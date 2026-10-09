@@ -10,7 +10,7 @@
 ## 一分钟版
 
 ```bash
-phosphor --new carts/mygame --id mygame --name "My Game" --author "你"
+phosphor --new mygame --id mygame --name "My Game" --author "你"   # 只给名字：建到 carts/ 下
 phosphor --cart carts/mygame                       # 改完存盘直接跑，卡带不需要编译
 phosphor --pack carts/mygame                       # 产出 dist/mygame.phos
 ```

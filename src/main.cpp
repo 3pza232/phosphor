@@ -87,7 +87,13 @@ static int run_check_api(const std::string& annotation_path, bool json) {
 
 /// --new：从 DevKit 模板生成卡带骨架（--id / --name / --author 在这里一次命名）
 static int run_create(const phos::CliOptions& opts, const std::string& template_dir) {
-    const std::string& target = *opts.create;
+    // 卡带默认落在"当前目录下的 carts/"里——正常启动（双击或从安装目录运行）时，
+    // 当前目录就是 exe 所在目录，于是 `--new mygame` 等价于 `--new carts/mygame`。
+    // 只给名字就够，不必自己拼 carts/；要放到别处就传带路径的形式。
+    std::string target = *opts.create;
+    const bool bare_name = target.find('/') == std::string::npos &&
+                           target.find('\\') == std::string::npos;
+    if (bare_name) target = "carts/" + target;
 
     // 建卡时能定的身份一次填好：id / 标题 / 作者；留空的走默认值
     phos::devkit::ScaffoldInfo info;
@@ -156,7 +162,7 @@ int main(int argc, char** argv) {
                 "  --scan <dir>      list carts and exit\n"
                 "  --pack <dir>      pack cart directory into .phos and exit\n"
                 "  --out <file>      pack output path (default dist/<id>.phos)\n"
-                "  --new <dir>       create cart skeleton from devkit template\n"
+                "  --new <name|dir>  create cart skeleton (a bare name goes to carts/<name>)\n"
                 "  --id <name>       cart id for --new (default: directory name)\n"
                 "  --name <title>    cart title for --new (default: same as id)\n"
                 "  --author <name>   cart author for --new (default: as in template)\n"
