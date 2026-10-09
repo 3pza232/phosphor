@@ -59,7 +59,7 @@ cmake --build build -j
 | `docs/` | **使用文档**：玩家手册 / 卡带作者手册 / API 参考 / 格式与内容包 / agent 接口 |
 | `design/` | 开发期设计文档与计划（不随发行包发布） |
 | `tools/` | 开发脚本（自测、演示、构建期同步） |
-| `build/` | 构建产物；运行包中 `carts/ docs/ theme/ mods/ devkit/` 是指向源码的联接 |
+| `build/` | 构建产物，**同时就是可直接分发/试玩的运行目录**：`carts/ devkit/ theme/ mods/ docs/` 与 exe 同级，全部是真实文件（不含任何路径联接） |
 
 ## 文档
 

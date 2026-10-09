@@ -45,8 +45,9 @@ phosphor --cart carts/mygame                                    # 开窗口试�
 phosphor --cart carts/mygame --headless --frames 300 --dump-screen   # 无头看一眼画面文本
 ```
 
-**改卡带不需要重新构建**：开发仓库里 `carts/` / `devkit/` / `theme/` / `mods/` / `docs/`
-都是**指向源码的目录联接**，存盘再跑就是新的；只有改主机 C++ 才需要 `cmake --build`。
+**改卡带不需要重新构建**：卡带就在 `carts/` 里，存盘再跑就是新的——卡带是 Lua 脚本，
+主机从不编译它。只有两种情况才需要跑 `cmake --build`：改了主机 C++，
+或者改了 `package/` 里的内容（主题 / 模板 / 文档，构建会把它们同步到发行目录）。
 
 **5. 打包分发**
 
