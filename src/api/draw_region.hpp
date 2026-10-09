@@ -39,6 +39,14 @@ public:
     void put(int x, int y, char32_t ch, Color fg, Color bg);
     void print(int x, int y, std::string_view text, Color fg, Color bg);
     void fill(int x, int y, int w, int h, char32_t ch, Color fg, Color bg);
+
+    /// 与 phos.screen 同一套语义：**只改前景、保留该格原有背景**。
+    /// Lua 侧"没给 bg"就走这几条，于是区域里的字默认透明——
+    /// 覆盖层压在游戏画面上时不会糊出一块块黑底
+    void put_fg(int x, int y, char32_t ch, Color fg);
+    void print_fg(int x, int y, std::string_view text, Color fg);
+    void fill_fg(int x, int y, int w, int h, char32_t ch, Color fg);
+    void blit_fg(int x, int y, const std::vector<std::string>& rows, Color fg);
     /// 一次写多行（每行一条字符串）：地图/画面搬运用，避免逐格与逐行调用
     void blit(int x, int y, const std::vector<std::string>& rows, Color fg, Color bg);
     void frame(std::string_view title);

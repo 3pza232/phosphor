@@ -157,23 +157,37 @@ void register_ui_api(sol::state& lua, HostContext& host) {
         },
         "put",
         [](DrawRegion& r, int x, int y, sol::object ch, sol::object fg, sol::object bg) {
-            r.put(x, y, api::read_char(ch, U' '), color_from(fg, Color::white),
-                  color_from(bg, Color::black));
+            if (!bg.valid() || bg.get_type() == sol::type::nil)
+                r.put_fg(x, y, api::read_char(ch, U' '), color_from(fg, Color::white));
+            else
+                r.put(x, y, api::read_char(ch, U' '), color_from(fg, Color::white),
+                      color_from(bg, Color::black));
         },
         "print",
         [](DrawRegion& r, int x, int y, const std::string& text, sol::object fg, sol::object bg) {
-            r.print(x, y, text, color_from(fg, Color::white), color_from(bg, Color::black));
+            if (!bg.valid() || bg.get_type() == sol::type::nil)
+                r.print_fg(x, y, text, color_from(fg, Color::white));
+            else
+                r.print(x, y, text, color_from(fg, Color::white), color_from(bg, Color::black));
         },
         "fill",
         [](DrawRegion& r, int x, int y, int w, int h, sol::object ch, sol::object fg,
            sol::object bg) {
-            r.fill(x, y, w, h, api::read_char(ch, U' '), color_from(fg, Color::white),
-                   color_from(bg, Color::black));
+            if (!bg.valid() || bg.get_type() == sol::type::nil) {
+                // 用空格填充时"保留背景"就是什么都不做；用实心字形才算真的画上去
+                r.fill_fg(x, y, w, h, api::read_char(ch, U' '), color_from(fg, Color::white));
+            } else {
+                r.fill(x, y, w, h, api::read_char(ch, U' '), color_from(fg, Color::white),
+                       color_from(bg, Color::black));
+            }
         },
         "blit",
         [](DrawRegion& r, int x, int y, sol::object rows, sol::object fg, sol::object bg) {
-            r.blit(x, y, row_list(rows), color_from(fg, Color::white),
-                   color_from(bg, Color::black));
+            if (!bg.valid() || bg.get_type() == sol::type::nil)
+                r.blit_fg(x, y, row_list(rows), color_from(fg, Color::white));
+            else
+                r.blit(x, y, row_list(rows), color_from(fg, Color::white),
+                       color_from(bg, Color::black));
         },
         "frame",
         [](DrawRegion& r, sol::object title) {

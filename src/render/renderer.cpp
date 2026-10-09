@@ -113,8 +113,8 @@ void Renderer::destroy() {
 }
 
 const Renderer::Glyph* Renderer::glyph_for(char32_t cp) {
+    // 空格（32）就在 ASCII 区间里，由上一行覆盖；不必单独判一次
     if (cp >= kFirstChar && cp < kFirstChar + kCharCount) return &glyphs_[cp - kFirstChar];
-    if (cp == U' ') return &glyphs_[U' ' - kFirstChar];
     if (!fonts_) return nullptr;
 
     const auto cached = extra_glyphs_.find(cp);
@@ -320,6 +320,22 @@ void Renderer::draw(const Screen& screen) {
             const float gw = g.w * s;
             const float gh = g.h * s;
 
+            // 先铺**整格**背景。只有一个字形的位图方块会被画出来，
+            // 而位图只有墨迹那一小块——不铺整格的话，ASCII 与窄字形四周就是
+            // glClear 留下的黑色，看上去每个字都带着一块黑底（中文是双宽字形，
+            // 之前恰好被下面的整格四边形盖住了，所以只有 ASCII 露馅）。
+            // fg 也传 bg：这样无论采样到图集的哪个像素，alpha 混出来的都是背景色
+            {
+                const float bx0 = x * cw, by0 = y * chh;
+                const float bx1 = bx0 + (cell.cols == 2 ? cw * 2 : cw), by1 = by0 + chh;
+                push_vert(bx0, by0, 0.0f, 0.0f, cell.bg, cell.bg);
+                push_vert(bx1, by0, 0.0f, 0.0f, cell.bg, cell.bg);
+                push_vert(bx1, by1, 0.0f, 0.0f, cell.bg, cell.bg);
+                push_vert(bx0, by0, 0.0f, 0.0f, cell.bg, cell.bg);
+                push_vert(bx1, by1, 0.0f, 0.0f, cell.bg, cell.bg);
+                push_vert(bx0, by1, 0.0f, 0.0f, cell.bg, cell.bg);
+            }
+
             // 空格字形无位图，只画背景色：UV 取空白区
             const float u0 = blank ? 0.0f : g.u0;
             const float v0 = blank ? 0.0f : g.v0;
@@ -331,16 +347,6 @@ void Renderer::draw(const Screen& screen) {
             const float y0 = blank ? y * chh : gy;
 
             // 全角字符：先铺一块覆盖两格的底色（续格自身不绘制），再画字形
-            if (cell.cols == 2) {
-                const float bx1 = x * cw + cw * 2;
-                push_vert(x * cw, y * chh, 0.0f, 0.0f, cell.fg, cell.bg);
-                push_vert(bx1, y * chh, 0.0f, 0.0f, cell.fg, cell.bg);
-                push_vert(bx1, y * chh + chh, 0.0f, 0.0f, cell.fg, cell.bg);
-                push_vert(x * cw, y * chh, 0.0f, 0.0f, cell.fg, cell.bg);
-                push_vert(bx1, y * chh + chh, 0.0f, 0.0f, cell.fg, cell.bg);
-                push_vert(x * cw, y * chh + chh, 0.0f, 0.0f, cell.fg, cell.bg);
-            }
-
             push_vert(x0, y0, u0, v0, cell.fg, cell.bg);
             push_vert(x1, y0, u1, v0, cell.fg, cell.bg);
             push_vert(x1, y1, u1, v1, cell.fg, cell.bg);

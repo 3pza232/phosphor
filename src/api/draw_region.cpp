@@ -74,6 +74,34 @@ void DrawRegion::blit(int x, int y, const std::vector<std::string>& rows, Color 
     for (size_t i = 0; i < rows.size(); ++i) print(x, y + static_cast<int>(i), rows[i], fg, bg);
 }
 
+void DrawRegion::put_fg(int x, int y, char32_t ch, Color fg) {
+    const int cols = text::char_width(ch);
+    if (cols == 0 || x < 0 || y < 0 || x + cols > w_ || y >= h_) return;
+    screen().put_fg(abs_x(x), abs_y(y), ch, fg);
+}
+
+void DrawRegion::print_fg(int x, int y, std::string_view text, Color fg) {
+    if (y < 0 || y >= h_) return;
+    int col = x;
+    for (char32_t cp : text::decode(text)) {
+        const int cols = text::char_width(cp);
+        if (cols == 0) continue;
+        if (col + cols > w_) break;
+        if (col >= 0) screen().put_fg(abs_x(col), abs_y(y), cp, fg);
+        col += cols;
+    }
+}
+
+void DrawRegion::fill_fg(int x, int y, int w, int h, char32_t ch, Color fg) {
+    for (int row = y; row < y + h; ++row)
+        for (int col = x; col < x + w; ++col) put_fg(col, row, ch, fg);
+}
+
+void DrawRegion::blit_fg(int x, int y, const std::vector<std::string>& rows, Color fg) {
+    for (size_t i = 0; i < rows.size(); ++i)
+        print_fg(x, y + static_cast<int>(i), rows[i], fg);
+}
+
 void DrawRegion::frame(std::string_view title) {
     ui::frame(screen(), ui::Rect{abs_x(0), abs_y(0), w_, h_}, title, style());
 }

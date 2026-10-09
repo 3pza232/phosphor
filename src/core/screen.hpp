@@ -46,6 +46,18 @@ public:
     /// 清屏（可选底色）
     void clear(Color fg = Color::white, Color bg = Color::black);
 
+    /// 只改前景、**保留该格原有背景**（"不清底"）。
+    /// 卡带没显式给 bg 时走这几条：否则每个字都自带黑底，
+    /// 压在天空或地形上就是一块块黑斑（地形用象限字形，一格里有空有实，
+    /// 黑底会让坡面边缘出现黑边）。显式给了 bg 的调用方（外壳、界面）不受影响。
+    void put_fg(int x, int y, char32_t ch, Color fg) { put(x, y, ch, fg, at(x, y).bg); }
+    void print_fg(int x, int y, std::string_view text, Color fg) {
+        print(x, y, text, fg, at(x, y).bg);
+    }
+    void fill_fg(int x, int y, int w, int h, char32_t ch, Color fg) {
+        fill(x, y, w, h, ch, fg, at(x, y).bg);
+    }
+
     /// 读某格；越界返回静态空 Cell（不抛异常，便于渲染循环直接遍历）
     const Cell& at(int x, int y) const;
 

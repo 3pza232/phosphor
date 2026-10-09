@@ -23,19 +23,40 @@ WindowHandlers g_handlers{};  // NOTE: 单窗口假设，多窗口时需重构�
 //
 // **一个功能一个键**：不为同一按钮准备替代键，免得提示与习惯出现两套说法。
 // 左右 Shift、主键盘与小键盘的回车是**同一个键的两个物理位置**，保留。
-std::optional<Key> map_key(int glfw_key) {
+/// GLFW 物理键 → 虚拟键名。约定的名字就是键名本身的小写（"a" / "space" / "k"），
+/// 只有四颗方向键与 ENTER/SHIFT 例外：它们保留手柄式的名字（"left" / "start" /
+/// "select"），这样老卡带的提示与存档绑定不会因为改名而失效。
+/// 不认识的键返回空串：主机不会为它们造键，也不会拦着别的层用文本通道接。
+std::string key_name_from_glfw(int glfw_key) {
+    if (glfw_key >= GLFW_KEY_A && glfw_key <= GLFW_KEY_Z) {
+        return std::string(1, static_cast<char>('a' + (glfw_key - GLFW_KEY_A)));
+    }
+    if (glfw_key >= GLFW_KEY_0 && glfw_key <= GLFW_KEY_9) {
+        return std::string(1, static_cast<char>('0' + (glfw_key - GLFW_KEY_0)));
+    }
+    if (glfw_key >= GLFW_KEY_F1 && glfw_key <= GLFW_KEY_F12) {
+        return "f" + std::to_string(glfw_key - GLFW_KEY_F1 + 1);
+    }
     switch (glfw_key) {
-        case GLFW_KEY_LEFT: return Key::left;
-        case GLFW_KEY_RIGHT: return Key::right;
-        case GLFW_KEY_UP: return Key::up;
-        case GLFW_KEY_DOWN: return Key::down;
-        case GLFW_KEY_A: return Key::a;
-        case GLFW_KEY_B: return Key::b;
-        case GLFW_KEY_X: return Key::x;
-        case GLFW_KEY_Y: return Key::y;
-        case GLFW_KEY_ENTER: case GLFW_KEY_KP_ENTER: return Key::start;
-        case GLFW_KEY_LEFT_SHIFT: case GLFW_KEY_RIGHT_SHIFT: return Key::select;
-        default: return std::nullopt;
+        case GLFW_KEY_LEFT: return "left";
+        case GLFW_KEY_RIGHT: return "right";
+        case GLFW_KEY_UP: return "up";
+        case GLFW_KEY_DOWN: return "down";
+        case GLFW_KEY_ENTER: case GLFW_KEY_KP_ENTER: return "start";
+        case GLFW_KEY_LEFT_SHIFT: case GLFW_KEY_RIGHT_SHIFT: return "select";
+        case GLFW_KEY_SPACE: return "space";
+        case GLFW_KEY_COMMA: return "comma";
+        case GLFW_KEY_PERIOD: return "period";
+        case GLFW_KEY_SLASH: return "slash";
+        case GLFW_KEY_SEMICOLON: return "semicolon";
+        case GLFW_KEY_APOSTROPHE: return "apostrophe";
+        case GLFW_KEY_MINUS: return "minus";
+        case GLFW_KEY_EQUAL: return "equal";
+        case GLFW_KEY_LEFT_BRACKET: return "lbrace";
+        case GLFW_KEY_RIGHT_BRACKET: return "rbrace";
+        case GLFW_KEY_BACKSLASH: return "backslash";
+        case GLFW_KEY_TAB: return "tab";
+        default: return {};
     }
 }
 
@@ -63,8 +84,8 @@ void key_callback(GLFWwindow*, int key, int, int action, int) {
     }
 
     if (action == GLFW_PRESS || action == GLFW_RELEASE) {
-        if (auto k = map_key(key))
-            g_handlers.input->set_key(*k, action == GLFW_PRESS);
+        const std::string name = key_name_from_glfw(key);
+        if (!name.empty()) g_handlers.input->set_key(name, action == GLFW_PRESS);
     }
 }
 

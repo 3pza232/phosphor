@@ -37,6 +37,12 @@ void blank(Cell& c) {
 
 void Screen::put(int x, int y, char32_t ch, Color fg, Color bg) {
     if (y < 0 || y >= h_) return;
+    // 背景色带着"别动背景"的标记：把它解析成该格当前背景再往下走。
+    // 只在这一个函数里判断就够了——print / fill / 各层包装最后都走 put
+    if (bg.keep && x >= 0 && x < w_) {
+        bg = cells_[static_cast<size_t>(y) * w_ + x].bg;
+        bg.keep = false;
+    }
     const int width = text::char_width(ch);
 
     // 先清理被覆盖的旧内容：写到续格上要连带清掉它的头格，

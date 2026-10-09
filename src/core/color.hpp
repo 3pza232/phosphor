@@ -10,6 +10,12 @@ namespace phos {
 struct Color {
     uint8_t r = 255, g = 255, b = 255;
 
+    /// "别动这格的背景"。背景色带这个标记时，Screen::put 会取该格**原有**背景，
+    /// 于是画字/画地形不会给每个字符压上一块黑底。
+    /// 卡带侧的界面样式（style_from_palette）整体带这个标记：
+    /// 覆盖层压在游戏画面上时默认透明，要一块不透明底就显式传颜色。
+    bool keep = false;
+
     static const Color black, white, gray, dark_gray;
     static const Color red, green, blue, yellow;
     static const Color cyan, magenta, orange, purple;

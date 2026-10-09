@@ -24,6 +24,13 @@ Color opt_color(const sol::object& obj, Color fallback) {
     return fallback;
 }
 
+/// 是否"没给背景色"。给了就照给的画，没给则**保留该格原有背景**：
+/// 卡带画字/画地形时不该让每个字符都自带一块黑底——那会在天空上留下黑斑，
+/// 在地形的斜边留下黑边。想要不透明底色的调用方显式传一个颜色即可
+bool transparent_bg(const sol::object& obj) {
+    return !obj.valid() || obj.get_type() == sol::type::nil;
+}
+
 /// 内容区边界约束：卡带只能画在自己的区域里（越界写入会盖到侧栏与机身上）。
 /// 写成自由函数而不是局部 lambda：局部 lambda 被闭包按引用捕获后，
 /// 注册函数一返回就悬垂，随后每次调用都是野指针。
@@ -89,13 +96,21 @@ void register_host_api(sol::state& lua, HostContext& host) {
         const char32_t glyph = opt_char(ch, U' ');
         const int cols = text::char_width(glyph);
         if (cols == 0 || !inside_content(host, x, y, cols)) return;
-        host.screen->put(host.content_x + x, host.content_y + y, glyph,
-                         opt_color(fg, Color::white), opt_color(bg, Color::black));
+        if (transparent_bg(bg))
+            host.screen->put_fg(host.content_x + x, host.content_y + y, glyph,
+                                opt_color(fg, Color::white));
+        else
+            host.screen->put(host.content_x + x, host.content_y + y, glyph,
+                             opt_color(fg, Color::white), opt_color(bg, Color::black));
     };
     screen["print"] = [&host](int x, int y, const std::string& text,
                               sol::object fg, sol::object bg) {
-        host.screen->print(host.content_x + x, host.content_y + y, text,
-                           opt_color(fg, Color::white), opt_color(bg, Color::black));
+        if (transparent_bg(bg))
+            host.screen->print_fg(host.content_x + x, host.content_y + y, text,
+                                  opt_color(fg, Color::white));
+        else
+            host.screen->print(host.content_x + x, host.content_y + y, text,
+                               opt_color(fg, Color::white), opt_color(bg, Color::black));
     };
     screen["fill"] = [&host](int x, int y, int w, int h, const sol::object& ch,
                              sol::object fg, sol::object bg) {
@@ -148,12 +163,17 @@ void register_host_api(sol::state& lua, HostContext& host) {
         const int cols = text::char_width(glyph);
         // 宽字符在最后一列放不下：宁可少画一个字，也不让它溢出到机身
         if (cols == 0 || x < 0 || x + cols > host.panel_w || y >= host.content_h) return;
-        host.screen->put(host.panel_origin_x() + x, host.content_y + y, glyph,
-                         opt_color(fg, Color::white), opt_color(bg, Color::black));
+        if (transparent_bg(bg))
+            host.screen->put_fg(host.panel_origin_x() + x, host.content_y + y, glyph,
+                                opt_color(fg, Color::white));
+        else
+            host.screen->put(host.panel_origin_x() + x, host.content_y + y, glyph,
+                             opt_color(fg, Color::white), opt_color(bg, Color::black));
     };
     panel["print"] = [&host](int x, int y, const std::string& text,
                              sol::object fg, sol::object bg) {
         const Color f = opt_color(fg, Color::white);
+        const bool keep = transparent_bg(bg);
         const Color b = opt_color(bg, Color::black);
         if (y < 0 || y >= host.content_h) return;
         int col = x;
@@ -161,8 +181,11 @@ void register_host_api(sol::state& lua, HostContext& host) {
             const int cols = text::char_width(glyph);
             if (cols == 0) continue;
             if (col + cols > host.panel_w) break;  // 右侧放不下（含宽字符只差一格的情形）
-            if (col >= 0) host.screen->put(host.panel_origin_x() + col, host.content_y + y,
-                                           glyph, f, b);
+            if (col >= 0) {
+                const int px = host.panel_origin_x() + col;
+                if (keep) host.screen->put_fg(px, host.content_y + y, glyph, f);
+                else host.screen->put(px, host.content_y + y, glyph, f, b);
+            }
             col += cols;
         }
     };
@@ -198,9 +221,16 @@ void register_host_api(sol::state& lua, HostContext& host) {
                 const int cols = text::char_width(cp);
                 if (cols == 0) continue;
                 if (col + cols > host.panel_w) break;  // 右边界放不下就停
-                if (col >= 0)
-                    host.screen->put(host.panel_origin_x() + col, host.content_y + py, cp,
-                                     opt_color(fg, Color::white), opt_color(bg, Color::black));
+                if (col >= 0) {
+                    const int px = host.panel_origin_x() + col;
+                    // 与 screen.blit 同一套语义：没给背景 = 保留原背景
+                    if (transparent_bg(bg))
+                        host.screen->put_fg(px, host.content_y + py, cp,
+                                            opt_color(fg, Color::white));
+                    else
+                        host.screen->put(px, host.content_y + py, cp,
+                                         opt_color(fg, Color::white), opt_color(bg, Color::black));
+                }
                 col += cols;
             }
         }
@@ -223,23 +253,13 @@ void register_host_api(sol::state& lua, HostContext& host) {
 
     // --- phos.input ---
     sol::table input = phos.create_named("input");
-    input["down"] = [&host](const std::string& key) {
-        auto k = key_from_name(key);
-        return k && host.input->down(*k);
-    };
-    input["pressed"] = [&host](const std::string& key) {
-        auto k = key_from_name(key);
-        return k && host.input->pressed(*k);
-    };
-    input["released"] = [&host](const std::string& key) {
-        auto k = key_from_name(key);
-        return k && host.input->released(*k);
-    };
+    // 键就是名字：主机不做白名单，任何名字都能查（没见过 = 一直是松开）。
+    // 卡带因此可以要多少键就多少键，也能读存档里的绑定名直接查状态
+    input["down"] = [&host](const std::string& key) { return host.input->down(key); };
+    input["pressed"] = [&host](const std::string& key) { return host.input->pressed(key); };
+    input["released"] = [&host](const std::string& key) { return host.input->released(key); };
     // 操作提示应该写键盘上的键，而不是手柄按钮名——主机没有手柄
-    input["key_name"] = [](const std::string& key) {
-        const auto k = key_from_name(key);
-        return k ? key_primary_name(*k) : std::string("?");
-    };
+    input["key_name"] = [](const std::string& key) { return key_display_name(key); };
     // 本帧输入的文本（UTF-8；可含多字节字符与退格 '\b'）
     input["text"] = [&host]() { return host.input->text(); };
 
@@ -248,9 +268,9 @@ void register_host_api(sol::state& lua, HostContext& host) {
     // 再用 phos.input.key_name() 显示成键盘上真实的键。
     // 主机保留键（Esc / F2）不在其中——它们永远属于主机。
     input["any_pressed"] = [&host, &lua]() -> sol::object {
-        for (const auto& [key, name] : kAllKeys)
-            if (host.input->pressed(key)) return sol::make_object(lua, std::string(name));
-        return sol::nil;
+        const std::string name = host.input->any_pressed();
+        if (name.empty()) return sol::nil;
+        return sol::make_object(lua, name);
     };
 
     // --- phos.input.field：文本输入框缓冲 ---

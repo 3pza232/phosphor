@@ -104,8 +104,8 @@ std::string App::control_state_json() const {
     out << "]}";
 
     std::string held;
-    for (const auto& [key, name] : kAllKeys) {
-        if (!input_.down(key)) continue;
+    for (const auto& name : input_.names()) {
+        if (!input_.down(name)) continue;
         if (!held.empty()) held += ",";
         held += json::quote(name);
     }

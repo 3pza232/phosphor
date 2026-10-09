@@ -60,12 +60,14 @@ void App::fill_debug_info(DebugInfo& info) {
 
     info.crt = &active_crt_;  // 仪表盘可直接调参，所以给的是可写指针
 
-    for (const auto& [key, name] : kAllKeys) {
-        if (input_.down(key)) info.held_keys.push_back(name);
-        if (input_.pressed(key))
-            info.edge_keys.push_back(std::string(name) + "+");
-        else if (input_.released(key))
-            info.edge_keys.push_back(std::string(name) + "-");
+    // 键名表是动态的（卡带想用什么键就是什么键），所以这里遍历"见过的键名"，
+    // 而不是某张写死在主机里的固定表
+    for (const auto& name : input_.names()) {
+        if (input_.down(name)) info.held_keys.push_back(name);
+        if (input_.pressed(name))
+            info.edge_keys.push_back(name + "+");
+        else if (input_.released(name))
+            info.edge_keys.push_back(name + "-");
     }
 }
 

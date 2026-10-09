@@ -29,6 +29,10 @@ Style style_from_palette(const Palette& palette) {
     s.accent = slot(PaletteSlot::green);
     s.frame = slot(PaletteSlot::gray);
     s.bg = slot(PaletteSlot::black);
+    // 卡带侧的界面样式**默认不动背景**：卡带的浮窗/边框压在游戏画面上时，
+    // 不该把底下的画面糊成一块黑板。要一块不透明底的地方，显式传颜色即可
+    // （机身边框走 style_from_skin，仍是实底，不受这里影响）
+    s.bg.keep = true;
     return s;
 }
 

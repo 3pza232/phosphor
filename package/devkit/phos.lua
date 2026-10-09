@@ -291,7 +291,7 @@ function phos.audio.stop_sample(handle) end
 ---@class phos.input
 phos.input = {}
 
----@param key string "left"|"right"|"up"|"down"|"a"|"b"|"x"|"y"|"start"|"select"
+---@param key string "left"|"right"|"up"|"down"|"a"|"b"|"x"|"y"|"start"|"select"|"space"|"comma"|"period"
 ---@return boolean
 function phos.input.down(key) end
 

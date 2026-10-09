@@ -252,8 +252,8 @@ bool App::boot_should_end() const {
 void App::load_cart(int index) { load_cart_path(shell_.cart_path_at(index)); }
 
 bool App::any_key_edge() const {
-    for (const auto& entry : kAllKeys)
-        if (input_.pressed(entry.first)) return true;
+    for (const auto& name : input_.names())
+        if (input_.pressed(name)) return true;
     return false;
 }
 
@@ -302,9 +302,9 @@ void App::apply_input_action(const InputAction& action, int hold_frames) {
             shell_.open_settings();
         return;
     }
-    if (!action.key) return;
-    input_.set_key(*action.key, action.down);
-    if (action.down && hold_frames > 0) pending_releases_.emplace_back(*action.key, hold_frames);
+    if (action.key.empty()) return;
+    input_.set_key(action.key, action.down);
+    if (action.down && hold_frames > 0) pending_releases_.emplace_back(action.key, hold_frames);
 }
 
 

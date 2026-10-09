@@ -1,47 +1,82 @@
 #include "core/input.hpp"
 
+#include <algorithm>
+#include <cctype>
+
 namespace phos {
 
-std::optional<Key> key_from_name(const std::string& name) {
-    for (const auto& [key, key_name] : kAllKeys)
-        if (name == key_name) return key;
-    return std::nullopt;
-}
+namespace {
 
-std::string key_primary_name(Key key) {
-    switch (key) {
-        case Key::left: return "LEFT";
-        case Key::right: return "RIGHT";
-        case Key::up: return "UP";
-        case Key::down: return "DOWN";
-        case Key::a: return "A";
-        case Key::b: return "B";
-        case Key::x: return "X";
-        case Key::y: return "Y";
-        case Key::start: return "ENTER";
-        case Key::select: return "SHIFT";
-        case Key::count: break;
+/// 少数几个"显示名和键名不一样"的键：其余按大写显示
+constexpr std::pair<const char*, const char*> kDisplayAliases[] = {
+    {"start", "ENTER"}, {"select", "SHIFT"}, {"space", "SPACE"},
+    {"comma", ","},     {"period", "."},     {"slash", "/"},
+    {"semicolon", ";"}, {"apostrophe", "'"}, {"minus", "-"},
+    {"equal", "="},     {"lbrace", "["},     {"rbrace", "]"},
+    {"backslash", "\\"}, {"tab", "TAB"},
+};
+
+} // namespace
+
+std::string key_display_name(std::string_view name) {
+    for (const auto& [key, shown] : kDisplayAliases)
+        if (name == key) return shown;
+    std::string out;
+    if (name.size() == 1) {
+        // 字母按大写显示（"a" → "A"），数字与符号原样
+        out.push_back(static_cast<char>(std::toupper(static_cast<unsigned char>(name[0]))));
+        return out;
     }
-    return "?";
+    bool first = true;
+    for (char c : name) {  // 其余整体大写："f1" → "F1"、"left" → "LEFT"
+        const bool lowered = !first && std::isdigit(static_cast<unsigned char>(out.back()));
+        out.push_back(static_cast<char>(
+            lowered ? c : std::toupper(static_cast<unsigned char>(c))));
+        first = false;
+    }
+    return out;
 }
 
 std::optional<InputAction> input_action_from(std::string_view name, bool down) {
     const std::string text(name);
-    if (is_host_key(text)) return InputAction{std::nullopt, down, text};
-    if (const auto key = key_from_name(text)) return InputAction{*key, down, {}};
-    return std::nullopt;
+    if (is_host_key(text)) return InputAction{{}, down, text};
+    if (text.empty()) return std::nullopt;
+    // 任何非空名字都是合法虚拟键：主机不做白名单，卡带想用哪个键就是哪个键
+    return InputAction{text, down, {}};
 }
 
-void Input::set_key(Key key, bool down) {
-    cur_[index(key)] = down;
+int Input::find(std::string_view name) const {
+    for (size_t i = 0; i < names_.size(); ++i)
+        if (names_[i] == name) return static_cast<int>(i);
+    return -1;
+}
+
+int Input::slot(std::string_view name) {
+    const int found = find(name);
+    if (found >= 0) return found;
+    names_.emplace_back(name);
+    cur_.push_back(false);
+    prev_.push_back(false);
+    return static_cast<int>(names_.size() - 1);
+}
+
+void Input::set_key(std::string_view name, bool down) {
+    if (name.empty()) return;
+    cur_[static_cast<size_t>(slot(name))] = down;
 }
 
 void Input::push_text(std::string text) {
     text_ += std::move(text);
 }
 
+std::string Input::any_pressed() const {
+    for (size_t i = 0; i < names_.size(); ++i)
+        if (cur_[i] && !prev_[i]) return names_[i];
+    return {};
+}
+
 void Input::release_all() {
-    cur_.fill(false);
+    std::fill(cur_.begin(), cur_.end(), false);
 }
 
 } // namespace phos

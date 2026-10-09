@@ -194,7 +194,7 @@ private:
     int pending_steps_ = 0;              // 待推进的逻辑帧数
     int step_request_id_ = -1;           // 待回包的 time.step 请求 id
     std::string cart_path_;              // 当前卡带路径（供 cart.reload）
-    std::vector<std::pair<Key, int>> pending_releases_;  // 注入按键的定时释放
+    std::vector<std::pair<std::string, int>> pending_releases_;  // 注入按键的定时释放（按名字记）
 };
 
 } // namespace phos
