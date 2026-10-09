@@ -1,0 +1,18 @@
+#pragma once
+
+#include <cstdint>
+
+namespace phos {
+
+/// 一种颜色。调色板、屏幕格、界面样式、卡带图标都用它。
+///
+/// 单独成文件：几乎所有模块都要用 Color，而它不该逼任何人连带包含整个屏幕网格。
+struct Color {
+    uint8_t r = 255, g = 255, b = 255;
+
+    static const Color black, white, gray, dark_gray;
+    static const Color red, green, blue, yellow;
+    static const Color cyan, magenta, orange, purple;
+};
+
+} // namespace phos

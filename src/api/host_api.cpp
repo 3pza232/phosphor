@@ -1,0 +1,374 @@
+#include "api/host_api.hpp"
+
+#include "api/text_field.hpp"
+
+#include "api/assets_api.hpp"
+#include "cart/cartridge.hpp"
+#include "api/audio_api.hpp"
+#include "api/ui_api.hpp"
+#include "core/log.hpp"
+#include "core/text.hpp"
+#include "core/version.hpp"
+
+#include <sol/sol.hpp>
+
+#include <cstdio>
+
+namespace phos {
+
+namespace {
+
+/// 可选颜色参数解析（未提供时用默认值）
+Color opt_color(const sol::object& obj, Color fallback) {
+    if (obj.is<Color>()) return obj.as<Color>();
+    return fallback;
+}
+
+/// 内容区边界约束：卡带只能画在自己的区域里（越界写入会盖到侧栏与机身上）。
+/// 写成自由函数而不是局部 lambda：局部 lambda 被闭包按引用捕获后，
+/// 注册函数一返回就悬垂，随后每次调用都是野指针。
+bool inside_content(const HostContext& host, int x, int y, int cols) {
+    return x >= 0 && y >= 0 && x + cols <= host.content_w && y < host.content_h;
+}
+
+/// 单字符参数解析：解码首个码点。
+/// 取首字节是错的——"中" 在 UTF-8 里是 3 字节，只取首字节只会画出乱码。
+char32_t opt_char(const sol::object& obj, char32_t fallback) {
+    if (obj.is<std::string>()) {
+        const std::string& s = obj.as<std::string>();
+        if (!s.empty()) {
+            const std::vector<char32_t> codepoints = text::decode(s);
+            if (!codepoints.empty()) return codepoints.front();
+        }
+    }
+    return fallback;
+}
+
+} // namespace
+
+void apply_palette_to(sol::state& lua, const Palette& palette) {
+    sol::table color = lua["phos"]["color"];
+    for (size_t i = 0; i < kPaletteSlots; ++i)
+        color[palette_slot_name(static_cast<PaletteSlot>(i))] = palette.slots[i];
+}
+
+void register_host_api(sol::state& lua, HostContext& host) {
+    // --- Color 类型 ---
+    lua.new_usertype<Color>("Color",
+        sol::constructors<Color()>(),
+        "r", &Color::r, "g", &Color::g, "b", &Color::b);
+
+    sol::table phos = lua.create_named_table("phos");
+
+    // --- phos.color（常量取自激活滤镜，热切换时由 apply_palette_to 更新） ---
+    sol::table color = phos.create_named("color");
+    color["rgb"] = [](int r, int g, int b) {
+        auto clamp = [](int v) { return v < 0 ? 0 : (v > 255 ? 255 : v); };
+        return Color{static_cast<uint8_t>(clamp(r)),
+                     static_cast<uint8_t>(clamp(g)),
+                     static_cast<uint8_t>(clamp(b))};
+    };
+    if (host.palette) apply_palette_to(lua, *host.palette);
+
+    // --- phos.screen（局部坐标：内容区左上角为 (0,0)） ---
+    sol::table screen = phos.create_named("screen");
+    screen["size"] = [&host]() { return std::make_tuple(host.content_w, host.content_h); };
+    // 内容区尺寸是常量（与主题无关，见 docs/api-reference.md），直接给字段更顺手
+    screen["width"] = host.content_w;
+    screen["height"] = host.content_h;
+    // 可玩区：内容区扣掉侧栏以后的那一块（x, y, w, h）。画"游戏画面"应该用它——
+    // 用 size() 会把侧栏覆盖的部分一起算进来，从 0 画到 w 就有几列藏在侧栏后面，
+    // 玩家只会看到"东西突然冒出来"。面板宽度可在运行时改（phos.panel.resize），
+    // 所以这里是**函数**而非字段：每次调用都按当前面板宽度算。
+    screen["playfield"] = [&host]() {
+        const int w = host.content_w - host.panel_w;
+        return std::make_tuple(0, 0, w < 0 ? 0 : w, host.content_h);
+    };
+    screen["put"] = [&host](int x, int y, const sol::object& ch,
+                            sol::object fg, sol::object bg) {
+        const char32_t glyph = opt_char(ch, U' ');
+        const int cols = text::char_width(glyph);
+        if (cols == 0 || !inside_content(host, x, y, cols)) return;
+        host.screen->put(host.content_x + x, host.content_y + y, glyph,
+                         opt_color(fg, Color::white), opt_color(bg, Color::black));
+    };
+    screen["print"] = [&host](int x, int y, const std::string& text,
+                              sol::object fg, sol::object bg) {
+        host.screen->print(host.content_x + x, host.content_y + y, text,
+                           opt_color(fg, Color::white), opt_color(bg, Color::black));
+    };
+    screen["fill"] = [&host](int x, int y, int w, int h, const sol::object& ch,
+                             sol::object fg, sol::object bg) {
+        const int x0 = x < 0 ? 0 : x;
+        const int y0 = y < 0 ? 0 : y;
+        const int x1 = (x + w < host.content_w) ? x + w : host.content_w;
+        const int y1 = (y + h < host.content_h) ? y + h : host.content_h;
+        if (x1 <= x0 || y1 <= y0) return;
+        host.screen->fill(host.content_x + x0, host.content_y + y0, x1 - x0, y1 - y0,
+                          opt_char(ch, U' '), opt_color(fg, Color::white),
+                          opt_color(bg, Color::black));
+    };
+    screen["clear"] = [&host](sol::object fg, sol::object bg) {
+        host.screen->fill(host.content_x, host.content_y, host.content_w, host.content_h, U' ',
+                          opt_color(fg, Color::white), opt_color(bg, Color::black));
+    };
+    // 一次写多行（每行一条字符串）：地图/画面搬运用，比逐格 put 少一堆调用。
+    // 超出内容区宽度的部分按**显示宽度**截断，免得溢到机身装饰上
+    screen["blit"] = [&host](int x, int y, sol::table rows, sol::object fg, sol::object bg) {
+        if (x < 0 || x >= host.content_w) return;
+        for (size_t i = 1; i <= rows.size(); ++i) {
+            sol::object row = rows[i];
+            if (!row.is<std::string>()) continue;
+            const int py = y + static_cast<int>(i) - 1;
+            if (py < 0 || py >= host.content_h) continue;
+            host.screen->print(host.content_x + x, host.content_y + py,
+                               text::truncate(row.as<std::string>(), host.content_w - x),
+                               opt_color(fg, Color::white), opt_color(bg, Color::black));
+        }
+    };
+    screen["get"] = [&host](int x, int y) {
+        const int sx = host.content_x + x;
+        const int sy = host.content_y + y;
+        const Cell& c = host.screen->at(sx, sy);
+        std::string out;
+        // 取字规则与屏幕文本导出（--dump-screen / screen.read）同一份
+        // （Screen::glyph_at）：续格报头格字符、控制字符不算内容。
+        // 两处若各写一套，agent 读到的画面就会与 dump 出来的文本对不上
+        if (const char32_t ch = host.screen->glyph_at(sx, sy)) text::append_utf8(out, ch);
+        return std::make_tuple(out, c.fg, c.bg);
+    };
+
+    // --- phos.panel（侧栏面板：坐标局部于面板区，主机统一画分隔线） ---
+    // 面板内容完全由卡带决定：分数记录、地图、图鉴……
+    sol::table panel = phos.create_named("panel");
+    panel["size"] = [&host]() { return std::make_tuple(host.panel_w, host.content_h); };
+    panel["put"] = [&host](int x, int y, const sol::object& ch,
+                           sol::object fg, sol::object bg) {
+        const char32_t glyph = opt_char(ch, U' ');
+        const int cols = text::char_width(glyph);
+        // 宽字符在最后一列放不下：宁可少画一个字，也不让它溢出到机身
+        if (cols == 0 || x < 0 || x + cols > host.panel_w || y >= host.content_h) return;
+        host.screen->put(host.panel_origin_x() + x, host.content_y + y, glyph,
+                         opt_color(fg, Color::white), opt_color(bg, Color::black));
+    };
+    panel["print"] = [&host](int x, int y, const std::string& text,
+                             sol::object fg, sol::object bg) {
+        const Color f = opt_color(fg, Color::white);
+        const Color b = opt_color(bg, Color::black);
+        if (y < 0 || y >= host.content_h) return;
+        int col = x;
+        for (char32_t glyph : text::decode(text)) {
+            const int cols = text::char_width(glyph);
+            if (cols == 0) continue;
+            if (col + cols > host.panel_w) break;  // 右侧放不下（含宽字符只差一格的情形）
+            if (col >= 0) host.screen->put(host.panel_origin_x() + col, host.content_y + y,
+                                           glyph, f, b);
+            col += cols;
+        }
+    };
+    panel["fill"] = [&host](int x, int y, int w, int h, const sol::object& ch,
+                            sol::object fg, sol::object bg) {
+        for (int row = y; row < y + h; ++row)
+            for (int col = x; col < x + w; ++col) {
+                if (col < 0 || col >= host.panel_w) continue;
+                host.screen->put(host.panel_origin_x() + col, host.content_y + row,
+                                 opt_char(ch, U' '),
+                                 opt_color(fg, Color::white), opt_color(bg, Color::black));
+            }
+    };
+    panel["clear"] = [&host](sol::object fg, sol::object bg) {
+        host.screen->fill(host.panel_origin_x(), host.content_y, host.panel_w, host.content_h,
+                          U' ', opt_color(fg, Color::white), opt_color(bg, Color::black));
+    };
+    // 运行时改面板宽度（0 = 收起）：宽度是与主机共享的布局量，分隔线、面板局部坐标
+    // 都跟着变，所以只留 host.panel_w 一个真源。返回钳制后的实际宽度
+    panel["resize"] = [&host](int w) {
+        host.panel_w = w < 0 ? 0 : (w > kPanelMaxW ? kPanelMaxW : w);
+        return host.panel_w;
+    };
+    // 一次写多行：面板里的地图/表格搬运用，避免逐格调用
+    panel["blit"] = [&host](int x, int y, sol::table rows, sol::object fg, sol::object bg) {
+        for (size_t i = 1; i <= rows.size(); ++i) {
+            sol::object row = rows[i];
+            if (!row.is<std::string>()) continue;
+            const int py = y + static_cast<int>(i) - 1;
+            if (py < 0 || py >= host.content_h) continue;
+            int col = x;
+            for (char32_t cp : text::decode(row.as<std::string>())) {
+                const int cols = text::char_width(cp);
+                if (cols == 0) continue;
+                if (col + cols > host.panel_w) break;  // 右边界放不下就停
+                if (col >= 0)
+                    host.screen->put(host.panel_origin_x() + col, host.content_y + py, cp,
+                                     opt_color(fg, Color::white), opt_color(bg, Color::black));
+                col += cols;
+            }
+        }
+    };
+
+    // --- phos.text（文本度量） ---
+    // 中文一个字占两格，卡带要自己排版（居中、对齐、定宽字段）就得先问宽度，
+    // 而不是拿 #str 当列数——那是字节数，中文会被算成 3 格
+    sol::table text_api = phos.create_named("text");
+    text_api["width"] = [](const std::string& s) { return text::display_width(s); };
+    text_api["truncate"] = [](const std::string& s, int cols) { return text::truncate(s, cols); };
+    // 定宽位置（侧栏、状态条）的文案要"看得出被裁"：裁掉了就补省略号。
+    // 主机在右侧是硬切，会留下"[↑/A] 跳：按住更"这种半句话，玩家只能靠猜。
+    // 宽度按显示宽度算，全角字符不会被切成半个。
+    text_api["fit"] = [](const std::string& s, int cols) -> std::string {
+        if (cols <= 0) return std::string();
+        if (text::display_width(s) <= cols) return s;
+        return text::truncate(s, cols - 1) + "…";
+    };
+
+    // --- phos.input ---
+    sol::table input = phos.create_named("input");
+    input["down"] = [&host](const std::string& key) {
+        auto k = key_from_name(key);
+        return k && host.input->down(*k);
+    };
+    input["pressed"] = [&host](const std::string& key) {
+        auto k = key_from_name(key);
+        return k && host.input->pressed(*k);
+    };
+    input["released"] = [&host](const std::string& key) {
+        auto k = key_from_name(key);
+        return k && host.input->released(*k);
+    };
+    // 操作提示应该写键盘上的键，而不是手柄按钮名——主机没有手柄
+    input["key_name"] = [](const std::string& key) {
+        const auto k = key_from_name(key);
+        return k ? key_primary_name(*k) : std::string("?");
+    };
+    // 本帧输入的文本（UTF-8；可含多字节字符与退格 '\b'）
+    input["text"] = [&host]() { return host.input->text(); };
+
+    // 本帧新按下的键（任意一个），返回虚拟键名或 nil。
+    // 给"让玩家按一个键来完成绑定"用：拿到名字可以存进存档，
+    // 再用 phos.input.key_name() 显示成键盘上真实的键。
+    // 主机保留键（Esc / F2）不在其中——它们永远属于主机。
+    input["any_pressed"] = [&host, &lua]() -> sol::object {
+        for (const auto& [key, name] : kAllKeys)
+            if (host.input->pressed(key)) return sol::make_object(lua, std::string(name));
+        return sol::nil;
+    };
+
+    // --- phos.input.field：文本输入框缓冲 ---
+    // 过滤、按码点退格、限长都交给主机的 TextInput（与磁带码输入同一套实现），
+    // 卡带只管 feed() 与读 value()——"删掉一个中文字"因此不会变成半个字符。
+    lua.new_usertype<CartTextField>(
+        "phos.TextField", sol::no_constructor,
+        "feed", [&host](CartTextField& self) { self.feed(host.time, host.input->text()); },
+        "clear", &CartTextField::clear, "value", sol::property(&CartTextField::value),
+        "count", sol::property(&CartTextField::count));
+
+    input["field"] = [&lua](sol::optional<sol::table> cfg) -> CartTextField {
+        std::string preset = "any";
+        std::size_t max_chars = 0;
+        bool has_custom = false;
+        sol::protected_function custom;
+        if (cfg) {
+            sol::object filter = (*cfg)["filter"];
+            if (filter.is<std::string>()) {
+                preset = filter.as<std::string>();
+            } else if (filter.is<sol::function>()) {
+                custom = filter.as<sol::protected_function>();
+                has_custom = true;
+            }
+            sol::object limit = (*cfg)["max"];
+            if (limit.is<double>() || limit.is<int>()) {
+                const int requested = limit.as<int>();
+                max_chars = requested > 0 ? static_cast<std::size_t>(requested) : 0;
+            }
+        }
+
+        text::TextInput::Filter accept = text::TextInput::accept_any;
+        if (has_custom) {
+            // 卡带自己给的过滤器：回调出错按"不接受"处理，绝不把输入通道带崩
+            accept = [custom](char32_t cp) mutable {
+                const auto result = custom(static_cast<lua_Integer>(cp));
+                return result.valid() && result.get<bool>();
+            };
+        } else if (preset == "printable") {
+            accept = text::TextInput::accept_printable;
+        } else if (preset == "ascii") {
+            accept = text::TextInput::accept_ascii;
+        } else if (preset == "digits") {
+            accept = text::TextInput::accept_digits;
+        } else if (preset == "hex") {
+            accept = text::TextInput::accept_hex;
+        } else if (preset == "letters") {
+            accept = text::TextInput::accept_letters;
+        } else if (preset != "any") {
+            // 写错预设名不该静默变成"全收"，那会让卡带以为过滤生效了
+            log::warn("phos.input.field: unknown filter '" + preset + "', using 'any'");
+        }
+        return CartTextField(std::move(accept), max_chars);
+    };
+
+    // --- phos.save（需 manifest 声明 save = true） ---
+    sol::table save = phos.create_named("save");
+    save["available"] = [&host]() { return host.save != nullptr; };
+    save["write"] = [&host](const std::string& key, const std::string& value) -> bool {
+        if (!host.save) return false;
+        return host.save->set(key, value);  // 落盘失败也要如实回报，卡带才好降级
+    };
+    save["read"] = [&host, &lua](const std::string& key) -> sol::object {
+        if (!host.save) return sol::nil;
+        auto v = host.save->get(key);
+        if (!v) return sol::nil;
+        return sol::make_object(lua.lua_state(), *v);
+    };
+    save["erase"] = [&host](const std::string& key) -> bool {
+        return host.save && host.save->erase(key);
+    };
+    save["export"] = [&host]() -> std::string {
+        return host.save ? host.save->export_code() : std::string();
+    };
+    save["import"] = [&host](const std::string& code) -> bool {
+        return host.save && host.save->import_code(code);
+    };
+
+    // --- phos.sys ---
+    sol::table sys = phos.create_named("sys");
+    sys["time"] = [&host]() { return host.time; };
+    sys["fps"] = [&host]() { return host.fps; };
+    sys["random"] = [&host](int lo, int hi) {
+        if (lo > hi) std::swap(lo, hi);
+        return std::uniform_int_distribution<int>(lo, hi)(host.rng);
+    };
+    sys["seed"] = [&host](unsigned n) { host.rng.seed(n); };
+    // 卡带文案属于卡带内容，主机只告诉它"现在是什么语言"，怎么翻译由卡带自己决定
+    sys["language"] = [&host]() { return host.language; };
+    sys["log"] = [](const std::string& msg) {
+        std::printf("[cart] %s\n", msg.c_str());
+        log::info("[cart] " + msg);  // 卡带日志同样落盘，便于与实际帧号对齐
+    };
+    sys["version"] = []() { return kVersion; };
+    sys["product"] = []() { return kProductName; };
+
+    // --- phos.cart：卡带自己的身份（来自 manifest.lua） ---
+    // 有了它，卡带不必把标题之类的身份再抄一份到 Lua 里：作者在 manifest.lua 改
+    // `name`，标题画面与关于页立刻跟着变。取一次存起来即可，别每帧调用
+    sol::table cart = phos.create_named("cart");
+    cart["info"] = [&host, &lua]() {
+        sol::table out = lua.create_table();
+        const CartInfo* info = host.cart_info;  // 未插卡（主机脚本）时为空
+        out["id"] = info ? info->id : std::string();
+        out["name"] = info ? info->name : std::string();
+        out["version"] = info ? info->version : std::string();
+        out["author"] = info ? info->author : std::string();
+        // 简介是身份里唯一需要本地化的字段：按当前界面语言取（英文缺失时回落中文）
+        out["desc"] = info ? info->desc.get(host.language == "en") : std::string();
+        return out;
+    };
+
+    // 组件层（边框/浮窗/菜单/进度条/正文/精灵/导航）
+    register_ui_api(lua, host);
+    // 音频层（合成音/音符/打击乐/音序器音乐/采样）
+    register_audio_api(lua, host);
+    // 资源层（包内文本/按行/存在性/大小/列表）
+    register_assets_api(lua, host);
+}
+
+} // namespace phos
