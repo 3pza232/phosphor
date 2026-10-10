@@ -52,6 +52,8 @@ private:
     void load_cart(int index);
     void load_cart_path(const std::string& path);
     void eject_cart();
+    /// 重扫卡带目录并按"最近打开"重排架子（插卡/拔卡后调用，见 load_cart/eject）
+    void refresh_shelf_order();
 
     // 子系统
     /// 音频设备初始化（必须在开机动画之前调用：这一秒内就有声音）
@@ -112,6 +114,8 @@ private:
     static constexpr float kLogicStep = 1.0f / static_cast<float>(kLogicFps);
     static constexpr const char* kConfigPath = "config.json";
     static constexpr const char* kCartDir = "carts";
+    /// 卡带架的"最近打开"记录（见 core/config.hpp 的 load_recent）
+    static constexpr const char* kRecentPath = "recent.txt";
 
     static constexpr const char* kFontDir = "theme/font";                // 字体方案根目录
     static constexpr const char* kDefaultFontScheme = "default";         // 出厂默认方案名
@@ -121,6 +125,8 @@ private:
     static constexpr const char* kUserFilterDir = "theme/palette";
     static constexpr const char* kUserBootDir = "theme/boot";
     static constexpr const char* kUserSoundDir = "theme/sound";
+    // 出厂区：给"随主机发布的内容包"预留的位置。当前发行目录里 system/ 为空，
+    // 所以这几条合并是空操作；工厂包一旦放进去，用户区同名项仍优先
     static constexpr const char* kFactorySkinDir = "system/skin";
     static constexpr const char* kFactoryFilterDir = "system/palette";
     static constexpr const char* kFactoryBootDir = "system/boot";

@@ -35,6 +35,22 @@ local GLYPH = {
 local HIT_R2 = Worms.HIT_RADIUS * Worms.HIT_RADIUS
 local DEFAULT_POWER = 0.75          -- 开局力度：满力度也不是无敌，七成半正好上手
 local ANGLE_MIN, ANGLE_MAX = -60, 180
+-- 瞄准线的采样：AIM_STEP_SUB 子格走一步（正好 1 字符格）；
+-- 前 AIM_NEAR_SUB 子格算"近身段"，逐格点，让炮口朝向看得准
+local AIM_STEP_SUB, AIM_NEAR_SUB = 2, 24
+
+-- 瞄准手感：**点一下走 1 格，按住越走越快**。点按负责精准、长按负责跨度，
+-- 两者共用一个键；加速在 RAMP_T 秒内从 RATE 升到 RATE_MAX（线性）
+local TAP_POWER = 0.01              -- 力度：点一下 1%
+local POWER_RATE, POWER_RATE_MAX = 0.10, 0.80
+local TAP_ANGLE = 1                 -- 角度：点一下 1°
+local ANGLE_RATE, ANGLE_RATE_MAX = 6, 55
+local RAMP_T = 0.9                  -- 从"慢"加到"快"所用时间（秒）
+
+-- 长按加速：t 秒内从 base 线性升到 top。单位随调用处（力度/秒、度/秒、血/秒）
+local function accel(t, base, top)
+  return base + (top - base) * math.min(1, t / RAMP_T)
+end
 local PANEL_W = 22                  -- manifest 里声明的侧栏宽度（菜单/键位浮板时临时收起）
 local SKY_ROW = 30                  -- 天空背景（云、风痕、星）只画在这条线以上的空处
 
@@ -65,9 +81,16 @@ end
 
 local terrain, camera, worms, turn
 local projectiles, floats, fx, fires, beams, clouds, stars
+local burst = nil                   -- 点射队列（机枪）：每 burst 秒出一发，全打完才算这一炮结束
+local strikes = {}                  -- 天基炮：等待中的落点与正在释放的光柱
 local active = {}                   -- active[team] = 当前操作的虫子
 local aim_power, charge_mode, switch_delay, ai_delay, winner
 local weapon_index, ai_plan
+local hold_angle, hold_power = 0, 0    -- 按住时长：驱动"越按越快"的加速度
+local ai_decided, ai_walk_t = false, 0 -- AI 本回合是否已决定走位 / 还要走多久（秒）
+local ai_reason, ai_run_away = nil, false  -- 走位理由（观察口用）/ 是否在往后撤
+local ai_repositioned = false              -- 本回合是否已经为"够不着"换过一次位置
+local ai_last = "-"                        -- 上一次 AI 的决策摘要（观察口用）
 local cam = { x = 0, y = 0, hold = 0, focus = nil, pan = 0 }
 local tp_info = {}                  -- 上一次传送搜索的实况（观察口用，见 fire_teleport）
 local laser_dbg = {}                -- 光束每帧的位置与"离最近的敌虫多远"（观察口用）
@@ -81,10 +104,27 @@ end
 local flash = 0                      -- 闪烁计时（当前虫子的标记用它，不用主机时间）
 local screen = "menu"               -- menu / play
 local help_open = false
+local map_open = false              -- M：地图总览（不暂停）
 local pvp = false
 local ally_ai = false               -- PVE：我方队友交给 AI
-local menu = { row = 1, mode = "pve", mine = 4, theirs = 4, ally_ai = false }
+-- 难度档位：顺序即菜单里左右键的顺序，diff 存的是下标
+local DIFFS = { "easy", "normal", "hard" }
+local DIFF_LABEL = {
+  zh = { easy = "简单", normal = "普通", hard = "困难" },
+  en = { easy = "EASY", normal = "NORMAL", hard = "HARD" },
+}
+-- 生命值那一行：上下限与步长。长按的速率是"每秒多少点"，最后统一取整成 10 的倍数
+local HP_MIN, HP_MAX, HP_STEP = 10, 800, 10
+local HP_RATE, HP_RATE_MAX = 30, 240
+
+local menu = { row = 1, mode = "pve", mine = 4, theirs = 4, ally_ai = false, diff = 2, hp = 100 }
 local menu_flash = 0
+local hp_hold, hp_frac = 0, 0        -- 菜单里按住 ←→ 的累计时长 / 不足一步的余量
+
+-- 血量只能落在 10 的倍数上：点按、长按加速、上下限夹取全走这一个入口
+local function set_menu_hp(v)
+  menu.hp = math.max(HP_MIN, math.min(HP_MAX, v - v % HP_STEP))
+end
 
 local function pick_active(team, after)
   active[team] = worms:next_of_team(team, after)
@@ -159,6 +199,8 @@ local function start_match()
   ally_ai = menu.ally_ai
   phos.panel.resize(PANEL_W)
   refresh_view()
+  -- 血量上限由菜单决定，必须在造虫子**之前**设好：每只虫的初始血量取自它
+  Worms.MAX_HP = menu.hp
   terrain = Terrain.new()
   camera = Camera.new(terrain.W, terrain.H, VIEW_CW * 2, VIEW_CH * 2)
   worms = Worms.new(terrain, { menu.mine, menu.theirs })
@@ -195,10 +237,10 @@ local function start_match()
   screen = "play"
 end
 
--- 菜单：模式 / 我方人数 / 敌方人数 / 队友 AI / 开始
-local function menu_input()
-  local rows = { 1, 2, 3, 4, 5 }
-  if menu.mode == "pvp" then rows = { 1, 5 } end
+-- 菜单：模式 / 我方人数 / 敌方人数 / 生命值 / 队友 AI / 难度 / 开始
+local function menu_input(dt)
+  local rows = { 1, 2, 3, 4, 5, 6, 7 }       -- 7 = 开始游戏；PVP 没有人数、队友与难度
+  if menu.mode == "pvp" then rows = { 1, 4, 7 } end
   local function move(dir)
     local at = 1
     for i, r in ipairs(rows) do if r == menu.row then at = i end end
@@ -221,16 +263,37 @@ local function menu_input()
     elseif menu.row == 3 then
       menu.theirs = math.max(1, math.min(8, menu.theirs + step))
     elseif menu.row == 4 then
+      set_menu_hp(menu.hp + step * HP_STEP)
+    elseif menu.row == 5 then
       menu.ally_ai = not menu.ally_ai
+    elseif menu.row == 6 then
+      menu.diff = ((menu.diff - 1 + step) % #DIFFS) + 1
     end
     phos.audio.beep(520, 0.04, { wave = "square", volume = 0.14 })
   end
 
+  -- 生命值那一行：点一下 10 点，**按住**则越快越快（与炮弹蓄力同一套加速曲线）。
+  -- 累成整步再加，所以无论按多快，血量永远是 10 的倍数
+  if menu.row == 4 then
+    local dir = phos.input.down("left") and -1 or (phos.input.down("right") and 1 or 0)
+    hp_hold = (dir ~= 0) and (hp_hold + dt) or 0
+    if dir ~= 0 and not phos.input.pressed("left") and not phos.input.pressed("right") then
+      hp_frac = hp_frac + accel(hp_hold, HP_RATE, HP_RATE_MAX) * dt
+      local steps = math.floor(hp_frac / HP_STEP)
+      if steps > 0 then
+        hp_frac = hp_frac - steps * HP_STEP
+        set_menu_hp(menu.hp + dir * steps * HP_STEP)
+      end
+    end
+  else
+    hp_hold, hp_frac = 0, 0
+  end
+
   -- A / ENTER：在"开始游戏"上开局，"队友交给 AI"上开关。
-  -- 人数行不给 A 绑定动作：那两行要的是"选到再调"，多一个会误触的快捷键更麻烦
+  -- 人数、生命值、难度行不给 A 绑定动作：那几行要的是"选到再调"，多一个会误触的快捷键更麻烦
   if phos.input.pressed("a") or phos.input.pressed("start") then
-    if menu.row == 5 then start_match()
-    elseif menu.row == 4 then menu.ally_ai = not menu.ally_ai end
+    if menu.row == 7 then start_match()
+    elseif menu.row == 5 then menu.ally_ai = not menu.ally_ai end
   end
 end
 
@@ -270,21 +333,28 @@ local function player_input(dt)
     phos.audio.beep(charge_mode and 660 or 440, 0.05, { wave = "square", volume = 0.16 })
   end
 
-  if phos.input.down("left") then
-    if charge_mode then aim_power = math.max(0.1, aim_power - Physics.CHARGE_RATE * dt)
-    else worms:move(w, -1, dt) end
-  end
-  if phos.input.down("right") then
-    if charge_mode then aim_power = math.min(1.0, aim_power + Physics.CHARGE_RATE * dt)
-    else worms:move(w, 1, dt) end
+  -- 左右：蓄力态调力度（点按 1%、长按加速），非蓄力态走路
+  local left, right = phos.input.down("left"), phos.input.down("right")
+  hold_power = (left or right) and (hold_power + dt) or 0
+  if charge_mode then
+    local rate = accel(hold_power, POWER_RATE, POWER_RATE_MAX)
+    if phos.input.pressed("left") then aim_power = math.max(0.1, aim_power - TAP_POWER)
+    elseif phos.input.pressed("right") then aim_power = math.min(1.0, aim_power + TAP_POWER)
+    elseif left then aim_power = math.max(0.1, aim_power - rate * dt)
+    elseif right then aim_power = math.min(1.0, aim_power + rate * dt) end
+  else
+    if left then worms:move(w, -1, dt) end
+    if right then worms:move(w, 1, dt) end
   end
 
-  -- 角度：轻点 1°、按住连续走（1° 逐格点太慢）。下限 -60° 表示"朝下打"
+  -- 上下：点按 1°、长按越走越快。下限 -60° 表示"朝下打"
+  local up, down = phos.input.down("up"), phos.input.down("down")
+  hold_angle = (up or down) and (hold_angle + dt) or 0
   local ad = 0
-  if phos.input.pressed("up") then ad = 1 end
-  if phos.input.pressed("down") then ad = -1 end
-  if phos.input.down("up") and not phos.input.pressed("up") then ad = 45 * dt end
-  if phos.input.down("down") and not phos.input.pressed("down") then ad = -45 * dt end
+  if phos.input.pressed("up") then ad = TAP_ANGLE
+  elseif phos.input.pressed("down") then ad = -TAP_ANGLE
+  elseif up then ad = accel(hold_angle, ANGLE_RATE, ANGLE_RATE_MAX) * dt
+  elseif down then ad = -accel(hold_angle, ANGLE_RATE, ANGLE_RATE_MAX) * dt end
   if ad ~= 0 then w.angle = math.max(ANGLE_MIN, math.min(ANGLE_MAX, w.angle + ad)) end
 
   if phos.input.pressed("b") then worms:jump(w) end
@@ -318,8 +388,84 @@ end
 
 -- ---------- 开炮 ----------
 
--- 两条"当场结算"的路（定义在下面）：先声明，fire 才能引用它们
-local fire_hitscan, fire_teleport
+-- 当场结算的那条路（定义在下面）：先声明，fire 才能引用它
+local fire_teleport
+
+-- 第 i 枚（共 n 枚）相对瞄准线的偏角：等分铺在 weapon.spread 的总角度内。
+-- 等分而不是随机：覆盖范围必须可预期，否则同样的瞄准每次结果都不同
+local function spread_angle(weapon, i, n)
+  if n <= 1 then return 0 end
+  local s = weapon.spread or 0
+  return s * (i - 1) / (n - 1) - s / 2
+end
+
+-- 天基炮：等待期（落点标记闪烁）→ 光柱释放 3 秒（每 tick 结算一次伤害）→ 熄灭。
+-- 伤害按"位置"算而不是按"人"：光柱有多宽，站在里面的都会被打到，
+-- 所以它逼人离开掩体，而不是"追踪某只虫"
+local function update_strikes(dt)
+  for i = #strikes, 1, -1 do
+    local s = strikes[i]
+    local spec = s.spec
+    if s.t > 0 then
+      s.t = s.t - dt
+      if s.t <= 0 then
+        -- 点亮：镜头交给 update_camera 里的"特效优先"规则，这里只管声音。
+        -- 不用倒计时抢镜头——倒计时会在光柱还没烧完时就放镜头走人
+        s.age, s.next_tick = 0, 0
+        phos.audio.beep(60, 0.5, { wave = "noise", volume = 0.3, release = 0.3 })
+      end
+    else
+      s.age = s.age + dt
+      s.next_tick = s.next_tick - dt
+      if s.next_tick <= 0 then
+        s.next_tick = spec.tick
+        local half = (spec.width or 6) / 2
+        for _, q in ipairs(worms.list) do
+          if q.alive and math.abs(q.x - s.x) <= half and q.y <= s.y + 2 then
+            worms:damage(q, spec.damage)
+            add_float(q.x, q.y, spec.damage)
+          end
+        end
+        add_fx(s.x, s.y, 3)
+        phos.audio.beep(160, 0.08, { wave = "square", sweep = 60, volume = 0.2 })
+      end
+      if s.age >= spec.life then table.remove(strikes, i) end
+    end
+  end
+end
+
+-- 点射（机枪）：每 burst 秒出膛一发，全部打完才让上层认为"这一炮结束"。
+-- 装填发生在 update 里而不是一次性发完：连发要的是节奏，不是同时出膛
+local function update_burst(dt)
+  if not burst then return end
+  burst.t = burst.t - dt
+  if burst.t > 0 then return end
+  burst.done = burst.done + 1
+  local keep = burst.shooter.angle
+  burst.shooter.angle = burst.base + spread_angle(burst.weapon, burst.done, burst.total)
+  local p = Weapons.fire(burst.weapon, burst.shooter)
+  burst.shooter.angle = keep
+  p.trail = {}
+  projectiles[#projectiles + 1] = p
+  burst.t = burst.weapon.burst
+  add_fx(p.x, p.y, 1)
+  phos.audio.beep(320, 0.03, { wave = "square", sweep = 120, volume = 0.14 })
+  if burst.done >= burst.total then burst = nil end
+end
+
+-- 这一炮真的打完了吗：炮弹没了、连发队列空了，燃烧与天基炮这些**后续特效**
+-- 也都结束了，缺一不可。判定必须**每帧做一次**（见 update 末尾）：
+-- 只在"炮弹消失"那一帧判的话，燃烧/天基炮这类"落地之后才开始"的特效
+-- 当场就会被判成"还没完"，而此后没有任何地方会回头再判 —— 回合永远停在 flying
+local function shot_finished()
+  return #projectiles == 0 and not burst and #strikes == 0 and #fires == 0
+end
+
+-- 结算换手：唯一入口。延迟 0.8 秒，让爆炸与音效落地再切手
+local function settle_shot()
+  turn:end_shot()
+  switch_delay = 0.8
+end
 
 function fire(shooter, weapon)
   if not Weapons.has_ammo(shooter, weapon) then
@@ -340,15 +486,30 @@ function fire(shooter, weapon)
       return false
     end
     instant = true
-  elseif weapon.kind == "hitscan" then
-    fire_hitscan(shooter, weapon)
-    instant = true
+  elseif weapon.kind == "spread" then
+    -- 散射：把 N 枚**普通炮弹**按等分角打出去（有抛物线、受风，不是瞬时射线）。
+    -- 带 burst 的（机枪）这次只出一发，剩下的交给 update_burst 按间隔点射
+    local n = weapon.shells or 1
+    local now = weapon.burst and 1 or n
+    for i = 1, now do
+      local keep = shooter.angle
+      if n > 1 then shooter.angle = keep + spread_angle(weapon, i, n) end
+      local p = Weapons.fire(weapon, shooter)
+      shooter.angle = keep
+      p.trail = {}
+      projectiles[#projectiles + 1] = p
+    end
+    if weapon.burst and n > 1 then
+      burst = { weapon = weapon, shooter = shooter, base = shooter.angle,
+                done = 1, total = n, t = weapon.burst }
+    end
   elseif weapon.kind == "laser" then
     -- 激光是一条**会飞的光束**：初速拉到很高、不受重力、不落不炸，
     -- 一路烧穿地形并伤到碰到的人，直到飞出地图边界（镜头一路跟着它）
     local a = math.rad(shooter.angle)
     local sp = weapon.speed or 900
-    local p = Physics.new_projectile(shooter.x + shooter.facing * 3, shooter.y - 6,
+    local mx, my = Physics.muzzle_of(shooter)
+    local p = Physics.new_projectile(mx, my,
                                      math.cos(a) * sp * shooter.facing, -math.sin(a) * sp,
                                      { no_gravity = true })
     p.weapon, p.shooter, p.trail, p.hit = weapon, shooter, {}, {}
@@ -360,58 +521,15 @@ function fire(shooter, weapon)
   end
 
   spend_ammo(shooter, weapon)
+  -- 让侧栏与读数跟着**开火单位**显示它选的武器：队友或敌人开炮时，
+  -- 玩家也能看清对面在用哪件道具（这是"谁在用道具"的唯一线索）
+  for i, spec in ipairs(Weapons.LIST) do
+    if spec == weapon then weapon_index = i end
+  end
   turn:begin_shot()
   phos.audio.beep(180, 0.08, { wave = "square", sweep = 90, volume = 0.25 })
-  if instant then
-    turn:end_shot()
-    switch_delay = 0.8
-  end
+  if instant then settle_shot() end   -- 传送这类"当场结算"的也走同一个换手入口
   return true
-end
-
--- 枪：把每一发都真的扫一遍。弹道带一点散布，否则六发全落在同一格，
--- 看起来像一发、也永远推不动人
-function fire_hitscan(shooter, weapon)
-  for i = 1, (weapon.shots or 1) do
-    local deg = shooter.angle
-    if i > 1 and (weapon.spread or 0) > 0 then
-      deg = deg + phos.sys.random(-weapon.spread, weapon.spread)
-    end
-    local a = math.rad(deg)
-    local dx, dy = math.cos(a) * shooter.facing, -math.sin(a)
-    local ox, oy = shooter.x + shooter.facing * 3, shooter.y - 6
-    local res = Physics.raycast(ox, oy, dx, dy, weapon.range or 60, probe)
-    if res then
-      beams[#beams + 1] = { x0 = ox, y0 = oy, x1 = res.x, y1 = res.y, t = 0.12, life = 0.12 }
-      if res.kind == "worm" and res.point then
-        worms:damage(res.point, weapon.damage)
-        add_float(res.point.x, res.point.y, weapon.damage)
-        if weapon.push then
-          local p = res.point
-          p.on_ground, p.fall_from, p.vy = false, p.y, -3
-          p.x = p.x + (dx >= 0 and 1 or -1) * weapon.push * 0.4
-        end
-      elseif res.kind == "terrain" then
-        -- 打在墙上：按 dig 挖个小坑，再按半径算**半步溅射**。
-        -- 枪的伤害主要来自直击没错，但"擦着地皮打中脚边"完全没反馈，
-        -- 用起来就像坏了——霰弹枪尤其明显
-        if (weapon.dig or 0) > 0 then
-          terrain:blast(math.floor(res.x), math.floor(res.y), weapon.dig)
-        end
-        local points = {}
-        for _, w in ipairs(worms.list) do
-          if w.alive then points[#points + 1] = w end
-        end
-        local hits = Physics.blast(res.x, res.y, weapon.radius or 1,
-                                   (weapon.damage or 0) * 0.5, points, nil)
-        for _, h in ipairs(hits) do
-          worms:damage(h.point, h.damage)
-          if h.damage >= 1 then add_float(h.point.x, h.point.y, h.damage) end
-        end
-        add_fx(res.x, res.y, (weapon.dig or 0) + 2)
-      end
-    end
-  end
 end
 
 -- 传送：角度定方向、力度定距离，落点必须站得住。
@@ -453,12 +571,45 @@ local function resolve(p)
   add_fx(p.x, p.y, w.radius)
   -- 镜头在爆炸处多停一会儿：立刻切回虫子会让人看不清"到底炸成什么样了"
   cam.focus, cam.hold = { p.x, p.y }, 1.3
-  if (w.radius or 0) > 0 then
+  -- 治疗弹不炸、不挖地：它只给**自己队**回血（敌人治敌人、队友治队友）。
+  -- 血满时实际治愈量为 0，于是不会冒出一个骗人的 "+25"
+  if (w.heal or 0) > 0 then
+    local r = w.radius or 3
+    for _, q in ipairs(worms.list) do
+      if q.alive and q.team == (p.shooter and p.shooter.team or -1) then
+        local d = math.sqrt((q.x - p.x) ^ 2 + (q.y - p.y) ^ 2)
+        if d <= r then
+          local got = worms:heal(q, w.heal * math.max(0.4, 1 - d / r))
+          if got >= 1 then
+            add_float(q.x, q.y, 0, "+" .. math.floor(got + 0.5), phos.color.green)
+          end
+        end
+      end
+    end
+  elseif (w.radius or 0) > 0 then
     local events = {}
-    worms:apply_blast(p.x, p.y, w.radius, w.damage, events)
+    -- p.direct 已在撞虫那一刻拿过全额伤害，这里把它排除在距离衰减之外
+    worms:apply_blast(p.x, p.y, w.radius, w.damage, events, p.direct)
     for _, e in ipairs(events) do
       if e.damage and e.damage >= 1 then add_float(e.worm.x, e.worm.y, e.damage) end
     end
+    -- 记下"这一炸扫到了谁"：AI 下一轮据此判断自己是不是站在危险位置
+    for _, q in ipairs(worms.list) do
+      if q.alive and math.abs(q.x - p.x) <= (w.radius or 0) * 1.5 then
+        q.exposed = turn.round
+      end
+    end
+  end
+  -- 地形弹：不伤人不挖地，落点长出一块圆形地形
+  if (w.raise or 0) > 0 then
+    local grew = terrain:fill_circle(math.floor(p.x), math.floor(p.y), w.raise)
+    add_float(p.x, p.y, 0, "地形 +" .. grew, COL.top)
+  end
+  -- 天基炮：登记一次打击（等待 spec.delay 秒后开始释放，见 update_strikes）
+  if w.orbital then
+    strikes[#strikes + 1] = { x = p.x, y = p.y, t = w.orbital.delay,
+                              age = 0, next_tick = 0, spec = w.orbital }
+    add_float(p.x, p.y, 0, "天基炮!", phos.color.cyan)
   end
   if w.burn then
     fires[#fires + 1] = { x = p.x, y = p.y, radius = w.radius or 3, life = w.burn }
@@ -495,40 +646,50 @@ local function after_settle()
   -- 轮到谁就恢复谁上次的力度/朝向/弹药；第一轮用默认值
   local now = current_worm()
   aim_power, charge_mode = (now and now.power) or DEFAULT_POWER, false
-  if now then
-    weapon_index = now.weapon or weapon_index
-  end
+  -- 这只虫**第一次**轮到自己时回到普通炮弹（列表第一件）。
+  -- 不能沿用上一个开火者选的武器：那会让还没开过炮的虫子端着别人的弹药开打
+  weapon_index = (now and now.weapon) or 1
   cam.focus, cam.hold, cam.pan = nil, 0, 0
   ai_delay = 1.2
   ai_plan = nil
+  ai_decided, ai_walk_t = false, 0      -- 新回合重新决定"要不要先走位"
+  ai_reason, ai_run_away = nil, false
+  ai_repositioned = false
+  burst = nil                        -- 换手时旧的连发队列必须清掉
+  hold_angle, hold_power = 0, 0         -- 新回合从"慢速微调"开始，不留上一轮的加速度
 end
 
--- AI 这一炮能用的武器。四条纪律：
---   * 手里**还有那种弹药**（AI 与玩家共用同一本弹药账）
---   * 只列**预演算得准**的弹种：普通炮弹/火箭筒/手雷/集束都能被 physics 如实预演；
---     枪/激光是当场直线结算、传送是瞬移，塞进同一套预演只会算出假成绩
---   * 集束只在敌人扎堆时才有价值（5 次小爆炸，敌人分散就是浪费）
---   * 弹药有限，所以 AI 也得挑着用，不能一上来就把超级弹药砸光
+-- AI 这一炮能用的武器。判断依据是"这局势值不值得用这一件"：
+--   * 攻击弹有弹药就能用；集束/超级只在敌人**扎堆**时才划算（几次小爆炸打散人就是浪费）
+--   * 治疗弹只在**队友血量低于一半**时才拿出来（见 AI.WOUNDED_RATIO）
+--   * 追踪弹与传送不列入：它们的飞行方式没法用同一份 physics 预演，
+--     硬塞进这套评分只会算出假成绩
 local function ai_weapons(w)
   local out = {}
+  local foe = (w.team == 1) and 2 or 1
+  local foes = worms:of_team(foe)
+  local bunched = false
+  for _, e in ipairs(foes) do
+    for _, o in ipairs(foes) do
+      if e ~= o and math.abs(e.x - o.x) < 18 and math.abs(e.y - o.y) < 10 then bunched = true end
+    end
+  end
+  local wounded = false
+  for _, m in ipairs(worms:of_team(w.team)) do
+    if m.hp <= Worms.MAX_HP * AI.WOUNDED_RATIO then wounded = true end
+  end
+
   for _, spec in ipairs(Weapons.LIST) do
     if Weapons.has_ammo(w, spec) then
-      if spec.id == "shell" or spec.id == "bazooka" or spec.id == "grenade" then
-        out[#out + 1] = spec.id
-      elseif spec.id == "cluster" then
-        -- 扎堆判断看的是**敌人**那边（AI 自己队伍挤不挤与它无关）
-        local foe = (w.team == 1) and 2 or 1
-        local mates = worms:of_team(foe)
-        for _, e in ipairs(mates) do
-          for _, o in ipairs(mates) do
-            if e ~= o and math.abs(e.x - o.x) < 14 and math.abs(e.y - o.y) < 8 then
-              out[#out + 1] = spec.id
-              break
-            end
-          end
-          if out[#out] == spec.id then break end
-        end
-      end
+      local ok = false
+      if spec.id == "heal" then ok = wounded
+      elseif spec.id == "cluster" then ok = bunched
+      elseif spec.id == "super" then ok = bunched or #foes <= 1
+      -- 追踪弹、传送、天基炮、地形弹一律不列入：前两件的飞行方式没法用同一份
+      -- physics 预演，后两件的价值在"位置"而不在"伤害"，评分模型量不到
+      elseif spec.id ~= "missile" and spec.id ~= "teleport"
+             and spec.id ~= "orbital" and spec.id ~= "terrain" then ok = true end
+      if ok then out[#out + 1] = spec.id end
     end
   end
   return out
@@ -552,10 +713,30 @@ local function update_ai(dt)
   end
   if best then w.facing = (best.x >= w.x) and 1 or -1 end
 
+  -- 走位只在**两种能说出理由**的情况下发生（不是随机挪）：
+  --   exposed：上一轮挨过炸，先离开原地（难度越高越肯躲）
+  --   blocked：算完了发现最好的落点离敌人还差得远（预测线被地形挡住 / 够不着）
+  local cfg = AI.DIFFICULTY[DIFFS[menu.diff]] or AI.DIFFICULTY.normal
+  if not ai_decided then
+    ai_decided = true
+    if w.exposed and w.exposed >= turn.round - 1
+       and phos.sys.random(1, 100) <= cfg.dodge then
+      ai_walk_t, ai_reason, ai_run_away = cfg.walk_time, "exposed", true
+    end
+  end
+  if ai_walk_t > 0 then
+    ai_walk_t = ai_walk_t - dt
+    local dir = ai_run_away and -w.facing or w.facing
+    local before = w.x
+    worms:move(w, dir, dt)
+    -- 只有"走不动"才跳：跳是为了翻过挡住路的坡，不是为了好看
+    if w.x == before then worms:jump(w) end
+    return
+  end
+
   -- 规划是**分帧推进**的：一次算完几百组预演会触发主机的 100 毫秒看门狗
   if not ai_plan then
-    local allowed = ai_weapons(w)
-    ai_plan = AI.plan_begin(w, worms.list, terrain, turn.wind, "normal", allowed)
+    ai_plan = AI.plan_begin(w, worms.list, terrain, turn.wind, DIFFS[menu.diff], ai_weapons(w))
     if not ai_plan then
       turn:next_team() pick_active(1) ai_delay = 1.2
       return
@@ -564,8 +745,18 @@ local function update_ai(dt)
   if not ai_plan:advance(AI.BATCH) then return end
   local plan = ai_plan:result()
   ai_plan = nil
+  -- 算完了但够不着：先换个位置再重算，而不是硬打一发没意义的
+  -- （每回合只换一次：换完再算还是够不着，就认了，否则会无限挪下去）
+  if plan and plan.near and plan.near > cfg.good_dist and not ai_repositioned then
+    ai_repositioned = true
+    ai_walk_t, ai_reason, ai_run_away = cfg.walk_time, "blocked", false
+    return
+  end
   if plan then
     w.angle, aim_power = plan.angle, plan.power
+    ai_last = string.format("%s %d° 力%d 落点差%d", plan.weapon.id,
+                            math.floor(plan.angle + 0.5), math.floor(plan.power * 100 + 0.5),
+                            math.floor((plan.near or -1) + 0.5))
     fire(w, plan.weapon)
   else
     turn:next_team() pick_active(1) ai_delay = 1.2
@@ -616,8 +807,16 @@ local function update_particles(dt)
   end
 end
 
--- 镜头：跟弹药 → 爆炸后停留 → 再平滑回到当前虫子；, . 可以左右平移。
--- 平移**不设上限**（只受世界边缘约束），否则视野外的敌人永远看不到
+-- 还在跑的特效里最该看的那个：天基炮优先于燃烧。
+-- 镜头**从特效推导目标**，不靠"倒计时抢镜头"——倒计时只会在特效演一半时放走镜头
+local function effect_focus()
+  if strikes[1] then return strikes[1].x, strikes[1].y end
+  if fires[1] then return fires[#fires].x, fires[#fires].y end
+  return nil
+end
+
+-- 镜头优先级：飞行中的弹药 → 还在跑的特效 → 爆炸后的短暂停留 → 当前虫子。
+-- , . 可以左右平移，平移**不设上限**（只受世界边缘约束），否则视野外的敌人永远看不到
 local function update_camera(dt)
   if phos.input.down("comma") then cam.pan = cam.pan - 130 * dt end
   if phos.input.down("period") then cam.pan = cam.pan + 130 * dt end
@@ -627,11 +826,15 @@ local function update_camera(dt)
   local tx, ty
   if p then
     tx, ty = p.x, p.y
-  elseif cam.hold > 0 and cam.focus then
-    tx, ty = cam.focus[1], cam.focus[2]
   else
-    local w = current_worm()
-    if w and w.alive then tx, ty = w.x, w.y end
+    tx, ty = effect_focus()
+    if not tx and cam.hold > 0 and cam.focus then
+      tx, ty = cam.focus[1], cam.focus[2]
+    end
+    if not tx then
+      local w = current_worm()
+      if w and w.alive then tx, ty = w.x, w.y end
+    end
   end
   if tx then
     local k = 1 - math.exp(-dt * 6)
@@ -642,6 +845,14 @@ end
 
 function update(dt)
   flash = flash + dt
+  update_burst(dt)                 -- 点射（机枪）：先把该出膛的那一发补上
+  update_strikes(dt)               -- 天基炮：等待/释放/结算
+  -- M：地图总览浮窗。**不暂停**——它只是"看一眼地图"，
+  -- 不该打断正在飞的弹药与回合计时
+  if phos.input.pressed("m") then
+    map_open = not map_open
+    phos.audio.beep(map_open and 600 or 380, 0.04, { wave = "square", volume = 0.14 })
+  end
   if phos.input.pressed("k") then
     help_open = not help_open
     phos.audio.paused(help_open)     -- 看键位表时连音乐一起停
@@ -649,7 +860,7 @@ function update(dt)
   end
   if screen == "menu" then
     menu_flash = menu_flash + dt
-    menu_input()
+    menu_input(dt)
     return
   end
   if winner then
@@ -715,7 +926,6 @@ function update(dt)
       if p.x < 1 or p.x > terrain.W or p.y < 1 or p.y > terrain.H then
         resolve(p)
         table.remove(projectiles, i)
-        if #projectiles == 0 then turn:end_shot() switch_delay = 0.8 end
       end
       local last = p.trail[#p.trail]
       if not last or (p.x - last[1]) ^ 2 + (p.y - last[2]) ^ 2 > 16 then
@@ -723,19 +933,33 @@ function update(dt)
         if #p.trail > 90 then table.remove(p.trail, 1) end
       end
     else
-    local result = Physics.step(p, dt, turn.wind, probe)
+    local result, point = Physics.step(p, dt, turn.wind, probe)
     local last = p.trail[#p.trail]
     if not last or (p.x - last[1]) ^ 2 + (p.y - last[2]) ^ 2 > 16 then
       p.trail[#p.trail + 1] = { p.x, p.y }
       if #p.trail > 60 then table.remove(p.trail, 1) end
     end
     if result then
+      -- 直接命中（撞到虫身上）：按面板伤害**全额**结算。
+      -- 命中判定用的是躯体半径（HIT_RADIUS = 3 子格），弹着点离虫脚最远也有 3，
+      -- 只用爆炸的距离衰减去算的话，擦着打中的那发会被削到保底 10%——打中等于没打中
+      if result == "worm" and point then
+        if (p.weapon.heal or 0) > 0 then
+          -- 治疗弹直击：只对**自己队**生效（打在对面身上什么都不发生）
+          if point.team == (p.shooter and p.shooter.team or -1) then
+            local got = worms:heal(point, p.weapon.heal)
+            if got >= 1 then
+              add_float(point.x, point.y, 0, "+" .. math.floor(got + 0.5), phos.color.green)
+            end
+          end
+        else
+          worms:damage(point, p.weapon.damage or 0)
+          add_float(point.x, point.y, p.weapon.damage or 0)
+        end
+        p.direct = point
+      end
       resolve(p)
       table.remove(projectiles, i)
-      if #projectiles == 0 then
-        turn:end_shot()
-        switch_delay = 0.8
-      end
     end
     end
   end
@@ -761,6 +985,13 @@ function update(dt)
     if beams[i].t <= 0 then table.remove(beams, i) end
   end
 
+  -- 这一炮打完了吗：**每帧判一次**，判据只有 shot_finished() 一处。
+  -- 放在这里（而不是炮弹消失那一刻）是因为"落地"与"结束"不是同一件事：
+  -- 燃烧、天基炮光柱都是落地之后才开始的
+  if turn.phase == "flying" and not switch_delay and not winner and shot_finished() then
+    settle_shot()
+  end
+
   -- 弹药结算后的换手延迟：必须**与阶段无关**地倒数
   if switch_delay and not winner then
     switch_delay = switch_delay - dt
@@ -770,7 +1001,8 @@ function update(dt)
     end
   end
 
-  if turn.phase == "aim" and not winner and not switch_delay and #projectiles == 0 then
+  -- 回合计时只在"轮到我瞄准"时走：开炮期间停下来是刻意的
+  if turn.phase == "aim" and not winner and not switch_delay then
     local t = turn:tick(dt)
     if t.timeout then after_settle() end
   end
@@ -905,6 +1137,28 @@ local function draw_effects(S, C)
       put_at(S, f.x + d, f.y, "~", C.orange)
     end
   end
+  -- 天基炮：等待期画闪烁的落点标记（要让人有机会跑开），释放期画贯天光柱
+  for _, s in ipairs(strikes) do
+    local half = (s.spec.width or 6) / 2
+    if s.t > 0 then
+      if math.floor(flash * 8) % 2 == 0 then
+        for d = -half, half, 1 do
+          put_at(S, s.x + d, s.y, (d == 0) and "V" or "-", C.cyan)
+        end
+      end
+    else
+      -- 光柱：从世界顶端一路贯到落点；中心实线、两侧虚线，宽度就是判定宽度
+      for d = -half, half, 1 do
+        local ch = (d == 0) and "|" or ((math.abs(d) == half) and ":" or "|")
+        for wy = 1, s.y do
+          put_at(S, s.x + d, wy, ch, C.cyan)
+        end
+      end
+      for d = -half - 1, half + 1, 1 do
+        put_at(S, s.x + d, s.y, "=", C.white)
+      end
+    end
+  end
   for _, p in ipairs(projectiles) do
     for _, pt in ipairs(p.trail) do
       -- 轨迹点用灰白而不是深灰：深灰压在深色地形上像一条黑底带
@@ -913,21 +1167,39 @@ local function draw_effects(S, C)
   end
 end
 
--- 角度线：从炮口沿着瞄准方向点一条虚线，长度随力度长。
--- 它**只是一条直线**，不是弹道预测——角度看得清、落点还得自己算（DESIGN 第 7 节）
+-- 炮口符号：ASCII 表达方向就靠 - | / \ 四个（屏幕 y 向下，所以"往右上"是 /）
+local function slope_glyph(ux, uy)
+  if math.abs(ux) >= math.abs(uy) * 2 then return "-" end
+  if math.abs(uy) >= math.abs(ux) * 2 then return "|" end
+  return (ux * uy < 0) and "/" or "\\"
+end
+
+-- 瞄准线：从**炮口**沿瞄准方向点一条虚线，近密远疏，长度随力度长。
+-- 它**只是一条直线**，不是弹道预测——角度看得清、落点还得自己算（DESIGN 第 7 节）。
+-- 两档密度是刻意的：一个字符格 = 2x2 子格，本来就看不细；近身这一段要是也
+-- 隔好几格才点一下，"炮口朝哪"就只能靠猜（玩家反馈的"近处把不准"就是这个）。
+--   近身 AIM_NEAR_SUB：逐格点 + 白色，微调一度都看得出来
+--   远处：隔一格点 + 武器色，只作方向示意，不去把整屏点满
+-- 另外只画在**空中**：一格只能放一个字形，点进土里会把地形顶出一个个小洞。
+-- （末端的 > < 是"力度标尺"而不是路径，所以照画、不跳过）
 local function draw_aim(S, C)
   local w = current_worm()
   if not w or not w.alive or winner or not human_turn() then return end
   if turn.phase ~= "aim" then return end
   local a = math.rad(w.angle)
   local ux, uy = math.cos(a) * w.facing, -math.sin(a)
-  local ox, oy = w.x + w.facing * 3, w.y - 6
+  local ox, oy = Physics.muzzle_of(w)
   local col = charge_mode and C.yellow or C.orange
+
+  -- 炮口那格先点一个斜率符号：再密的虚线也不如一个 / 或 \ 把朝向说得清楚
+  put_at(S, ox, oy, slope_glyph(ux, uy), charge_mode and C.yellow or C.white)
+
   local len = 12 + aim_power * 96
-  local n = math.floor(len / 3)
-  for i = 1, n do
-    if i % 2 == 1 then
-      put_at(S, ox + ux * i * 3, oy + uy * i * 3, "·", col)
+  for d = AIM_STEP_SUB, len, AIM_STEP_SUB do
+    local x, y = ox + ux * d, oy + uy * d
+    local near = d <= AIM_NEAR_SUB
+    if (near or (d / AIM_STEP_SUB) % 2 == 1) and not terrain:solid(math.floor(x), math.floor(y)) then
+      put_at(S, x, y, "·", near and C.white or col)
     end
   end
   put_at(S, ox + ux * len, oy + uy * len, w.facing > 0 and ">" or "<", col)
@@ -973,7 +1245,7 @@ local function draw_actors(S, C)
             if in_view(i + d, j + 1) then S.put(i + d, j + 1, "=", C.white, COL.plate) end
           end
         end
-        Hud.hp_bar(S, C, i, j - 2, w.hp, COL.plate)
+        Hud.hp_bar(S, C, i, j - 2, w.hp / Worms.MAX_HP, COL.plate)
       end
     end
   end
@@ -1001,6 +1273,62 @@ local function box(S, C, x, y, w, h, title, tone)
   if title then
     S.print(x + 2, y, " " .. title .. " ", tone, COL.plate)
   end
+end
+
+-- M 地图总览：整幅地形剖面 + 双方位置 + 空中弹药 + 风向。
+-- 侧栏放不下这些（8v8 时光血量就占十几行），所以挪进浮窗；
+-- 它**不暂停**：弹药还在飞的时候也能看一眼全局，不用牺牲一个回合
+local function draw_map_overlay(S, C)
+  local mw = math.min(VIEW_CW - 8, 58)
+  local mh = math.min(VIEW_CH - 14, 18)
+  local x = math.floor((VIEW_CW - mw) / 2)
+  local y = 4                        -- 往下方放一些：上边留给状态行与瞄准读数
+  S.fill(x, y, mw, mh + 3, " ", nil, COL.plate)
+  box(S, C, x, y, mw, mh + 3, "地图总览", C.white)
+
+  -- 地形剖面：每列向下取一次表面高度，往下画实心；水面单独一色
+  local sx, sy = terrain.W / (mw - 2), terrain.H / mh
+  local tops = {}
+  for i = 0, mw - 3 do
+    local wx = math.floor((i + 0.5) * sx) + 1
+    tops[i] = 0
+    for yy = 1, terrain.WATER_Y - 1 do
+      if terrain:solid(wx, yy) then tops[i] = yy break end
+    end
+  end
+  for j = 0, mh - 1 do
+    local wy = math.floor((j + 0.5) * sy) + 1
+    for i = 0, mw - 3 do
+      local solid = (tops[i] > 0 and wy >= tops[i])
+      if solid then
+        S.put(x + 1 + i, y + 1 + j, "#", COL.top)
+      elseif wy >= terrain.WATER_Y then
+        S.put(x + 1 + i, y + 1 + j, "~", COL.water)
+      end
+    end
+  end
+
+  -- 虫子：正在操作的那只画成 O（其余 @），一眼知道该看谁
+  for _, w in ipairs(worms.list) do
+    if w.alive then
+      local i = math.max(0, math.min(mw - 3, math.floor(w.x / sx)))
+      local j = math.max(0, math.min(mh - 1, math.floor(w.y / sy)))
+      local col = (w.team == 1) and C.yellow or C.red
+      S.put(x + 1 + i, y + 1 + j, (w == current_worm()) and "O" or "@", col, COL.plate)
+    end
+  end
+
+  -- 空中弹药也要看得见：地图若只画"人站在哪"，就说不清"炮弹正往哪飞"——
+  -- 而 M 之所以不暂停，正是为了在弹药飞行途中也能看一眼全局
+  for _, p in ipairs(projectiles) do
+    local i = math.max(0, math.min(mw - 3, math.floor(p.x / sx)))
+    local j = math.max(0, math.min(mh - 1, math.floor(p.y / sy)))
+    S.put(x + 1 + i, y + 1 + j, "*", C.white, COL.plate)
+  end
+
+  S.print(x + 2, y + mh + 1, string.format("回合 %d    风 %s    轮到 %s队    空中 %d",
+           turn.round, Hud.wind_text(turn.wind), turn.team == 1 and "左" or "右",
+           #projectiles), C.white)
 end
 
 -- 键位浮板：按 K 弹出来，居中在本卡带的可玩区里（不压到侧栏）
@@ -1041,7 +1369,7 @@ local function draw_menu()
   S.print(2, 2, "回合制炮击 · 用有限弹药把对面轰进海里", C.gray)
 
   local px, py, pw, ph_ = phos.screen.playfield()
-  local w, h = math.min(46, pw - 2), 15
+  local w, h = math.min(46, pw - 2), 17
   local x = px + math.floor((pw - w) / 2) + 2
   local y = py + math.floor((ph_ - h) / 2) + 1
   box(S, C, x - 1, y - 1, w, h, "选择模式", C.white)
@@ -1050,20 +1378,29 @@ local function draw_menu()
 
   if menu.mode == "pve" then
     S.print(x, y, string.format("%s 模式        < PVE 人机对战 >", mark(1)), hi(1))
+    S.print(x, y + 1, "   左队归你，右队全归电脑", C.dark_gray)
     S.print(x, y + 2, string.format("%s 我方人数    < %d >", mark(2), menu.mine), hi(2))
     S.print(x, y + 3, string.format("%s 敌方人数    < %d >", mark(3), menu.theirs), hi(3))
-    S.print(x, y + 5, string.format("%s 队友交给 AI < %s >",
-                                    mark(4), menu.ally_ai and "是" or "否"), hi(4))
-    S.print(x, y + 6, menu.ally_ai and "   你只操作队长，其余队友由电脑指挥"
-                                     or "   所有队友都由你自己操作", C.dark_gray)
   else
     S.print(x, y, string.format("%s 模式        < PVP 同机对战 >", mark(1)), hi(1))
-    S.print(x, y + 2, "   两人轮流操作同一台机器：一方打完换另一方", C.dark_gray)
-    S.print(x, y + 3, "   左队黄、右队红，各 4 人", C.dark_gray)
+    S.print(x, y + 1, "   两人轮流操作同一台机器", C.dark_gray)
   end
-  S.print(x, y + 9, string.format("%s 开始游戏", mark(5)),
-          (menu.row == 5) and C.yellow or C.gray)
-  S.print(x + 2, y + 11, "↑↓ 选择   ←→ 调整   A / ENTER 确定", C.dark_gray)
+  S.print(x, y + 4, string.format("%s 生命值      < %d >", mark(4), menu.hp), hi(4))
+  S.print(x, y + 5, string.format("   每人上限 %d~%d，每次 %d；一局多长就看它",
+                                  HP_MIN, HP_MAX, HP_STEP), C.dark_gray)
+  if menu.mode == "pve" then
+    S.print(x, y + 6, string.format("%s 队友交给 AI < %s >",
+                                    mark(5), menu.ally_ai and "是" or "否"), hi(5))
+    S.print(x, y + 7, menu.ally_ai and "   你只操作队长，其余队友由电脑指挥"
+                                     or "   所有队友都由你自己操作", C.dark_gray)
+    local dl = DIFF_LABEL[phos.sys.language()] or DIFF_LABEL.zh
+    S.print(x, y + 8, string.format("%s 难度        < %s >",
+                                    mark(6), dl[DIFFS[menu.diff]] or DIFFS[menu.diff]), hi(6))
+    S.print(x, y + 9, "   越难：敌人与队友越会走位，也打得越准", C.dark_gray)
+  end
+  S.print(x, y + 11, string.format("%s 开始游戏", mark(7)),
+          (menu.row == 7) and C.yellow or C.gray)
+  S.print(x + 2, y + 13, "↑↓ 选择   ←→ 调整（按住加速）   A / ENTER 确定", C.dark_gray)
 end
 
 function draw()
@@ -1075,10 +1412,11 @@ function draw()
   draw_sky(S, C)
   draw_world(S, C)
   draw_effects(S, C)
-  draw_actors(S, C)
   -- 瞄准线、预测线、力度读数只在"轮到我、还没开炮"时出现：一发射立刻收掉，
-  -- 免得玩家盯着上一炮的刻度去瞄下一炮
+  -- 免得玩家盯着上一炮的刻度去瞄下一炮。
+  -- 它画在**角色之前**：高抛时线会穿过自己的头顶，压在血条与选标下面才不会糊成一团
   if turn.phase == "aim" and human_turn() and not winner then draw_aim(S, C) end
+  draw_actors(S, C)
 
   local w = current_worm()
   local weapon = selected_weapon()
@@ -1089,7 +1427,10 @@ function draw()
     weapon = weapon, plate = COL.plate,
     ammo = left, charge = charge_mode, pvp = pvp, turn_team = turn.team,
     ally_ai = ally_ai, human = human_turn(),
-    floats = floats, flight_note = turn.phase == "flying" and "弹药飞行中" or nil,
+    floats = floats,
+    -- 只在**弹药真的在空中**时提示。燃烧 3 秒、光柱 5 秒属于"特效阶段"，
+    -- 那时还写"弹药飞行中"，玩家会以为卡住了
+    flight_note = (#projectiles > 0 or burst) and "弹药飞行中" or nil,
   })
 
   if winner then
@@ -1097,7 +1438,14 @@ function draw()
     S.print(VIEW_CW // 2 - #msg // 2, VIEW_CH // 2, msg, C.white, phos.color.black)
   end
 
-  Panel.draw(terrain, camera, worms, turn, Weapons.LIST, weapon, pvp, w, human_turn())
+  Panel.draw({
+    terrain = terrain, camera = camera, worms = worms, turn = turn,
+    weapons = Weapons.LIST, current = weapon, pvp = pvp, active = w,
+    human = human_turn(), ally_ai = ally_ai, hp_max = Worms.MAX_HP,
+    -- 队长：队友交给 AI 时，唯一还归玩家操作的那只
+    leader = worms:of_team(1)[1],
+  })
+  if map_open then draw_map_overlay(S, C) end
   if help_open then draw_help(C, S) end
 end
 
@@ -1110,7 +1458,11 @@ function debug_state()
   local spec = selected_weapon()
   local out = {
     screen = screen, pvp = pvp, ally_ai = ally_ai, help = help_open,
-    mine = menu.mine, theirs = menu.theirs, menu_row = menu.row,
+    mine = menu.mine, theirs = menu.theirs, menu_row = menu.row, hp_max = menu.hp,
+    diff = DIFFS[menu.diff] or "normal",
+    ai_reason = ai_reason or "-", ai_walking = ai_walk_t > 0,
+    ai_repositioned = ai_repositioned, ai_last = ai_last, map_open = map_open,
+    burst_left = burst and (burst.total - burst.done) or 0, strikes = #strikes,
     team = turn and turn.team or 0, phase = turn and turn.phase or "-",
     wind = turn and turn.wind or 0, round = turn and turn.round or 0,
     shots_left = turn and turn.shots_left or 0, winner = winner,

@@ -12,7 +12,9 @@ Worms.__index = Worms
 
 Worms.MAX_HP = 100
 Worms.WALK_SPEED = 10      -- 子格/秒（= 5 格/秒）
-Worms.JUMP_VY = -9         -- 起跳初速（负值 = 向上）；跳不高，爬台阶够用
+-- 起跳初速（负值 = 向上）。跳跃高度 = v²/2g，12 对应 ≈3 子格（1.5 格）：
+-- 够翻过一块台阶、够离开脚下的爆炸圈，但不足以变成"飞"
+Worms.JUMP_VY = -12
 Worms.HIT_RADIUS = 3       -- 被弹药命中的判定半径（子格）
 
 local function make(team, x, y)
@@ -152,11 +154,22 @@ function Worms:damage(w, amount)
   if w.hp <= 0 then w.hp, w.alive = 0, false end
 end
 
--- 爆炸结算：伤害 + 冲量（把人往外推；推完交给 update 的重力继续算）
-function Worms:apply_blast(x, y, radius, damage, events)
+-- 回血：上限 Worms.MAX_HP（多治的那部分不浪费成负数）。返回**实际回了多少**，
+-- 上层据此决定要不要冒 "+25" 浮字——血满时不该冒出数字来骗人
+function Worms:heal(w, amount)
+  if not w.alive or amount <= 0 then return 0 end
+  local before = w.hp
+  w.hp = math.min(Worms.MAX_HP, w.hp + amount)
+  return w.hp - before
+end
+
+-- 爆炸结算：伤害 + 冲量（把人往外推；推完交给 update 的重力继续算）。
+-- skip 是"已经被直接命中、拿过全额伤害"的那只虫：爆炸不该再按距离削它一次，
+-- 否则同一发弹药对同一目标会结算两遍
+function Worms:apply_blast(x, y, radius, damage, events, skip)
   local points = {}
   for _, w in ipairs(self.list) do
-    if w.alive then points[#points + 1] = w end
+    if w.alive and w ~= skip then points[#points + 1] = w end
   end
   local hits = Physics.blast(x, y, radius, damage, points, self.terrain)
   for _, h in ipairs(hits) do

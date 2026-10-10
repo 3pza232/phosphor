@@ -51,6 +51,7 @@ phos.screen.put(x, y, ch, fg, bg)      -- 带颜色
 phos.screen.print(x, y, text)          -- 从 (x,y) 起写一行文本
 phos.screen.print(x, y, text, fg, bg)
 phos.screen.fill(x, y, w, h, ch, fg, bg) -- 填充矩形
+phos.screen.blit(x, y, rows, fg, bg)   -- 一次写多行（地图/画面搬运；超宽按显示宽度截断）
 phos.screen.clear()                    -- 全清（空格 + 默认色）
 phos.screen.clear(fg, bg)              -- 指定底色清屏
 
@@ -59,6 +60,17 @@ ch, fg, bg = phos.screen.get(x, y)
 ```
 
 越界写入**静默裁剪**，不报错——卡带不必为边缘坐标防御性编程。
+
+**省略 `bg` 时怎么办？** 分两组，这是写卡带最容易踩的一条：
+
+| 调用 | 省略 `bg`（或传 `nil`） |
+|---|---|
+| `screen.put` / `screen.print`、`panel.put` / `panel.print` | **保留该格原有背景**（"透明底"）：字压在地形、天空、底图上都不留色块 |
+| `ui.region` 的 `clear` / `put` / `print` / `fill` / `blit` | 同上，一律保留背景 |
+| `screen.fill` / `screen.blit`、`panel.fill` / `panel.clear` | **总是写底色**（省略 = 黑）——这些调用常被用来"清一块地方"，默认透明会变成什么都不做 |
+
+所以"要让这块地方不透底"是**显式给色**，而不是指望默认值：
+`phos.screen.print(x, y, text, fg, bg)`。
 
 ## phos.color
 
@@ -273,7 +285,8 @@ win:print(2, 10, long_text)          -- 超出窗口的部分被裁掉，不会�
 - 构造时与表层可用范围**求交**，所以 `x`/`y`/`w`/`h` 字段给的就是实际可画范围
 - 可用的绘制方法：`clear` / `put` / `print` / `fill` / `blit`（多行）/ `frame` /
   `divider` / `bar` / `menu`（`h` 可省略，缺省按条目数）/ `body`（折行正文，
-  `max_lines` 可省略）/ `sprite`（`step` 可省略）
+  `max_lines` 可省略）/ `sprite`（`step` 可省略）。这一族省略 `bg` 一律**保留背景**
+  （见 `phos.screen` 一节的 `bg` 规则）
 - **层级 = 调用顺序**：本机每帧清屏、卡带每帧重画，所以先画底图、再画窗口即可；
   窗口关闭时不再画它，底图自然就在（不需要"备份背景再还原"那类机制）
 - 若在运行时改了面板宽度（`phos.panel.resize`），请重新创建区域——
@@ -289,6 +302,8 @@ win:print(2, 10, long_text)          -- 超出窗口的部分被裁掉，不会�
 phos.input.down("left")  / "right" / "up" / "down"
 phos.input.down("a")     / "b"     / "x"  / "y"
 phos.input.down("start") / "select"
+-- 键盘专属的三颗：空格 / 逗号 / 句点（主机不给它们配手柄替代键）
+phos.input.down("space") / "comma" / "period"
 
 -- 边沿触发：本帧刚按下 / 刚松开 --
 phos.input.pressed("a")
@@ -313,6 +328,7 @@ local s = phos.input.text()      -- UTF-8 字符串；无输入时为空串
 | a / b | **A / B** | `a` 是确认，`b` 是取消 / 返回 |
 | x / y | **X / Y** | 卡带专用（主机保留键是 Esc / F2） |
 | start / select | Enter / Shift | `start` 是卡带自己的开始 / 暂停 |
+| space / comma / period | **空格 / , / .** | 键盘专属：留给"用了就舒服"的功能（发射、镜头平移这类）；手柄上没有对应位置 |
 | 系统菜单 | Esc | 主机保留，卡带收不到 |
 
 键位分两层，别混用：

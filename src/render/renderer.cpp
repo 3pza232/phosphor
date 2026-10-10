@@ -320,10 +320,8 @@ void Renderer::draw(const Screen& screen) {
             const float gw = g.w * s;
             const float gh = g.h * s;
 
-            // 先铺**整格**背景。只有一个字形的位图方块会被画出来，
-            // 而位图只有墨迹那一小块——不铺整格的话，ASCII 与窄字形四周就是
-            // glClear 留下的黑色，看上去每个字都带着一块黑底（中文是双宽字形，
-            // 之前恰好被下面的整格四边形盖住了，所以只有 ASCII 露馅）。
+            // 先铺**整格**背景。字形四边形只有位图那么大，而位图又只有墨迹那一小块，
+            // 不铺整格的话，窄字形四周会留着 glClear 的黑色。
             // fg 也传 bg：这样无论采样到图集的哪个像素，alpha 混出来的都是背景色
             {
                 const float bx0 = x * cw, by0 = y * chh;

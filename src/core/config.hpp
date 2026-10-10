@@ -3,6 +3,7 @@
 #include "core/defaults.hpp"
 
 #include <string>
+#include <vector>
 
 namespace phos {
 
@@ -25,5 +26,14 @@ Config load_config(const std::string& path);
 
 /// 写入配置（设置变更时即时保存——"记忆性"）
 void save_config(const std::string& path, const Config& cfg);
+
+/// 卡带架的"最近打开"记录：一行一个卡带 id，最近打开的在最前。
+/// 与 config.json 分开存：那份是**人写的设置**，这份是**机器写的使用痕迹**，
+/// 混在一起会让人以为手改 config.json 就能改排序
+std::vector<std::string> load_recent(const std::string& path);
+
+/// 记一次打开：把 cart_id 提到最前（去重、截到上限）并立即落盘。
+/// 写不进去只记日志——排序退化回目录顺序，不该拦住启动
+void remember_recent(const std::string& path, const std::string& cart_id);
 
 } // namespace phos

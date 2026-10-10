@@ -96,6 +96,22 @@ std::string Shell::cart_path_at(int index) const {
     return carts_[index].path;
 }
 
+std::string Shell::cart_id_at(int index) const {
+    if (index < 0 || index >= static_cast<int>(carts_.size())) return {};
+    return carts_[index].id;
+}
+
+void Shell::focus_cart(const std::string& id) {
+    if (id.empty()) return;
+    for (size_t i = 0; i < carts_.size(); ++i) {
+        if (carts_[i].id == id) {
+            shelf_cursor_ = static_cast<int>(i);
+            shelf_pos_ = static_cast<float>(i);  // 视窗样式不要滑一段动画，直接落位
+            return;
+        }
+    }
+}
+
 void Shell::show_error(const std::string& message) {
     error_message_ = message;
     mode_ = ShellMode::cart_error;

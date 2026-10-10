@@ -94,7 +94,7 @@
 方案名取自配置 `font`，缺省 `default`）内按 `font.* → font-*` 依次取第一个含该字形的字体。
 第三方头只出现在 `render/font.cpp` 内，
 接口不暴露 stbtt 类型；`STB_TRUETYPE_IMPLEMENTATION` 也只在那个 TU 定义
-（stb 的实现函数默认 `static`，放在别处会链接不到——这一条踩过）。
+（stb 的实现函数默认 `static`，放在别处会链接不到）。
 
 **全角字符占两格**靠 `Cell::cols` 表达：`2` 是头格、`0` 是续格（自身无字形）。
 渲染器跳过续格（整格由左邻的宽字形覆盖），`to_text()` 也不为续格产出字符，

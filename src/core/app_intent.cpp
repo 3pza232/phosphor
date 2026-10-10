@@ -113,7 +113,12 @@ void App::handle_intent(const Shell::Intent& intent, Renderer* renderer, Window*
         shell_.to_shelf();
     }
     if (intent.eject) {
+        // 拔卡的顺序有讲究：先记住"玩的是哪张"，再重排架子（刚玩过的会排到最前），
+        // 最后把光标停在它身上——玩家不必在新顺序里再找一遍
+        const std::string played = cart_ ? cart_->info().id : std::string();
         eject_cart();
+        refresh_shelf_order();
+        shell_.focus_cart(played);
         shell_.to_shelf();
     }
     if (intent.open_tape) {

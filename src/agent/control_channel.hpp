@@ -1,6 +1,6 @@
 #pragma once
 
-#include "agent/json_lite.hpp"
+#include "core/json_lite.hpp"
 
 #include <cstdint>
 #include <memory>

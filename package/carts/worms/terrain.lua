@@ -52,6 +52,14 @@ function Terrain:clear_span(y, x0, x1)
   self.rows[y] = row:sub(1, x0 - 1) .. string.rep("0", x1 - x0 + 1) .. row:sub(x1 + 1)
 end
 
+-- 与 clear_span 对称：把一行里 [x0, x1] 填实（地形弹用它）
+function Terrain:set_span(y, x0, x1)
+  x0, x1 = clamp(x0, 1, self.W), clamp(x1, 1, self.W)
+  if x1 < x0 then return end
+  local row = self.rows[y]
+  self.rows[y] = row:sub(1, x0 - 1) .. string.rep("1", x1 - x0 + 1) .. row:sub(x1 + 1)
+end
+
 -- 按高度场铺实心。整行用表拼接后一次成型：480x180 只要几十毫秒级
 function Terrain:fill_ground()
   local cells = {}
@@ -156,6 +164,27 @@ function Terrain:blast(cx, cy, r)
   return dug
 end
 
+-- 长出一块圆形地形（地形弹）：与 blast 同一套圆算法，只是把 "0" 写成 "1"，
+-- 所以"炸出来的坑"和"长出来的丘"形状语言一致。返回新增的格数
+function Terrain:fill_circle(cx, cy, r)
+  local grew = 0
+  for y = math.floor(cy - r), math.ceil(cy + r) do
+    if y >= 1 and y <= self.H then
+      local dy = y - cy
+      local half = math.floor(math.sqrt(math.max(0, r * r - dy * dy)))
+      if half > 0 then
+        half = half + phos.sys.random(-1, 1)
+        local x0, x1 = cx - half, cx + half
+        for x = math.max(1, x0), math.min(self.W, x1) do
+          if not self:solid(x, y) then grew = grew + 1 end
+        end
+        self:set_span(y, x0, x1)
+      end
+    end
+  end
+  return grew
+end
+
 -- 找一格能站的地方（本身空、脚下一格实心）。**向上**扫描：
 -- 语义是"从这里往上，落到最近的支撑面上"——放虫子、算坠落落点用它
 function Terrain:find_ground(x, from_y)
@@ -167,7 +196,7 @@ end
 
 -- 从 from_y **向下**找地表：传送落点用它。
 -- 与 find_ground 方向相反，用法也相反：那是"落到最近的支撑面"，
--- 这是"往下走到脚下那块地"。**拿错方向会永远找不到落点**（踩过这个坑）
+-- 这是"往下走到脚下那块地"。**方向必须朝下**，否则永远找不到落点
 function Terrain:ground_below(x, from_y)
   for y = clamp(from_y, 1, self.WATER_Y - 1), self.WATER_Y - 1 do
     if not self:solid(x, y) and self:solid(x, y + 1) then return x, y end

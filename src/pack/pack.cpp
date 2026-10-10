@@ -203,9 +203,10 @@ std::vector<T> scan_pack_dirs(const std::string& dir, Loader loader) {
         T pack;
         if (loader(entry.path(), pack)) out.push_back(std::move(pack));
     }
+    // 出厂包（"default"）排最前，其余按 id 字典序。
+    // 比较器必须是**严格弱序**：等价的元素两边都得返回 false，否则 sort 行为未定义
     std::sort(out.begin(), out.end(), [](const T& a, const T& b) {
-        if (a.id == "default") return true;
-        if (b.id == "default") return false;
+        if ((a.id == "default") != (b.id == "default")) return a.id == "default";
         return a.id < b.id;
     });
     return out;

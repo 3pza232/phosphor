@@ -4,12 +4,14 @@
 
 namespace phos {
 
+// 约定：返回 nullopt = 解析成功；**有值 = 出错**（值就是要给用户看的错误信息）。
+// 唯一的例外是 --help：它返回哨兵 kHelpRequest，由 main 特判后打印用法
 std::optional<std::string> parse_cli(int argc, char** argv, CliOptions& out) {
     for (int i = 1; i < argc; ++i) {
         const std::string arg = argv[i];
         auto need_value = [&](const char* name) -> std::optional<std::string> {
             if (i + 1 >= argc)
-                return std::string("参数 ") + name + " 缺少值";
+                return std::string("option ") + name + " requires a value";
             return std::nullopt;
         };
 
@@ -67,9 +69,9 @@ std::optional<std::string> parse_cli(int argc, char** argv, CliOptions& out) {
             if (auto err = need_value("--seed")) return err;
             out.seed = static_cast<unsigned>(std::strtoul(argv[++i], nullptr, 10));
         } else if (arg == "--help" || arg == "-h") {
-            return std::string("help");
+            return std::string(kHelpRequest);
         } else {
-            return "未知参数: " + arg;
+            return "unknown option: " + arg;
         }
     }
     return std::nullopt;

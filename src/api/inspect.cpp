@@ -1,6 +1,6 @@
 #include "api/inspect.hpp"
 
-#include "agent/json_lite.hpp"
+#include "core/json_lite.hpp"
 
 #include <sol/sol.hpp>
 

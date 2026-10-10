@@ -66,13 +66,28 @@ function Hud.draw(S, C, ctx)
             ctx.charge and C.yellow or (power > 0.85 and C.red or C.green))
   end
 
-  -- 第 2 行：武器与余弹
+  -- 第 2 行：武器、威力、余弹。
+  -- "威力"必须写出来：散射弹是"单发×枚数"（霰弹 10×5），治疗弹是"+25"（回血），
+  -- 其余按面板伤害。玩家选弹时最需要知道的就是这一件打出去是多少
   if ctx.weapon then
-    local name = ctx.weapon.name[phos.sys.language()] or ctx.weapon.name.en
+    local w = ctx.weapon
+    local name = w.name[phos.sys.language()] or w.name.en
     local n = ctx.ammo or 0
     local ammo_txt = (n < 0) and t.inf or tostring(n)
+    local power
+    if (w.heal or 0) > 0 then
+      power = "+" .. w.heal
+    elseif (w.shells or 1) > 1 then
+      power = string.format("%d×%d", w.damage or 0, w.shells)
+    elseif (w.orbital or 0) ~= 0 then
+      power = string.format("%d×%d", w.orbital.damage or 0, math.floor(w.orbital.life / w.orbital.tick))
+    elseif (w.raise or 0) > 0 then
+      power = "地形"
+    else
+      power = tostring(w.damage or 0)
+    end
     S.print(1, 2, phos.text.fit(
-      string.format("%s %s   x%s", t.weapon, name, ammo_txt), 40),
+      string.format("%s %s %s   x%s", t.weapon, name, power, ammo_txt), 40),
       (n == 0) and C.dark_gray or C.white)
   end
 
@@ -85,13 +100,16 @@ function Hud.draw(S, C, ctx)
 end
 
 -- 血条：画在虫子头顶，**垫浮层底板**（plate 由调用方给，nil = 透明）。
+-- frac 是当前血量**比例**（0~1）：血量上限由开局菜单决定（10~800），
+-- 所以这里一律按比例算格子与配色 —— 拿绝对值算的话，800 血的一局会永远显示满血青色。
 -- 为什么必须垫：血条是浮在世界上的一层，如果只写字形不动背景，
 -- 格子登记的底色仍是天空，站在斜坡或水面上时就会把地形顶出一个天空色的洞。
 -- 配色也刻意与地形拉开：地形偏绿，满血再用绿就糊在一起了，
 -- 所以满血用**青色**，括号用白色压住两端——无论压在山体还是海里都读得出来
-function Hud.hp_bar(S, C, x, y, hp, plate)
-  local n = math.max(0, math.ceil(math.max(0, hp) / 100 * 6))
-  local fill = (hp > 60 and C.cyan) or (hp > 25 and C.yellow) or C.red
+function Hud.hp_bar(S, C, x, y, frac, plate)
+  local f = math.max(0, math.min(1, frac or 0))
+  local n = math.ceil(f * 6)
+  local fill = (f > 0.6 and C.cyan) or (f > 0.25 and C.yellow) or C.red
   S.print(x - 3, y, "[", C.white, plate)
   S.print(x - 2, y, string.rep("=", n) .. string.rep("-", 6 - n), fill, plate)
   S.print(x + 4, y, "]", C.white, plate)

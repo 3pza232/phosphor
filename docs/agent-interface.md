@@ -116,7 +116,7 @@ phosphor --pack carts/snake --json
 | `screen.read` | — | 当前屏幕网格：`width`/`height`/`frame` + `lines`（逐行文本数组） |
 | `screenshot` | `path` | 当前画面写成 PNG（含滤镜/扫描线等后处理），返回像素尺寸 |
 | `carts.scan` | — | 扫描 `carts/` 目录，返回卡带列表（含 `error`） |
-| `input.inject` | `key`, `down`(bool)，可选 `frames` | 注入虚拟键；`frames` 表示按住 N 个逻辑帧后自动释放。`key` 也可为主机保留键 `escape`（见下节） |
+| `input.inject` | `key`, `down`(bool)，可选 `frames` | 注入虚拟键（可用键名见 [api-reference.md](api-reference.md) 的「phos.input」一节）；`frames` 表示按住 N 个逻辑帧后自动释放。`key` 也可为主机保留键 `escape`（见下节） |
 | `input.text` | `text` | 注入一段文本（UTF-8，可含中文），与玩家敲键盘等价。**只在下一逻辑帧可见**（文本是按帧的，下一帧自动清空） |
 | `input.clear` | — | 释放全部注入按键 |
 | `time.step` | `frames`(默认 1) | 进入单步模式并推进 N 个逻辑帧，**推进完毕后**才回包（确定性同步点） |

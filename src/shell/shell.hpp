@@ -125,6 +125,10 @@ public:
     int sfx_volume() const { return sfx_volume_; }
 
     std::string cart_path_at(int index) const;
+    /// 卡带 id（"最近打开"记录就按它匹配；坏卡带的 id 可能为空）
+    std::string cart_id_at(int index) const;
+    /// 把架子光标移到指定 id 的卡带上（找不到就保持原位）
+    void focus_cart(const std::string& id);
 
     Intent update(const Input& input, float dt);
     void draw(Screen& screen) const;

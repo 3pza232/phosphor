@@ -1,16 +1,21 @@
 #include "core/config.hpp"
 
-#include "agent/json_lite.hpp"
+#include "core/json_lite.hpp"
 #include "core/crt.hpp"
 #include "core/log.hpp"
 
+#include <algorithm>
 #include <fstream>
 #include <sstream>
 #include <string>
+#include <vector>
 
 namespace phos {
 
 namespace {
+
+/// 最近打开记录的保留条数：够覆盖一台机器的常用卡带即可
+constexpr size_t kMaxRecent = 24;
 
 /// 取字符串：缺项或空串都用默认值（手写配置常把值留空）
 std::string pick(const json::Object* scope, const char* key, std::string fallback) {
@@ -35,7 +40,7 @@ Config load_config(const std::string& path) {
     std::ostringstream ss;
     ss << in.rdbuf();
 
-    // 解析用与控制通道同一份 JSON 工具（agent/json_lite.hpp）：格式语义只有一处定义
+    // 解析用与控制通道同一份 JSON 工具（core/json_lite.hpp）：格式语义只有一处定义
     json::Object root;
     std::string err;
     if (!root.parse(ss.str(), err)) {
@@ -99,6 +104,37 @@ void save_config(const std::string& path, const Config& cfg) {
         << "  \"music_volume\": " << cfg.music_volume << ",\n"
         << "  \"sfx_volume\": " << cfg.sfx_volume << "\n"
         << "}\n";
+}
+
+std::vector<std::string> load_recent(const std::string& path) {
+    std::vector<std::string> ids;
+    std::ifstream in(path);
+    if (!in) return ids;  // 没有记录 = 首次启动，保持目录顺序
+
+    std::string line;
+    while (std::getline(in, line)) {
+        while (!line.empty() && (line.back() == '\r' || line.back() == ' ')) line.pop_back();
+        if (line.empty()) continue;
+        // 手改过这个文件也要能读：重复项只认第一次出现的位置
+        if (std::find(ids.begin(), ids.end(), line) == ids.end()) ids.push_back(line);
+    }
+    return ids;
+}
+
+void remember_recent(const std::string& path, const std::string& cart_id) {
+    if (cart_id.empty()) return;
+
+    std::vector<std::string> ids = load_recent(path);
+    ids.erase(std::remove(ids.begin(), ids.end(), cart_id), ids.end());
+    ids.insert(ids.begin(), cart_id);
+    if (ids.size() > kMaxRecent) ids.resize(kMaxRecent);
+
+    std::ofstream out(path, std::ios::trunc);
+    if (!out) {
+        log::warn("cannot save recent carts: " + path);
+        return;
+    }
+    for (const std::string& id : ids) out << id << '\n';
 }
 
 } // namespace phos

@@ -28,7 +28,11 @@ struct CliOptions {
     std::optional<unsigned> seed;       // 固定随机种子
 };
 
-/// 解析失败时返回错误信息字符串；请求帮助时返回 "help"。
+/// --help 的哨兵返回值：解析本身没出错，但调用方应打印用法后退出
+inline constexpr const char* kHelpRequest = "help";
+
+/// 解析命令行。返回 nullopt = 成功；有值 = 失败（值即错误信息）；
+/// 请求用法时返回 kHelpRequest
 std::optional<std::string> parse_cli(int argc, char** argv, CliOptions& out);
 
 } // namespace phos

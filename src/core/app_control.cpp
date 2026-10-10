@@ -1,5 +1,5 @@
 #include "agent/cart_json.hpp"
-#include "agent/json_lite.hpp"
+#include "core/json_lite.hpp"
 #include "cart/cart_scanner.hpp"
 #include "core/app.hpp"
 #include "core/log.hpp"
@@ -115,6 +115,8 @@ std::string App::control_state_json() const {
 
 std::string App::carts_json() const {
     // 字段集与 `--scan --json` 共用一份实现（agent/cart_json.hpp）
+    // 这里刻意**重扫一次**目录而不是复用卡带架：控制通道是给工具用的，
+    // 它要的是"磁盘上现在有什么"（含目录顺序），而不是玩家眼里的排序结果
     return "\"carts\":" + cart_list_json(scan_carts(kCartDir));
 }
 

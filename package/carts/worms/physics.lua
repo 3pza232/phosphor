@@ -14,11 +14,8 @@ Physics.MAX_WIND = 6           -- 风力上限（子格/秒²），每回合随�
 -- 这样"力度条还剩多少"才是真正要算的东西
 Physics.MAX_SPEED = 94         -- 满蓄力初速（子格/秒）
 Physics.MIN_SPEED = 8          -- 力度 10% 的初速（太小的初速连脚下的坡都翻不过去）
--- 蓄力速率（力度/秒）。写成"每帧 0.03"是不对的：那只在 60 帧下成立，
--- 一旦帧率变化蓄力速度就跟着变。按秒给，调用方乘 dt
-Physics.CHARGE_RATE = 1.8      -- 约 0.55 秒从最小推到满
+
 Physics.SUBSTEP = 0.25         -- 步进上限（子格）：逐点判定，避免穿墙
-Physics.RAY_STEP = 0.5         -- 直线武器（霰弹/机枪/激光）的采样间隔（子格）
 Physics.GRENADE_KEEP = 0.3     -- 手雷落地保留的速度（其余被地面吃掉）
 Physics.BURN_DPS = 20          -- 燃料火的伤害速率（每秒）。按秒算而不是按帧算：
                                -- 60 帧下"每帧 2 点"就是每秒 120 点，谁站进去都秒死
@@ -37,6 +34,14 @@ function Physics.velocity(angle_deg, power, facing)
   return v * math.cos(a) * facing, -v * math.sin(a)
 end
 
+-- 炮口：弹药**出生的位置**，也是瞄准线的起点。
+-- 绘制、发射、AI 评分共用它——这几处各写一遍"x + facing*3, y - 6"的话，
+-- 改了其中一处就会出现"线画在一个地方、弹从另一个地方飞出来"，
+-- 玩家看到的就是"瞄准线靠近自身那一段不准"
+function Physics.muzzle_of(w)
+  return w.x + (w.facing or 1) * 3, w.y - 6
+end
+
 function Physics.new_projectile(x, y, vx, vy, opts)
   opts = opts or {}
   return {
@@ -51,7 +56,8 @@ end
 
 -- 推进 dt 秒。hit(x, y) 由调用方提供，返回 nil 或命中类型：
 --   "terrain" 撞地 / "worm" 撞虫 / "water" 入海 / "out" 出界
--- 返回命中类型、或 "fuse"（引信到点）、或 nil（仍在飞）。
+-- 返回命中类型、或 "fuse"（引信到点）、或 nil（仍在飞）；
+-- hit 的第二个返回值（撞虫时是那只虫）原样透传，调用方靠它结算"直接命中"。
 -- 手雷（bounce_ground）撞地**不算命中**：弹一下继续飞，结算交给引信。
 function Physics.step(p, dt, wind, hit)
   if not p.alive then return nil end
@@ -65,12 +71,12 @@ function Physics.step(p, dt, wind, hit)
     if not p.no_gravity then p.vy = p.vy + Physics.GRAVITY * h end
     p.x = p.x + p.vx * h
     p.y = p.y + p.vy * h
-    local kind = hit(p.x, p.y)
+    local kind, point = hit(p.x, p.y)
     if kind == "terrain" and p.bounce_ground then
       Physics.bounce(p)
     elseif kind then
       p.alive = false
-      return kind
+      return kind, point
     end
     if p.fuse and p.t >= p.fuse then
       p.alive = false
@@ -89,20 +95,6 @@ function Physics.bounce(p)
   if math.abs(p.vy) < 1.5 then p.vy = 0 end
   p.vx = p.vx * ((p.vy == 0) and 0.5 or 0.75)
   if p.vy == 0 and math.abs(p.vx) < 0.8 then p.vx = 0 end
-end
-
--- 直线扫描：从 (x, y) 沿单位方向 (dx, dy) 走 max_dist 子格，每 RAY_STEP 采一次。
--- hit 的返回值原样透传（命中的虫作为第二返回值带出）。
--- 返回 { kind, x, y, point }，射程内什么都没碰到则返回 nil。
--- 霰弹、机枪、激光都走这里，所以"打得到打不到"三把枪是同一套判定。
-function Physics.raycast(x, y, dx, dy, max_dist, hit)
-  local n = math.floor(max_dist / Physics.RAY_STEP)
-  for _ = 1, n do
-    x, y = x + dx * Physics.RAY_STEP, y + dy * Physics.RAY_STEP
-    local kind, point = hit(x, y)
-    if kind then return { kind = kind, x = x, y = y, point = point } end
-  end
-  return nil
 end
 
 -- 爆炸：挖地形 + 对范围内每个点按距离衰减算伤害与冲量。

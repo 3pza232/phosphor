@@ -1,6 +1,6 @@
 #include "core/app.hpp"
 
-#include "agent/json_lite.hpp"
+#include "core/json_lite.hpp"
 #include "core/log.hpp"
 #include "platform/window.hpp"
 #include "render/renderer.hpp"

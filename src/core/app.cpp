@@ -1,6 +1,6 @@
 #include "core/app.hpp"
 
-#include "agent/json_lite.hpp"
+#include "core/json_lite.hpp"
 #include "cart/cart_scanner.hpp"
 #include "render/font.hpp"
 #include "core/effects.hpp"
@@ -20,6 +20,22 @@
 #include <thread>
 
 namespace phos {
+
+namespace {
+
+/// 按"最近打开"重排卡带：最近的在最前，其余保持扫描顺序（stable）。
+/// 用 id 匹配而不是路径——同一张卡带换个目录也认得出来；
+/// 不在记录里的（新卡带）排在后面，位置由扫描顺序决定
+void sort_by_recent(std::vector<CartInfo>& carts, const std::vector<std::string>& recent) {
+    const auto rank = [&recent](const CartInfo& cart) {
+        const auto it = std::find(recent.begin(), recent.end(), cart.id);
+        return it == recent.end() ? recent.size() : static_cast<size_t>(it - recent.begin());
+    };
+    std::stable_sort(carts.begin(), carts.end(),
+                     [&rank](const CartInfo& a, const CartInfo& b) { return rank(a) < rank(b); });
+}
+
+} // namespace
 
 int App::run(const CliOptions& opts) {
     config_ = load_config(kConfigPath);
@@ -69,7 +85,7 @@ int App::run(const CliOptions& opts) {
         static_cast<unsigned>(std::chrono::system_clock::now().time_since_epoch().count()));
     host_.rng.seed(rng_seed_);
 
-    shell_.set_carts(scan_carts(kCartDir));
+    refresh_shelf_order();
 
     std::vector<std::string> names;
     names.clear();
@@ -225,7 +241,10 @@ void App::tick_boot(float dt) {
     host_.time += dt;
     boot_elapsed_ += dt;
     if (boot_script_ && (!boot_script_->update(dt) || !boot_script_->draw())) {
-        // 动画脚本出错：回退内置自检，不中断开机流程
+        // 动画脚本出错：回退内置自检，不中断开机流程。
+        // 必须留痕——静默回退会让作者以为自己的脚本生效了，排查时无从下手
+        log::warn("boot script failed, falling back to built-in self-check: " +
+                  boot_script_->error());
         boot_script_.reset();
         shell_.set_external_boot(false);
     }
@@ -249,7 +268,17 @@ bool App::boot_should_end() const {
 }
 
 /// 按卡带架上的下标插卡（路径来自卡带列表，见 Shell::cart_path_at）
-void App::load_cart(int index) { load_cart_path(shell_.cart_path_at(index)); }
+void App::refresh_shelf_order() {
+    std::vector<CartInfo> carts = scan_carts(kCartDir);
+    sort_by_recent(carts, load_recent(kRecentPath));
+    shell_.set_carts(std::move(carts));
+}
+
+void App::load_cart(int index) {
+    // 记一次"最近打开"：拔卡回到架子时这张就排在最前
+    remember_recent(kRecentPath, shell_.cart_id_at(index));
+    load_cart_path(shell_.cart_path_at(index));
+}
 
 bool App::any_key_edge() const {
     for (const auto& name : input_.names())
