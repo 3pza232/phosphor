@@ -52,13 +52,14 @@
 local Game = require("game")
 local Panel = require("panel")
 
--- 界面文案：中英各一列，取值一律走 L()。新增语言只需加一列。
--- 不要在代码里写死中文——语言由 phos.sys.language() 给出
+-- 界面文案：中英各一列（新增语言只需再加一列）。**取值交给引擎**：
+-- phos.lang.dict 返回当前语言那一列（缺 en 自动回落中文），每帧取一次即可跟随切换。
+-- 不要在代码里写死中文——英文主机上它会原样显示。
+-- 要对齐的定宽字段用 phos.text.pad（按显示宽度补空格），别用 %-Ns（那个按字节补）
 local Text = {
   zh = { hud = "得分", paused = "暂停中", keys = "[%s] 动作   [%s] 暂停" },
   en = { hud = "SCORE", paused = "PAUSED", keys = "[%s] ACT   [%s] PAUSE" },
 }
-local function L() return Text[phos.sys.language()] or Text.zh end
 
 local game          -- 「填」你的规则对象，见 game.lua
 local cart = {}
@@ -92,7 +93,7 @@ end
 
 function draw()
   local C, S = phos.color, phos.screen
-  local t = L()
+  local t = phos.lang.dict(Text)      -- 当前语言那一列
   S.clear()
 
   -- 布局：**一律以可玩区为准**。playfield() 已经把侧栏算掉，

@@ -19,12 +19,12 @@ end
 
 local LOGO = phos.sys.product()          -- 产品名取自主机 API，不硬编码
 
--- 文案跟随机器界面语言（与卡带同一套约定：phos.sys.language()）
+-- 文案跟随机器界面语言（与卡带同一套约定：phos.lang.dict，缺 en 回落中文）
 local SUB = {
   zh = { prefix = "系统 v", tail = " —— 信号已捕获", wait = "正在搜索信号" },
   en = { prefix = "SYSTEM v", tail = " — SIGNAL LOCKED", wait = "SEARCHING FOR SIGNAL" },
 }
-local sub = SUB[phos.sys.language()] or SUB.zh
+local sub = phos.lang.dict(SUB)
 
 local SPECK = { ".", ":", "'", "`", ",", "-", "=", "+", "*" }
 local LOCK_T, FULL_T = 1.6, 2.6           -- 开始锁定 / 完全锁定（秒）

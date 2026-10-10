@@ -17,7 +17,8 @@ local Text = {
         time = "TIME", lives = "LIVES", move = "arrows move", launch = "launch", pause = "pause",
         restart = "restart", menu = "ESC menu"},
 }
-local function L() return Text[phos.sys.language()] or Text.zh end
+-- 取当前语言那一列：查表规则在引擎里（`phos.lang.dict`，缺 en 回落中文）
+local function L() return phos.lang.dict(Text) end
 
 local K = {
   a = phos.input.key_name("a"),

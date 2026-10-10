@@ -11,7 +11,8 @@ local Text = {
         empty = "(none)", legend = "LEGEND", head = "@ head", body = "o body", food = "O food",
         menu = "ESC pause"},
 }
-local function L() return Text[phos.sys.language()] or Text.zh end
+-- 取当前语言那一列：查表规则在引擎里（`phos.lang.dict`，缺 en 回落中文）
+local function L() return phos.lang.dict(Text) end
 
 local function section(P, C, y, title)
   P.print(1, y, title, C.dark_gray)

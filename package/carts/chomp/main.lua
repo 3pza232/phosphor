@@ -26,7 +26,8 @@ local Text = {
     record = "NEW RECORD",
   },
 }
-local function L() return Text[phos.sys.language()] or Text.zh end
+-- 取当前语言那一列：查表规则在引擎里（`phos.lang.dict`，缺 en 回落中文）
+local function L() return phos.lang.dict(Text) end
 
 -- 迷宫铺满内容区：x 从 0 起（61 列），纵向留出标题行与状态行
 local OX = 0

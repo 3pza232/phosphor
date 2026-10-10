@@ -93,6 +93,8 @@ phos.text.width("中文 abc")            -- 8  （2+2 全角 + 1 空格 + 3 半�
 phos.text.width("hello")               -- 5
 phos.text.truncate("很长的中文标题", 8)  -- "很长的中"（8 列，绝不切出半个字）
 phos.text.fit("很长的中文标题", 8)       -- "很长的中…"（8 列；没超宽就原样返回）
+phos.text.pad("模式", 8)                -- "模式    "（右补到 8 列）
+phos.text.pad_left("42", 6)             -- "    42"（左补：取值右对齐）
 ```
 
 `phos.screen` / `phos.panel` / `phos.ui` 的写文字接口都按显示宽度推进，
@@ -453,26 +455,38 @@ local r   = phos.sys.random(1, 100) -- 区间随机整数（确定性模式下�
 phos.sys.seed(42)                   -- 重置随机种子
 
 phos.sys.log("debug info")          -- 写主机日志（开发期利器）
-phos.sys.version()                  -- 主机版本（唯一权威，当前 "0.1.0"）
+phos.sys.version()                  -- 主机版本（唯一权威，当前 "0.1.1"）
 phos.sys.product()                  -- 产品名 "PHOSPHOR"
 phos.sys.language()                 -- 界面语言 "zh" / "en"（见下）
 ```
 
 ### 卡带文案的多语言
 
-**卡带文案属于卡带内容**，主机只告诉卡带"当前是什么语言"，怎么翻译由卡带自己决定。
-推荐写法（新增语言只需加一列，`L()` 取到哪一列由设置里的语言决定）：
+**卡带文案属于卡带内容**，主机只告诉卡带"当前是什么语言"（`phos.sys.language()`），
+怎么翻译由卡带自己决定；**取值那一步用 `phos.lang`**，不必自己写查表：
 
 ```lua
+-- 整屏的文案写成"两列"：新增语言只需再加一列
 local Text = {
-  zh = {over = "游戏结束", restart = "按 %s 重开"},
-  en = {over = "GAME OVER",  restart = "press %s to restart"},
+  zh = { over = "游戏结束", restart = "按 %s 重开" },
+  en = { over = "GAME OVER", restart = "press %s to restart" },
 }
-local function L() return Text[phos.sys.language()] or Text.zh end
 
-phos.ui.center_text(mid, L().over)                          -- 每帧读取即可跟随切换
-phos.ui.center_text(mid + 2, string.format(L().restart, key))  -- 带参数的用 %s / %d
+function draw()
+  local t = phos.lang.dict(Text)      -- 每帧取一次，跟随设置里的语言切换
+  phos.ui.center_text(mid, t.over)
+  phos.ui.center_text(mid + 2, string.format(t.restart, key))   -- 带参数的用 %s / %d
+end
+
+-- 单条（武器名、状态文案这类一条一对的记录）：
+local label = phos.lang.pick({ zh = "普通炮弹", en = "SHELL" })
 ```
+
+- `phos.lang.dict(fields)` 返回**原表里的那一张**（引用，不拷贝）：每帧取一次即可，
+  设置里切了语言，下一帧的读数就跟着变
+- `phos.lang.pick(fields)` 取单条；两者都是**缺 en 回落中文**，漏翻不会露出空串
+- 排版一律用 `phos.text.pad` / `phos.text.width` 量宽度：中英宽度不同（汉字 2 列、
+  字母 1 列），写死列号、或按字节补空格的排版，在英文下必然错位
 
 不要用 `#str` 判断按几列居中，那数的是字节：用 `phos.text.width`。
 

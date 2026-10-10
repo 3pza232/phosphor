@@ -8,22 +8,26 @@ local Physics = {}
 
 Physics.GRAVITY = 24           -- 子格/秒²（= 12 格/秒²，DOM 里的虫子手感）
 Physics.MAX_WIND = 6           -- 风力上限（子格/秒²），每回合随机
--- 满蓄力初速直接决定射程：无风 45° 时射程 ≈ v²/g（子格）。
--- 40 只能打 40²/24 ≈ 67 子格（33 格），而世界宽 480 子格——满力度也够不到对面。
--- 94 是 94²/24 ≈ 368 子格（184 格，近 4 成世界宽），顺风再加一大截，
--- 这样"力度条还剩多少"才是真正要算的东西
+-- 满蓄力初速直接决定射程：无风 45° 时射程 ≈ v²/g，94²/24 ≈ 368 子格（近 4 成世界宽），
+-- 顺风还能再远一截——"力度条还剩多少"才是真正要算的东西
 Physics.MAX_SPEED = 94         -- 满蓄力初速（子格/秒）
 Physics.MIN_SPEED = 8          -- 力度 10% 的初速（太小的初速连脚下的坡都翻不过去）
+
+-- 力度的合法区间。输入、AI 规划、发射三处共用，边界只在这里定义一次
+Physics.POWER_MIN, Physics.POWER_MAX = 0.1, 1.0
 
 Physics.SUBSTEP = 0.25         -- 步进上限（子格）：逐点判定，避免穿墙
 Physics.GRENADE_KEEP = 0.3     -- 手雷落地保留的速度（其余被地面吃掉）
 Physics.BURN_DPS = 20          -- 燃料火的伤害速率（每秒）。按秒算而不是按帧算：
                                -- 60 帧下"每帧 2 点"就是每秒 120 点，谁站进去都秒死
 
+function Physics.clamp_power(power)
+  return math.max(Physics.POWER_MIN, math.min(Physics.POWER_MAX, power or 0))
+end
+
 -- 力度百分比（0.1~1.0）→ 初速
 function Physics.speed_of(power)
-  local p = math.max(0.1, math.min(1, power))
-  return Physics.MIN_SPEED + (Physics.MAX_SPEED - Physics.MIN_SPEED) * p
+  return Physics.MIN_SPEED + (Physics.MAX_SPEED - Physics.MIN_SPEED) * Physics.clamp_power(power)
 end
 
 -- 角度（度，0 = 朝正右、90 = 朝正上）→ 速度分量。
@@ -97,15 +101,17 @@ function Physics.bounce(p)
   if p.vy == 0 and math.abs(p.vx) < 0.8 then p.vx = 0 end
 end
 
+Physics.BLAST_FLOOR = 0.1      -- 距离衰减的保底比例：擦着边的也至少吃这么多
+
 -- 爆炸：挖地形 + 对范围内每个点按距离衰减算伤害与冲量。
 -- points 是任意带 x/y 的表（虫子、油桶……），把"谁挨打"留给调用方。
 -- 返回 { {point=, damage=, push=}, ... }, 挖掉的格数
-function Physics.blast(x, y, radius, damage, points, terrain, floor_ratio)
+function Physics.blast(x, y, radius, damage, points, terrain)
   -- terrain 传 nil = "只算伤害，不动地形"：AI 预演要调用上千次，
   -- 绝不能让它在预演里真把地图挖了
   local dug = 0
   if terrain then dug = terrain:blast(math.floor(x), math.floor(y), radius) end
-  local floor = floor_ratio or 0.1
+  local floor = Physics.BLAST_FLOOR
   local hits = {}
   for _, p in ipairs(points) do
     local dx, dy = p.x - x, p.y - y

@@ -19,7 +19,8 @@ local Text = {
     keys = "KEYS", jump = "[↑/A] JUMP", jump_hold = "  hold = higher", duck = "[↓] DUCK",
   },
 }
-local function L() return Text[phos.sys.language()] or Text.zh end
+-- 取当前语言那一列：查表规则在引擎里（`phos.lang.dict`，缺 en 回落中文）
+local function L() return phos.lang.dict(Text) end
 
 function Panel.draw(game, cart_t)
   local P, C = phos.panel, phos.color

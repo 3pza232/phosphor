@@ -52,8 +52,8 @@ theme/skin/rust-cabinet/
 ```
 设置里可选的内容 = theme/<type>/ 下的每个文件夹（出厂默认也在这里）
         ↓ 该类型一个可用包都没有时
-      system/<type>/ 中的出厂包
-        ↓ 连出厂包都没有时
+      system/<type>/ 中的固件资源（预留给将来；当前发行版不含此目录）
+        ↓ 连它也没有时
       主机内建的硬编码兜底（builtin_skin / builtin_palette / SILENT / 文字自检动画）
 ```
 
@@ -150,14 +150,19 @@ return {
 | `default` | TUBE WARMUP：中央亮线展开 + 冲击波 → 自检打字机 + 扫描头左右移动 → 末段电压抖动 |
 | `static-rain` | STATIC RAIN：全屏雪花噪点雨 → LOGO 扫描式揭露 → 余噪干扰线（附沙沙噪声） |
 | `sweep` | CART LOADER：进度条推进 + 闪烁读写头 + 逐块校验灯点亮（附启动扫频与完成音） |
+| `persistence` | PERSISTENCE：写头扫过让字样"显影"，笔画按余辉先亮后暗（两遍扫描 + 就绪报字） |
+| `waveform` | WAVEFORM LOCK：示波器栅格上的噪声波逐渐锁相成稳定波形（半格精度曲线 + 读数） |
 
 > **文案约定**：出厂默认字体方案已带中文字体（`theme/font/default/font-cn.otf` 作回退），
-> 中文与 ASCII 都能显示。但如果你的包要在**任何**字体方案下都不缺字（例如随附的
-> `ascii` 方案只含 ASCII，缺字以 `.` 占位），那就只用 ASCII 写文案。
+> 中文与 ASCII 都能显示。但如果你的包要在**任何**字体方案下都不缺字，那就只用 ASCII 写文案
+> ——用户完全可以自己做一个只含 ASCII 的字体方案（缺字以 `?` 占位）。
 >
-> **语言**：启动动画是以卡带形式运行的 Lua 脚本，面向玩家的文字按
-> `phos.sys.language()` 选（`theme/boot/*/main.lua` 里都是"中英两列 + 取一列"的写法）；
+> **语言**：启动动画是以卡带形式运行的 Lua 脚本，面向玩家的文字按语言给两列、
+> 取值用 `phos.lang.dict`（整张表）或 `phos.lang.pick`（单条），缺 en 会自动回落中文；
 > 需要按显示宽度居中的，用 `phos.text.width`，不要拿 `#str` 当列数。
+> **皮肤（skin）里的字不参与本地化**：那是机台装饰（铭牌、贴纸、铭文），
+> 一律写成 **ASCII 字符画**即可——生硬翻译反而破坏机器感。
+> 皮肤脚本也拿不到语言 API（内容包沙箱只有 `phos.text.width` / `truncate`）。
 
 ### palette（显像管滤镜）
 
@@ -199,7 +204,7 @@ return {
 return {
   boot    = { wave = "square", freq = 220, sweep = 880, dur = 0.45, volume = 0.30 },
   insert  = { wave = "noise",  dur = 0.16, volume = 0.35 },
-  insert2 = { perc = "K" },             -- 也可用打击乐记号
+  key     = { perc = "K" },             -- 也可用打击乐记号
   eject   = { wave = "square", freq = 520, sweep = 90, dur = 0.24 },
   error   = { file = "assets/fault.wav" },  -- 或指向包内音频文件（优先）
 }
@@ -235,8 +240,7 @@ theme/font/default/
   —— 绝不因此开不了机
 - 想换中文观感：复制 `default/` 成新目录（如 `theme/font/hei/`），换掉字形文件，
   再切到该方案。打开任一带中文的卡带（如 `carts/snake`）即可确认覆盖情况
-- 随发行版另附一套 `ascii` 方案：只含 ASCII 主字体，中文显示为 `?` 占位
-  —— 既用于验证"切换字体方案"这条链路，也留作纯像素英文字形的选择
+- 想要纯 ASCII 的像素英文观感：再建一个只放 `font.ttf` 的方案即可，中文会显示为 `?` 占位
 
 切换入口：`SETTINGS` → `FONT SCHEME` 行（左右键切换，立即生效并写回 `config.json`）。
 

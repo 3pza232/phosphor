@@ -98,6 +98,10 @@ phos.panel.print(1, y, phos.text.fit(text, pw - 2))
 并补省略号，宽度按显示宽度算（全角字符不会被切成半个）。分区、小地图、状态条用
 `phos.ui.region(...)`：它自带裁剪，越界不画。
 
+要对齐的定宽字段（"标签 + 取值"那一列）用 `phos.text.pad` / `phos.text.pad_left`：
+它们按**显示宽度**补空格，中英混排也能对齐。`string.format` 的 `%-Ns` 是按**字节**补的，
+汉字会被算成 3 字节，同一列在中文下齐、在英文下就歪。
+
 **3. 键位提示写键盘上真实的键**
 
 `phos.input.key_name("a")` 给出实际按键名。主机没有手柄，写按钮名等于在提示里说谎。
@@ -128,6 +132,26 @@ phos.panel.print(1, y, phos.text.fit(text, pw - 2))
 
 "不许掉头"加上一张有死路的图，会让敌人集体卡在角落里不动。
 让 AI 不进只有一个出口的格子，并且被逼住时允许掉头。
+
+**9. 写给玩家看的字要有中英两列，取值交给 `phos.lang`**
+
+```lua
+-- 整屏文案：两列，新增语言只需再加一列
+local Text = {
+  zh = { over = "游戏结束", restart = "按 %s 重开" },
+  en = { over = "GAME OVER", restart = "press %s to restart" },
+}
+
+local t = phos.lang.dict(Text)        -- 每帧取一次：设置里切了语言，下一帧就跟上
+phos.ui.center_text(mid, t.over)
+
+-- 单条（武器名、状态文案这类"一条一对"的记录）
+local name = phos.lang.pick({ zh = "普通炮弹", en = "SHELL" })
+```
+
+`dict` / `pick` 都是**缺 en 回落中文**，漏翻不会露出空串。**写死中文的卡带在英文主机上
+会原样显示中文**——这是最常见的"适配没做完"。排版别忘上一条：中英宽度不同，
+要对齐就用 `phos.text.pad`。
 
 ## 多文件卡带
 
@@ -238,5 +262,5 @@ phosphor --check-api --json
 | 退出码 `1` | 命令行参数写错了，`--help` 是权威列表 |
 | 退出码 `2` | 卡带装载/校验失败（manifest 缺字段、入口脚本不存在、打包校验不过） |
 | 退出码 `3` | 主机内部错误，带上 `--log host.log` 的日志反馈 |
-| 改了卡带没生效 | 确认改的是运行中的那份（开发仓库里内容目录是联接，存盘即生效） |
+| 改了卡带没生效 | 确认改的是运行中的那份（开发仓库里内容目录由构建时从源码同步而来，存盘即生效） |
 | 字体/语言不对 | 那是设置项与主题的事，见 [content-packs.md](content-packs.md) |

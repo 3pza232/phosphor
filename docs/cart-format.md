@@ -54,7 +54,8 @@ return {
   -- 可选字段 --
   author   = "you",
   -- 简介：写字符串 = 中英同文；写表 = 各语言一份（缺 en 回落 zh），
-  -- 卡带架按机器的界面语言取（manifest 只有 desc 一项需要本地化）
+  -- 卡带架按机器的界面语言取。manifest 里**只有 desc 需要本地化**：
+  -- 游戏内与侧栏自己的文案不在 manifest，用 Lua 侧的 phos.lang（见 api-reference.md）
   desc     = { zh = "在终端里觅食的蛇。", en = "A snake hunting in the terminal." },
   sidebar  = { w = 16 },         -- 右侧栏面板宽度（0~32，缺省无侧栏）
   save     = true,               -- 是否需要存档空间（声明后 phos.save 可用）

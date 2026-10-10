@@ -22,7 +22,7 @@ local function once(key, fn)
   fn()
 end
 
--- 自检行文案：跟随机器界面语言。启动动画与卡带用**同一套约定**（phos.sys.language()），
+-- 自检行文案：跟随机器界面语言。启动动画与卡带用**同一套约定**（phos.lang.dict），
 -- 新增语言只需加一列，不要在脚本里写死某一种语言
 local L = {
   zh = {
@@ -42,7 +42,7 @@ local L = {
     "WAITING FOR CART _",
   },
 }
-local text = L[phos.sys.language()] or L.zh
+local text = phos.lang.dict(L)
 
 local checks = {
   phos.sys.product() .. " v" .. phos.sys.version(),  -- 版本来自主机 API，不硬编码

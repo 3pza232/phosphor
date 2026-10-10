@@ -49,18 +49,24 @@ function Patterns.load()
   return Patterns.list
 end
 
--- 图案名是**数据**（来自 assets/patterns.txt 的 [名字]）：这里给出英文对照，
--- 界面语言为 en 时显示英文，没收录的名字原样显示
-local NAME_EN = {
-  ["滑翔机"] = "GLIDER", ["闪烁器"] = "BLINKER", ["蟾蜍"] = "TOAD", ["信标"] = "BEACON",
-  ["脉冲星"] = "PULSAR", ["轻型飞船"] = "LWSS", ["R 五连"] = "R-PENTOMINO",
-  ["橡果"] = "ACORN", ["滑翔机枪"] = "GOSPER GUN",
+-- 图案名是**数据**（来自 assets/patterns.txt 的 [名字]）：这里给出各语言的名字，
+-- 取值与"缺 en 回落中文"交给引擎（phos.lang.pick）；没收录的名字原样显示
+local NAMES = {
+  ["滑翔机"] = { zh = "滑翔机", en = "GLIDER" },
+  ["闪烁器"] = { zh = "闪烁器", en = "BLINKER" },
+  ["蟾蜍"] = { zh = "蟾蜍", en = "TOAD" },
+  ["信标"] = { zh = "信标", en = "BEACON" },
+  ["脉冲星"] = { zh = "脉冲星", en = "PULSAR" },
+  ["轻型飞船"] = { zh = "轻型飞船", en = "LWSS" },
+  ["R 五连"] = { zh = "R 五连", en = "R-PENTOMINO" },
+  ["橡果"] = { zh = "橡果", en = "ACORN" },
+  ["滑翔机枪"] = { zh = "滑翔机枪", en = "GOSPER GUN" },
 }
 
 function Patterns.label(pattern)
   local name = (pattern and pattern.name) or "-"
-  if phos.sys.language() == "en" then return NAME_EN[name] or name end
-  return name
+  local rec = NAMES[name]
+  return rec and phos.lang.pick(rec) or name
 end
 
 function Patterns.get(index)

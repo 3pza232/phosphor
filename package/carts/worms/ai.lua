@@ -22,7 +22,7 @@ local HIT_R2 = Worms.HIT_RADIUS * Worms.HIT_RADIUS
 
 AI.PREVIEW_DT = 1 / 30      -- 预演的时间步（秒）：真正的物理，只是不画画面
 AI.PREVIEW_MAX_T = 14       -- 一枚弹药最多预演这么久
-AI.BATCH = 20               -- 每帧最多预演多少组（实测远低于 100 毫秒）
+AI.BATCH = 20               -- 每帧最多预演多少组（预算：稳在一帧之内）
 -- 血量不超过这个比例就算"伤员"，值得用治疗弹。
 -- 用"不超过"而不是"低于"：本作的伤害值（8/10/25/30/50）经常正好把血打到 50，
 -- 卡在严格小于上会让最需要治疗的那只恰好被跳过
@@ -35,12 +35,16 @@ AI.WOUNDED_RATIO = 0.5
 --   good_dist        落点离目标多近才算"打得到"（子格）；够不着就先走位
 --   dodge            上一轮被炸到之后，这一轮选择换位置的百分比
 --   walk_time        真挪起来走多久（秒）
+-- angle / power 是**刻意打的误差**：角度加 ±angle 度、力度乘 (1 ± power)。
+-- 这两项直接决定命中率，所以三档要拉开；但也不能给大 —— 溅射半径只有 3~5 子格，
+-- 误差一大，AI 就整局打不中：算出来的落点再准，也被这抖动推出溅射半径之外。
+-- 所以调稳一档：easy 4°/5%、normal 2°/2%、hard 1°/1%
 AI.DIFFICULTY = {
-  easy = { angle = 6, power = 0.10, a_step = 14, p_step = 0.15, refine = false,
+  easy = { angle = 4, power = 0.05, a_step = 14, p_step = 0.15, refine = false,
            good_dist = 14, dodge = 25, walk_time = 0.5 },
-  normal = { angle = 3, power = 0.04, a_step = 10, p_step = 0.10, refine = true,
+  normal = { angle = 2, power = 0.02, a_step = 10, p_step = 0.10, refine = true,
              good_dist = 9, dodge = 55, walk_time = 1.0 },
-  hard = { angle = 1, power = 0.015, a_step = 8, p_step = 0.08, refine = true,
+  hard = { angle = 1, power = 0.01, a_step = 8, p_step = 0.08, refine = true,
            good_dist = 6, dodge = 85, walk_time = 1.6 },
 }
 
@@ -115,6 +119,10 @@ end
 -- avoid 是"不该炸到的东西"（自己队；治疗弹不需要）
 local DAMAGE_W = 3         -- 每点伤害值多少分
 local HIT_BONUS = 40       -- 直击额外分
+-- 普通炮弹的"机会成本"：**本回合已评出的限量弹最高分**（由规划器维护，见 advance）。
+-- 不写死一个数：一次溅射几十分、一次直击上百分，定死的扣分在某个局面必然失真 ——
+-- 有了这个门限，"限量弹还没打光就先用普通弹"必须真的比限量弹打得更好才行
+local shell_bar = 0
 local NEAR_W = 1           -- 每偏离目标 1 子格扣多少分
 local NEAR_CAP = 60        -- 偏离扣分上限：没打中时靠它挑"谁离得最近"
 local SHELL_PENALTY = 30   -- 无限弹的机会成本（上面第 3 条）
@@ -146,7 +154,7 @@ local function score_of(weapon, hit_x, hit_y, hit_enemy, targets, avoid)
     local hits = Physics.blast(hit_x, hit_y, weapon.radius, weapon.damage, avoid, nil)
     for _, h in ipairs(hits) do score = score - h.damage * SELF_W * (weapon.ai_mult or 1) end
   end
-  if (weapon.ammo or 0) < 0 then score = score - SHELL_PENALTY end
+  if (weapon.ammo or 0) < 0 then score = score - SHELL_PENALTY - shell_bar end
   return score, near
 end
 
@@ -182,6 +190,7 @@ function AI.plan_begin(shooter, all_worms, terrain, wind, difficulty, allowed)
   end
   if #enemies == 0 then return nil end
 
+  shell_bar = 0 -- 每轮从零开始攒：本回合限量弹的最好成绩
   local jobs = {}
   for _, id in ipairs(allowed or { "bazooka" }) do
     local weapon = Weapons.by_id(id)
@@ -229,6 +238,10 @@ function Planner:advance(batch)
                                   self.wind, self.terrain, targets)
       score, near = score_of(weapon, hx, hy, hit, targets, avoid)
     end
+    -- 限量弹的成绩顺带抬高普通炮弹的门限：它要赢，就得**明显**比限量弹好
+    if (weapon.ammo or 0) >= 0 and score > shell_bar then
+      shell_bar = score
+    end
     if not self.best or score > self.best.score then
       self.best = { weapon = weapon, angle = angle, power = power, score = score, near = near }
     end
@@ -240,7 +253,7 @@ function Planner:advance(batch)
       local cfg, b = self.cfg, self.best
       self.jobs = jobs_for(b.weapon, b.angle - cfg.a_step, b.angle + cfg.a_step, 2,
                            math.max(0.15, b.power - cfg.p_step),
-                           math.min(1.0, b.power + cfg.p_step), 0.02)
+                           Physics.clamp_power(b.power + cfg.p_step), 0.02)
       self.index, self.phase = 1, 2
       return false
     end
@@ -258,7 +271,7 @@ function Planner:result()
   return {
     weapon = b.weapon,
     angle = b.angle + phos.sys.random(-aj, aj) / 10,
-    power = math.max(0.1, math.min(1.0, b.power + phos.sys.random(-pj, pj) / 1000)),
+    power = Physics.clamp_power(b.power + phos.sys.random(-pj, pj) / 1000),
     near = b.near,
   }
 end

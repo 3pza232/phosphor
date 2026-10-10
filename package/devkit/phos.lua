@@ -404,6 +404,36 @@ function phos.text.truncate(text, columns) end
 ---@return string
 function phos.text.fit(text, columns) end
 
+---按显示宽度**右补空格**（不足才补，超了原样返回）。定宽排版的对齐用它，
+---不要用 string.format 的 %-Ns：那个按字节数补，"队友交给 AI" 这类中英混排会整列歪
+---@param text string
+---@param columns integer
+---@return string
+function phos.text.pad(text, columns) end
+
+---按显示宽度**左补空格**（数字/取值右对齐时用）
+---@param text string
+---@param columns integer
+---@return string
+function phos.text.pad_left(text, columns) end
+
+---多语言取值：文案属于卡带内容（主机不替卡带翻译），这里只提供"取当前语言那一条"
+---的机制。缺项一律回落中文，卡带不必为漏翻写防御代码。
+---@class phos.lang
+phos.lang = {}
+
+---从 `{ zh = "普通炮弹", en = "SHELL" }` 里取当前语言那一条；缺项回落中文
+---@param fields table zh / en 两条
+---@return string
+function phos.lang.pick(fields) end
+
+---从 `{ zh = {…}, en = {…} }` 里取当前语言的**那张表**（返回引用，不拷贝）。
+---用法：`local Text = { zh = {...}, en = {...} }`，每帧 `local t = phos.lang.dict(Text)` ——
+---每帧取一次就能跟着设置里的语言切换即时变，不必自己缓存
+---@param fields table zh / en 两张表
+---@return table
+function phos.lang.dict(fields) end
+
 ---包内资源读取（路径相对包根；覆盖层 Mod 生效时读到替换后的内容）
 ---@class phos.assets
 phos.assets = {}

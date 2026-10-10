@@ -11,16 +11,17 @@ local Text = {
     score = "得分", best = "最高", level = "关卡", lives = "生命",
     ghosts = "幽灵", legend = "图例", dot = "· 豆子", power = "● 能量豆",
     fruit = "♥ 水果", keys = "操作", move = "[←↑↓→] 移动",
-    scared = "吓退", eaten = "回巢",
+    scared = "吓退", eaten = "回巢", pause = "暂停",
   },
   en = {
     score = "SCORE", best = "BEST", level = "LEVEL", lives = "LIVES",
     ghosts = "GHOSTS", legend = "LEGEND", dot = "· dot", power = "● power",
     fruit = "♥ fruit", keys = "KEYS", move = "[←↑↓→] MOVE",
-    scared = "scared", eaten = "eaten",
+    scared = "scared", eaten = "eaten", pause = "PAUSE",
   },
 }
-local function L() return Text[phos.sys.language()] or Text.zh end
+-- 取当前语言那一列：查表规则在引擎里（`phos.lang.dict`，缺 en 回落中文）
+local function L() return phos.lang.dict(Text) end
 
 local GHOST_NAMES = {
   blinky = { zh = "布林基", en = "Blinky" },
@@ -60,7 +61,8 @@ function Panel.draw(game, cart_t)
   for i, g in ipairs(status.ghosts) do
     local y = 16 + i
     local name = GHOST_NAMES[g.name]
-    local label = name and (name[phos.sys.language()] or name.en) or g.name
+    -- 名字是 { zh = …, en = … } 记录：取值与"缺 en 回落中文"都交给引擎
+    local label = name and phos.lang.pick(name) or g.name
     local col = C[GHOST_COLORS[g.name]] or C.white
     local mark = "▲"
     if g.eaten then
@@ -80,8 +82,7 @@ function Panel.draw(game, cart_t)
 
   P.print(1, ph - 3, t.keys, C.gray)
   P.print(1, ph - 2, t.move, C.white)
-  P.print(1, ph - 1, "[" .. phos.input.key_name("start") .. "] " ..
-                      (phos.sys.language() == "en" and "PAUSE" or "暂停"), C.white)
+  P.print(1, ph - 1, "[" .. phos.input.key_name("start") .. "] " .. t.pause, C.white)
 end
 
 return Panel

@@ -250,6 +250,16 @@ void register_host_api(sol::state& lua, HostContext& host) {
         if (text::display_width(s) <= cols) return s;
         return text::truncate(s, cols - 1) + "…";
     };
+    // 定宽排版的对齐：按**显示宽度**补空格。不要用 string.format 的 %-Ns —— 那个按
+    // 字节数补，"队友交给 AI" 这类中英混排会整列歪掉（汉字 3 字节、字母 1 字节）
+    text_api["pad"] = [](const std::string& s, int cols) {
+        const int w = text::display_width(s);
+        return w >= cols ? s : s + std::string(static_cast<size_t>(cols - w), ' ');
+    };
+    text_api["pad_left"] = [](const std::string& s, int cols) {
+        const int w = text::display_width(s);
+        return w >= cols ? s : std::string(static_cast<size_t>(cols - w), ' ') + s;
+    };
 
     // --- phos.input ---
     sol::table input = phos.create_named("input");
@@ -366,6 +376,32 @@ void register_host_api(sol::state& lua, HostContext& host) {
     };
     sys["version"] = []() { return kVersion; };
     sys["product"] = []() { return kProductName; };
+
+    // --- phos.lang（多语言取值） ---
+    // 文案属于卡带内容：主机不替卡带翻译，只把"取当前语言那一条"收成机制 ——
+    // 否则每张卡带都要把同一套查表写法（`x[lang] or x.zh`）抄一遍。
+    // 缺项一律**回落中文**（与 manifest 的 desc 同一规则），卡带不必为漏翻写防御代码
+    sol::table lang = phos.create_named("lang");
+
+    // 单条：phos.lang.pick{ zh = "普通炮弹", en = "SHELL" }
+    lang["pick"] = [&host](const sol::table& fields) -> std::string {
+        const char* cur = (host.language == "en") ? "en" : "zh";
+        sol::object v = fields[cur];
+        if (!v.is<std::string>()) v = fields["zh"];
+        if (!v.is<std::string>()) v = fields["en"];
+        return v.is<std::string>() ? v.as<std::string>() : std::string();
+    };
+
+    // 整张表：local Text = { zh = {...}, en = {...} }，用时 `local t = phos.lang.dict(Text)`。
+    // 返回的是原表里的那一张（引用，不拷贝），所以**每帧取一次**就能跟着设置里的
+    // 语言切换即时变，卡带不必自己缓存或刷新
+    lang["dict"] = [&host, &lua](sol::table fields) -> sol::table {
+        const char* cur = (host.language == "en") ? "en" : "zh";
+        sol::table dict = fields[cur];
+        if (!dict.valid()) dict = fields["zh"];
+        if (!dict.valid()) dict = fields["en"];
+        return dict.valid() ? dict : lua.create_table();  // 两列都没写：给空表，别让卡带崩
+    };
 
     // --- phos.cart：卡带自己的身份（来自 manifest.lua） ---
     // 有了它，卡带不必把标题之类的身份再抄一份到 Lua 里：作者在 manifest.lua 改

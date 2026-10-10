@@ -78,9 +78,9 @@ if(MINGW)
 endif()
 
 # --- 程序包组装：exe + package/ 骨架 ---
-# 每次构建都执行。内容目录（卡带 / devkit / 皮肤 / mod）走"联接源码"而不是复制：
+# 每次构建都执行：内容目录（卡带 / devkit / 皮肤 / mod）由源码**同步**（合并式复制）过来：
 # 复制出来的那份是快照，改卡带后不重新构建就仍在玩旧副本——卡带的承诺是即放即玩。
-# 详见 tools/sync_package.cmake（建不成联接时退回复制，那条路才需要重新构建）。
+# 详见 tools/sync_package.cmake。改了源码后重新构建一次即可（也可直接改运行目录里的副本）。
 add_custom_target(assemble_package ALL
     COMMAND ${CMAKE_COMMAND}
         -DSRC=${CMAKE_SOURCE_DIR}/package

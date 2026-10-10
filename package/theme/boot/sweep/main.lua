@@ -6,12 +6,12 @@ local t = 0
 local W, H = 80, 45
 local BLOCKS = 12
 
--- 文案跟随机器界面语言（与卡带同一套约定：phos.sys.language()，新增语言加一列）
+-- 文案跟随机器界面语言（与卡带同一套约定：phos.lang.dict，新增语言加一列）
 local L = {
   zh = { loading = "正在装入卡带", block = "区块 %02d / %02d", ready = "卡槽就绪" },
   en = { loading = "LOADING CART", block = "BLOCK %02d / %02d", ready = "SLOT READY" },
 }
-local text = L[phos.sys.language()] or L.zh
+local text = phos.lang.dict(L)
 
 local started = false
 local finished = false
@@ -81,8 +81,9 @@ function draw()
     if math.floor(t * 12) % 2 == 0 then
       S.put(head_x, bar_y, ">", C.white)
     end
-    -- 头部微光
-    S.put(head_x - 1, bar_y, "=", C.accent)
+    -- 头部微光：用**调色板**里的颜色。皮肤配色（accent 之类）是主机界面专用的，
+    -- 卡带与内容包拿不到也不该拿——那会把机台配色带进游戏画面
+    S.put(head_x - 1, bar_y, "=", C.cyan)
   end
 
   -- 百分比

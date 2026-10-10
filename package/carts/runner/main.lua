@@ -21,7 +21,8 @@ local Text = {
     day = "day", night = "night",
   },
 }
-local function L() return Text[phos.sys.language()] or Text.zh end
+-- 取当前语言那一列：查表规则在引擎里（`phos.lang.dict`，缺 en 回落中文）
+local function L() return phos.lang.dict(Text) end
 
 local GROUND = 30                   -- 地面线所在行（0 基）
 -- 小恐龙：7 宽 4 高，'#' 实心、'.' 透明。剪影由"头+吻（右上）、背、尾（左）、两条腿"构成；

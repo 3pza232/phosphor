@@ -8,8 +8,7 @@ local Camera = {}
 Camera.__index = Camera
 
 -- 视口尺寸（子格）**由调用方给**，不能写死：声明侧栏后内容区会变窄，
--- 写死 160 的话右侧那一截会被主机裁掉——画得再多玩家也看不见，
--- 看上去就像"敌人在地图外面"（踩过这个坑）
+-- 写死 160 的话右侧那一截会被主机裁掉——画得再多玩家也看不见
 Camera.VIEW_W, Camera.VIEW_H = 160, 90
 
 function Camera.new(world_w, world_h, view_w, view_h)
@@ -36,11 +35,6 @@ function Camera:center(wx, wy)
   self:clamp()
 end
 
-function Camera:pan(dx, dy)
-  self.x, self.y = self.x + dx, self.y + dy
-  self:clamp()
-end
-
 -- 视口左上角对应的世界子格坐标
 function Camera:origin() return self.x, self.y end
 
@@ -49,11 +43,6 @@ function Camera:origin() return self.x, self.y end
 -- 而 Lua 的 // 在两个浮点数之间仍返回浮点，主机写入格子的接口只收整数
 function Camera:cell_of(wx, wy)
   return math.floor((wx - self.x) / 2), math.floor((wy - self.y) / 2)
-end
-
-function Camera:visible(wx, wy)
-  return wx >= self.x and wx < self.x + self.vw
-     and wy >= self.y and wy < self.y + self.vh
 end
 
 return Camera

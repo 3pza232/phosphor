@@ -16,6 +16,19 @@ Worms.WALK_SPEED = 10      -- 子格/秒（= 5 格/秒）
 -- 够翻过一块台阶、够离开脚下的爆炸圈，但不足以变成"飞"
 Worms.JUMP_VY = -12
 Worms.HIT_RADIUS = 3       -- 被弹药命中的判定半径（子格）
+-- 阵亡爆炸：谁倒下都会炸一下（最高 50），波及身边单位 —— 于是"残血扎堆"要付代价。
+-- 但**伤害不在这里结算**：只把死讯报给上层（on_death），由它排队统一处理。
+-- 在伤害函数里直接炸的话，"爆炸→死人→再爆炸"会一层层递归进去，
+-- 而且爆炸还要特效、浮字与声音，那些都属于表现层
+Worms.DEATH_RADIUS, Worms.DEATH_DAMAGE = 8, 50
+
+-- 洗牌：出生站位与队内出场顺序都要随机（用主机的 RNG，跟种子一起可复现）
+local function shuffle(t)
+  for i = #t, 2, -1 do
+    local j = phos.sys.random(1, i)
+    t[i], t[j] = t[j], t[i]
+  end
+end
 
 local function make(team, x, y)
   return {
@@ -40,6 +53,10 @@ end
 -- counts 是 { 我方人数, 敌方人数 }（传一个数字表示两边一样多）。
 -- 每个人数都走 terrain:spawn_spot —— 它会**先把脚下压平**再放虫，
 -- 所以"随机地形 + 出生即卡死在石头里"这件事不会发生。
+--
+-- 站位与**队内出场顺序**都洗牌。按序号从左到右排的话，谁站在哪、第几个上场
+-- 都是开局就写死的："对面的第一只永远在最左边"这种规律不该存在，
+-- 它让第一炮的目标变得可预测，也让每局开局的走位一模一样
 function Worms.new(terrain, counts)
   local self = setmetatable({}, Worms)
   self.terrain = terrain
@@ -51,14 +68,29 @@ function Worms.new(terrain, counts)
     n = { counts, counts }
   end
   for team = 1, 2 do
+    -- 先把这一队的三分之一切成等距的坑位（保证两两之间留出空地，不会叠在一起），
+    -- 再把坑位洗牌：位置随机，但间距仍然均匀
     local span = terrain.W // 3
+    local base = (team == 1) and 0 or (terrain.W - span)
+    local step = span // (n[team] + 1)
+    local slots = {}
     for i = 1, n[team] do
-      -- 在各自的三分之一里均匀铺开，两两之间留出空地，免得叠在一起
-      local step = span // (n[team] + 1)
-      local x = (team == 1) and (i * step) or (terrain.W - i * step)
-      local gx, gy = terrain:spawn_spot(x)
-      if gx then self.list[#self.list + 1] = make(team, gx, gy) end
+      slots[i] = base + i * step
     end
+    shuffle(slots)
+    local squad = {}
+    for i = 1, n[team] do
+      local gx, gy = terrain:spawn_spot(slots[i])
+      -- 坑位落在水上时 spawn_spot 不给位置：换几处随机点再试，别把这只虫弄丢
+      for _ = 1, 4 do
+        if gx then break end
+        gx, gy = terrain:spawn_spot(phos.sys.random(base + 4, base + span - 4))
+      end
+      if gx then squad[#squad + 1] = make(team, gx, gy) end
+    end
+    -- 出场顺序再洗一次：站位随机与上场顺序是两件独立的事
+    shuffle(squad)
+    for _, w in ipairs(squad) do self.list[#self.list + 1] = w end
   end
   return self
 end
@@ -140,7 +172,7 @@ function Worms:update(dt)
         if gy then w.y = gy end
       end
       if w.y >= self.terrain.WATER_Y then
-        w.hp, w.alive = 0, false
+        self:kill(w)
         events[#events + 1] = { kind = "drowned", worm = w }
       end
     end
@@ -148,14 +180,22 @@ function Worms:update(dt)
   return events
 end
 
+-- 死亡裁决的**唯一入口**：标记阵亡，并把死讯报给上层（阵亡爆炸）。
+-- 直伤与落海都从这里过，所以"谁死了"只有一个地方说了算
+function Worms:kill(w)
+  if not w.alive then return end
+  w.hp, w.alive = 0, false
+  if self.on_death then self.on_death(w) end
+end
+
 function Worms:damage(w, amount)
   if not w.alive or amount <= 0 then return end
   w.hp = w.hp - amount
-  if w.hp <= 0 then w.hp, w.alive = 0, false end
+  if w.hp <= 0 then self:kill(w) end
 end
 
--- 回血：上限 Worms.MAX_HP（多治的那部分不浪费成负数）。返回**实际回了多少**，
--- 上层据此决定要不要冒 "+25" 浮字——血满时不该冒出数字来骗人
+-- 回血：上限 Worms.MAX_HP。返回**实际回了多少**，上层据此决定要不要冒浮字
+-- （血满时为 0，于是不会有数字）
 function Worms:heal(w, amount)
   if not w.alive or amount <= 0 then return 0 end
   local before = w.hp

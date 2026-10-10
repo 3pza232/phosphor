@@ -1,6 +1,8 @@
 -- RUST CABINET：废弃游戏厅的机台
 local W = 84
 
+-- 铭牌只用 ASCII：皮肤脚本跑在**内容包沙箱**里（只有 phos.text.width/truncate），
+-- 拿不到界面语言，所以正文一律不写中文——与其他两款皮肤保持一致
 local function plate(text)
   local inner = 80
   if phos.text.width(text) > inner then text = phos.text.truncate(text, inner) end
@@ -13,7 +15,7 @@ return {
   right = "|:",
   top = {
     "##" .. string.rep(":..:", 20) .. "##",
-    plate("R U S T   C A B I N E T          ***  维修中  SINCE 1987  ***"),
+    plate("R U S T   C A B I N E T          ***  OUT OF ORDER  SINCE 1987  ***"),
     "##" .. string.rep(":..:", 20) .. "##",
   },
   bottom = {

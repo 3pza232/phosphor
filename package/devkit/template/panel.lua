@@ -8,12 +8,12 @@
 
 local Panel = {}
 
--- 侧栏自己的文案（与 main.lua 的文案表互不依赖，改这里不会牵动画面）
+-- 侧栏自己的文案（与 main.lua 的文案表互不依赖，改这里不会牵动画面）。
+-- 取值同样走引擎的 phos.lang.dict，见 main.lua 顶部那段说明
 local Text = {
   zh = { score = "得分", keys = "操作", act = "动作" },
   en = { score = "SCORE", keys = "KEYS", act = "ACT" },
 }
-local function L() return Text[phos.sys.language()] or Text.zh end
 
 ---@param game table  main.lua 传进来的规则对象
 ---@param cart table  卡带身份（phos.cart.info()）
@@ -22,7 +22,7 @@ function Panel.draw(game, cart)
   local pw, ph = P.size()
   if pw == 0 then return end        -- 没声明侧栏（或被 mod 关掉）：什么都不画
 
-  local t = L()
+  local t = phos.lang.dict(Text)
   P.clear()
 
   P.print(1, 1, phos.text.fit(cart.name, pw - 2), C.yellow)

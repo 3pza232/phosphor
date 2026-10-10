@@ -22,7 +22,8 @@ local Text = {
   zh = {over = "游戏结束", restart = "按 %s 重开"},
   en = {over = "GAME OVER", restart = "press %s to restart"},
 }
-local function L() return Text[phos.sys.language()] or Text.zh end
+-- 取当前语言那一列：查表规则在引擎里（`phos.lang.dict`，缺 en 回落中文）
+local function L() return phos.lang.dict(Text) end
 
 local game
 

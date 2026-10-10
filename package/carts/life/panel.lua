@@ -26,7 +26,8 @@ local Text = {
         step = "step", run_pause = "run/pause", clear = "clear", move = "arrows move",
         menu = "ESC pause"},
 }
-local function L() return Text[phos.sys.language()] or Text.zh end
+-- 取当前语言那一列：查表规则在引擎里（`phos.lang.dict`，缺 en 回落中文）
+local function L() return phos.lang.dict(Text) end
 
 -- 内部状态 -> 面板标签（底部遥测行仍报英文 RUNNING/PAUSED，与主机同一套政策）
 local function state_label(running)

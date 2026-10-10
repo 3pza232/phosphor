@@ -17,7 +17,8 @@ local Music = require("music")
 
 -- 界面文案：跟随机器的界面语言（新增语言只需加一列）
 local Text = {zh = {zone = "第 7 区"}, en = {zone = "ZONE 7"}}
-local function L() return Text[phos.sys.language()] or Text.zh end
+-- 取当前语言那一列：查表规则在引擎里（`phos.lang.dict`，缺 en 回落中文）
+local function L() return phos.lang.dict(Text) end
 
 -- 棋盘在内容区中的位置：留出边框与顶部标题
 local OX, OY = 2, 3

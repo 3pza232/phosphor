@@ -11,6 +11,7 @@
 --
 -- 稀有性只有一个旋钮：ammo ——"这只虫子一共能用几次"（-1 = 无限）。
 -- **弹药按虫算**，不跟队友共享：同一件武器，你的 5 发不会被队友用掉。
+-- 空投补给一箱给几发，由 supply 给（默认 1；霰弹/机枪这类弱弹给 2）。
 --
 -- kind 决定走哪条飞行逻辑：
 --   ballistic 标准弹道        grenade 引信 + 弹跳      spread 多枚炮弹散射
@@ -21,6 +22,9 @@ local Physics = require("physics")
 
 local Weapons = {}
 
+-- 侧栏武器格只有 9 列宽（一格 = 图标 + 短名 + 余弹），所以 en 的 short 一律压到
+-- 6 列以内：中文短名是 2 字（4 列）天然够用，英文照抄全名就会把余弹挤出格子
+--
 -- 普通炮弹排第一：它是"打光了也有得打"的兜底，也是默认选择
 Weapons.INFINITE = -1
 
@@ -28,23 +32,23 @@ Weapons.LIST = {
   { id = "shell", name = { zh = "普通炮弹", en = "SHELL" }, short = { zh = "普通", en = "SHELL" },
     kind = "ballistic", damage = 10, radius = 3, wind = 1.0,
     ammo = Weapons.INFINITE },
-  { id = "bazooka", name = { zh = "火箭筒", en = "BAZOOKA" }, short = { zh = "火箭", en = "BAZOOKA" },
+  { id = "bazooka", name = { zh = "火箭筒", en = "BAZOOKA" }, short = { zh = "火箭", en = "ROCKET" },
     kind = "ballistic", damage = 50, radius = 5, wind = 1.0, ammo = 4 },
-  { id = "grenade", name = { zh = "手雷", en = "GRENADE" }, short = { zh = "手雷", en = "GRENADE" },
+  { id = "grenade", name = { zh = "手雷", en = "GRENADE" }, short = { zh = "手雷", en = "NADE" },
     kind = "grenade", damage = 45, radius = 5, wind = 0.6, fuse = 3.0, ammo = 4 },
   -- 散射系：**多枚普通炮弹**按总散射角打出去（有抛物线、受风，不是瞬时射线）。
   -- 平衡点就在命中率上：全中很值钱，散开后通常只中两三枚，所以单发期望只能按
   -- "两三枚"折算（ai_mult 就是给 AI 用的这个折扣）。dig 是打在墙上挖多大的洞，
   -- 与 radius（擦身溅射半径）不是一回事
   -- 霰弹：5 枚 11 伤、10° 总散射 —— 敢靠近才有全中
-  { id = "shotgun", name = { zh = "霰弹枪", en = "SHOTGUN" }, short = { zh = "霰弹", en = "SHOTGUN" },
+  { id = "shotgun", name = { zh = "霰弹枪", en = "SHOTGUN" }, short = { zh = "霰弹", en = "SHOT" },
     kind = "spread", shells = 5, spread = 10, damage = 11, radius = 3, wind = 1.0,
-    dig = 1, ammo = 3, ai_mult = 3 },
+    dig = 1, ammo = 3, ai_mult = 3, supply = 2 },
   -- 机枪：同一套散射角度，但**连发**——burst 是每发之间的间隔（秒）。
   -- 8 枚小威力炮弹挤在 8° 内，边打边推进，压制与推人用
   { id = "mg", name = { zh = "机关枪", en = "MACHINE GUN" }, short = { zh = "机枪", en = "MG" },
     kind = "spread", shells = 8, spread = 8, burst = 0.1, damage = 8, radius = 1, wind = 1.0,
-    dig = 0, ammo = 3, ai_mult = 3 },
+    dig = 0, ammo = 3, ai_mult = 3, supply = 2 },
   -- 治疗弹：打中**自己队**的单位回血（敌人治敌人、队友治队友），打在对面身上什么也不发生。
   -- 不带伤害、不挖地形——它是"道具"，不是武器。回 60 是照默认 100 血给的：
   -- 一发能顶住一轮集火，但救不回已被打残两次的人
@@ -53,11 +57,11 @@ Weapons.LIST = {
   -- 地形弹：不伤人不挖地，落点**长出一块圆形地形**（半径 10 子格 ≈ 5 个字符格高）。
   -- 用法是造掩体、垫高脚、或者干脆把对面的直线通路堵死
   { id = "terrain", name = { zh = "地形弹", en = "TERRAIN SHELL" },
-    short = { zh = "地形", en = "TERRAIN" },
+    short = { zh = "地形", en = "MOUND" },
     kind = "ballistic", raise = 10, damage = 0, radius = 0, wind = 1.0, ammo = 2 },
-  -- 天基炮：落点先标记 2 秒，再从天而降一束粗光柱持续 3 秒，每 0.5 秒结算 15 伤害。
+  -- 天基炮：落点先标记 2 秒，再从天而降一束粗光柱持续 3 秒，每 0.5 秒结算一次伤害。
   -- 它打的是**位置**而不是人——逼对面离开掩体、或者断掉一条必经之路
-  { id = "orbital", name = { zh = "天基炮", en = "ORBITAL" }, short = { zh = "天基", en = "ORBITAL" },
+  { id = "orbital", name = { zh = "天基炮", en = "ORBITAL" }, short = { zh = "天基", en = "ORBIT" },
     kind = "ballistic", wind = 1.0, damage = 0, radius = 0, ammo = 1,
     orbital = { delay = 2.0, life = 3.0, tick = 0.5, damage = 18, width = 6 } },
   { id = "barrel", name = { zh = "燃油桶", en = "FUEL BARREL" }, short = { zh = "燃油", en = "BARREL" },
@@ -67,16 +71,16 @@ Weapons.LIST = {
   { id = "laser", name = { zh = "激光射线", en = "LASER" }, short = { zh = "激光", en = "LASER" },
     kind = "laser", damage = 22, radius = 1, wind = 0,
     speed = 900, width = 1, ammo = 2 },
-  { id = "missile", name = { zh = "导弹", en = "MISSILE" }, short = { zh = "导弹", en = "MISSILE" },
+  { id = "missile", name = { zh = "导弹", en = "MISSILE" }, short = { zh = "导弹", en = "HOMING" },
     kind = "track", damage = 45, radius = 4, wind = 0, turn_rate = 60, ammo = 2 },
-  { id = "cluster", name = { zh = "集束炸弹", en = "CLUSTER" }, short = { zh = "集束", en = "CLUSTER" },
+  { id = "cluster", name = { zh = "集束炸弹", en = "CLUSTER" }, short = { zh = "集束", en = "BOMBS" },
     -- ai_mult 只用于 AI 的**评分**：它预演的是母弹落点，看不到 5 枚子弹药，
     -- 不放大就会被 AI 当成"15 伤害的弱弹"。物理本身没被改动
     kind = "multi", damage = 18, radius = 3, wind = 1.2, splits = 5,
     ai_mult = 3, ammo = 2 },
   { id = "super", name = { zh = "超级弹药", en = "SUPER" }, short = { zh = "超级", en = "SUPER" },
     kind = "ballistic", damage = 100, radius = 9, wind = 0.4, ammo = 1 },
-  { id = "teleport", name = { zh = "传送", en = "TELEPORT" }, short = { zh = "传送", en = "TELEPORT" },
+  { id = "teleport", name = { zh = "传送", en = "TELEPORT" }, short = { zh = "传送", en = "WARP" },
     kind = "utility", damage = 0, radius = 0, ammo = 2 },
 }
 

@@ -4,7 +4,7 @@ WORMS —— PHOSPHOR 卡带骨架
 建卡（标题、作者创建时就能定）：
     phosphor.exe --new carts/mygame --id mygame --name "我的游戏" --author "你"
 
-运行（改完直接跑，卡带**不需要**编译；内容目录与源码是联接的）：
+运行（改完直接跑，卡带**不需要**编译；内容目录由构建时从源码同步而来）：
     phosphor.exe --cart carts/mygame
 自测（无窗口跑 N 帧并把字符画面打出来，适合脚本与 agent）：
     phosphor.exe --cart carts/mygame --headless --frames 60 --dump-screen
