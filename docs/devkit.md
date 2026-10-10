@@ -217,7 +217,10 @@ phosphor --cart carts/mygame --control 7654 --headless
 
 ```lua
 function debug_state()
-  return { score = score, alive = alive, head_x = ..., food_x = ... }
+  return { score = score, alive = alive,
+           -- 坐标一律给全 (x, y)：只给 x 会逼 agent 去读画面反推地形
+           head_x = ..., head_y = ..., food_x = ..., food_y = ... }
+  -- 有多只实体（敌人、子弹、单位）时写成数组，一条实体一张表
 end
 ```
 

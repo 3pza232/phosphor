@@ -21,6 +21,9 @@ enum class Msg {
     shelf_empty,
     shelf_empty_hint,
     shelf_broken,
+    shelf_search_title,
+    shelf_search_hint,
+    shelf_search_empty,
 
     // 设置界面
     settings_title,

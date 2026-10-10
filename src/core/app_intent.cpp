@@ -51,6 +51,12 @@ void App::handle_escape() {
             log::info("resume");
             break;
         case ShellMode::shelf:
+            // 搜索框正在输入时，Esc 只清空搜索并收起输入框。架面上的 Esc 原本是关机，
+            // 玩家正低头打字时被关掉机器是不可接受的——这个键位是刻意抢过来的
+            if (shell_.shelf_search().editing()) {
+                shell_.cancel_shelf_search();
+                break;
+            }
             log::info("power off");
             quit_ = true;
             break;

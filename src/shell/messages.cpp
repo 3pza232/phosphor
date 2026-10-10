@@ -16,11 +16,15 @@ struct Entry {
 constexpr std::array<Entry, static_cast<size_t>(Msg::count)> kTable{{
     // 卡带架
     {"卡带架", "CARTRIDGE SHELF"},
-    {"[Enter] 插入   [F2] 设置   [Esc] 关机", "[Enter] INSERT   [F2] SETTINGS   [Esc] POWER OFF"},
+    {"[Enter] 插入   [F] 搜索   [F2] 设置   [Esc] 关机",
+     "[Enter] INSERT   [F] SEARCH   [F2] SETTINGS   [Esc] POWER OFF"},
     {"信息", "INFO"},
     {"（无卡带）", "(no cartridges)"},
     {"把 .phos 卡带放进 carts/ 后重启", "drop .phos carts into carts/ and restart"},
     {"  [损坏]", "  [BROKEN]"},
+    {"搜索卡带", "SEARCH CARTS"},
+    {"输入即筛选   [Enter] 确认   [Esc] 清空并退出", "type to filter   [Enter] ok   [Esc] clear"},
+    {"无匹配", "no match"},
 
     // 设置界面
     {"设置", "SETTINGS"},

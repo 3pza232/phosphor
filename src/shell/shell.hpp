@@ -8,6 +8,7 @@
 #include "core/screen.hpp"
 #include "core/skin.hpp"
 #include "core/ui.hpp"
+#include "shell/shelf_search.hpp"
 #include "shell/shelf_view.hpp"
 #include "shell/tape_view.hpp"
 
@@ -126,6 +127,11 @@ public:
     int music_volume() const { return music_volume_; }
     int sfx_volume() const { return sfx_volume_; }
 
+    /// 卡带架搜索的只读状态：架面绘制与 App 的 Esc 路由都要看它
+    const ShelfSearch& shelf_search() const { return shelf_search_; }
+    /// 清空查询串并收起搜索框（Esc 在输入框内的语义，见 App::handle_escape）
+    void cancel_shelf_search() { shelf_search_.cancel(); }
+
     std::string cart_path_at(int index) const;
     /// 卡带 id（"最近打开"记录就按它匹配；坏卡带的 id 可能为空）
     std::string cart_id_at(int index) const;
@@ -156,8 +162,15 @@ private:
     void draw_chrome(Screen& screen, const std::string& title,
                      const std::string& right_text) const;
     void draw_footer(Screen& screen, const std::string& hints) const;
-    /// 卡带架视图（渲染逻辑见 shell/shelf_view.cpp）
-    ShelfView shelf_view() const;
+    /// 搜索命中的卡带下标（查询串为空即全部）。架面绘制与光标移动共用同一份判据，
+    /// 两处各算一次就会出现"能选到但看不见"这类错位
+    std::vector<int> shelf_matches() const { return shelf_search_.match(carts_); }
+    /// 把光标收进命中集：查询串一变，原光标就可能不在结果里了。不收的后果很具体——
+    /// 画面上高亮着第一条（视图找不到光标就退回第一条），而 Enter 插进去的却是旧光标那张
+    void shelf_sync_cursor();
+    /// 卡带架视图（渲染逻辑见 shell/shelf_view.cpp）。传的是**过滤后**的那一串：
+    /// 视图不必知道有搜索这回事，它只要一串卡带与一个光标
+    ShelfView shelf_view(const std::vector<CartInfo>& shown, int cursor) const;
 
     Skin skin_;
     ui::Style style_;
@@ -170,6 +183,7 @@ private:
     int shelf_cursor_ = 0;
     float shelf_pos_ = 0.0f;
     ShelfStyle shelf_style_ = ShelfStyle::window;
+    ShelfSearch shelf_search_;
     int settings_cursor_ = 0;
     int pause_cursor_ = 0;
 

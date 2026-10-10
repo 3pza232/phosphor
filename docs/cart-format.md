@@ -205,16 +205,24 @@ phos.save.import(code)           -- 从磁带码恢复（整份替换）；非�
 ### 可选：向 agent 暴露玩法状态
 
 卡带可以定义一个全局函数 `debug_state()`，返回一张表；主机在控制通道的
-`state.query` 里会把它一并带上（表内可含 number / string / boolean 与一层嵌套表）：
+`state.query` 里会把它一并带上。表内可含 number / string / boolean、数组与嵌套表
+（主机按**深度 4** 序列化，纯数组会写成真正的 JSON 数组）：
 
 ```lua
 function debug_state()
-  return { score = score, alive = alive, level = level, hp = hp }
+  return {
+    score = score, alive = alive, level = level,
+    -- 逐实体的状态写成数组、一条实体一张表：agent 拿到的是结构化坐标，
+    -- 不必去解析拼接出来的字符串
+    units = { { x = 12, y = 34, hp = 100 }, { x = 56, y = 78, hp = 40 } },
+  }
 end
 ```
 
 - 好处：自动化测试与 agent 直接读状态，**不必从字符画面反推**；
   不定义也完全不影响卡带运行（它只是可选的观测面）
+- **要报坐标就报全 `(x, y)`**：只给 x 是个陷阱 —— agent 想算"炮弹落在哪"，
+  还得去读画面反推地形高度，又慢又不准。顺手带上脚下那一列的地面高度更好用
 - 与侧栏面板一样，这是"卡带愿意展示什么"的决定，主机不强制
 
 ## 九、版本兼容

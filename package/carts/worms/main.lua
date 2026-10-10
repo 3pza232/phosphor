@@ -1933,7 +1933,8 @@ end
 
 -- agent / 自测观察口。
 -- 注意：菜单态下这局还没开始，projectiles 之类的容器都还是 nil，
--- 所以一律用 `(x or {})` 取值——观察口自己抛异常，agent 就什么都看不到了
+-- 所以一律用 `(x or {})` 取值——观察口自己抛异常，agent 就什么都看不到了。
+-- 逐只速查见下面的 `units`：位置、血量、瞄准、归谁操作与队长标记都在里面
 function debug_state()
 	local w = current_worm()
 	local list = (worms and worms.list) or {}
@@ -2069,20 +2070,53 @@ function debug_state()
 		local side = (m.team == 1) and out.hp1 or out.hp2
 		side[#side + 1] = m.alive and math.floor(m.hp) or -1
 	end
-	-- 每只虫的坐标：世界宽高 + 各队 x 范围。
-	-- "某个单位在地图外/看不见"这类问题，有这两个数就不用猜了
-	out.world_w, out.world_h = terrain and terrain.W or 0, terrain and terrain.H or 0
-	local x1min, x1max, x2min, x2max = 1e9, -1e9, 1e9, -1e9
-	for _, m in ipairs(list) do
-		if m.team == 1 then
-			x1min, x1max = math.min(x1min, m.x), math.max(x1max, m.x)
-		else
-			x2min, x2max = math.min(x2min, m.x), math.max(x2max, m.x)
+	-- 每只虫**逐只**的位置与状态。算弹道、判命中都要 (x, y)：只给 x 的话，agent 想知道
+	-- 炮弹落在哪就得去读地图反推地形（我就这么绕过一大圈，还打偏了）。数组顺序 =
+	-- 出场顺序 = worm_id/order1/order2 的下标，于是"第 i 只虫"在所有字段里指的是同一只。
+	-- ground 是它脚下那一列的地表高度：炮口与落点都以它为基准，比"只给个 y"更好用
+	out.units = {}
+	for i, m in ipairs(list) do
+		out.units[#out.units + 1] = {
+			id = i,
+			team = m.team,
+			alive = m.alive,
+			x = math.floor(m.x),
+			y = math.floor(m.y),
+			ground = surface_at(math.floor(m.x)),
+			hp = m.alive and math.floor(m.hp) or -1,   -- 与 hp1/hp2 同口径：阵亡报 -1
+			angle = math.floor(m.angle or 0),
+			facing = m.facing or 0,
+			power = math.floor((m.power or 0) * 100),  -- AI 的虫可能还没存过力度
+			human = worm_is_human(m) and 1 or 0,       -- 归谁操作：1 = 玩的人，0 = 电脑
+			leader = (m == captain) and 1 or 0,        -- 队长：队友交给 AI 时唯一还归玩家的
+		}
+	end
+	-- 地表剖面：每 GROUND_STEP 个子格取一次高度。**这是让 agent 能自己瞄准的那一项** ——
+	-- 光有双方坐标还不够，还得知道中途中地形多高，否则算不出炮弹会不会撞山、落在哪
+	-- （我上一次是去读地图反推的，又慢又不准）。与 units 同样是数组：深度 4 序列化下，
+	-- 纯数组就是真正的 JSON 数组，agent 直接当列表读
+	local GROUND_STEP = 8
+	out.ground_step = GROUND_STEP
+	out.ground = {}
+	if terrain then
+		for gx = 0, terrain.W - 1, GROUND_STEP do
+			out.ground[#out.ground + 1] = surface_at(gx)
 		end
 	end
-	out.x1 = (x1min > 1e8) and -1 or math.floor(x1min)
-	out.x2 = (x1max < -1e8) and -1 or math.floor(x1max)
-	out.y1 = (x2min > 1e8) and -1 or math.floor(x2min)
-	out.y2 = (x2max < -1e8) and -1 or math.floor(x2max)
+	-- 世界尺寸 + 各队 x 的跨度。字段名直说是什么——早先这组叫 x1/x2/y1/y2，
+	-- 而 y1/y2 装的其实是敌方的 **x**：名字骗人比没有字段更糟
+	out.world_w, out.world_h = terrain and terrain.W or 0, terrain and terrain.H or 0
+	local function x_span(team)
+		local lo, hi = nil, nil
+		for _, m in ipairs(list) do
+			if m.team == team and m.alive then
+				lo = (lo == nil) and m.x or math.min(lo, m.x)
+				hi = (hi == nil) and m.x or math.max(hi, m.x)
+			end
+		end
+		return math.floor(lo or -1), math.floor(hi or -1)
+	end
+	out.team1_x_min, out.team1_x_max = x_span(1)
+	out.team2_x_min, out.team2_x_max = x_span(2)
 	return out
 end

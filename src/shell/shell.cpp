@@ -156,27 +156,55 @@ Shell::Intent Shell::update(const Input& input, float dt) {
     return {};
 }
 
+void Shell::shelf_sync_cursor() {
+    const std::vector<int> matches = shelf_matches();
+    if (matches.empty()) return;   // 没结果：光标留在原处，插卡由"命中集为空"挡住
+    for (int index : matches)
+        if (index == shelf_cursor_) return;   // 还在结果里就不动，免得边打字边跳
+    shelf_cursor_ = matches.front();   // 不在结果里：落到第一条（= 分数最高的那条）
+}
+
 Shell::Intent Shell::update_shelf(const Input& input) {
     Intent intent;
-    const int count = static_cast<int>(carts_.size());
 
-    if (count > 0) {
-        auto step = [count](int cursor, int delta) { return (cursor + delta + count) % count; };
-        if (input.pressed(Key::left))  shelf_cursor_ = step(shelf_cursor_, -1);
-        if (input.pressed(Key::right)) shelf_cursor_ = step(shelf_cursor_, 1);
+    // 输入框开着时，这一帧敲的字符全进查询串：方向键、插卡、搜索键都让位给打字。
+    // 结算放在这里而不是让 App 代为转发——搜索是架面自己的状态
+    if (shelf_search_.editing()) {
+        shelf_search_.apply_text(input.text());
+        if (input.pressed(Key::start)) shelf_search_.commit();
+        // 每敲一个字都要把光标收进新的命中集：不然后面那次 Enter 插的是旧光标那张
+        shelf_sync_cursor();
+        // Esc 在这里不处理：架面上的 Esc 是主机关机键，由 App::handle_escape 统一裁决
+        return intent;
+    }
+    if (input.pressed("f")) shelf_search_.begin_edit();
+
+    // 先对齐再取命中集：下面的插卡用的是 shelf_cursor_，它必须已经在结果里
+    shelf_sync_cursor();
+    const std::vector<int> matches = shelf_matches();
+    if (!matches.empty()) {
+        // 光标在**命中集**里走，不是在整表里走：搜出三只就该一下一只，
+        // 而不是跳过十几个不匹配的
+        auto move = [&matches, this](int delta) {
+            const int n = static_cast<int>(matches.size());
+            int at = 0;
+            for (int i = 0; i < n; ++i)
+                if (matches[static_cast<std::size_t>(i)] == shelf_cursor_) at = i;
+            shelf_cursor_ = matches[static_cast<std::size_t>((at + delta + n) % n)];
+        };
+        if (input.pressed(Key::left))  move(-1);
+        if (input.pressed(Key::right)) move(1);
         if (shelf_style_ == ShelfStyle::list) {
             // 列表样式下用上下键更符合直觉
-            if (input.pressed(Key::up))   shelf_cursor_ = step(shelf_cursor_, -1);
-            if (input.pressed(Key::down)) shelf_cursor_ = step(shelf_cursor_, 1);
+            if (input.pressed(Key::up))   move(-1);
+            if (input.pressed(Key::down)) move(1);
         }
     }
 
     // 主机界面按 PC 习惯：Enter 插卡，Esc 返回/关机，F2 进设置（F2 由 App 转发到 open_settings）
-    if (input.pressed(Key::start)) {
-        if (count > 0 && carts_[shelf_cursor_].error.empty()) {
-            intent.insert_cart = true;
-            intent.cart_index = shelf_cursor_;
-        }
+    if (input.pressed(Key::start) && !matches.empty() && carts_[shelf_cursor_].error.empty()) {
+        intent.insert_cart = true;
+        intent.cart_index = shelf_cursor_;
     }
     return intent;
 }
@@ -310,8 +338,11 @@ Shell::Intent Shell::update_paused(const Input& input) {
 
 ui::Rect Shell::content_rect() const { return phos::content_rect(skin_); }
 
-ShelfView Shell::shelf_view() const {
-    return ShelfView{&carts_, shelf_style_, shelf_cursor_, shelf_pos_, lang_};
+ShelfView Shell::shelf_view(const std::vector<CartInfo>& shown, int cursor) const {
+    // 搜索生效时不做滑动动效：那个动效状态是按**整表**下标攒的，过滤后下标含义变了，
+    // 混用会让图标来回窜。瞬时定位更好——搜东西时没人想等动画
+    const float position = shelf_search_.visible() ? static_cast<float>(cursor) : shelf_pos_;
+    return ShelfView{&shown, shelf_style_, cursor, position, lang_};
 }
 
 // ---------------------------------------------------------------- 绘制
@@ -405,15 +436,44 @@ void Shell::draw_boot(Screen& screen) const {
 }
 
 void Shell::draw_shelf(Screen& screen) const {
-    const std::string counter = carts_.empty()
+    const std::vector<int> matches = shelf_matches();
+    // 视图只认"一串卡带 + 一个光标"：把命中结果拷成一份临时表递过去，
+    // 渲染层不必知道有搜索这回事（搜索是外壳的状态，不是渲染的知识）
+    std::vector<CartInfo> shown;
+    shown.reserve(matches.size());
+    int shown_cursor = 0;
+    for (std::size_t i = 0; i < matches.size(); ++i) {
+        shown.push_back(carts_[static_cast<std::size_t>(matches[i])]);
+        if (matches[i] == shelf_cursor_) shown_cursor = static_cast<int>(i);
+    }
+
+    const std::string counter = shown.empty()
         ? std::string("0 / 0")
-        : std::to_string(shelf_cursor_ + 1) + " / " + std::to_string(carts_.size());
+        : std::to_string(shown_cursor + 1) + " / " + std::to_string(shown.size());
     draw_chrome(screen, tr(lang_, Msg::shelf_title), counter);
 
     const ui::Rect content = content_rect();
-    shelf::draw(screen, content, shelf_view(), style_);  // 渲染逻辑见 shell/shelf_view.cpp
+    shelf::draw(screen, content, shelf_view(shown, shown_cursor), style_);
 
-    draw_footer(screen, tr(lang_, Msg::shelf_insert_hint));
+    if (shelf_search_.visible()) {
+        // 搜索框压在上栏区域的居中位置：盖住标题与计数是有意的——正在搜索时，
+        // 它才是注意力的中心，被它盖住的两行没有信息量
+        const int room = content.w - 4;
+        const ui::Rect box{content.x + (content.w - (room < 46 ? room : 46)) / 2,
+                           content.y + ShellLayout::kTitleY, room < 46 ? room : 46, 3};
+        ui::fill(screen, box, U' ', style_.fg, style_.bg);
+        ui::frame(screen, box, tr(lang_, Msg::shelf_search_title), style_);
+        const std::string field = "> " + shelf_search_.query() + (shelf_search_.editing() ? "_" : "");
+        ui::print(screen, box.x + 2, box.y + 1,
+                  text::truncate(field, box.w - 4), style_.fg, style_.bg);
+    }
+
+    if (!shelf_search_.visible())
+        draw_footer(screen, tr(lang_, Msg::shelf_insert_hint));
+    else if (matches.empty() && !carts_.empty())
+        draw_footer(screen, tr(lang_, Msg::shelf_search_empty));
+    else
+        draw_footer(screen, tr(lang_, Msg::shelf_search_hint));
 }
 
 void Shell::draw_settings(Screen& screen) const {
