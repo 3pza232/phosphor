@@ -50,6 +50,7 @@ DevKit：
   --json                 机器可读输出使用 JSON 格式
 
 其它：
+  --version              打印版本号（唯一权威来源 core/version.hpp）后退出
   --help, -h             打印用法
 ```
 

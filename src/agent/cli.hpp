@@ -28,11 +28,14 @@ struct CliOptions {
     std::optional<unsigned> seed;       // 固定随机种子
 };
 
-/// --help 的哨兵返回值：解析本身没出错，但调用方应打印用法后退出
+/// --help / --version 的哨兵返回值：解析本身没出错，但调用方应打印后退出。
+/// 走返回值而不是 CliOptions 字段：这两件事在解析阶段就能答复，
+/// 不必让下游（App、运行目录、卡带目录）参与进来
 inline constexpr const char* kHelpRequest = "help";
+inline constexpr const char* kVersionRequest = "version";
 
 /// 解析命令行。返回 nullopt = 成功；有值 = 失败（值即错误信息）；
-/// 请求用法时返回 kHelpRequest
+/// 请求用法或版本时返回对应的哨兵
 std::optional<std::string> parse_cli(int argc, char** argv, CliOptions& out);
 
 } // namespace phos

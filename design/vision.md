@@ -119,7 +119,7 @@ PHOSPHOR 最终交付的不只是一个 exe，而是一套小型生态：
 | 内容包 | skin / palette / boot / sound / font 五类可替换，全部即时生效并持久化 |
 | 观测 | ImGui 仪表盘（性能/主机/卡带/内容包/输入，CRT 参数可实时调） |
 | 演示卡带 | SNAKE（模块化范式 + 历史分数）、LIFE（康威生命游戏 + 资源图案库 + 可编辑棋盘）、BRICKS（打砖块 + 最高分存档）、CHOMP、RUNNER、WORMS（时钟天气 / 空投补给 / 阵地战，例示"重卡带"） |
-| 机器接口 | CLI：`--cart/--scan/--json/--headless/--frames/--dump-screen/--dump-every/--seed/--screenshot/--log/--save-dir/--control`；控制通道（NDJSON over TCP：读屏/查状态（含卡带自报状态与运行形态）/注入输入（含主机保留键 Esc）/单步/热重载/截图/传档/按路径装卡）；窗口模式下人可围观（标题标明 `[live]`/`[stepping]`）；agent 实例 `tools/agent_play.py`（开窗挑一张卡带玩起来，通用）、`agent_shell_demo.py`（操作系统界面） |
+| 机器接口 | CLI：`--cart/--scan/--json/--headless/--frames/--dump-screen/--dump-every/--seed/--screenshot/--log/--save-dir/--control/--version`；控制通道（NDJSON over TCP：读屏/查状态（含卡带自报状态与运行形态）/注入输入（含主机保留键 Esc）/单步/热重载/截图/传档/按路径装卡）；窗口模式下人可围观（标题标明 `[live]`/`[stepping]`）；agent 实例 `tools/agent_play.py`（开窗挑一张卡带玩起来，通用）、`agent_shell_demo.py`（操作系统界面） |
 | DevKit | `--new` 从模板生成骨架（资源示例 + 磁带码往返）；`--pack` 打包并校验；`--check-api` 校验注解与实装一致（函数、子表、**字段**）；`devkit/phos.lua` 提供编辑器补全 |
 
 **卡带 API（`phos.*`）**
@@ -138,7 +138,7 @@ PHOSPHOR 最终交付的不只是一个 exe，而是一套小型生态：
 
 **未完成事项的权威清单见 `roadmap.md`**（本文只描述"现在是什么样"，不再维护候选列表）。
 
-**版本约定**：主机版本号唯一权威 = `v0.1.1`，定义于 `core/version.hpp`，
+**版本约定**：主机版本号唯一权威 = `core/version.hpp` 的 `kVersion`，
 对内容作者暴露为 `phos.sys.version()` / `phos.sys.product()`。
 卡带与内容包的 `version` 是作者自己的版本，与主机版本无关，两者不得混淆。
 **任何地方都不得硬编码版本字符串**——这是"不硬编码"原则的第一个范例。

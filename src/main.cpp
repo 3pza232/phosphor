@@ -4,6 +4,7 @@
 #include "cart/cart_scanner.hpp"
 #include "core/app.hpp"
 #include "core/log.hpp"
+#include "core/version.hpp"
 #include "devkit/api_check.hpp"
 #include "devkit/packer.hpp"
 
@@ -142,7 +143,11 @@ int main(int argc, char** argv) {
 
     phos::CliOptions opts;
     if (auto err = phos::parse_cli(argc, argv, opts)) {
-        if (*err == "help") {
+        if (*err == phos::kVersionRequest) {
+            std::printf("%s %s\n", phos::kProductName, phos::kVersion);
+            return 0;
+        }
+        if (*err == phos::kHelpRequest) {
             std::printf(
                 "PHOSPHOR - ASCII fantasy console\n"
                 "usage: phosphor [options]\n"
@@ -169,6 +174,10 @@ int main(int argc, char** argv) {
                 "  --save-dir <dir>  save directory (default: saves)\n"
                 "  --check-api       verify devkit/phos.lua against the registered API\n"
                 "  --json            machine-readable output\n"
+                "\n"
+                "info:\n"
+                "  --version         print version and exit\n"
+                "  --help, -h        print usage\n"
                 "\n"
                 "exit codes: 0 ok | 1 bad arguments | 2 load/validation failed |\n"
                 "            3 internal error\n");

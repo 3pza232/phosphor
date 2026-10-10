@@ -462,7 +462,7 @@ local r   = phos.sys.random(1, 100) -- 区间随机整数（确定性模式下�
 phos.sys.seed(42)                   -- 重置随机种子
 
 phos.sys.log("debug info")          -- 写主机日志（开发期利器）
-phos.sys.version()                  -- 主机版本（唯一权威，当前 "0.1.1"）
+phos.sys.version()                  -- 主机版本（唯一权威来源：core/version.hpp）
 phos.sys.product()                  -- 产品名 "PHOSPHOR"
 phos.sys.language()                 -- 界面语言 "zh" / "en"（见下）
 ```
