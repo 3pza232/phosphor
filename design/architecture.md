@@ -30,7 +30,7 @@
 
 
 1. **依赖方向向下**。唯一例外是**组装点**：`core/app.*` 必须知道所有层才能把它们接起来；
-   其余 `core/` 单元（`screen` / `input` / `text` / `ui` / `audio` / `crt`…）不得 include 上层。
+   其余 `core/` 单元（`screen` / `surface` / `input` / `text` / `ui` / `audio` / `crt`…）不得 include 上层。
    跨层向上通信用回调/接口注入
 2. **Lua 类型只出现在 `api/`、`cart/`、`pack/`、`devkit/`**：前两者是 Lua 的宿主（装载并运行脚本），
    第三个要核对注解与实现。`core/`、`render/`、`shell/`、`platform/` 出现 `sol.hpp` / `lua.hpp` 即违规
@@ -53,6 +53,7 @@
 |------|------|
 | `App` | 应用生命周期与主循环（固定逻辑帧 + 渲染帧），模式分派 |
 | `Screen` | 字符网格：游戏画面的**逻辑抽象**，与渲染完全解耦 |
+| `Surface` | 网格上的一块**可写矩形**（内容区 / 侧栏面板 / 卡带绘制区域）：越界裁剪、透明底、宽字符占格的**唯一一份规则** |
 | `Input` | 统一输入队列。物理键盘/手柄/agent 注入的输入在此汇流，消费者无从分辨来源 |
 | `Audio` | 音频子系统：软件混音（波形/包络/扫频/噪声/音序器/采样），三层音量 |
 | `ui` | 界面绘制原语：边框/菜单/进度条/正文/精灵/导航（主机与卡带共用） |
@@ -65,6 +66,11 @@
 `Screen` 是本项目最重要的抽象：它是一个二维字符网格（字符 + 前景色 + 背景色）。
 **渲染器只是网格的消费者之一**；文本导出器是另一个消费者（headless 模式下是唯一消费者）。
 任何代码都不允许"往屏幕上画东西"，只能"往网格里写字"。
+
+`Surface` 是网格上的**一块面**：卡带的内容区、侧栏面板、卡带的绘制区域都是它的实例。
+三者真正的差别只有"原点在哪、写到哪为止"，写入规则（越界怎么裁、省略底色是什么意思、
+宽字符占几格）必须一致，所以只写一份——分别实现会让同一句 `fill` 在三个面上给出三种行为，
+"卡带能写到机身装饰上"那类漏洞就是这么来的。
 
 ### render —— 渲染层
 
@@ -174,17 +180,17 @@ miniaudio 封装：软件混音（波形 / 包络 / 扫频 / 噪声）、采样�
 phosphor/
 ├── CMakeLists.txt
 ├── .gitignore             # 忽略构建产物与运行期生成物
-├── docs/                  # 设计文档（你正在读的这些）
-├── extern/                # 全部第三方依赖（glfw/glad/lua/sol2/stb/miniaudio/miniz）
+├── design/                # 设计文档（你正在读的这些）
+├── docs/                  # 使用文档（玩家 / 卡带作者 / API 参考）
+├── extern/                # 全部第三方依赖（glfw/glad/imgui/lua/sol2/stb/miniaudio/miniz）
 ├── src/                   # 主机源码
 │   ├── main.cpp
 │   ├── agent/  api/  cart/  core/  devkit/  pack/  platform/  render/  shell/
 ├── package/               # 程序包内容源（构建时整份复制到输出目录）
-│   ├── carts/             # 演示卡带（snake / life / bricks）
-│   ├── theme/             # 出厂内容包：skin / boot / palette / sound
+│   ├── carts/             # 出厂卡带（snake / bricks / life / chomp / runner / worms）
+│   ├── theme/             # 出厂内容包：skin / boot / palette / sound / font
 │   ├── devkit/            # 模板卡带 / phos.lua 注解 / 说明
-│   ├── mods/  saves/      # 覆盖层与存档目录（各带 README 引导）
-│   └── README.txt
+│   └── mods/  saves/      # 覆盖层与存档目录（各带 README 引导）
 ├── tools/                 # 主机侧验证与演示脚本（Python）
 └── build/                 # 构建输出（同时就是可直接运行的程序包目录）
 ```
@@ -197,9 +203,9 @@ phosphor/
 | 类别 | 内容 | 能不能删 |
 |------|------|----------|
 | CMake 产物 | `CMakeCache.txt`、`CMakeFiles/`、`Makefile`、`cmake_install.cmake`、`compile_commands.json`、`lib*.a`、`phosphor.exe` | 删了要重新构建 |
-| 构建时复制 | `carts/`、`theme/`、`mods/`、`devkit/`、`README.txt` —— 每次构建从 `package/` 覆盖而来 | 可删，下次构建自动回来 |
+| 构建时同步 | `carts/`、`devkit/`、`theme/`、`mods/`、`saves/`、`docs/` —— 每次构建从 `package/` 与 `docs/` 同步而来（逐文件，规则见 `tools/sync_package.cmake`） | 可删，下次构建自动回来 |
 | 运行期生成 | `config.json`（机台设置）、`saves/*.sav`（你的存档） | **别删**（删了设置和纪录就没了） |
-| 临时物 | `*.log`、`dist/`（打包产物）、`shots/`、`saves/demo/` | 随便删，`tools/clean.py` 一键清 |
+| 临时物 | `*.log`、`dist/`（打包产物）、`shots/`、`saves/demo/`、`tests-out/`（冒烟跑出来的临时画面） | 随便删，`tools/clean.py` 一键清 |
 
 两条容易踩的规则：
 
@@ -224,8 +230,10 @@ PHOSPHOR/
 │   ├── sound/    音效包
 │   └── font/     字体方案（default 方案含中文思源黑体）
 ├── carts/                 # 卡带存放处（卡带架扫描这里）
+├── devkit/                # 模板卡带 / phos.lua 注解（创作卡带用）
 ├── mods/                  # 覆盖层 Mod
 ├── saves/                 # 存档
+├── docs/                  # 使用文档（API 参考等）
 └── config.json            # 机台配置（激活的主题选择、屏幕参数等）
 ```
 

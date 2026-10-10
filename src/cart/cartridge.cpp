@@ -14,11 +14,8 @@ namespace phos {
 namespace {
 
 /// 卡带执行看门狗：防止 `while true do end` 这类失控把整机一起拖死。
-///
-/// 最高原则是"主机永不因卡带而死"：卡带报错与死循环都得挡住，后者若不管
-/// 会直接冻结主循环。做法是给卡带的 Lua 状态挂一个指令计数钩子：
-/// 进入 init/update/draw 等卡带代码前布防，超时就抛一个普通 Lua 错误，
-/// 于是失控走的是既有的"卡带出错 → 安全拔卡 + 错误屏"通道，不需要新机制。
+/// 给卡带的 Lua 状态挂指令计数钩子，布防后再进卡带代码，超时就抛一个普通 Lua 错误——
+/// 于是失控走的是既有的"卡带出错 → 安全拔卡 + 错误屏"通道
 constexpr int kWatchdogStep = 20000;   // 每多少条 VM 指令查一次时钟（≈0.1ms，开销可忽略）
 constexpr int kWatchdogLimitMs = 100;  // 单次卡带调用的墙钟上限
 
@@ -118,8 +115,7 @@ CartInfo parse_manifest(const std::string& manifest_text, const std::string& car
     if (sidebar.is<sol::table>()) {
         sol::object w = sidebar.as<sol::table>()["w"];
         if (w.is<double>() || w.is<int>()) {
-            const int requested = w.as<int>();
-            info.sidebar_w = requested < 0 ? 0 : (requested > kPanelMaxW ? kPanelMaxW : requested);
+            info.sidebar_w = clamp_panel_w(w.as<int>());
         }
     }
 
@@ -135,20 +131,16 @@ CartInfo parse_manifest(const std::string& manifest_text, const std::string& car
             if (v.is<std::string>()) info.icon_rows.push_back(v.as<std::string>());
         }
     }
-    sol::object icon_colors = t["icon_colors"];
-    if (icon_colors.is<sol::table>()) {
-        sol::table map = icon_colors.as<sol::table>();
-        for (auto& kv : map) {
-            if (!kv.first.is<std::string>() || !kv.second.is<sol::table>()) continue;
-            std::string key = kv.first.as<std::string>();
-            if (key.empty()) continue;
-            info.icon_colors[key[0]] = api::read_color(kv.second, Color::white);
-        }
-    }
+    // 与卡带精灵共用同一份"字符画取色"读取（api::read_char_color_map）：
+    // 同一个 icon_colors 表在卡带架与卡带里必须解释成同一组颜色
+    info.icon_colors = api::read_char_color_map(t["icon_colors"]);
     return info;
 }
 
 bool Cartridge::load(const std::string& cart_path, HostContext& host) {
+    // 先摘掉上一张卡带的存档指针：下面几条早退路径不会再碰它，而调用方可能已经
+    // 销毁了那个 Cartridge（成员 save_ 随之消失），留着就是悬垂指针
+    host.save = nullptr;
     files_ = CartFiles::open(cart_path);
     if (!files_.valid()) {
         error_ = "cart path not found: " + cart_path;

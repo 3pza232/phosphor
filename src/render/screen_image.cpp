@@ -144,8 +144,6 @@ std::optional<ScreenImage> render_screen_image(const Screen& screen,
     image.rgba.assign(static_cast<size_t>(image.width) * static_cast<size_t>(image.height) * 4, 0);
     canvas.data = image.rgba.data();
 
-    std::vector<unsigned char> glyph;
-
     for (int cy = 0; cy < screen.height(); ++cy) {
         for (int cx = 0; cx < screen.width(); ++cx) {
             const Cell& cell = screen.at(cx, cy);

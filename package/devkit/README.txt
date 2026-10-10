@@ -55,9 +55,10 @@ Then talk newline-delimited JSON over 127.0.0.1:7654:
     {"id":4,"cmd":"time.step","frames":60}     <- advance exactly 60 logic frames
     {"id":5,"cmd":"cart.reload"}               <- hot reload after editing code
 
-Commands: ping / state.query / screen.read / carts.scan /
-          input.inject / input.clear / time.step / time.resume /
-          cart.load / cart.reload / cart.eject / quit
+Commands: ping / state.query / screen.read / screenshot / carts.scan /
+          input.inject / input.text / input.clear / time.step / time.resume /
+          save.export / save.import / cart.load / cart.reload / cart.eject / quit
+          (full parameter list: docs/agent-interface.md)
 
 A one-shot alternative without the channel:
 

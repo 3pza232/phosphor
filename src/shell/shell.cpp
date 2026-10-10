@@ -72,7 +72,7 @@ void Shell::open_settings() {
 
 void Shell::to_tape() {
     mode_ = ShellMode::tape;
-    tape_.open();  // 回到查看页、滚动归零、缓冲区与结果行清空
+    tape_.open();
 }
 
 void Shell::set_tape(std::string cart_name, std::string code, bool available) {
@@ -308,9 +308,7 @@ Shell::Intent Shell::update_paused(const Input& input) {
 
 // ---------------------------------------------------------------- 布局
 
-ui::Rect Shell::content_rect() const {
-    return ui::Rect{skin_.screen_x, skin_.screen_y, skin_.screen_w, skin_.screen_h};
-}
+ui::Rect Shell::content_rect() const { return phos::content_rect(skin_); }
 
 ShelfView Shell::shelf_view() const {
     return ShelfView{&carts_, shelf_style_, shelf_cursor_, shelf_pos_, lang_};

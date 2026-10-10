@@ -258,6 +258,7 @@ fuse, splits, burn, dig, speed, width, raise, orbital, heal, turn_rate, ai_mult,
 | `camera.lua` | 滚动、夹紧、世界↔字符格换算 | 不绘制 |
 | `weather.lua` | 时钟、天色、日月云星、天气状态机与降水 | 不碰弹道与伤害 |
 | `supply.lua` | 空投补给：落下 / 落地 / 领取 / 过期、AI 可达性判据 | 不绘制（箱子的样子归 main） |
+| `music.lua` | 曲式与音效事件：把玩法事件翻成音序器调用 | 不含玩法规则 |
 | `panel.lua` | 侧栏：两队血量 / 武器网格 / 键位与地图提示 | 只读状态 |
 | `hud.lua` | 角度·力度·风·倒计时·时钟与天气·血量条与浮字 | 只读状态 |
 

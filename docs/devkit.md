@@ -126,7 +126,11 @@ phos.panel.print(1, y, phos.text.fit(text, pw - 2))
 `phos.screen.print(x, y, text, fg, bg)` 省略 `bg` 时**只写字、不动那一格的背景** ——
 这正是"字压在山体上不留色块"要的效果。反过来，若这块地方必须不透底（浮窗标题、
 血量读数这类），就得**显式给色**，否则脚下换成水、斜坡或天空时就会露出"空洞"。
-`phos.screen.fill` / `blit` 与 `panel.fill` 是另一组：它们**总是**写底色（省略即黑）。
+
+**另一组**是 `fill` / `blit` / `clear`（`screen` / `panel` 的，以及 `ui.region.clear`）：
+它们是"整块搬运或清一块地方"，省略底色按**黑**算——清屏若也按"保留背景"来，就变成什么都不做。
+`ui.region` 的 `put` / `print` / `fill` / `blit` 属于"保留背景"那一组，别把它的 `clear` 混进去。
+两组规则各含哪些调用，以 API 参考里的表为准。
 
 **8. 巡逻类 AI 要防死角**
 

@@ -2,6 +2,7 @@
 
 #include "core/defaults.hpp"
 #include "core/screen.hpp"
+#include "core/ui.hpp"
 
 #include <string>
 #include <vector>
@@ -44,6 +45,13 @@ struct Skin {
     int grid_h() const { return static_cast<int>(top.size()) + screen_h +
                                  static_cast<int>(bottom.size()); }
 };
+
+/// 内容区矩形：皮肤几何是**唯一真源**。卡带看到的内容区、外壳的版面、
+/// 转场特效的覆盖范围都由它定，所以只算一处——分别算两处，
+/// 只要有一处没跟上皮肤，卡带的画布与外壳的版面就会错位
+inline ui::Rect content_rect(const Skin& skin) {
+    return ui::Rect{skin.screen_x, skin.screen_y, skin.screen_w, skin.screen_h};
+}
 
 /// 出厂默认机身（硬编码兜底，永远是回退链的最后一环）
 Skin builtin_skin();

@@ -44,12 +44,8 @@ void main() {
 }
 )";
 
-// CRT 后处理参考 RetroArch 系滤镜的构成：
-//   1) 细扫描线——每 kScanlinePeriodPx 像素一条窄暗线（屏幕行结构），
-//      而非按字符行整片压暗（后者只会显得又暗又糊）
-//   2) 孔径格栅——每 3 像素一组的 RGB 子像素条纹，强度保持克制
-//   3) 字符辉光——单 pass 四邻域采样近似 bloom，弱强度以保住像素字锐度
-//   4) 亮度补偿——按扫描线与格栅造成的平均衰减反向增益，观感不随档位变暗
+// CRT 后处理：细扫描线（按像素周期，优于按字符行整片压暗）+ 孔径格栅 +
+// 弱字符辉光（四邻域近似 bloom，弱到不糊字形）+ 反向亮度补偿（档位变化不改变整体亮度）
 const char* kFragSrc = R"(
 #version 330 core
 in vec2 v_uv;
@@ -95,8 +91,7 @@ void main() {
 
 } // namespace
 
-// 构造函数与析构函数都放在这里：writer 与 unique_ptr<FontChain> 的
-// 完整类型只在本 TU 可见，头部只需前置声明
+// FontChain 的完整类型只在本 TU 可见（头部只需前置声明），构造与析构因此留在这里
 Renderer::Renderer() = default;
 
 Renderer::~Renderer() { destroy(); }
@@ -124,7 +119,7 @@ const Renderer::Glyph* Renderer::glyph_for(char32_t cp) {
     const GlyphBitmap bitmap = fonts_->rasterize(cp, kFontPixels);
     if (bitmap.width <= 0 || bitmap.height <= 0) return nullptr;  // 字体链里没有这个字形
 
-    // 行式装箱：一行放满就换下一行；图集装不下就不再尝试（只警告一次）
+    // 一行放满就往下开一行；整体装不下即标记满，只告警一次
     if (pen_x_ + bitmap.width > kAtlasSize) {
         pen_x_ = 0;
         pen_y_ += pen_row_h_ + 1;
@@ -292,7 +287,8 @@ void Renderer::draw(const Screen& screen) {
     const float win_h = chh * sh;
 
     vertices_.clear();
-    vertices_.reserve(static_cast<size_t>(sw) * sh * 6 * 10);
+    // 每格最多两块四边形（底色 + 字形），每块 6 个顶点
+    vertices_.reserve(static_cast<size_t>(sw) * sh * 12 * 10);
 
     auto push_vert = [&](float px, float py, float u, float v, const Color& fg, const Color& bg) {
         float f = 1.0f / 255.0f;
@@ -334,23 +330,17 @@ void Renderer::draw(const Screen& screen) {
                 push_vert(bx0, by1, 0.0f, 0.0f, cell.bg, cell.bg);
             }
 
-            // 空格字形无位图，只画背景色：UV 取空白区
-            const float u0 = blank ? 0.0f : g.u0;
-            const float v0 = blank ? 0.0f : g.v0;
-            const float u1 = blank ? 0.0f : g.u1;
-            const float v1 = blank ? 0.0f : g.v1;
-            const float x1 = blank ? x * cw + cw : gx + gw;
-            const float y1 = blank ? y * chh + chh : gy + gh;
-            const float x0 = blank ? x * cw : gx;
-            const float y0 = blank ? y * chh : gy;
+            // 空格没有字形：底色那一步已经铺满这一格，再推一份同色四边形没有意义。
+            // 空格的占比通常在三成以上，省下的是每帧一次的整块顶点构建
+            if (blank) continue;
 
-            // 全角字符：先铺一块覆盖两格的底色（续格自身不绘制），再画字形
-            push_vert(x0, y0, u0, v0, cell.fg, cell.bg);
-            push_vert(x1, y0, u1, v0, cell.fg, cell.bg);
-            push_vert(x1, y1, u1, v1, cell.fg, cell.bg);
-            push_vert(x0, y0, u0, v0, cell.fg, cell.bg);
-            push_vert(x1, y1, u1, v1, cell.fg, cell.bg);
-            push_vert(x0, y1, u0, v1, cell.fg, cell.bg);
+            // 字形四边形。宽字符的位图天然跨两格，续格自身不绘制
+            push_vert(gx, gy, g.u0, g.v0, cell.fg, cell.bg);
+            push_vert(gx + gw, gy, g.u1, g.v0, cell.fg, cell.bg);
+            push_vert(gx + gw, gy + gh, g.u1, g.v1, cell.fg, cell.bg);
+            push_vert(gx, gy, g.u0, g.v0, cell.fg, cell.bg);
+            push_vert(gx + gw, gy + gh, g.u1, g.v1, cell.fg, cell.bg);
+            push_vert(gx, gy + gh, g.u0, g.v1, cell.fg, cell.bg);
         }
     }
 

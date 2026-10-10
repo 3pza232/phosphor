@@ -23,6 +23,7 @@ config.json
 imgui.ini
 saves/
 shots/
+tests-out/
 *.log
 
 # ── 工具与编辑器 ────────────────────────────────────────────────────────
@@ -31,3 +32,5 @@ shots/
 .idea/
 *.swp
 recent.txt
+__pycache__/
+*.pyc

@@ -37,8 +37,7 @@ void blank(Cell& c) {
 
 void Screen::put(int x, int y, char32_t ch, Color fg, Color bg) {
     if (y < 0 || y >= h_) return;
-    // 背景色带着"别动背景"的标记：把它解析成该格当前背景再往下走。
-    // 只在这一个函数里判断就够了——print / fill / 各层包装最后都走 put
+    // 背景色带"别动背景"标记时，先解析成该格当前背景（全屏唯一的解析点）
     if (bg.keep && x >= 0 && x < w_) {
         bg = cells_[static_cast<size_t>(y) * w_ + x].bg;
         bg.keep = false;
@@ -69,6 +68,9 @@ void Screen::put(int x, int y, char32_t ch, Color fg, Color bg) {
     c.bg = bg;
     c.cols = static_cast<uint8_t>(width);
 
+    // 续格顺手写上；落在最后一列时没有右邻格可写，最右侧就只剩头格——这是原始网格
+    // 原有的行为，外壳自己的排版依赖它：贴边时看得见半个宽字，比整格少一个字好。
+    // 卡带那一侧的 Surface 反过来——放不下就整格不写（见 core/surface.cpp）
     if (width == 2 && x + 1 < w_) {
         Cell& tail = cells_[static_cast<size_t>(y) * w_ + x + 1];
         tail.ch = U' ';
@@ -102,21 +104,18 @@ void Screen::fill(int x, int y, int w, int h, char32_t ch, Color fg, Color bg) {
         }
 }
 
-void Screen::clear(Color fg, Color bg) {
-    for (auto& c : cells_) {
-        c.ch = U' ';
-        c.cols = 1;
-        c.fg = fg;
-        c.bg = bg;
-    }
+const Cell& Screen::empty() {
+    static const Cell blank{};
+    return blank;
 }
 
 const Cell& Screen::at(int x, int y) const {
-    if (x < 0 || y < 0 || x >= w_ || y >= h_) return out_of_bounds_;
+    if (x < 0 || y < 0 || x >= w_ || y >= h_) return empty();
     return cells_[static_cast<size_t>(y) * w_ + x];
 }
 
 char32_t Screen::glyph_at(int x, int y) const {
+    if (x < 0 || y < 0 || x >= w_ || y >= h_) return 0;  // 越界不算"这格有东西"
     const Cell& cell = at(x, y);
     const Cell* source = &cell;
     if (cell.cols == 0) {

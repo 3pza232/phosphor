@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """清理运行目录里的临时物。
 
-只清"可再生的临时物"：日志、打包产物、截图、演示用的隔离存档区与导出画面。
+只清"可再生的临时物"：日志、打包产物、截图、演示用的隔离存档区、
+冒烟跑出来的临时画面（tests-out/）。
 
 **绝不触碰**：config.json（你的机器设置）、saves/*.sav（你的存档）、
 carts/ 下的卡带本体、构建产物（exe / 库 / CMake 文件）。
@@ -18,7 +19,7 @@ import shutil
 from pathlib import Path
 
 #: 直接删除的路径（文件或目录）
-EPHEMERAL_PATHS = ["imgui.ini", "dist", "shots", "saves/demo"]
+EPHEMERAL_PATHS = ["imgui.ini", "dist", "shots", "saves/demo", "tests-out"]
 
 
 def main() -> int:

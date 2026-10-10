@@ -52,7 +52,7 @@ private:
     void load_cart(int index);
     void load_cart_path(const std::string& path);
     void eject_cart();
-    /// 重扫卡带目录并按"最近打开"重排架子（插卡/拔卡后调用，见 load_cart/eject）
+    /// 重扫卡带目录并按"最近打开"重排架子（启动时与拔卡回架子后各调用一次）
     void refresh_shelf_order();
 
     // 子系统
@@ -92,6 +92,7 @@ private:
     void complete_step_request();
     std::string control_state_json() const;
     std::string carts_json() const;
+    std::string shelf_json() const;
     /// 时间是否由控制通道驱动（此时主循环只在 time.step 时推进逻辑帧）
     bool control_time_driven() const { return control_.running() && control_stepping_; }
     /// 注入按键的定时释放
@@ -125,8 +126,7 @@ private:
     static constexpr const char* kUserFilterDir = "theme/palette";
     static constexpr const char* kUserBootDir = "theme/boot";
     static constexpr const char* kUserSoundDir = "theme/sound";
-    // 出厂区：给"随主机发布的内容包"预留的位置。当前发行目录里 system/ 为空，
-    // 所以这几条合并是空操作；工厂包一旦放进去，用户区同名项仍优先
+    // 出厂区：随主机发布的内容包的位置；用户区有同名项时用户区优先
     static constexpr const char* kFactorySkinDir = "system/skin";
     static constexpr const char* kFactoryFilterDir = "system/palette";
     static constexpr const char* kFactoryBootDir = "system/boot";

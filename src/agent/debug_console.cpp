@@ -16,7 +16,7 @@ bool DebugConsole::init(GLFWwindow* window, std::string& err) {
     // 不该因为"开了一次调试面板"就多出一个 ini
     ImGui::GetIO().IniFilename = nullptr;
 
-    // install_callbacks=true 时链式调用我们先前设置的键盘回调
+    // install_callbacks=true 时，ImGui 回调链在主机已注册的键盘回调之后
     if (!ImGui_ImplGlfw_InitForOpenGL(window, true)) {
         err = "ImGui GLFW 后端初始化失败";
         return false;

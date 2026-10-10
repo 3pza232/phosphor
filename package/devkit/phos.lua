@@ -54,7 +54,7 @@ function phos.screen.size() end
 ---@return integer x, integer y, integer w, integer h
 function phos.screen.playfield() end
 
----写入单个字符（越界静默裁剪）
+---写入单个字符（越界裁到内容区，不会画到侧栏或机身装饰上；省略 bg = 保留该格原有背景）
 ---@param x integer
 ---@param y integer
 ---@param ch string
@@ -62,7 +62,7 @@ function phos.screen.playfield() end
 ---@param bg phos.Color|nil
 function phos.screen.put(x, y, ch, fg, bg) end
 
----写一行文本
+---写一行文本（超出内容区宽度的部分按**显示宽度**截断，汉字算两格；省略 bg = 保留该格原有背景）
 ---@param x integer
 ---@param y integer
 ---@param text string
@@ -70,7 +70,7 @@ function phos.screen.put(x, y, ch, fg, bg) end
 ---@param bg phos.Color|nil
 function phos.screen.print(x, y, text, fg, bg) end
 
----填充矩形
+---填充矩形（**总是写底色**，省略 = 黑）
 ---@param x integer
 ---@param y integer
 ---@param w integer
@@ -80,19 +80,21 @@ function phos.screen.print(x, y, text, fg, bg) end
 ---@param bg phos.Color|nil
 function phos.screen.fill(x, y, w, h, ch, fg, bg) end
 
----清屏（可选填底色）
+---清屏（**总是写底色**，省略 = 黑）
 ---@param fg phos.Color|nil
 ---@param bg phos.Color|nil
 function phos.screen.clear(fg, bg) end
 
----读取某格字符（与 `--dump-screen` 是同一份字符屏幕，两者可逐字对照）
+---读取某格字符（与 `--dump-screen` 是同一份字符屏幕，两者可逐字对照）。
+---越界（内容区之外）返回空串
+
 ---@param x integer
 ---@param y integer
 ---@return string ch, phos.Color fg, phos.Color bg
 function phos.screen.get(x, y) end
 
 ---一次写多行（每行一条字符串）：地图/画面搬运用，比逐格 put 少一堆调用。
----超出内容区宽度的部分按**显示宽度**截断，不会溢到机身装饰上
+---超出内容区宽度的部分按**显示宽度**截断，不会溢到机身装饰上；**总是写底色**（省略 = 黑）
 ---@param x integer
 ---@param y integer
 ---@param rows string[]
@@ -114,7 +116,8 @@ function phos.panel.size() end
 ---@return integer
 function phos.panel.resize(w) end
 
----一次写多行（每行一条字符串）：面板里的地图/表格搬运用
+---一次写多行（每行一条字符串）：面板里的地图/表格搬运用。与 screen.blit 同组：
+---**恒写底色**（省略 = 黑），不能靠省略 bg 来透出底图
 ---@param x integer
 ---@param y integer
 ---@param rows string[]
@@ -122,6 +125,7 @@ function phos.panel.resize(w) end
 ---@param bg phos.Color|nil
 function phos.panel.blit(x, y, rows, fg, bg) end
 
+---写一个字符（越界裁到面板内；省略 bg = 保留该格原有背景）
 ---@param x integer 面板局部坐标
 ---@param y integer
 ---@param ch string
@@ -129,6 +133,7 @@ function phos.panel.blit(x, y, rows, fg, bg) end
 ---@param bg phos.Color|nil
 function phos.panel.put(x, y, ch, fg, bg) end
 
+---写一行文本（超出面板宽度的部分按显示宽度截断；省略 bg = 保留该格原有背景）
 ---@param x integer
 ---@param y integer
 ---@param text string
@@ -136,6 +141,7 @@ function phos.panel.put(x, y, ch, fg, bg) end
 ---@param bg phos.Color|nil
 function phos.panel.print(x, y, text, fg, bg) end
 
+---填充矩形（**总是写底色**，省略 = 黑）
 ---@param x integer
 ---@param y integer
 ---@param w integer
@@ -145,7 +151,7 @@ function phos.panel.print(x, y, text, fg, bg) end
 ---@param bg phos.Color|nil
 function phos.panel.fill(x, y, w, h, ch, fg, bg) end
 
----只清空面板区
+---只清空面板区（**总是写底色**，省略 = 黑）
 ---@param fg phos.Color|nil
 ---@param bg phos.Color|nil
 function phos.panel.clear(fg, bg) end
@@ -362,11 +368,11 @@ function phos.ui.region(x, y, w, h, opts) end
 ---@field w integer 实际宽度
 ---@field h integer 实际高度
 ---@field surface string "screen" 或 "panel"
----@field clear fun(self: phos.Region, fg: phos.Color|nil, bg: phos.Color|nil)
----@field put fun(self: phos.Region, x: integer, y: integer, ch: any, fg: phos.Color|nil, bg: phos.Color|nil)
----@field print fun(self: phos.Region, x: integer, y: integer, text: string, fg: phos.Color|nil, bg: phos.Color|nil)
----@field fill fun(self: phos.Region, x: integer, y: integer, w: integer, h: integer, ch: any, fg: phos.Color|nil, bg: phos.Color|nil)
----@field blit fun(self: phos.Region, x: integer, y: integer, rows: string[], fg: phos.Color|nil, bg: phos.Color|nil) 一次写多行
+---@field clear fun(self: phos.Region, fg: phos.Color|nil, bg: phos.Color|nil) 省略 bg = 黑（总是写底色）
+---@field put fun(self: phos.Region, x: integer, y: integer, ch: any, fg: phos.Color|nil, bg: phos.Color|nil) 省略 bg = 保留该格原有背景
+---@field print fun(self: phos.Region, x: integer, y: integer, text: string, fg: phos.Color|nil, bg: phos.Color|nil) 省略 bg = 保留该格原有背景
+---@field fill fun(self: phos.Region, x: integer, y: integer, w: integer, h: integer, ch: any, fg: phos.Color|nil, bg: phos.Color|nil) 省略 bg = 保留该格原有背景
+---@field blit fun(self: phos.Region, x: integer, y: integer, rows: string[], fg: phos.Color|nil, bg: phos.Color|nil) 一次写多行；省略 bg = 保留该格原有背景
 ---@field frame fun(self: phos.Region, title: string|nil)
 ---@field divider fun(self: phos.Region, y: integer)
 ---@field bar fun(self: phos.Region, x: integer, y: integer, w: integer, ratio: number)
@@ -517,7 +523,7 @@ function phos.sys.seed(seed) end
 ---@param message string
 function phos.sys.log(message) end
 
----主机版本（唯一权威，如 "0.1.0"）
+---主机版本（唯一权威，形如 x.y.z）
 ---@return string
 function phos.sys.version() end
 

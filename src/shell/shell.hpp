@@ -60,6 +60,9 @@ public:
     void set_skin(const Skin& skin);
     /// 告知卡带架上有哪些卡带：架面显示、插卡、拔卡都按这份列表
     void set_carts(std::vector<CartInfo> carts);
+    /// 架子上的卡带（玩家眼里的顺序：最近打开优先）。控制通道据此暴露 `shelf`，
+    /// agent 才能"数到第几张再插卡"——`cursor` 就是它的下标
+    const std::vector<CartInfo>& carts() const { return carts_; }
     /// 告知可选滤镜名与当前项（设置界面据此显示与翻页）
     void set_filters(std::vector<std::string> names, int active);
     /// 告知可选字体方案名与当前项
@@ -72,9 +75,8 @@ public:
     void set_sounds(std::vector<std::string> names, int active);
     /// 卡带插入后指示灯转为常亮（仪式感：机器"醒了"）
     void set_lamps_solid(bool on) { lamps_solid_ = on; }
-    /// 磁带码导入的结果。语义定义在 `tape::ScreenState` 里（界面只收语义、自己按语言
-    /// 取词——若让 App 直接塞中文串，界面就没有语言可切，文案属于界面层）。
-    /// 这里留个别名，App 既有的 `Shell::TapeResult::ok` 写法不必改
+    /// 磁带码导入的结果。语义定义在 `tape::ScreenState` 里：界面只收语义、自己按语言取词
+    /// （若让 App 直接塞中文串，界面就没有语言可切，文案属于界面层）
     using TapeResult = tape::ScreenState::Result;
 
     /// 磁带码界面的数据：卡带名、码本体、该卡带是否有存档（由 App 在进入时填入）
@@ -135,8 +137,7 @@ public:
     void draw_chassis(Screen& screen) const;
 
 private:
-    // 布局常量见 shell/layout.hpp（ShellLayout）：外壳与各屏幕模块共用同一套边距，
-    // 谁也不许自己另写一份——那样迟早会出现"标题贴着边框"这类走样
+    // 布局常量见 shell/layout.hpp（ShellLayout）：外壳与各屏幕模块共用同一套边距
 
     Intent update_shelf(const Input& input);
     Intent update_settings(const Input& input);

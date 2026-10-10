@@ -55,6 +55,7 @@ std::string App::control_state_json() const {
         << ",\"font\":" << json::quote(font_scheme_)
         << ",\"language\":" << json::quote(lang_name(shell_.language()))
         << ",\"cursor\":" << shell_.cursor()
+        << ",\"shelf\":" << shelf_json()
         << ",\"crt_level\":" << config_.crt_level
         << ",\"video\":" << json::quote(headless_ ? "headless" : "window")
         << ",\"control_port\":" << control_port_
@@ -84,20 +85,30 @@ std::string App::control_state_json() const {
     }
     if (!last_error_.empty()) out << ",\"last_error\":" << json::quote(last_error_);
 
-    // 内容包列表：名称即文件夹名，列表长度应与 theme/<类型>/ 下的文件夹数一致
-    auto names_json = [](const auto& packs) {
+    // 内容包：**名字**（屏幕上画的就是它，会随语言变）与**id**（稳定标识，与名字逐位对应）。
+    // 脚本要比对状态里的当前值、或记住某一项时必须用 id——拿名字去比 id 会假失败，
+    // 换个界面语言就全错。字体方案的标识本身就是 id，所以它只有一份 `font`
+    auto pack_json = [](const auto& packs, auto id_of) {
         std::string out;
         for (const auto& pack : packs) {
             if (!out.empty()) out += ",";
-            out += json::quote(pack.name);
+            out += json::quote(id_of(pack));
         }
         return "[" + out + "]";
     };
+    const auto by_name = [](const auto& pack) { return pack.name; };
+    const auto by_id = [](const auto& pack) { return pack.id; };
     out << ",\"save\":{\"available\":" << (host_.save ? "true" : "false")
         << ",\"entries\":" << (host_.save ? host_.save->size() : 0) << "}";
 
-    out << ",\"packs\":{\"skin\":" << names_json(skins_) << ",\"filter\":" << names_json(filters_)
-        << ",\"boot\":" << names_json(boots_) << ",\"sound\":" << names_json(sounds_)
+    out << ",\"packs\":{\"skin\":" << pack_json(skins_, by_name)
+        << ",\"skin_ids\":" << pack_json(skins_, by_id)
+        << ",\"filter\":" << pack_json(filters_, by_name)
+        << ",\"filter_ids\":" << pack_json(filters_, by_id)
+        << ",\"boot\":" << pack_json(boots_, by_name)
+        << ",\"boot_ids\":" << pack_json(boots_, by_id)
+        << ",\"sound\":" << pack_json(sounds_, by_name)
+        << ",\"sound_ids\":" << pack_json(sounds_, by_id)
         << ",\"font\":[";
     for (size_t i = 0; i < font_schemes_.size(); ++i)
         out << (i ? "," : "") << json::quote(font_schemes_[i]);
@@ -118,6 +129,18 @@ std::string App::carts_json() const {
     // 这里刻意**重扫一次**目录而不是复用卡带架：控制通道是给工具用的，
     // 它要的是"磁盘上现在有什么"（含目录顺序），而不是玩家眼里的排序结果
     return "\"carts\":" + cart_list_json(scan_carts(kCartDir));
+}
+
+std::string App::shelf_json() const {
+    // 架上的顺序（玩家眼里的：最近打开优先），与 carts.scan 的目录顺序不同。
+    // 两者都暴露，是因为用途不同：扫描列表回答"磁盘上有什么"，
+    // 这一份回答"数到第几张能插进去哪张"——cursor 就是它的下标
+    std::string ids;
+    for (const auto& cart : shell_.carts()) {
+        if (!ids.empty()) ids += ",";
+        ids += json::quote(cart.id);
+    }
+    return "[" + ids + "]";
 }
 
 void App::complete_step_request() {

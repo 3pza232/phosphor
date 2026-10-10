@@ -18,6 +18,7 @@ phos.panel    -- 右侧栏面板（需 manifest 声明 sidebar）
 phos.text     -- 文本度量与定宽裁剪（宽度单位是"列"，不是字节）
 phos.color    -- 颜色常量与自定义色
 phos.input    -- 输入查询
+phos.lang     -- 卡带文案取当前语言那一列（dict / pick）
 phos.audio    -- 合成音/音符/打击乐/音序器音乐/采样
 phos.save     -- 存档（需 manifest 声明 save = true）
 phos.assets   -- 包内资源读取（文本 / 按行 / 存在性 / 大小 / 列表）
@@ -59,15 +60,18 @@ phos.screen.clear(fg, bg)              -- 指定底色清屏
 ch, fg, bg = phos.screen.get(x, y)
 ```
 
-越界写入**静默裁剪**，不报错——卡带不必为边缘坐标防御性编程。
+越界写入**静默裁剪到内容区**（侧栏与机身装饰不在卡的写入范围内），不报错——
+卡带不必为边缘坐标防御性编程。四条写入一族的口径一致：`put` / `print` / `fill` / `blit`
+都按内容区边界裁剪，其中 `print` / `blit` 按**显示宽度**截断（汉字算两格）。
+读取同理：`screen.get` 落在内容区之外时返回空串。
 
 **省略 `bg` 时怎么办？** 分两组，这是写卡带最容易踩的一条：
 
 | 调用 | 省略 `bg`（或传 `nil`） |
 |---|---|
 | `screen.put` / `screen.print`、`panel.put` / `panel.print` | **保留该格原有背景**（"透明底"）：字压在地形、天空、底图上都不留色块 |
-| `ui.region` 的 `clear` / `put` / `print` / `fill` / `blit` | 同上，一律保留背景 |
-| `screen.fill` / `screen.blit`、`panel.fill` / `panel.clear` | **总是写底色**（省略 = 黑）——这些调用常被用来"清一块地方"，默认透明会变成什么都不做 |
+| `ui.region` 的 `put` / `print` / `fill` / `blit` | 同上，一律保留背景（覆盖层压在游戏画面上不会糊出一块块黑底） |
+| `screen.fill` / `screen.blit` / `screen.clear`、`panel.fill` / `panel.blit` / `panel.clear`、`ui.region.clear` | **总是写底色**（省略 = 黑）——这些调用常被用来"整块搬运/清一块地方"，默认透明会让底图从字缝里透出来，清屏则变成什么都不做 |
 
 所以"要让这块地方不透底"是**显式给色**，而不是指望默认值：
 `phos.screen.print(x, y, text, fg, bg)`。
@@ -252,7 +256,8 @@ end
 ## phos.panel
 
 侧栏面板（卡带在 manifest 声明 `sidebar.w` 后可用）。
-坐标为**面板局部坐标**：`(0, 0)` 是面板左上角，越界写入静默裁剪。
+坐标为**面板局部坐标**：`(0, 0)` 是面板左上角，越界写入静默裁剪到面板内
+（写不到内容区与机身装饰上）。
 分隔线由主机统一绘制，卡带只负责面板内容。
 
 ```lua
@@ -260,7 +265,8 @@ w, h = phos.panel.size()        -- w = 0 表示本卡带无面板
 phos.panel.put(x, y, ch, fg, bg)
 phos.panel.print(x, y, text, fg, bg)
 phos.panel.fill(x, y, w, h, ch, fg, bg)
-phos.panel.clear(fg, bg)        -- 只清面板区
+phos.panel.blit(x, y, rows, fg, bg)     -- 一次写多行（恒写底色，省略 = 黑）
+phos.panel.clear(fg, bg)        -- 只清面板区（恒写底色）
 phos.panel.resize(w)            -- 运行时改宽度（0 = 收起，上限 32）；返回实际宽度
 ```
 
@@ -287,12 +293,13 @@ win:print(2, 10, long_text)          -- 超出窗口的部分被裁掉，不会�
 - 构造时与表层可用范围**求交**，所以 `x`/`y`/`w`/`h` 字段给的就是实际可画范围
 - 可用的绘制方法：`clear` / `put` / `print` / `fill` / `blit`（多行）/ `frame` /
   `divider` / `bar` / `menu`（`h` 可省略，缺省按条目数）/ `body`（折行正文，
-  `max_lines` 可省略）/ `sprite`（`step` 可省略）。这一族省略 `bg` 一律**保留背景**
-  （见 `phos.screen` 一节的 `bg` 规则）
+  `max_lines` 可省略）/ `sprite`（`step` 可省略）。其中 `put` / `print` / `fill` / `blit`
+  省略 `bg` 时**保留背景**，`clear` 省略 `bg` 时**写黑**（见 `phos.screen` 一节的 `bg` 规则）
 - **层级 = 调用顺序**：本机每帧清屏、卡带每帧重画，所以先画底图、再画窗口即可；
   窗口关闭时不再画它，底图自然就在（不需要"备份背景再还原"那类机制）
-- 若在运行时改了面板宽度（`phos.panel.resize`），请重新创建区域——
-  区域范围在创建时就与表层求过交
+- 字段 `x/y/w/h` 是**构造时**与表层求交的结果：运行时改了面板宽度（`phos.panel.resize`）
+  后请重新创建区域。旧区域即使不重建也不会写到面外（写入会按当前面板宽度再裁一次），
+  但它报的 `w` 会比实际能画的宽
 
 ## phos.input
 

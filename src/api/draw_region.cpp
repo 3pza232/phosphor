@@ -10,22 +10,22 @@ namespace phos {
 
 namespace {
 
-/// 区域锚定的表层左边界与宽度：内容区（默认）或侧栏面板
-int surface_x(const HostContext& host, const std::string& surface) {
-    return surface == "panel" ? host.panel_origin_x() : host.content_x;
+/// 区域锚定到的面的左边界与宽度：内容区（默认）或侧栏面板
+int anchor_x(const HostContext& host, const std::string& anchor) {
+    return anchor == "panel" ? host.panel_origin_x() : host.content_x;
 }
 
-int surface_w(const HostContext& host, const std::string& surface) {
-    return surface == "panel" ? host.panel_w : host.content_w;
+int anchor_w(const HostContext& host, const std::string& anchor) {
+    return anchor == "panel" ? host.panel_w : host.content_w;
 }
 
 } // namespace
 
-DrawRegion::DrawRegion(HostContext& host, std::string surface, int x, int y, int w, int h)
-    : host_(host), surface_(std::move(surface)), x_(x), y_(y), w_(w), h_(h) {
-    // 与表层可用范围求交：越界部分直接不要，而不是让每次绘制各自做边缘判断。
+DrawRegion::DrawRegion(HostContext& host, std::string anchor, int x, int y, int w, int h)
+    : host_(host), anchor_(std::move(anchor)), x_(x), y_(y), w_(w), h_(h) {
+    // 与锚定面的可用范围求交：越界部分直接不要，而不是让每次绘制各自做边缘判断。
     // 求交只做一次，字段给出的就是"实际能画的区域"。
-    const int limit_w = surface_w(host_, surface_);
+    const int limit_w = anchor_w(host_, anchor_);
     const int limit_h = host_.content_h;
     const int left = std::max(x_, 0);
     const int top = std::max(y_, 0);
@@ -37,84 +37,60 @@ DrawRegion::DrawRegion(HostContext& host, std::string surface, int x, int y, int
     h_ = std::max(0, bottom - top);
 }
 
-// 局部 → 绝对：表层起点 + **区域自身的偏移** + 区域内坐标。
-// 少了中间那项，整块区域会落到表层左上角，而不是区域自己的位置
-int DrawRegion::abs_x(int x) const { return surface_x(host_, surface_) + x_ + x; }
+// 局部 → 绝对：锚定面起点 + **区域自身的偏移** + 区域内坐标。
+// 少了中间那项，整块区域会落到面的左上角，而不是区域自己的位置
+int DrawRegion::abs_x(int x) const { return anchor_x(host_, anchor_) + x_ + x; }
 int DrawRegion::abs_y(int y) const { return host_.content_y + y_ + y; }
+
+int DrawRegion::room_w() const {
+    // w_ 是构造时与当时面宽的交集：面板之后被 phos.panel.resize 改窄，它就会偏大
+    const int room = anchor_w(host_, anchor_) - x_;
+    return w_ < room ? w_ : room;
+}
+
+int DrawRegion::clip_w(int x, int w) const {
+    const int avail = room_w() - x;
+    if (avail <= 0) return 0;
+    return w < avail ? w : avail;
+}
+
+Surface DrawRegion::surface_of() const {
+    return Surface(screen(), abs_x(0), abs_y(0), room_w(), h_);
+}
 
 ui::Style DrawRegion::style() const { return cart_style(host_); }
 
-void DrawRegion::clear(Color fg, Color bg) { fill(0, 0, w_, h_, U' ', fg, bg); }
+void DrawRegion::clear(Color fg, Color bg) { surface_of().clear(fg, bg); }
 
 void DrawRegion::put(int x, int y, char32_t ch, Color fg, Color bg) {
-    const int cols = text::char_width(ch);
-    // 宽字符在最后一列放不下：宁可少画一个字，也不让它溢出到区域外
-    if (cols == 0 || x < 0 || y < 0 || x + cols > w_ || y >= h_) return;
-    screen().put(abs_x(x), abs_y(y), ch, fg, bg);
+    surface_of().put(x, y, ch, fg, bg);
 }
 
 void DrawRegion::print(int x, int y, std::string_view text, Color fg, Color bg) {
-    if (y < 0 || y >= h_) return;
-    int col = x;
-    for (char32_t cp : text::decode(text)) {
-        const int cols = text::char_width(cp);
-        if (cols == 0) continue;
-        if (col + cols > w_) break;  // 右边界放不下就停，宁少画不错位
-        if (col >= 0) screen().put(abs_x(col), abs_y(y), cp, fg, bg);
-        col += cols;
-    }
+    surface_of().print(x, y, text, fg, bg);
 }
 
 void DrawRegion::fill(int x, int y, int w, int h, char32_t ch, Color fg, Color bg) {
-    for (int row = y; row < y + h; ++row)
-        for (int col = x; col < x + w; ++col) put(col, row, ch, fg, bg);
+    surface_of().fill(x, y, w, h, ch, fg, bg);
 }
 
 void DrawRegion::blit(int x, int y, const std::vector<std::string>& rows, Color fg, Color bg) {
-    for (size_t i = 0; i < rows.size(); ++i) print(x, y + static_cast<int>(i), rows[i], fg, bg);
-}
-
-void DrawRegion::put_fg(int x, int y, char32_t ch, Color fg) {
-    const int cols = text::char_width(ch);
-    if (cols == 0 || x < 0 || y < 0 || x + cols > w_ || y >= h_) return;
-    screen().put_fg(abs_x(x), abs_y(y), ch, fg);
-}
-
-void DrawRegion::print_fg(int x, int y, std::string_view text, Color fg) {
-    if (y < 0 || y >= h_) return;
-    int col = x;
-    for (char32_t cp : text::decode(text)) {
-        const int cols = text::char_width(cp);
-        if (cols == 0) continue;
-        if (col + cols > w_) break;
-        if (col >= 0) screen().put_fg(abs_x(col), abs_y(y), cp, fg);
-        col += cols;
-    }
-}
-
-void DrawRegion::fill_fg(int x, int y, int w, int h, char32_t ch, Color fg) {
-    for (int row = y; row < y + h; ++row)
-        for (int col = x; col < x + w; ++col) put_fg(col, row, ch, fg);
-}
-
-void DrawRegion::blit_fg(int x, int y, const std::vector<std::string>& rows, Color fg) {
-    for (size_t i = 0; i < rows.size(); ++i)
-        print_fg(x, y + static_cast<int>(i), rows[i], fg);
+    surface_of().blit(x, y, rows, fg, bg);
 }
 
 void DrawRegion::frame(std::string_view title) {
-    ui::frame(screen(), ui::Rect{abs_x(0), abs_y(0), w_, h_}, title, style());
+    ui::frame(screen(), ui::Rect{abs_x(0), abs_y(0), room_w(), h_}, title, style());
 }
 
 void DrawRegion::divider(int y) {
     if (y < 0 || y >= h_) return;
     ui::Style s = style();
-    ui::divider(screen(), abs_x(0), abs_y(y), w_, s.dim, s.bg);
+    ui::divider(screen(), abs_x(0), abs_y(y), room_w(), s.dim, s.bg);
 }
 
 void DrawRegion::bar(int x, int y, int w, float ratio) {
     if (y < 0 || y >= h_) return;
-    ui::bar(screen(), abs_x(x), abs_y(y), std::min(w, w_ - x), ratio, style());
+    ui::bar(screen(), abs_x(x), abs_y(y), clip_w(x, w), ratio, style());
 }
 
 void DrawRegion::menu(int x, int y, int w, const std::vector<std::string>& items, int selected,
@@ -122,13 +98,13 @@ void DrawRegion::menu(int x, int y, int w, const std::vector<std::string>& items
     if (items.empty()) return;
     const int height = h > 0 ? h : static_cast<int>(items.size());
     if (y + height <= 0 || y >= h_) return;
-    ui::menu(screen(), ui::Rect{abs_x(x), abs_y(y), std::min(w, w_ - x), height}, items, selected,
+    ui::menu(screen(), ui::Rect{abs_x(x), abs_y(y), clip_w(x, w), height}, items, selected,
              style());
 }
 
 void DrawRegion::body(int x, int y, int w, std::string_view text, int max_lines) {
     if (y < 0 || y >= h_) return;
-    ui::text_block(screen(), abs_x(x), abs_y(y), std::min(w, w_ - x), text,
+    ui::text_block(screen(), abs_x(x), abs_y(y), clip_w(x, w), text,
                    max_lines > 0 ? max_lines : 1, style());
 }
 

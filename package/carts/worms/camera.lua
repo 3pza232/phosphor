@@ -7,8 +7,7 @@
 local Camera = {}
 Camera.__index = Camera
 
--- 视口尺寸（子格）**由调用方给**，不能写死：声明侧栏后内容区会变窄，
--- 写死 160 的话右侧那一截会被主机裁掉——画得再多玩家也看不见
+-- 视口尺寸（子格）由调用方给：写死的宽度在侧栏展开后会被主机裁掉右侧
 Camera.VIEW_W, Camera.VIEW_H = 160, 90
 
 function Camera.new(world_w, world_h, view_w, view_h)

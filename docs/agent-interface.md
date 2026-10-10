@@ -31,6 +31,7 @@ phosphor [选项]
   --dump-screen          退出时把屏幕网格以文本打印到 stdout
   --dump-every <N>       每 N 帧打印一次屏幕（流式观察）
   --screenshot <path>    退出时把画面写成 PNG（CPU 光栅化，无头同样可用）
+  --save-dir <dir>       存档与机台配置的落点（默认 saves/；工具脚本据此隔离）
   --seed <n>             固定随机种子
 
 确定性输入由**控制通道**承担（`input.inject` + `time.step`）：不需要额外文件，
@@ -43,8 +44,8 @@ agent 能看着状态一步步来；`--seed` 负责随机数可复现。
 DevKit：
   --scan <dir>           列出目录下的卡带（--json 输出机器可读格式）
   --pack <dir> [--out f] 将卡带目录打包为 .phos，并校验 manifest 与入口脚本
-  --new <dir> [--name t]
-                         从 devkit/template 生成卡带骨架（标题缺省用目录名）
+  --new <dir> [--id s] [--name s] [--author s]
+                        从 devkit/template 生成卡带骨架（id 缺省用目录名，name 缺省用 id）
   --check-api            校验 devkit/phos.lua 注解与实装是否一致（含字段级）
   --json                 机器可读输出使用 JSON 格式
 
@@ -112,14 +113,14 @@ phosphor --pack carts/snake --json
 | 命令 | 参数 | 说明 |
 |------|------|------|
 | `ping` | — | 连通性探测 |
-| `state.query` | `path?` | 主机状态：帧号、模式（含 `TAPE` 磁带码界面）、运行形态（`video`/`control_port`）、网格/内容区尺寸、面板宽度、皮肤/滤镜/启动动画/音效包/**字体方案**（`font` 生效方案 + `fonts` 全部可选）、**界面语言**（`language`：`zh`/`en`）、**菜单光标**（`cursor`：当前菜单选中第几行，`-1` = 当前模式没有菜单）、音量、CRT 档位、音频是否就绪、**音乐状态**（`music.on` / `section` / `index` / `count`）、卡带元信息、卡带开销（`cart.update_ms` / `cart.draw_ms` = 最近一帧；`cart.update_peak_ms` / `cart.draw_peak_ms` = 约 1 秒窗口内的峰值，查偶发卡顿看这个；`cart.lua_mem_kb` = Lua 堆）、按住的键、存档概况。带 `path` 时另返回卡带 Lua 全局值（点分路径）；卡带定义 `debug_state()` 时另返回其内容（见下节） |
+| `state.query` | `path?` | 主机状态：帧号、模式（含 `TAPE` 磁带码界面）、运行形态（`video`/`control_port`）、网格/内容区尺寸、面板宽度、皮肤/滤镜/启动动画/音效包/**字体方案**（顶层 `font` 是生效方案，全部可选在各 `packs.*` 里，如 `packs.font`；`packs.filter` 等装的是**屏幕上画的名字**，`packs.filter_ids` 等是逐位对应的**稳定 id**——要比对状态值或记住某一项就用 id，名字会随界面语言变）、**界面语言**（`language`：`zh`/`en`）、**菜单光标**（`cursor`：当前菜单选中第几行，`-1` = 当前模式没有菜单）、**卡带架顺序**（`shelf`：架上的卡带 id 数组，按玩家眼里的顺序＝最近打开优先；`cursor` 就是它的下标，于是"数到第几张再插卡"是可编程的）、音量、CRT 档位、音频是否就绪、**音乐状态**（`music.on` / `section` / `index` / `count`）、卡带元信息、卡带开销（`cart.update_ms` / `cart.draw_ms` = 最近一帧；`cart.update_peak_ms` / `cart.draw_peak_ms` = 约 1 秒窗口内的峰值，查偶发卡顿看这个；`cart.lua_mem_kb` = Lua 堆）、按住的键、存档概况。带 `path` 时另返回卡带 Lua 全局值（点分路径）；卡带定义 `debug_state()` 时另返回其内容（见下节） |
 | `screen.read` | — | 当前屏幕网格：`width`/`height`/`frame` + `lines`（逐行文本数组） |
 | `screenshot` | `path` | 当前画面写成 PNG（含滤镜/扫描线等后处理），返回像素尺寸 |
 | `carts.scan` | — | 扫描 `carts/` 目录，返回卡带列表（含 `error`） |
-| `input.inject` | `key`, `down`(bool)，可选 `frames` | 注入虚拟键（可用键名见 [api-reference.md](api-reference.md) 的「phos.input」一节）；`frames` 表示按住 N 个逻辑帧后自动释放。`key` 也可为主机保留键 `escape`（见下节） |
+| `input.inject` | `key`, `down`(bool)，可选 `frames` | 注入虚拟键（可用键名见 [api-reference.md](api-reference.md) 的「phos.input」一节）；`frames` 表示按住 N 个逻辑帧后自动释放。命令本身**立即回包**，实时与单步模式下都一样。`key` 也可为主机保留键 `escape`（见下节） |
 | `input.text` | `text` | 注入一段文本（UTF-8，可含中文），与玩家敲键盘等价。**只在下一逻辑帧可见**（文本是按帧的，下一帧自动清空） |
 | `input.clear` | — | 释放全部注入按键 |
-| `time.step` | `frames`(默认 1) | 进入单步模式并推进 N 个逻辑帧，**推进完毕后**才回包（确定性同步点） |
+| `time.step` | `frames`(默认 1) | 进入单步模式并推进 N 个逻辑帧，**推进完毕后**才回包（确定性同步点）。窗口模式下同样精确：推进只由本命令驱动，与显示器刷新节奏无关 |
 | `time.resume` | — | 退出单步模式，恢复实时推进 |
 | `save.export` | — | 当前卡带的磁带码（十六进制文本） |
 | `save.import` | `code` | 用磁带码恢复当前卡带的存档（整份替换），返回条目数 |
@@ -162,9 +163,12 @@ $w.WriteLine('{"id":3,"cmd":"quit"}')
 ```
 
 > 参考实现：`tools/control_test.py`——本仓库的回归脚本，
-> 覆盖握手、状态查询、单步确定性、读屏、注入输入、热重载、扫描与退出码。
-> 完整应用见：`agent_play_snake.py`（玩游戏）、`agent_shell_demo.py`（操作系统界面）、
-> `agent_watch.py`（开窗口给人看）。
+> 覆盖握手、状态查询、单步确定性、读屏、注入输入、热重载、扫描与退出码；
+> `tools/window_smoke.py` 覆盖**窗口路径**（开窗跑时钟、菜单→开局、按键、`time.step` 精确性）；
+> `tools/cart_smoke.py` 覆盖**卡带运行**：出厂卡带跑得完、不出错、有画面，
+> 且同种子跑两遍逐字节一致（不比对像素——画面本来就该随卡带内容变）。
+> 完整应用见：`agent_play.py`（开窗挑一张卡带玩起来，任意卡带都行）、
+> `agent_shell_demo.py`（操作系统界面）。各脚本的跑法见仓库 README 的"开发脚本"表。
 
 ### 让它玩起来：agent 操控闭环
 
@@ -199,10 +203,11 @@ input.inject 注入按键  →  time.step 精确推进若干帧
 
 不可序列化的值（函数 / userdata）以 `{"__type":"…"}` 表达，不存在的路径返回 `null`。
 
-> 完整可跑的实例：`tools/agent_play_snake.py`——约 100 行 Python，
-> 读 `debug_state()` 判断蛇头与食物，贪心选向后 `input.inject` 方向键，
-> 再用 `time.step 6` 推进一步，直到游戏结束并打印终局画面。
-> 本仓库实测：它自己玩到 50 分、长度 8 后死于自身（贪心不含避身，属预期）。
+> 完整可跑的实例：`tools/agent_play.py`——通用玩家，**不认识任何具体卡带**：
+> 开窗 → 在卡带架上选一张 → 每轮读 `state.query` 里的 `debug_state()` 决定按哪个键 →
+> `input.inject` + `time.step` 推进。按键来源按优先级取：`--policy` 指定的策略文件
+> （`choose(state) -> 键名`）、卡带自报的 `debug.next_key`、`--keys` 给的序列，
+> 都没有才在键池里随便按。想让 agent"玩得好"，写的是策略文件，不是改这个脚本。
 
 ### 操控主机本身：`escape` 是主机保留键
 
@@ -277,9 +282,9 @@ PHOSPHOR - agent :7731 [stepping]     agent 接管，单步推进（画面只在
   谁按的都一样（卡带无从分辨）。
 - 窗口模式下音频设备是开着的，音效/音乐都会响——演示时这一半临场感来自它。
 
-> 完整实例：`tools/agent_watch.py`——开窗、读窗口标题自证身份、
-> 读卡带遥测做贪心操控（蛇会自己吃食物、死了自己按 ENTER 重开）、
-> 切换单步演示标题变化、注入 Esc 暂停/继续，最后退出。
+> 完整实例：`tools/agent_play.py --shelf-cart worms`——开窗、在卡带架上逐张试插
+> 直到选中指定的卡带、读卡带遥测操控它玩，最后干净退出；标题里的 `[stepping]`
+> 说明画面只在 `time.step` 时前进。
 
 ### 日志落盘：`--log <file>`
 

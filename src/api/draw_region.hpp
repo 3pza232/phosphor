@@ -2,6 +2,7 @@
 
 #include "api/host_api.hpp"
 #include "core/screen.hpp"
+#include "core/surface.hpp"
 #include "core/ui.hpp"
 
 #include <map>
@@ -21,32 +22,28 @@ namespace phos {
 /// 本机每帧清屏、卡带每帧重画，所以**层级就是调用顺序**：先画底图、再画窗口。
 /// 不需要"备份背景再还原"那类机制——窗口关闭时不再画它，底图自然就在。
 ///
-/// `surface` 决定锚定在哪个面："screen"（内容区，默认）或 "panel"（侧栏面板）。
+/// 写入本身交给 `Surface`：区域与内容区、侧栏面板的差别只是"原点在哪、裁到哪为止"，
+/// 越界裁剪、透明底、宽字符占格的规则三处必须一致，所以只写一份。
+///
+/// `anchor` 决定锚定在哪个面："screen"（内容区，默认）或 "panel"（侧栏面板）；
+/// 它在 Lua 侧的名字是 `surface`。
 /// 构造时会与表层的可用范围**求交**（越界部分直接不要），所以 x/y/w/h 给出的
 /// 就是实际可画范围，卡带据此排版即可。
 class DrawRegion {
 public:
-    DrawRegion(HostContext& host, std::string surface, int x, int y, int w, int h);
+    DrawRegion(HostContext& host, std::string anchor, int x, int y, int w, int h);
 
     int x() const { return x_; }
     int y() const { return y_; }
     int w() const { return w_; }
     int h() const { return h_; }
-    const std::string& surface() const { return surface_; }
+    const std::string& anchor() const { return anchor_; }
 
     // 坐标均为区域局部坐标；颜色由 Lua 绑定层转换后传入
     void clear(Color fg, Color bg);
     void put(int x, int y, char32_t ch, Color fg, Color bg);
     void print(int x, int y, std::string_view text, Color fg, Color bg);
     void fill(int x, int y, int w, int h, char32_t ch, Color fg, Color bg);
-
-    /// 与 phos.screen 同一套语义：**只改前景、保留该格原有背景**。
-    /// Lua 侧"没给 bg"就走这几条，于是区域里的字默认透明——
-    /// 覆盖层压在游戏画面上时不会糊出一块块黑底
-    void put_fg(int x, int y, char32_t ch, Color fg);
-    void print_fg(int x, int y, std::string_view text, Color fg);
-    void fill_fg(int x, int y, int w, int h, char32_t ch, Color fg);
-    void blit_fg(int x, int y, const std::vector<std::string>& rows, Color fg);
     /// 一次写多行（每行一条字符串）：地图/画面搬运用，避免逐格与逐行调用
     void blit(int x, int y, const std::vector<std::string>& rows, Color fg, Color bg);
     void frame(std::string_view title);
@@ -59,13 +56,19 @@ public:
 
 private:
     Screen& screen() const { return *host_.screen; }
+    /// 本区域对应的一块面。每次现取：面板宽度可在运行时改，缓存就会用旧几何
+    Surface surface_of() const;
+    /// 区域在**当前**面宽下还能用的宽度：w_ 是构造时与当时面宽的交集，面板变窄后会偏大
+    int room_w() const;
+    /// 区域内一条横线的实际可用宽度（x 为区域内坐标，放不下就是 0）
+    int clip_w(int x, int w) const;
     ui::Style style() const;
-    /// 局部坐标 → 绝对网格坐标（surface 决定横向锚点）
+    /// 局部坐标 → 绝对网格坐标（锚点决定横向基准）
     int abs_x(int x) const;
     int abs_y(int y) const;
 
     HostContext& host_;
-    std::string surface_;
+    std::string anchor_;
     int x_ = 0, y_ = 0, w_ = 0, h_ = 0;
 };
 

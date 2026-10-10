@@ -23,12 +23,9 @@ struct FontChain::Face {
 
 namespace {
 
-/// 字形缩放。两套度量，理由不同：
-/// - 主字体（ASCII 像素字体）按行高缩放（ascent − descent = 字号像素高），
-///   整机的像素基线由它确定，不能动；
-/// - 回退字体（中文等大码集）按 **em 方框** 缩放：CJK 字体的行高度量普遍大于
-///   一个 em（给注音、附加符号留余地），若也按行高缩放，一个满 em 的汉字
-///   只占约 0.7 个格子，看上去明显偏小。
+/// 字形缩放。主字体（ASCII 像素字体）按行高缩放——整机像素基线由它定，不能动；
+/// 回退字体（中文等大码集）按 **em 方框**缩放：这类字体的行高度量普遍大于一个 em
+/// （给注音、附加符号留余地），按行高缩放会让满 em 汉字只占约 0.7 格，明显偏小
 float face_scale(const stbtt_fontinfo& info, float pixel_height, bool primary) {
     return primary ? stbtt_ScaleForPixelHeight(&info, pixel_height)
                    : stbtt_ScaleForMappingEmToPixels(&info, pixel_height);

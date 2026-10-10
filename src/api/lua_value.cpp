@@ -7,6 +7,7 @@
 namespace phos::api {
 
 Color read_color(const sol::object& object, Color fallback) {
+    if (object.is<Color>()) return object.as<Color>();
     if (!object.is<sol::table>()) return fallback;
     const sol::table table = object.as<sol::table>();
     auto channel = [&table](int index, uint8_t fallback_channel) {
@@ -30,6 +31,39 @@ char32_t read_char(const sol::object& object, char32_t fallback) {
         return number > 0 ? static_cast<char32_t>(number) : fallback;
     }
     return fallback;
+}
+
+std::vector<std::string> read_rows(const sol::object& object) {
+    std::vector<std::string> rows;
+    if (!object.is<sol::table>()) return rows;
+    const sol::table table = object.as<sol::table>();
+    rows.reserve(table.size());
+    for (size_t i = 1; i <= table.size(); ++i) {
+        const sol::object row = table[i];
+        if (row.is<std::string>()) rows.push_back(row.as<std::string>());
+    }
+    return rows;
+}
+
+std::map<char, Color> read_char_color_map(const sol::object& object) {
+    std::map<char, Color> colors;
+    if (!object.is<sol::table>()) return colors;
+    const sol::table table = object.as<sol::table>();
+    for (auto& entry : table) {
+        if (!entry.first.is<std::string>()) continue;
+        const std::string key = entry.first.as<std::string>();
+        if (key.empty()) continue;
+        if (!entry.second.is<Color>() && !entry.second.is<sol::table>()) continue;
+        colors[key[0]] = read_color(entry.second, Color::white);
+    }
+    return colors;
+}
+
+Color read_background(const sol::object& object) {
+    if (object.is<Color>() || object.is<sol::table>()) return read_color(object, Color::black);
+    Color keep_bg;
+    keep_bg.keep = true;
+    return keep_bg;
 }
 
 } // namespace phos::api

@@ -6,8 +6,10 @@
 
 现有：
   default       TUBE WARMUP：显像管预热（亮线展开 → 逐行自检 → 稳定）
+  persistence   PERSISTENCE：写头扫过显影，笔画先亮后暗，留下余辉
   static-rain   STATIC RAIN：雪花噪点如雨，LOGO 从干扰中浮现
   sweep         CART LOADER：进度条推进 + 校验灯逐块点亮
+  waveform      WAVEFORM LOCK：抖动噪声波锁相成稳定方波
 
 动画是一段 Lua 脚本（main.lua），用 phos.screen / phos.color / phos.ui 逐帧作画，
 能力与游戏卡带完全相同 —— 想做多夸张都行。

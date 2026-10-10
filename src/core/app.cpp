@@ -1,12 +1,10 @@
 #include "core/app.hpp"
 
-#include "core/json_lite.hpp"
 #include "cart/cart_scanner.hpp"
 #include "render/font.hpp"
 #include "core/effects.hpp"
 #include "core/log.hpp"
 #include "pack/builtin.hpp"
-#include "render/screen_image.hpp"
 #include "core/version.hpp"
 #include "platform/window.hpp"
 #include "render/renderer.hpp"
@@ -88,7 +86,6 @@ int App::run(const CliOptions& opts) {
     refresh_shelf_order();
 
     std::vector<std::string> names;
-    names.clear();
     for (const auto& skin : skins_) names.push_back(skin.name);
     shell_.set_skins(names, skin_index_);
     names.clear();
@@ -228,10 +225,12 @@ void App::tick_playing(float dt) {
     // 宽度只认 host_.panel_w 这一个真源——卡带能在运行时改它（phos.panel.resize），
     // 这里若改读 manifest 的值，分隔线就会与面板实际宽度对不上
     if (host_.panel_w > 0) {
-        const int divider_x = host_.content_x + kContentW - host_.panel_w - 1;
+        // 分隔线贴着面板左缘：面板左缘由 panel_origin_x() 给出（内容区与面板宽度的函数），
+        // 这里再抄一份"内容区宽 - 面板宽"就会与它脱节
+        const int divider_x = host_.panel_origin_x() - 1;
         const Color divider_color =
             active_filter_.slots[static_cast<size_t>(PaletteSlot::dark_gray)];
-        for (int y = host_.content_y; y < host_.content_y + kContentH; ++y)
+        for (int y = host_.content_y; y < host_.content_y + host_.content_h; ++y)
             screen_.put(divider_x, y, U'|', divider_color);
     }
     input_.next_frame();
@@ -287,7 +286,9 @@ bool App::any_key_edge() const {
 }
 
 ui::Rect App::content_rect() const {
-    return ui::Rect{host_.content_x, host_.content_y, host_.content_w, host_.content_h};
+    // 与外壳读同一份皮肤几何（core/skin.hpp 的 content_rect）：
+    // host_.content_* 是给卡带 API 用的镜像，由 apply_skin 一处写入
+    return phos::content_rect(skins_[static_cast<size_t>(skin_index_)]);
 }
 
 void App::start_boot_animation() {
@@ -314,11 +315,7 @@ void App::start_boot_animation() {
     play_event("boot");
 }
 
-// ---------------------------------------------------------------- 观测与工具
-
-
-
-
+// ---------------------------------------------------------------- 输入落地
 
 
 
@@ -335,12 +332,6 @@ void App::apply_input_action(const InputAction& action, int hold_frames) {
     input_.set_key(action.key, action.down);
     if (action.down && hold_frames > 0) pending_releases_.emplace_back(action.key, hold_frames);
 }
-
-
-
-
-
-
 
 // ---------------------------------------------------------------- 运行
 
@@ -458,22 +449,36 @@ int App::run_windowed(const CliOptions& opts) {
         if (dt > 0.0f) fps_ = fps_ * 0.9f + (1.0f / dt) * 0.1f;
         host_.fps = static_cast<int>(fps_ + 0.5f);  // 卡带侧 phos.sys.fps() 要的是真实帧率
 
-        // 单步模式丢弃累积时间：时间只由 time.step 推进，恢复实时时不补跑积压帧
-        if (control_time_driven()) accumulator = 0.0f;
-
-        accumulator += dt;
-        while (accumulator >= kLogicStep) {
-            if (control_time_driven() && pending_steps_ <= 0) {
-                accumulator = 0.0f;
-                break;
+        // 单步模式的推进**只看待推进帧数**，不攒墙钟时间：它的承诺是"推 N 帧，然后回包"，
+        // 与显示器的刷新节奏无关。改成"攒够一个逻辑帧才走"就会在渲染循环快于逻辑帧的
+        // 机器上（关垂直同步、高刷屏、窗口被遮挡）永远攒不够，time.step 永不回包
+        if (control_time_driven()) {
+            accumulator = 0.0f;
+            while (pending_steps_ > 0) {
+                // 一批里也要能被"关窗 / 退出 / 帧预算"打断：一次 time.step 要几百帧时，
+                // 把这些检查推到批末就等于期间点关闭没有反应。停下前先回包，
+                // 否则 agent 会等一个永远不会来的响应
+                if (quit_ || window.should_close() ||
+                    (opts.frames > 0 && frame_count_ >= opts.frames)) {
+                    pending_steps_ = 0;
+                    complete_step_request();
+                    break;
+                }
+                advance(kLogicStep, &renderer, &window);
+                ++frame_count_;
+                release_expired_inputs();
+                if (--pending_steps_ <= 0) complete_step_request();
+                maybe_dump(opts, frame_count_);
             }
-            accumulator -= kLogicStep;
-            advance(kLogicStep, &renderer, &window);
-            ++frame_count_;
-            release_expired_inputs();
-            if (control_stepping_ && pending_steps_ > 0 && --pending_steps_ == 0)
-                complete_step_request();
-            maybe_dump(opts, frame_count_);
+        } else {
+            accumulator += dt;
+            while (accumulator >= kLogicStep) {
+                accumulator -= kLogicStep;
+                advance(kLogicStep, &renderer, &window);
+                ++frame_count_;
+                release_expired_inputs();
+                maybe_dump(opts, frame_count_);
+            }
         }
 
         renderer.draw(screen_);

@@ -7,6 +7,11 @@ namespace phos {
 inline constexpr int kContentW = 80;    // 卡带内容区宽（字符格）
 inline constexpr int kContentH = 45;    // 卡带内容区高
 inline constexpr int kPanelMaxW = 32;   // 侧栏面板最大宽度
+
+/// 面板宽度的唯一合法化点：负数按收起（0）算，超上限按上限算。
+/// 面板宽度是与主机共享的布局量（分隔线、面板局部坐标都跟着它走），
+/// 所以钳制只写一份——两处各写一套，迟早对同一个输入给出两个结果
+inline int clamp_panel_w(int w) { return w < 0 ? 0 : (w > kPanelMaxW ? kPanelMaxW : w); }
 inline constexpr int kCellPx = 16;      // 单元格像素边长
 inline constexpr int kLogicFps = 60;    // 逻辑帧率
 

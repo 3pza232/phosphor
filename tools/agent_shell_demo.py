@@ -30,6 +30,8 @@ TEXT = {
         "settings_title": "设置",
         "shelf_hint": "[F2] 设置",
         "scanlines": "扫描线",
+        "filter": "显像管滤镜",
+        "font": "字体方案",
         "resume": "继续游戏",
         "eject": "拔出卡带",
     },
@@ -37,6 +39,8 @@ TEXT = {
         "settings_title": "SETTINGS",
         "shelf_hint": "[F2] SETTINGS",
         "scanlines": "SCANLINES",
+        "filter": "TUBE FILTER",
+        "font": "FONT SCHEME",
         "resume": "RESUME",
         "eject": "EJECT CART",
     },
@@ -47,7 +51,33 @@ FONT_SCHEME_DIR = os.path.join("theme", "font", "_demo")
 LOG = "demo_stderr.log"
 
 
+def goto_row(host, label: str, limit: int = 14) -> bool:
+    """把设置光标移到标题为 label 的那一行；返回是否找到。
+
+    两个信号都不够用：标题**每一行都画**（等于一步也不走），而行首的 '>' 与值里的
+    '< 候选 >' 分隔符同形，只找 '>' 会停在任意"有候选值"的行上。光标标记固定在
+    **内容区第 6 列**，所以就只在这一小段里找；行序与起始行一概不假设——界面记着
+    上次停在哪一行，行数还会随版本增加。
+    """
+
+    def focused(text: str) -> bool:
+        return any(">" in line[6:11] and label in line for line in text.splitlines())
+
+    for _ in range(limit):
+        if focused(host.screen_text()):
+            return True
+        host.key("down")
+    return focused(host.screen_text())
+
+
 def cycle_next(names: list[str], current: str) -> str:
+    """设置里"下一项"会被切到哪个名字。
+
+    当前值可能不是内容包：内置的 NONE（不改配色）就没有对应文件夹，玩家的设置
+    里却可以是它。这时从列表头开始，而不是把 list.index 抛出来。
+    """
+    if current not in names:
+        return names[0]
     return names[(names.index(current) + 1) % len(names)]
 
 
@@ -91,7 +121,8 @@ def run() -> int:
             first = carts[0]
             check(len(carts) >= 1, f"{len(carts)} cart(s) scanned")
             screen = host.screen_text()
-            check(first["name"] in screen, f"shelf screen lists {first['name']}")
+            # 架子按"最近打开"排序，与 carts.scan 的扫描顺序不同：只断言扫到的卡有在架上的
+            check(any(c["name"] in screen for c in carts), "shelf screen lists a scanned cart")
             check(words["shelf_hint"] in screen, f"shelf hint shows the real key ({words['shelf_hint']})")
             check(state.get("cart") is None, "no cart inserted yet")
 
@@ -102,14 +133,20 @@ def run() -> int:
             check(words["scanlines"] in host.screen_text(), "settings screen shows the CRT row")
 
             section("navigate to the FILTER row and cycle it forward")
-            filters = state["packs"]["filter"]
+            # 认 **id**：state.filter 是 id，packs.filter 是屏幕上给人看的名字，
+            # 同一个包这两个值不同名（内置项的名字还会随语言变）——拿名字比 id 会假失败
+            filter_ids = state["packs"]["filter_ids"]
+            filter_names = state["packs"]["filter"]
             original = state["filter"]
-            target = cycle_next(filters, original)
-            host.key("down")
+            target = cycle_next(filter_ids, original)
+            check(len(filter_ids) >= 2, f"{len(filter_ids)} filter(s) available (at least 2 needed)")
+            check(target != original, f"target filter differs from current: {original} -> {target}")
+            check(goto_row(host, words["filter"]), "cursor reached the FILTER row")
             host.key("right")
             state = host.state()
             check(state.get("filter") == target, f"filter: {original} -> {state.get('filter')}")
-            check(target in host.screen_text(), "screen shows the new filter name")
+            check(filter_names[filter_ids.index(target)] in host.screen_text(),
+                  "screen shows the new filter name")
 
             section("restore the setting (cycle back)")
             host.key("left")
@@ -125,7 +162,7 @@ def run() -> int:
             check(len(schemes) >= 2, f"{len(schemes)} font scheme(s) available (at least 2 needed)")
             check(font_target != font_original,
                   f"target scheme differs from current: {font_original} -> {font_target}")
-            host.key("down")   # FILTER -> FONT SCHEME
+            check(goto_row(host, words["font"]), "cursor reached the FONT SCHEME row")
             host.key("right")
             state = host.state()
             check(state.get("font") == font_target, f"font scheme: {font_original} -> {state.get('font')}")
@@ -144,11 +181,14 @@ def run() -> int:
             section("insert the cartridge from the shelf (Enter = confirm)")
             host.key("start", frames=4)
             state = host.state()
+            # 架上选中的是哪张由"最近打开"顺序决定，所以从状态里读，不预设是哪一张
+            inserted = state.get("cart", {})
             check(state.get("mode") == "PLAYING", f"mode={state.get('mode')}")
-            check(state.get("cart", {}).get("id") == first["id"],
-                  f"cart={state.get('cart', {}).get('id')} [{state.get('cart', {}).get('name')}]")
+            check(inserted.get("id") is not None,
+                  f"cart={inserted.get('id')} [{inserted.get('name')}]")
             host.step(60)
-            check(first["name"] in host.screen_text(), "cart UI is on screen")
+            check(bool(inserted.get("name")) and inserted["name"] in host.screen_text(),
+                  "cart UI is on screen")
             check(state.get("debug") is not None, "cart reports debug_state")
 
             section("pause it with escape")

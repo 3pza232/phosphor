@@ -325,8 +325,7 @@ function Game:update(dt)
   -- 吃到水果：每帧都判，而不是只在"走完一格之后"判。水果完全可能出现在玩家脚下
   -- （踩点计时，或者玩家刚复活在同一格），那种情况站着不动就该吃到；只在移动后判会漏掉
   if self.fruit and self.player.c == self.fruit.c and self.player.r == self.fruit.r then
-    -- 加分 + 一条命。命才是这条规则里"看得见"的奖励——
-    -- 从前只加一百来分，加完玩家根本感觉不到自己吃到了东西
+    -- 加分 + 一条命。命才是这条规则里"看得见"的奖励
     local points = 100 * self.level
     self.score = self.score + points
     self.lives = self.lives + 1

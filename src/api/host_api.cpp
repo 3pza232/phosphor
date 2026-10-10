@@ -3,10 +3,12 @@
 #include "api/text_field.hpp"
 
 #include "api/assets_api.hpp"
-#include "cart/cartridge.hpp"
 #include "api/audio_api.hpp"
+#include "api/lua_value.hpp"
 #include "api/ui_api.hpp"
+#include "cart/cartridge.hpp"
 #include "core/log.hpp"
+#include "core/surface.hpp"
 #include "core/text.hpp"
 #include "core/version.hpp"
 
@@ -18,37 +20,16 @@ namespace phos {
 
 namespace {
 
-/// 可选颜色参数解析（未提供时用默认值）
-Color opt_color(const sol::object& obj, Color fallback) {
-    if (obj.is<Color>()) return obj.as<Color>();
-    return fallback;
+/// 内容区那一块面。每次现取：皮肤几何与面板宽度都能在运行时改，
+/// 缓存下来就会拿旧几何去画
+Surface content_surface(HostContext& host) {
+    return Surface(*host.screen, host.content_x, host.content_y, host.content_w, host.content_h);
 }
 
-/// 是否"没给背景色"。给了就照给的画，没给则**保留该格原有背景**：
-/// 卡带画字/画地形时不该让每个字符都自带一块黑底——那会在天空上留下黑斑，
-/// 在地形的斜边留下黑边。想要不透明底色的调用方显式传一个颜色即可
-bool transparent_bg(const sol::object& obj) {
-    return !obj.valid() || obj.get_type() == sol::type::nil;
-}
-
-/// 内容区边界约束：卡带只能画在自己的区域里（越界写入会盖到侧栏与机身上）。
-/// 写成自由函数而不是局部 lambda：局部 lambda 被闭包按引用捕获后，
-/// 注册函数一返回就悬垂，随后每次调用都是野指针。
-bool inside_content(const HostContext& host, int x, int y, int cols) {
-    return x >= 0 && y >= 0 && x + cols <= host.content_w && y < host.content_h;
-}
-
-/// 单字符参数解析：解码首个码点。
-/// 取首字节是错的——"中" 在 UTF-8 里是 3 字节，只取首字节只会画出乱码。
-char32_t opt_char(const sol::object& obj, char32_t fallback) {
-    if (obj.is<std::string>()) {
-        const std::string& s = obj.as<std::string>();
-        if (!s.empty()) {
-            const std::vector<char32_t> codepoints = text::decode(s);
-            if (!codepoints.empty()) return codepoints.front();
-        }
-    }
-    return fallback;
+/// 侧栏面板那一块面（面板坐标局部于面板区）
+Surface panel_surface(HostContext& host) {
+    return Surface(*host.screen, host.panel_origin_x(), host.content_y, host.panel_w,
+                   host.content_h);
 }
 
 } // namespace
@@ -91,65 +72,41 @@ void register_host_api(sol::state& lua, HostContext& host) {
         const int w = host.content_w - host.panel_w;
         return std::make_tuple(0, 0, w < 0 ? 0 : w, host.content_h);
     };
-    screen["put"] = [&host](int x, int y, const sol::object& ch,
-                            sol::object fg, sol::object bg) {
-        const char32_t glyph = opt_char(ch, U' ');
-        const int cols = text::char_width(glyph);
-        if (cols == 0 || !inside_content(host, x, y, cols)) return;
-        if (transparent_bg(bg))
-            host.screen->put_fg(host.content_x + x, host.content_y + y, glyph,
-                                opt_color(fg, Color::white));
-        else
-            host.screen->put(host.content_x + x, host.content_y + y, glyph,
-                             opt_color(fg, Color::white), opt_color(bg, Color::black));
+    screen["put"] = [&host](int x, int y, const sol::object& ch, sol::object fg,
+                            sol::object bg) {
+        content_surface(host).put(x, y, api::read_char(ch, U' '),
+                                  api::read_color(fg, Color::white), api::read_background(bg));
     };
-    screen["print"] = [&host](int x, int y, const std::string& text,
-                              sol::object fg, sol::object bg) {
-        if (transparent_bg(bg))
-            host.screen->print_fg(host.content_x + x, host.content_y + y, text,
-                                  opt_color(fg, Color::white));
-        else
-            host.screen->print(host.content_x + x, host.content_y + y, text,
-                               opt_color(fg, Color::white), opt_color(bg, Color::black));
+    screen["print"] = [&host](int x, int y, const std::string& text, sol::object fg,
+                              sol::object bg) {
+        content_surface(host).print(x, y, text, api::read_color(fg, Color::white),
+                                    api::read_background(bg));
     };
-    screen["fill"] = [&host](int x, int y, int w, int h, const sol::object& ch,
-                             sol::object fg, sol::object bg) {
-        const int x0 = x < 0 ? 0 : x;
-        const int y0 = y < 0 ? 0 : y;
-        const int x1 = (x + w < host.content_w) ? x + w : host.content_w;
-        const int y1 = (y + h < host.content_h) ? y + h : host.content_h;
-        if (x1 <= x0 || y1 <= y0) return;
-        host.screen->fill(host.content_x + x0, host.content_y + y0, x1 - x0, y1 - y0,
-                          opt_char(ch, U' '), opt_color(fg, Color::white),
-                          opt_color(bg, Color::black));
+    // fill / blit / clear 与 put / print 分两组：这族调用是"整块搬运或清一块地方"，
+    // 省略底色按黑算——否则一句清屏会因为"没给底色"而变成什么都不做
+    screen["fill"] = [&host](int x, int y, int w, int h, const sol::object& ch, sol::object fg,
+                             sol::object bg) {
+        content_surface(host).fill(x, y, w, h, api::read_char(ch, U' '),
+                                   api::read_color(fg, Color::white),
+                                   api::read_color(bg, Color::black));
     };
     screen["clear"] = [&host](sol::object fg, sol::object bg) {
-        host.screen->fill(host.content_x, host.content_y, host.content_w, host.content_h, U' ',
-                          opt_color(fg, Color::white), opt_color(bg, Color::black));
+        content_surface(host).clear(api::read_color(fg, Color::white),
+                                    api::read_color(bg, Color::black));
     };
-    // 一次写多行（每行一条字符串）：地图/画面搬运用，比逐格 put 少一堆调用。
-    // 超出内容区宽度的部分按**显示宽度**截断，免得溢到机身装饰上
-    screen["blit"] = [&host](int x, int y, sol::table rows, sol::object fg, sol::object bg) {
-        if (x < 0 || x >= host.content_w) return;
-        for (size_t i = 1; i <= rows.size(); ++i) {
-            sol::object row = rows[i];
-            if (!row.is<std::string>()) continue;
-            const int py = y + static_cast<int>(i) - 1;
-            if (py < 0 || py >= host.content_h) continue;
-            host.screen->print(host.content_x + x, host.content_y + py,
-                               text::truncate(row.as<std::string>(), host.content_w - x),
-                               opt_color(fg, Color::white), opt_color(bg, Color::black));
-        }
+    // 一次写多行（每行一条字符串）：地图/画面搬运用，比逐格 put 少一堆调用
+    screen["blit"] = [&host](int x, int y, sol::object rows, sol::object fg, sol::object bg) {
+        content_surface(host).blit(x, y, api::read_rows(rows), api::read_color(fg, Color::white),
+                                   api::read_color(bg, Color::black));
     };
     screen["get"] = [&host](int x, int y) {
-        const int sx = host.content_x + x;
-        const int sy = host.content_y + y;
-        const Cell& c = host.screen->at(sx, sy);
+        const Surface surface = content_surface(host);
+        const Cell& c = surface.at(x, y);
         std::string out;
-        // 取字规则与屏幕文本导出（--dump-screen / screen.read）同一份
+        // 取字规则与屏幕文本导出（--dump-screen / screen.read）是同一份判断
         // （Screen::glyph_at）：续格报头格字符、控制字符不算内容。
         // 两处若各写一套，agent 读到的画面就会与 dump 出来的文本对不上
-        if (const char32_t ch = host.screen->glyph_at(sx, sy)) text::append_utf8(out, ch);
+        if (const char32_t ch = surface.glyph_at(x, y)) text::append_utf8(out, ch);
         return std::make_tuple(out, c.fg, c.bg);
     };
 
@@ -157,83 +114,37 @@ void register_host_api(sol::state& lua, HostContext& host) {
     // 面板内容完全由卡带决定：分数记录、地图、图鉴……
     sol::table panel = phos.create_named("panel");
     panel["size"] = [&host]() { return std::make_tuple(host.panel_w, host.content_h); };
-    panel["put"] = [&host](int x, int y, const sol::object& ch,
-                           sol::object fg, sol::object bg) {
-        const char32_t glyph = opt_char(ch, U' ');
-        const int cols = text::char_width(glyph);
-        // 宽字符在最后一列放不下：宁可少画一个字，也不让它溢出到机身
-        if (cols == 0 || x < 0 || x + cols > host.panel_w || y >= host.content_h) return;
-        if (transparent_bg(bg))
-            host.screen->put_fg(host.panel_origin_x() + x, host.content_y + y, glyph,
-                                opt_color(fg, Color::white));
-        else
-            host.screen->put(host.panel_origin_x() + x, host.content_y + y, glyph,
-                             opt_color(fg, Color::white), opt_color(bg, Color::black));
+    panel["put"] = [&host](int x, int y, const sol::object& ch, sol::object fg,
+                           sol::object bg) {
+        panel_surface(host).put(x, y, api::read_char(ch, U' '),
+                                api::read_color(fg, Color::white), api::read_background(bg));
     };
-    panel["print"] = [&host](int x, int y, const std::string& text,
-                             sol::object fg, sol::object bg) {
-        const Color f = opt_color(fg, Color::white);
-        const bool keep = transparent_bg(bg);
-        const Color b = opt_color(bg, Color::black);
-        if (y < 0 || y >= host.content_h) return;
-        int col = x;
-        for (char32_t glyph : text::decode(text)) {
-            const int cols = text::char_width(glyph);
-            if (cols == 0) continue;
-            if (col + cols > host.panel_w) break;  // 右侧放不下（含宽字符只差一格的情形）
-            if (col >= 0) {
-                const int px = host.panel_origin_x() + col;
-                if (keep) host.screen->put_fg(px, host.content_y + y, glyph, f);
-                else host.screen->put(px, host.content_y + y, glyph, f, b);
-            }
-            col += cols;
-        }
+    panel["print"] = [&host](int x, int y, const std::string& text, sol::object fg,
+                             sol::object bg) {
+        panel_surface(host).print(x, y, text, api::read_color(fg, Color::white),
+                                  api::read_background(bg));
     };
-    panel["fill"] = [&host](int x, int y, int w, int h, const sol::object& ch,
-                            sol::object fg, sol::object bg) {
-        for (int row = y; row < y + h; ++row)
-            for (int col = x; col < x + w; ++col) {
-                if (col < 0 || col >= host.panel_w) continue;
-                host.screen->put(host.panel_origin_x() + col, host.content_y + row,
-                                 opt_char(ch, U' '),
-                                 opt_color(fg, Color::white), opt_color(bg, Color::black));
-            }
+    panel["fill"] = [&host](int x, int y, int w, int h, const sol::object& ch, sol::object fg,
+                            sol::object bg) {
+        panel_surface(host).fill(x, y, w, h, api::read_char(ch, U' '),
+                                 api::read_color(fg, Color::white),
+                                 api::read_color(bg, Color::black));
     };
     panel["clear"] = [&host](sol::object fg, sol::object bg) {
-        host.screen->fill(host.panel_origin_x(), host.content_y, host.panel_w, host.content_h,
-                          U' ', opt_color(fg, Color::white), opt_color(bg, Color::black));
+        panel_surface(host).clear(api::read_color(fg, Color::white),
+                                  api::read_color(bg, Color::black));
     };
     // 运行时改面板宽度（0 = 收起）：宽度是与主机共享的布局量，分隔线、面板局部坐标
     // 都跟着变，所以只留 host.panel_w 一个真源。返回钳制后的实际宽度
     panel["resize"] = [&host](int w) {
-        host.panel_w = w < 0 ? 0 : (w > kPanelMaxW ? kPanelMaxW : w);
+        host.panel_w = clamp_panel_w(w);
         return host.panel_w;
     };
-    // 一次写多行：面板里的地图/表格搬运用，避免逐格调用
-    panel["blit"] = [&host](int x, int y, sol::table rows, sol::object fg, sol::object bg) {
-        for (size_t i = 1; i <= rows.size(); ++i) {
-            sol::object row = rows[i];
-            if (!row.is<std::string>()) continue;
-            const int py = y + static_cast<int>(i) - 1;
-            if (py < 0 || py >= host.content_h) continue;
-            int col = x;
-            for (char32_t cp : text::decode(row.as<std::string>())) {
-                const int cols = text::char_width(cp);
-                if (cols == 0) continue;
-                if (col + cols > host.panel_w) break;  // 右边界放不下就停
-                if (col >= 0) {
-                    const int px = host.panel_origin_x() + col;
-                    // 与 screen.blit 同一套语义：没给背景 = 保留原背景
-                    if (transparent_bg(bg))
-                        host.screen->put_fg(px, host.content_y + py, cp,
-                                            opt_color(fg, Color::white));
-                    else
-                        host.screen->put(px, host.content_y + py, cp,
-                                         opt_color(fg, Color::white), opt_color(bg, Color::black));
-                }
-                col += cols;
-            }
-        }
+    // 一次写多行：面板里的地图/表格搬运用，避免逐格调用。与 fill / clear 同组：
+    // 恒写底色（省略 = 黑），不能靠省略背景色来透出底图
+    panel["blit"] = [&host](int x, int y, sol::object rows, sol::object fg, sol::object bg) {
+        panel_surface(host).blit(x, y, api::read_rows(rows), api::read_color(fg, Color::white),
+                                 api::read_color(bg, Color::black));
     };
 
     // --- phos.text（文本度量） ---

@@ -41,7 +41,7 @@ function Panel.draw(game, cart_t)
   local status = game:status()
   P.clear()
 
-  P.print(1, 1, cart_t and cart_t.title or "CHOMP", C.yellow)
+  P.print(1, 1, phos.cart.info().name, C.yellow)
   P.print(1, 2, string.rep("·", pw - 2), C.dark_gray)
 
   P.print(1, 4, t.score, C.gray)

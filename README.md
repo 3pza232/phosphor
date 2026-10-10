@@ -43,12 +43,36 @@ phosphor --check-api                            # 校验 API 注解与实现一�
 ## 从源码构建
 
 ```bash
-cmake -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build -j
+cmake -G Ninja -DCMAKE_BUILD_TYPE=Release ..
+ninja -j8
 ```
 
 依赖已随仓库放在 `extern/`（glfw / lua / miniz / sol2 / imgui / stb / miniaudio），
 不需要额外安装。构建后 `build/` 就是可直接分发的运行包。
+
+**内容改哪里**：改卡带/主题/文档改 `package/` 与 `docs/` 下的源文件，构建时同步进 `build/`。
+若运行目录里的同一份文件在上次同步之后被就地改过，构建会**跳过它并告警**（不会静默覆盖）——
+要么把它拷回 `package/`，要么直接改 `package/` 再构建。
+
+**排查内存类问题时**用自检构建：容器边界断言与栈保护让越界访问在**现场**停下并打印位置，
+而不是过一会儿以"堆已损坏"的形式暴露在离元凶很远的地方。
+
+```bash
+cmake -G Ninja -DPHOSPHOR_SANITY=ON ../    # 自检构建：慢，只用于排查
+```
+
+**开发脚本**（`tools/`；除注明外都在含 `phosphor.exe` 的构建目录里跑）：
+
+| 脚本 | 用途 | 跑法 |
+|---|---|---|
+| `control_test.py` | 控制通道契约：握手 / 单步精确 / 读屏 / 注入 / 热重载 / 退出 | `python ../tools/control_test.py` |
+| `window_smoke.py` | 窗口路径冒烟：开窗跑一段时钟、菜单→开局、按键、`time.step` 精确性、退出码（需要图形环境） | `python ../tools/window_smoke.py [--seconds N] [--cart carts/x]` |
+| `cart_smoke.py` | 卡带冒烟：出厂卡带各跑一段，断言跑得完 / 不出错 / 有画面 / **同种子跑两遍逐字节一致**；不比对像素——画面本来就该随内容变 | `python ../tools/cart_smoke.py [--frames 3000] [--cart worms]` |
+| `agent_play.py` | 通用 agent 玩家：开真窗口、在卡带架上挑一张卡带、按卡带自报的 `debug_state()` 操控它玩（策略用 `--policy` 接自己的文件，流速用 `--speed` 设，默认实机流速） | `python ../tools/agent_play.py [--shelf-cart bricks] [--cart carts/x] [--steps 40] [--speed 1]` |
+| `agent_shell_demo.py` | 端到端操控系统界面：设置 / 插拔卡 / 暂停 / 磁带码 | `python ../tools/agent_shell_demo.py` |
+| `clean.py` | 清运行目录里的临时物（日志 / 截图 / 演示存档区），不碰设置与存档 | `python ../tools/clean.py` |
+| `phos.py` | 上面几个脚本共用的控制通道客户端库，不单独运行 | — |
+| `sync_package.cmake` | 构建期把 `package/` 与 `docs/` 同步进构建目录（由 `assemble_package` 目标调用，规则与告警见文件头） | 随构建自动执行 |
 
 ## 目录
 
@@ -59,7 +83,7 @@ cmake --build build -j
 | `docs/` | **使用文档**：玩家手册 / 卡带作者手册 / API 参考 / 格式与内容包 / agent 接口 |
 | `design/` | 开发期设计文档与计划（不随发行包发布） |
 | `tools/` | 开发脚本（自测、演示、构建期同步） |
-| `build/` | 构建产物，**同时就是可直接分发/试玩的运行目录**：`carts/ devkit/ theme/ mods/ docs/` 与 exe 同级，全部是真实文件（不含任何路径联接） |
+| `build/` | 构建产物，**同时就是可直接分发/试玩的运行目录**：`carts/ devkit/ theme/ mods/ saves/ docs/` 与 exe 同级，全部是真实文件（不含任何路径联接） |
 
 ## 文档
 

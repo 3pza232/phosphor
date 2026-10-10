@@ -12,6 +12,16 @@ if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release)
 endif()
 
+# --- 运行时自检（排查内存问题时用） ---
+# 让越界访问在**现场**停下并报位置，而不是过一会儿表现为"堆已损坏"（分配器才发现）。
+# 慢，不用于发行；默认关：
+#   cmake -B build-sanity -DPHOSPHOR_SANITY=ON
+# 这两个开关属于 libstdc++ 与编译器本身，只对 GCC/Clang 有意义
+option(PHOSPHOR_SANITY "启用容器边界断言与栈保护（排查内存问题）" OFF)
+if(PHOSPHOR_SANITY AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    add_compile_options(-D_GLIBCXX_ASSERTIONS -fstack-protector-all)
+endif()
+
 set(EXTERN ${CMAKE_SOURCE_DIR}/extern)
 
 # --- glad：OpenGL 3.3 Core 函数加载 ---
@@ -78,9 +88,8 @@ if(MINGW)
 endif()
 
 # --- 程序包组装：exe + package/ 骨架 ---
-# 每次构建都执行：内容目录（卡带 / devkit / 皮肤 / mod）由源码**同步**（合并式复制）过来：
-# 复制出来的那份是快照，改卡带后不重新构建就仍在玩旧副本——卡带的承诺是即放即玩。
-# 详见 tools/sync_package.cmake。改了源码后重新构建一次即可（也可直接改运行目录里的副本）。
+# 每次构建都把内容目录（卡带 / devkit / 主题 / mods / saves / docs）同步到构建目录；
+# 合并式复制的规则与告警见 tools/sync_package.cmake
 add_custom_target(assemble_package ALL
     COMMAND ${CMAKE_COMMAND}
         -DSRC=${CMAKE_SOURCE_DIR}/package
