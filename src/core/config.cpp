@@ -5,6 +5,7 @@
 #include "core/log.hpp"
 
 #include <algorithm>
+#include <cstdlib>
 #include <fstream>
 #include <sstream>
 #include <string>
@@ -74,6 +75,17 @@ Config load_config(const std::string& path) {
     const int level = pick_int(&root, "crt_level", kDefaultCrtLevel);
     cfg.crt_level = level < 0 ? 0 : (level >= kCrtLevelCount ? kCrtLevelCount - 1 : level);
 
+    // 帧率：只认档位表里的值。手写一个表外的数（比如 90）就落到最接近的一档并留痕——
+    // 静默接受一个"这台机器做不到"的刷新率，比取整更糟
+    const int wanted = pick_int(&root, "fps", kDefaultFps);
+    cfg.fps = kFpsChoices[0];
+    for (int i = 0; i < kFpsChoiceCount; ++i)
+        if (std::abs(kFpsChoices[i] - wanted) < std::abs(cfg.fps - wanted))
+            cfg.fps = kFpsChoices[i];
+    if (cfg.fps != wanted)
+        log::warn("config: fps=" + std::to_string(wanted) + " is not a supported rate, using " +
+                  std::to_string(cfg.fps));
+
     // 兼容旧配置的单 volume 字段：作为两层音量的初值
     const int legacy = pick_int(&root, "volume", -1);
     cfg.music_volume =
@@ -101,6 +113,7 @@ void save_config(const std::string& path, const Config& cfg) {
         << "  },\n"
         << "  \"shelf_style\": \"" << cfg.shelf_style << "\",\n"
         << "  \"crt_level\": " << cfg.crt_level << ",\n"
+        << "  \"fps\": " << cfg.fps << ",\n"
         << "  \"music_volume\": " << cfg.music_volume << ",\n"
         << "  \"sfx_volume\": " << cfg.sfx_volume << "\n"
         << "}\n";

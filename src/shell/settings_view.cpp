@@ -24,6 +24,7 @@ constexpr Row kRows[] = {
     {false, Msg::count,           SettingId::filter},
     {false, Msg::count,           SettingId::font},
     {false, Msg::count,           SettingId::scanlines},
+    {false, Msg::count,           SettingId::fps},
     {true,  Msg::section_audio,   SettingId::count},
     {false, Msg::count,           SettingId::sound_pack},
     {false, Msg::count,           SettingId::music_volume},
@@ -75,6 +76,18 @@ std::string row_text(SettingId id, const SettingsContext& ctx) {
         case SettingId::scanlines:
             return label(lang, Msg::row_scanlines) + "[ " +
                    crt_level_label(lang, ctx.crt_level) + " ]";
+        case SettingId::fps: {
+            // 读数里带上它相对实机的倍数：这台机器的逻辑是 60Hz 定步长，刷新率只改
+            // 画面顺不顺、不改游戏速度——一眼能看出这件事，比对着文档猜强
+            const int fps = ctx.fps > 0 ? ctx.fps : kDefaultFps;
+            std::string speed;
+            if (fps != kLogicFps) {
+                const bool slower = fps < kLogicFps;
+                speed = std::string(slower ? "  (1/" : "  (") +
+                        std::to_string(slower ? kLogicFps / fps : fps / kLogicFps) + "x)";
+            }
+            return label(lang, Msg::row_fps) + "< " + std::to_string(fps) + speed + " >";
+        }
         case SettingId::sound_pack:
             return label(lang, Msg::row_sound) + "< " +
                    pick(ctx.sounds, ctx.sound_index, tr(lang, Msg::value_silent)) + " >";

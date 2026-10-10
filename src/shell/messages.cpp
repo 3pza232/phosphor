@@ -37,6 +37,7 @@ constexpr std::array<Entry, static_cast<size_t>(Msg::count)> kTable{{
     {"显像管滤镜", "TUBE FILTER"},
     {"字体方案", "FONT SCHEME"},
     {"扫描线", "SCANLINES"},
+    {"帧率", "FRAME RATE"},
     {"音效包", "SOUND PACK"},
     {"音乐音量", "MUSIC VOLUME"},
     {"音效音量", "SFX VOLUME"},

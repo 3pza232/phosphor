@@ -1593,7 +1593,9 @@ end
 -- 隔好几格才点一下，"炮口朝哪"就只能靠猜。
 --   近身 AIM_NEAR_SUB：逐格点 + 白色，微调一度都看得出来
 --   远处：隔一格点 + 武器色，只作方向示意，不去把整屏点满
--- 另外只画在**空中**：一格只能放一个字形，点进土里会把地形顶出一个个小洞。
+-- 地形那一段**照画**，但换字形与颜色：早先为了"别在土里打洞"而整段跳过，
+-- 结果地形把后半条线吃掉了——玩家反而看不出炮口指向哪、这一炮会不会撞山。
+-- 现在土里用暗色的 +、空中用亮色的 ·（一格仍只放一个字形），"线钻进山体"看得见。
 -- （末端的 > < 是"力度标尺"而不是路径，所以照画、不跳过）
 local function draw_aim(S, C)
 	local w = current_worm()
@@ -1615,8 +1617,11 @@ local function draw_aim(S, C)
 	for d = AIM_STEP_SUB, len, AIM_STEP_SUB do
 		local x, y = ox + ux * d, oy + uy * d
 		local near = d <= AIM_NEAR_SUB
-		if (near or (d / AIM_STEP_SUB) % 2 == 1) and not terrain:solid(math.floor(x), math.floor(y)) then
-			put_at(S, x, y, "·", near and C.white or col)
+		if near or (d / AIM_STEP_SUB) % 2 == 1 then
+			local buried = terrain:solid(math.floor(x), math.floor(y))
+			-- 钻进地形的那一段照画：换字形（+）+ 暗色，与空中的 · 一眼分得开，
+			-- 地形也不再"盖住"后半条线
+			put_at(S, x, y, buried and "+" or "·", buried and C.gray or (near and C.white or col))
 		end
 	end
 	put_at(S, ox + ux * len, oy + uy * len, w.facing > 0 and ">" or "<", col)
@@ -1629,13 +1634,15 @@ local function draw_aim(S, C)
 	local left = spec and (w.ammo[spec.id] or 0) or 0
 	local ammo_txt = (left < 0) and "∞" or tostring(left)
 	local label =
-		string.format(" %4d° %3d%%  x%s ", math.floor(w.angle + 0.5), math.floor(aim_power * 100 + 0.5), ammo_txt)
-	local bar = " [" .. string.rep("#", filled) .. string.rep(".", bar_w - filled) .. "] "
+		string.format("%4d° %3d%%  x%s", math.floor(w.angle + 0.5), math.floor(aim_power * 100 + 0.5), ammo_txt)
+	local bar = "[" .. string.rep("#", filled) .. string.rep(".", bar_w - filled) .. "]"
 	local lx = math.max(0, math.min(VIEW_CW - #bar - 1, i - 7))
 	local ly = math.min(VIEW_CH - 2, j + 2)
-	-- 读数与力度条垫**同一块底板**：它们是浮层，不该被脚下的地形切成碎片
-	S.print(lx, ly, label, charge_mode and C.yellow or C.white, COL.plate)
-	S.print(lx, ly + 1, bar, charge_mode and C.yellow or C.green, COL.plate)
+	-- 两行都**不垫底板**：省略底色 = 保留该格原有的底（世界自己的色），于是读数
+	-- 只是"压在画面上的一层字"，既不会挖出一块块黑方块，也没有"底比字身宽一格"
+	-- 这件事。可读性靠配色：白/黄/绿与地形（偏绿、偏暗）拉得开
+	S.print(lx, ly, label, charge_mode and C.yellow or C.white)
+	S.print(lx, ly + 1, bar, charge_mode and C.yellow or C.green)
 end
 
 local function draw_actors(S, C)
@@ -1651,20 +1658,21 @@ local function draw_actors(S, C)
 				else
 					col = (pvp or turn.team == 2) and C.red or C.purple
 				end
-				-- 虫标、选标、血条全部垫底板：它们都是"浮层"，画在世界上而不是地形里，
-				-- 站在斜坡或水里时也不会把地形顶出缺口
-				S.put(i, j, "@", col, COL.plate)
-				-- 标记只画在"轮到人"的那只虫上：队友交给 AI 时，标识不该跟着跳过去
+				-- 虫标**不垫底板**：省略底色 = 保留这一格原有的底色（phos.screen.put 的 keep
+				-- 语义），于是它直接压在世界的底上，也就没有"底比字身宽出一格"这件事。
+				-- 早先之所以垫，是怕"透明空洞"——那是**省略底色会变黑**的误解：保留底色
+				-- 拿到的是世界的底（天空/土层色），不是黑洞
+				S.put(i, j, "@", col)
+				-- 标记只画在"轮到人"的那只虫上：队友交给 AI 时，标识不该跟着跳过去。
+				-- 脚下那一排 === 去掉了：它压在斜坡/土上时读起来像地形的一部分，
+				-- 比头顶那个闪动的箭头更吵。选中是谁，看 @ 的颜色与箭头就够
 				if w == current_worm() and human_turn() then
 					local blink = (math.floor(flash * 4) % 2 == 0)
-					S.put(i, j - 1, blink and "V" or "^", C.white, COL.plate)
-					for d = -1, 1 do
-						if in_view(i + d, j + 1) then
-							S.put(i + d, j + 1, "=", C.white, COL.plate)
-						end
-					end
+					S.put(i, j - 1, blink and "V" or "^", C.white)
 				end
-				Hud.hp_bar(S, C, i, j - 2, w.hp / Worms.MAX_HP, COL.plate)
+				-- 血条同样不垫底板（nil = 透明）：底板是**整格**粒度，垫上就比字身
+				-- 宽出一格；压在斜坡或水面上时更像"挖了个洞"
+				Hud.hp_bar(S, C, i, j - 2, w.hp / Worms.MAX_HP, nil)
 			end
 		end
 	end
@@ -1787,8 +1795,10 @@ local function draw_help(S, C)
 	local w, h = math.min(52, pw - 2), 22
 	local x = px + math.floor((pw - w) / 2)
 	local y = py + math.floor((ph_ - h) / 2)
-	-- 浮窗要**整块不透明**：只在文字处涂底的话，空白处会透出后面的战况，糊成一片
-	S.fill(x + 1, y + 1, w - 2, h - 2, " ", nil, COL.plate)
+	-- 浮窗要**整块不透明**，连边框那一圈也要：只填内框的话，边框上压着地形/天空，
+	-- 浮窗就成了"半透明"的（与 M 地图浮窗不一致，也读不清）。所以整块 w×h 先铺底，
+	-- 再往上画边框与文字——与 draw_map_overlay 同一套做法
+	S.fill(x, y, w, h, " ", nil, COL.plate)
 	box(S, C, x, y, w, h, t.help_title, C.white)
 	S.print(x + 2, y + 1, t.help_head, C.yellow)
 	-- 键名列按**显示宽度**补齐："空格"（4 列）与 "SPACE"（5 列）都对齐到同一列
@@ -1882,7 +1892,7 @@ function draw()
 		phase = turn.phase,
 		shots_left = turn.shots_left,
 		weapon = weapon,
-		plate = COL.plate,
+		plate = nil, -- 浮层底板一律不用（见 draw_actors 与读数处的说明）
 		ammo = left,
 		charge = charge_mode,
 		pvp = pvp,

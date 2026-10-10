@@ -49,6 +49,7 @@ public:
         int sound_index = -1;
         bool shelf_style_changed = false;
         bool crt_changed = false;
+        bool fps_changed = false;   // 画面刷新率已改（节流在主循环里，界面自己不改硬件）
         bool music_volume_changed = false;
         bool sfx_volume_changed = false;
         bool open_tape = false;    // 进入磁带码界面（App 需填入当前卡带的码）
@@ -103,6 +104,9 @@ public:
     Lang language() const { return lang_; }
     /// 设置界面显示的扫描线档位（改值经 Intent 交回主机，界面自己不改硬件）
     void set_crt_level(int level);
+    /// 设置界面显示的画面刷新率（改值同样经 Intent 交回主机：节流发生在主循环里）
+    void set_fps(int fps);
+    int fps() const { return fps_; }
     /// 设置界面显示的音乐音量（0~100）
     void set_music_volume(int volume);
     /// 设置界面显示的音效音量（0~100）
@@ -185,6 +189,7 @@ private:
     ShelfStyle shelf_style_ = ShelfStyle::window;
     ShelfSearch shelf_search_;
     int settings_cursor_ = 0;
+    int fps_ = kDefaultFps;
     int pause_cursor_ = 0;
 
     std::vector<std::string> filter_names_;

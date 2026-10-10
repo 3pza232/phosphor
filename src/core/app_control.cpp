@@ -57,6 +57,8 @@ std::string App::control_state_json() const {
         << ",\"cursor\":" << shell_.cursor()
         << ",\"shelf\":" << shelf_json()
         << ",\"crt_level\":" << config_.crt_level
+        << ",\"fps\":" << config_.fps
+        << ",\"render_fps\":" << host_.fps
         << ",\"video\":" << json::quote(headless_ ? "headless" : "window")
         << ",\"control_port\":" << control_port_
         << ",\"music_volume\":" << config_.music_volume

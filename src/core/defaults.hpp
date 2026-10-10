@@ -13,7 +13,15 @@ inline constexpr int kPanelMaxW = 32;   // 侧栏面板最大宽度
 /// 所以钳制只写一份——两处各写一套，迟早对同一个输入给出两个结果
 inline int clamp_panel_w(int w) { return w < 0 ? 0 : (w > kPanelMaxW ? kPanelMaxW : w); }
 inline constexpr int kCellPx = 16;      // 单元格像素边长
-inline constexpr int kLogicFps = 60;    // 逻辑帧率
+inline constexpr int kLogicFps = 60;    // 逻辑帧率（游戏速度由它定，不随"帧率"设置变）
+
+/// "帧率"设置的可选档位：每秒最多刷新多少次**画面**。逻辑帧率恒为 kLogicFps，
+/// 所以这个档位只改刷新率与 CPU 占用，**不改游戏速度**：30 更省电、更有老机器的顿感，
+/// 120/180 让 CRT 后处理与镜头平移更顺（高刷屏上才看得出来）。
+/// 档位表放在这里，是为了让"配置校验"与"设置界面"读同一份，不再各写一套
+inline constexpr int kFpsChoices[] = {30, 60, 120, 180};
+inline constexpr int kFpsChoiceCount = 4;
+inline constexpr int kDefaultFps = 60;  // 出厂默认：实机刷新率
 
 /// 卡带存档目录（默认；可用 --save-dir 改到别处，工具脚本据此隔离）
 inline constexpr const char* kSaveDir = "saves";

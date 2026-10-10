@@ -79,6 +79,14 @@ void Shell::set_tape(std::string cart_name, std::string code, bool available) {
     tape_.set_tape(std::move(cart_name), std::move(code), available);
 }
 
+void Shell::set_fps(int fps) {
+    // 落进档位表：手改配置写了个表外的数（如 75）时，界面不能显示一个不会生效的值
+    auto dist = [fps](int value) { return value > fps ? value - fps : fps - value; };
+    fps_ = kFpsChoices[0];
+    for (int i = 1; i < kFpsChoiceCount; ++i)
+        if (dist(kFpsChoices[i]) < dist(fps_)) fps_ = kFpsChoices[i];
+}
+
 void Shell::set_crt_level(int level) {
     crt_level_ = level < 0 ? 0 : (level >= kCrtLevelCount ? kCrtLevelCount - 1 : level);
 }
@@ -265,6 +273,18 @@ Shell::Intent Shell::update_settings(const Input& input) {
         case SettingId::scanlines:
             intent.crt_changed = pick_level(crt_level_, kCrtLevelCount);
             break;
+        case SettingId::fps: {
+            // 与扫描线同规矩：左键往前一档，Enter 也算调整（一个键就能走遍四档）
+            if (adjust) {
+                int at = 0;
+                for (int i = 0; i < kFpsChoiceCount; ++i)
+                    if (kFpsChoices[i] == fps_) at = i;
+                const int step = right ? 1 : kFpsChoiceCount - 1;
+                fps_ = kFpsChoices[(at + step) % kFpsChoiceCount];
+                intent.fps_changed = true;
+            }
+            break;
+        }
         case SettingId::sound_pack:
             if (pick_next(sound_names_, sound_index_)) {
                 intent.sound_changed = true;
@@ -491,6 +511,7 @@ void Shell::draw_settings(Screen& screen) const {
     ctx.boot_index = boot_index_;
     ctx.sound_index = sound_index_;
     ctx.crt_level = crt_level_;
+    ctx.fps = fps_;
     ctx.music_volume = music_volume_;
     ctx.sfx_volume = sfx_volume_;
     ctx.window_style = shelf_style_ == ShelfStyle::window;

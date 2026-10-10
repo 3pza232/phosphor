@@ -16,6 +16,7 @@ enum class SettingId {
     filter,        // 显像管滤镜
     font,          // 字体方案
     scanlines,     // 扫描线档位
+    fps,           // 画面刷新率（逻辑帧率恒定，见 defaults.hpp 的 kFpsChoices）
     sound_pack,    // 音效包
     music_volume,  // 音乐音量
     sfx_volume,    // 音效音量
@@ -31,6 +32,7 @@ struct SettingsContext {
     std::vector<std::string> skins, filters, fonts, boots, sounds;
     int skin_index = 0, filter_index = 0, font_index = 0, boot_index = 0, sound_index = 0;
     int crt_level = kDefaultCrtLevel;
+    int fps = kDefaultFps;
     int music_volume = kDefaultMusicVolume, sfx_volume = kDefaultSfxVolume;
     bool window_style = true;
     Lang lang = Lang::zh;  // 界面语言：设置界面自己的文案也要跟着切

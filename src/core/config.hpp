@@ -17,6 +17,7 @@ struct Config {
     std::string language = "zh";         // 界面语言（"zh" / "en"，见 shell/messages.hpp）
     std::string shelf_style = "window";  // 卡带架样式：list / window
     int crt_level = kDefaultCrtLevel;      // 扫描线档位（见 core/crt.hpp）
+    int fps = kDefaultFps;                 // 画面刷新率上限（档位见 defaults.hpp 的 kFpsChoices）
     int music_volume = kDefaultMusicVolume;  // 音乐音量 0~100（音序器产出）
     int sfx_volume = kDefaultSfxVolume;      // 音效音量 0~100（beep/音符/采样）
 };

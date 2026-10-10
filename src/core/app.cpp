@@ -105,6 +105,7 @@ int App::run(const CliOptions& opts) {
 
     shell_.set_shelf_style(config_.shelf_style == "list" ? ShelfStyle::list : ShelfStyle::window);
     shell_.set_crt_level(config_.crt_level);
+    shell_.set_fps(config_.fps);
     shell_.set_music_volume(config_.music_volume);
     shell_.set_sfx_volume(config_.sfx_volume);
     shell_.set_skin(skins_[skin_index_]);
@@ -489,6 +490,26 @@ int App::run_windowed(const CliOptions& opts) {
             renderer.set_crt(active_crt_);  // 仪表盘可直接调参并即时生效
         }
         window.swap_buffers();
+
+        // 帧率档位：每秒最多刷新这么多次画面。**只在实时（非单步）时生效** ——
+        // 单步模式的承诺是"推 N 帧就回包"，给它加节流只会让 agent 的 time.step 越等越久。
+        // 逻辑帧率恒为 kLogicFps（累加器按墙钟走），所以这里限制的是刷新率与 CPU 占用，
+        // **不是**游戏速度：30 更省电、更有老机器的顿感，120/180 让扫描线与镜头平移更顺。
+        // 睡眠基准取 last（本轮起点）而不是 now：慢帧不会被"追债"式补跑，也就不会抖
+        if (!control_time_driven() && config_.fps > 0) {
+            const auto budget = std::chrono::duration_cast<clock::duration>(
+                std::chrono::duration<float>(1.0f / static_cast<float>(config_.fps)));
+            const auto deadline = last + budget;
+            // sleep 只能睡到下一个系统时钟片（Windows 默认约 15.6ms）：直接睡到点会睡过头，
+            // 60 档实测只有 36 帧。所以先睡掉大半、留 1ms 自旋等到底，档位才说到做到。
+            // 这 1ms 自旋是刷新率档位的代价（180 档约占 18% 的一个核），换来读数不撒谎
+            // 自旋段不用 yield()：Windows 上它会把线程让出去好几个毫秒，等于又睡过头
+            // （实测 60 档只有 46 帧）。纯自旋才准，代价就是那 1ms 的 CPU
+            const auto slack = std::chrono::milliseconds(1);
+            if (clock::now() + slack < deadline) std::this_thread::sleep_until(deadline - slack);
+            while (clock::now() < deadline) {
+            }
+        }
     }
 
     console_.shutdown();

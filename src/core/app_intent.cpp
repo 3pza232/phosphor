@@ -71,6 +71,12 @@ void App::handle_intent(const Shell::Intent& intent, Renderer* renderer, Window*
         save_config_now();
         log::info("setting crt_level=" + std::to_string(config_.crt_level));
     }
+    if (intent.fps_changed) {
+        // 节流发生在主循环里（见 App::run_windowed）：这里只负责记住并落盘
+        config_.fps = shell_.fps();
+        save_config_now();
+        log::info("setting fps=" + std::to_string(config_.fps));
+    }
     if (intent.filter_changed) {
         apply_filter(intent.filter_index, renderer);
         log::info("setting filter=" + active_filter_.id);

@@ -35,6 +35,7 @@ enum class Msg {
     row_filter,
     row_font,
     row_scanlines,
+    row_fps,
     row_sound,
     row_music,
     row_sfx,
