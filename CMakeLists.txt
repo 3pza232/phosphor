@@ -87,6 +87,27 @@ if(MINGW)
     target_link_options(phosphor PRIVATE -static-libgcc -static-libstdc++)
 endif()
 
+# --- Windows 可执行文件资源：exe 图标 + 版本信息 ---
+# 窗口图标（glfwSetWindowIcon，运行时读 theme/icon/phos_icon.jpg）与 exe 图标是**两件事**：
+# Explorer / 任务栏给 exe 显示的图标是**链接期嵌入的 Win32 资源**，只能用 .rc 烘焙。
+# .ico 由 `python tools/make_icon.py` 从那张 jpg 生成、随源码提交（构建不依赖 Python）。
+# 版本号从 version.hpp 解析，保持单一真源；非 Windows 平台跳过（图标随平台而异）。
+if(WIN32)
+    enable_language(RC)
+    set(PHOS_ICON_FILE "${CMAKE_SOURCE_DIR}/package/theme/icon/phos_icon.ico")
+    file(STRINGS "${CMAKE_SOURCE_DIR}/src/core/version.hpp" PHOS_VERSION_LINE
+         REGEX "kVersion[ \t]*=")
+    string(REGEX MATCH "[0-9]+\\.[0-9]+\\.[0-9]+" PHOS_VERSION "${PHOS_VERSION_LINE}")
+    if(NOT PHOS_VERSION)
+        set(PHOS_VERSION "0.0.0")
+    endif()
+    string(REPLACE "." "," PHOS_VERSION_COMMA "${PHOS_VERSION}")
+    set(PHOS_VERSION_COMMA "${PHOS_VERSION_COMMA},0")  # VERSIONINFO 的 FILEVERSION 要四段
+    configure_file("${CMAKE_SOURCE_DIR}/tools/phos_icon.rc.in"
+                   "${CMAKE_BINARY_DIR}/phos_icon.rc" @ONLY)
+    target_sources(phosphor PRIVATE "${CMAKE_BINARY_DIR}/phos_icon.rc")
+endif()
+
 # --- 程序包组装：exe + package/ 骨架 ---
 # 每次构建都把内容目录（卡带 / devkit / 主题 / mods / saves / docs）同步到构建目录；
 # 合并式复制的规则与告警见 tools/sync_package.cmake

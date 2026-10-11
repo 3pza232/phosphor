@@ -74,6 +74,7 @@ cmake -G Ninja -DPHOSPHOR_SANITY=ON ../    # 自检构建：慢，只用于排�
 | `agent_play.py` | 通用 agent 玩家：开真窗口、在卡带架上挑一张卡带、按卡带自报的 `debug_state()` 操控它玩（策略用 `--policy` 接自己的文件，流速用 `--speed` 设，默认实机流速） | `python ../tools/agent_play.py [--shelf-cart bricks] [--cart carts/x] [--steps 40] [--speed 1]` |
 | `agent_shell_demo.py` | 端到端操控系统界面：设置 / 插拔卡 / 暂停 / 磁带码 | `python ../tools/agent_shell_demo.py` |
 | `clean.py` | 清运行目录里的临时物（日志 / 截图 / 演示存档区），不碰设置与存档 | `python ../tools/clean.py` |
+| `make_icon.py` | 由 `theme/icon/phos_icon.jpg` 生成 exe 用的多尺寸 `.ico`（换 exe 图标时跑一次并把 `.ico` 提交；窗口图标不受影响）。路径按脚本位置解析，任意目录可跑，需 Pillow | `python tools/make_icon.py` |
 | `phos.py` | 上面几个脚本共用的控制通道客户端库，不单独运行 | — |
 | `sync_package.cmake` | 构建期把 `package/` 与 `docs/` 同步进构建目录（由 `assemble_package` 目标调用，规则与告警见文件头） | 随构建自动执行 |
 
