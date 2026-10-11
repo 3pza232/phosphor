@@ -43,6 +43,8 @@ phosphor --check-api                            # 校验 API 注解与实现一�
 ## 从源码构建
 
 ```bash
+mkdir build
+cd build
 cmake -G Ninja -DCMAKE_BUILD_TYPE=Release ..
 ninja -j8
 ```
