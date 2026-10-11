@@ -1,17 +1,26 @@
--- ai.lua —— 电脑队：扫描角度×力度 → 用同一份 physics 预演 → 选最优 + 加误差
+-- ai.lua —— 电脑队：按"怎么瞄 × 命中后怎么变"两件事装配，评分只认世界变化量
 --
--- 三条硬约束决定了这里的写法：
+-- 一件武器由**三段数据**描述（都在 weapons.lua，改武器不必回这里）：
+--   plan   = 走哪个瞄准求解器（怎么试）：arc 抛物线角度×力度 / ray 直线只挑角度
+--   effect = 命中之后世界怎么变：blast 爆炸 / heal 回血 / mound 长地形并埋人 /
+--            strike 天降光柱 / beam 烧穿射线
+--   ai     = 电脑用不用它：throw 参战 / self 只对自己用（传送）/ false 明确不用
+-- 于是"加一件新武器"= 武器表加一行；只有当它带来**全新的瞄准维度**或**全新的世界变化**
+-- 时，才需要在下面的 PLANS / EFFECTS 里各加一个函数。规划器、评分、难度、发射逻辑、
+-- 侧栏、候选过滤都不必动。
+--
+-- 三条硬约束，动手改之前先想清楚它们为什么在：
 --   1. 预演必须走**同一份 physics**（连子步都共用），否则 AI 挑中的角度在实弹里不成立；
---      手雷的弹跳也不例外——自己写一套"撞地就停"的近似弹道，算出来的落点是假的。
+--      手雷的弹跳也不例外 —— 自己写一套"撞地就停"的近似弹道，算出来的落点是假的
 --   2. 主机有"单次调用不得超过 100 毫秒"的看门狗，几百组候选一次算完会被当场掐掉。
---      所以规划器**可分帧推进**：每帧只算一小批，想 0.2~0.4 秒再开炮。
---   3. 预演时给 Physics.blast 传 nil 地形——否则 AI 每想一次就把地图挖一遍。
+--      所以规划器**可分帧推进**：每帧只算一小批，想 0.2~0.4 秒再开炮
+--   3. 预演**不许改世界**：Physics.blast 传 nil 地形；地形弹按**理想圆**估（真实那一发
+--      每行有 ±1 子格的噪声，预演按无噪声算，位置误差 ≤1 子格）
 --
--- "想打谁"由武器自己决定：攻击弹瞄敌人，治疗弹瞄**血量偏低的队友**，
--- 两者共用同一套"越近越好 + 直击加分"的判据，所以走位/瞄准逻辑只有一份。
+-- 评分思路：每个候选先被预演成一个**世界变化量 delta**（伤了多少、埋了几只、挖了几格…），
+-- 再用**同一套权重**相加。评分只认 delta，不认武器种类 —— 加一件武器不必回来补公式。
 --
--- 结果里额外带出 `near`：最优落点离最近目标还有多远（子格）。
--- 上层用它判断"这一炮到底有没有射击条件"，据此决定是开炮还是先换个位置。
+-- 结果里额外带出 `near`（最优落点离最近目标多远，子格）与 `reason`（一句话说明它为什么赢）。
 
 local Physics = require("physics")
 local Worms = require("worms")
@@ -27,6 +36,27 @@ AI.BATCH = 20               -- 每帧最多预演多少组（预算：稳在一�
 -- 用"不超过"而不是"低于"：本作的伤害值（8/10/25/30/50）经常正好把血打到 50，
 -- 卡在严格小于上会让最需要治疗的那只恰好被跳过
 AI.WOUNDED_RATIO = 0.5
+
+-- 权重表：**加武器不必改它**，调难度也只改这张表（外加手抖与扫描密度）。
+-- 每项后面写的是"这个数在买什么"，改之前先想清楚买的是什么
+AI.WEIGHTS = {
+  damage = 3.0,    -- 敌方净掉血（每点）：主项
+  hit = 40,        -- 直击：打断走位、把人推下坡，这些价值量不出来但确实存在
+  heal = 3.0,      -- 给队友回血（每点）：与伤害同一把尺子
+  drown = 90,      -- 把敌人送进水里：等于直接消灭
+  trap = 45,       -- 把敌人埋住（地形弹）：它走不动、只能花弹药自救 —— 这就是牵制
+  dig = 0.25,      -- 每挖掉一格地形：破掩体是好事，但也可能给对方开出新路，所以权重小
+  dig_cap = 40,    -- 挖地形的计分上限：一炮能挖的格数无上限（天基炮连跳、贯穿的激光），
+                   -- 不封顶的话"挖土多"会盖过"打到人"，AI 就会挑着对空气开炮
+  self = 0.8,      -- 自伤（每点，乘这个系数）
+  near = 1.0,      -- 离目标越远越差：没打中时靠它挑"谁离得最近"
+  near_cap = 60,   -- 偏离扣分的上限
+  -- 机会成本：**按稀缺度定价**。不用"本回合已评出的最高分"当门限——那种算法依赖评估顺序，
+  -- 换个顺序结论就变，加一件武器还可能悄悄改掉别人的定价。
+  -- 无限弹（ammo<0）几乎免费；限量弹按 1/剩余发数 计价：剩 1 发就是 30 分，剩 4 发只有 7.5 分
+  ammo = 30,
+  ammo_free = 2,   -- 无限弹的固定小成本（"打光了也有得打"，不是免费随便打）
+}
 
 -- 难度：决定"算得多细""手有多稳""什么时候肯换位置"，但**没有一档是必中**——
 -- 越难只是把误差压小、扫描做细、走位更积极，最后一击仍要看风向与地形
@@ -48,22 +78,21 @@ AI.DIFFICULTY = {
            good_dist = 6, dodge = 85, walk_time = 1.6 },
 }
 
-local LASER_GOOD = 3        -- 激光射线离目标中心多近算"擦得到"（子格）
-
--- 用真 physics 飞一次，返回落点与"直接命中"的那只虫
-local function preview(shooter, weapon, angle, power, wind, terrain, targets)
+-- 用真 physics 飞一次，返回落点与"直接命中"的那只虫。
+-- 激光不在这里：它走直线，见下面的 beam 效果（少一次仿真，也更准）
+local function preview(ctx, shooter, weapon, aim)
   local keep_a, keep_p = shooter.angle, shooter.power
-  shooter.angle, shooter.power = angle, power
+  shooter.angle, shooter.power = aim.angle, aim.power
   local p = Weapons.fire(weapon, shooter)
   shooter.angle, shooter.power = keep_a, keep_p
 
   local hit_worm = nil
   local function probe(x, y)
-    if x < 1 or x > terrain.W or y > terrain.H then return "out" end
+    if x < 1 or x > ctx.terrain.W or y > ctx.terrain.H then return "out" end
     if y < 1 then return nil end
-    if terrain:solid(math.floor(x), math.floor(y)) then return "terrain" end
-    if y >= terrain.WATER_Y then return "water" end
-    for _, t in ipairs(targets) do
+    if ctx.terrain:solid(math.floor(x), math.floor(y)) then return "terrain" end
+    if y >= ctx.terrain.WATER_Y then return "water" end
+    for _, t in ipairs(ctx.enemies) do
       if t.alive then
         local dx, dy = t.x - x, t.y - y
         if dx * dx + dy * dy <= HIT_R2 then hit_worm = t return "worm", t end
@@ -74,136 +103,307 @@ local function preview(shooter, weapon, angle, power, wind, terrain, targets)
 
   local t = 0
   while t < AI.PREVIEW_MAX_T do
-    local kind = Physics.step(p, AI.PREVIEW_DT, wind, probe)
+    local kind = Physics.step(p, AI.PREVIEW_DT, ctx.wind, probe)
     t = t + AI.PREVIEW_DT
     if kind then break end
   end
-  return p.x, p.y, hit_worm
+  return { x = p.x, y = p.y, hit = hit_worm }
 end
 
--- 点到线段的距离：激光不是弹道，只能靠它判断"这条线擦不擦得到目标"
-local function ray_distance(ox, oy, dx, dy, len, px, py)
-  local vx, vy = px - ox, py - oy
-  local t = vx * dx + vy * dy
-  if t < 0 then t = 0 elseif t > len then t = len end
-  local cx, cy = ox + dx * t, oy + dy * t
-  return math.sqrt((px - cx) ^ 2 + (py - cy) ^ 2)
+-- ---------- 瞄准求解器：产出"试哪些瞄法" ----------
+-- 每个求解器两件事：jobs 给出候选（aim 表），impact 把候选算成**落点描述**。
+-- 落点描述只有两种形状，效果函数按自己需要取：
+--   { x, y, hit }        有一次落点（抛物线、垂直光柱）
+--   { ray = {ox,oy,dx,dy,len} }  一条射线（激光：沿路都算）
+local PLANS = {}
+
+-- 抛物线：角度 × 力度。绝大多数弹药走这条
+PLANS.arc = {
+  jobs = function(weapon, cfg)
+    local out = {}
+    for angle = 40, 140, cfg.a_step do
+      for power = 0.25, 1.0, cfg.p_step do
+        out[#out + 1] = { angle = angle, power = power }
+      end
+    end
+    return out
+  end,
+  impact = function(ctx, shooter, weapon, aim)
+    -- preview 返回的就是落点描述 { x, y, hit }，直接交出去即可。
+    -- 写成 local x, y, hit = preview(...) 的话，x 拿到的是整张表，
+    -- 下游 Physics.blast 收到表就会报"对表做算术"
+    return preview(ctx, shooter, weapon, aim)
+  end,
+  -- 精修：围着粗扫找到的那一组细看（误差是之后才加的，这里要的是准）
+  refine = function(best, cfg)
+    return { angle = best.angle, power = best.power }
+  end,
+}
+
+-- 射线：只有角度有意义（激光不落不炸，力度不影响结果）
+PLANS.ray = {
+  jobs = function(weapon, cfg)
+    local out = {}
+    for angle = -40, 80, 4 do
+      out[#out + 1] = { angle = angle, power = 1.0 }
+    end
+    return out
+  end,
+  impact = function(ctx, shooter, weapon, aim)
+    local a = math.rad(aim.angle)
+    local ox, oy = Physics.muzzle_of(shooter)
+    local dx, dy = math.cos(a) * shooter.facing, -math.sin(a)
+    -- 射线也要给出"离目标多远"：它是**点到直线**的距离，不是落点距离。
+    -- 不这么做，上层拿到的 near 会是"射手到目标的距离"（几百子格），
+    -- 于是"够不着，先换个位置"的判断对激光永远为真，它会站在那儿一直对空气开炮
+    local near = 9999
+    for _, t in ipairs(ctx.enemies) do
+      if t.alive then
+        local px, py = t.x - ox, t.y - 3 - oy     -- 瞄身体中段
+        local along = px * dx + py * dy
+        if along > 0 then
+          local cx, cy = ox + dx * along, oy + dy * along
+          local d = math.sqrt((ox + px - cx) ^ 2 + (oy + py - cy) ^ 2)
+          if d < near then near = d end
+        end
+      end
+    end
+    return { x = ox, y = oy, near = near,
+             ray = { ox = ox, oy = oy, dx = dx, dy = dy, len = ctx.terrain.W * 2 } }
+  end,
+  refine = function(best, cfg) return { angle = best.angle, power = 1.0 } end,
+}
+
+-- ---------- 效果：把落点翻译成"世界变化量"（全部纯计算，不许改世界） ----------
+-- delta 字段就是评分表的输入，加新效果时**顺手加字段**即可，评分不必改：
+--   damage / hits / heal / drown / trap / dig / own_damage / own_drown / own_trap
+local EFFECTS = {}
+
+local function new_delta()
+  return { damage = 0, hits = 0, heal = 0, drown = 0, trap = 0, dig = 0,
+           own_damage = 0, own_drown = 0, own_trap = 0 }
 end
 
--- 激光的评分：射线贴着目标才算好；贴不上就按"差多远"平滑降分
-local function laser_score(shooter, weapon, angle, targets)
-  local a = math.rad(angle)
-  local dx, dy = math.cos(a) * shooter.facing, -math.sin(a)
-  local ox, oy = Physics.muzzle_of(shooter)
-  local reach = 200
-  local near = 9999
-  for _, t in ipairs(targets) do
-    if t.alive then
-      -- 瞄身体中段（脚下往上 4 子格），不然贴着头顶过也算不中
-      local d = ray_distance(ox, oy, dx, dy, reach, t.x, t.y - 4)
-      if d < near then near = d end
+-- 水边判定：脚下离水面这么近就算"一炸就下去"（子格）。纯几何，不改世界
+local DROWN_MARGIN = 6
+local function near_water(ctx, w)
+  return w.y >= ctx.terrain.WATER_Y - DROWN_MARGIN
+end
+
+-- 爆炸：挖地形 + 按距离衰减的伤害与冲量。预演不传地形（见文件头第 3 条）
+EFFECTS.blast = function(ctx, weapon, impact)
+  local d = new_delta()
+  local r, dmg = weapon.radius or 0, weapon.damage or 0
+  local hits = Physics.blast(impact.x, impact.y, r, dmg, ctx.enemies, nil)
+  for _, h in ipairs(hits) do
+    d.damage = d.damage + h.damage
+    d.hits = d.hits + 1
+    if near_water(ctx, h.point) then d.drown = d.drown + 1 end
+  end
+  if #ctx.mine > 0 then
+    for _, h in ipairs(Physics.blast(impact.x, impact.y, r, dmg, ctx.mine, nil)) do
+      d.own_damage = d.own_damage + h.damage
+      if near_water(ctx, h.point) then d.own_drown = d.own_drown + 1 end
     end
   end
-  return (near <= LASER_GOOD) and 90 or (20 - near), near
+  return d
 end
 
--- 一次候选的评分。要的不是"这一炮打得最爽"，而是**整场仗打下来伤得最多**：
---   1. 主项是这一炮**真能造成的伤害**：用同一份 Physics.blast 在落点上算，
---      半径外的目标自然是 0 分。不能拿"离目标多近"当主项 —— 近不等于疼，
---      火箭筒擦身而过比普通弹贴脸更值钱
---   2. 直击再加一点分：打断走位、把人推下坡这些价值量不出来，但确实存在
---   3. 无限弹（普通炮弹）扣一档：限量弹还有货时，它不该占 AI 的回合。
---      否则"手里有 50 伤的火箭筒，却一直用 10 伤的普通弹磨"，玩家一眼就看穿
---   4. 自伤照旧重罚；散射/集束这类"预演只看得到一枚"的用 ai_mult 放大
--- targets 是"这一炮想打中的东西"（攻击弹 = 敌人，治疗弹 = 伤员），
--- avoid 是"不该炸到的东西"（自己队；治疗弹不需要）
-local DAMAGE_W = 3         -- 每点伤害值多少分
-local HIT_BONUS = 40       -- 直击额外分
--- 普通炮弹的"机会成本"：**本回合已评出的限量弹最高分**（由规划器维护，见 advance）。
--- 不写死一个数：一次溅射几十分、一次直击上百分，定死的扣分在某个局面必然失真 ——
--- 有了这个门限，"限量弹还没打光就先用普通弹"必须真的比限量弹打得更好才行
-local shell_bar = 0
-local NEAR_W = 1           -- 每偏离目标 1 子格扣多少分
-local NEAR_CAP = 60        -- 偏离扣分上限：没打中时靠它挑"谁离得最近"
-local SHELL_PENALTY = 30   -- 无限弹的机会成本（上面第 3 条）
-local SELF_W = 0.8         -- 自伤权重
+-- 治疗弹：打中**自己队**的单位回血（敌人治敌人、队友治队友），打在对面身上什么也不发生。
+-- 回血量是定额（与实弹一致），不按距离衰减
+EFFECTS.heal = function(ctx, weapon, impact)
+  local d = new_delta()
+  local r, amount = weapon.radius or 0, weapon.heal or 0
+  for _, m in ipairs(ctx.mine) do
+    if m.alive then
+      local dx, dy = m.x - impact.x, m.y - impact.y
+      if dx * dx + dy * dy <= r * r then d.heal = d.heal + amount end
+    end
+  end
+  return d
+end
 
-local function score_of(weapon, hit_x, hit_y, hit_enemy, targets, avoid)
-  local is_heal = (weapon.heal or 0) > 0
+-- 地形弹：落点长出一块圆，把土**灌到虫身上**。
+-- 价值不在伤害（它没有伤害），而在"埋住"：被埋的虫子走不动，只能花弹药自救 —— 这就是牵制。
+-- 预演按**理想圆**算（真实那一发每行有 ±1 子格噪声），位置误差 ≤1 子格
+EFFECTS.mound = function(ctx, weapon, impact)
+  local d = new_delta()
+  local r = weapon.raise or 0
+  local cx, cy = math.floor(impact.x), math.floor(impact.y)
+  local filled = {}   -- 记下"这一炮会新长出哪些格"，用来判断谁被埋住
+  for y = math.floor(cy - r), math.ceil(cy + r) do
+    if y >= 1 and y <= ctx.terrain.H then
+      local dy = y - cy
+      local half = math.floor(math.sqrt(math.max(0, r * r - dy * dy)))
+      if half > 0 then
+        for x = math.max(1, cx - half), math.min(ctx.terrain.W, cx + half) do
+          if not ctx.terrain:solid(x, y) then
+            d.fill = (d.fill or 0) + 1
+            filled[x .. "," .. y] = true
+          end
+        end
+      end
+    end
+  end
+  -- 谁被埋住：身体落在新增格里的都算（含自己人 —— 埋到自己人头上要扣分）
+  for _, e in ipairs(ctx.enemies) do
+    for y = math.floor(e.y) - 5, math.floor(e.y) do
+      for x = math.floor(e.x) - 1, math.floor(e.x) + 1 do
+        if filled[x .. "," .. y] then d.trap = d.trap + 1 break end
+      end
+      if d.trap > 0 and d.trap % 1 == 0 then break end
+    end
+  end
+  for _, m in ipairs(ctx.mine) do
+    if m.alive then
+      for y = math.floor(m.y) - 5, math.floor(m.y) do
+        if filled[math.floor(m.x) .. "," .. y] then d.own_trap = d.own_trap + 1 break end
+      end
+    end
+  end
+  return d
+end
+
+-- 天降光柱：以落点为中线的**垂直光柱**，宽 width、持续 life、每 tick 结算一次；
+-- 它同时挖穿地形（"断掉一条必经之路"就是这么用的）
+EFFECTS.strike = function(ctx, weapon, impact)
+  local d = new_delta()
+  local o = weapon.orbital or {}
+  local half = (o.width or 6) / 2
+  local ticks = math.floor((o.life or 3) / (o.tick or 0.5))
+  for _, e in ipairs(ctx.enemies) do
+    if e.alive and math.abs(e.x - impact.x) <= half then
+      d.damage = d.damage + math.min(e.hp, (o.damage or 0) * ticks)
+      d.hits = d.hits + 1
+    end
+  end
+  for _, m in ipairs(ctx.mine) do
+    if m.alive and math.abs(m.x - impact.x) <= half then
+      d.own_damage = d.own_damage + math.min(m.hp, (o.damage or 0) * ticks)
+    end
+  end
+  -- 挖穿：光柱那一列还有多少实心格（每格 1 分地记，权重很低）
+  local x = math.floor(impact.x)
+  for y = 1, ctx.terrain.H do
+    if ctx.terrain:solid(x, y) then d.dig = d.dig + 1 end
+  end
+  return d
+end
+
+-- 烧穿射线：激光走直线，沿路烧地形、伤到碰到的人，一路飞到地图边界。
+-- 它不需要弹道预演（速度 900、不受重力、不受风），所以这里直接按直线算
+EFFECTS.beam = function(ctx, weapon, impact)
+  local d = new_delta()
+  local ray = impact.ray
+  local r = weapon.radius or 1
+  local step = 1
+  local hit_any = {}
+  for t = 0, ray.len, step do
+    local x, y = ray.ox + ray.dx * t, ray.oy + ray.dy * t
+    if x < 1 or x > ctx.terrain.W or y < 1 or y > ctx.terrain.H then break end
+    -- 烧穿地形本身**不算价值**：射线会横穿整张地图，按格累加的话
+    -- "对空气开一炮"也能靠烧掉的土拿高分，于是 AI 会挑着乱打。
+    -- 地形照烧（物理如此），只是不记进收益
+    for _, e in ipairs(ctx.enemies) do
+      if e.alive and not hit_any[e] then
+        local dx, dy = e.x - x, e.y - 3 - y      -- 瞄身体中段
+        if dx * dx + dy * dy <= r * r then
+          hit_any[e] = true
+          d.damage = d.damage + (weapon.damage or 0)
+          d.hits = d.hits + 1
+          if near_water(ctx, e) then d.drown = d.drown + 1 end
+        end
+      end
+    end
+  end
+  return d
+end
+
+-- ---------- 评分：delta × 权重 ----------
+
+-- 弹药机会成本：**无状态定价**（稀缺度）。剩得越少越贵，无限弹几乎免费。
+-- 只剩一个敌人时全体打折：都到最后了，好弹留着不如用掉
+local function ammo_cost(weapon, ctx)
+  local w = AI.WEIGHTS
+  local n = weapon.ammo or 0
+  local cost = (n < 0) and w.ammo_free or (w.ammo / math.max(1, n))
+  if #ctx.enemies <= 1 then cost = cost * 0.5 end
+  return cost
+end
+
+local function nearest(x, y, list)
   local near = 9999
-  for _, t in ipairs(targets) do
+  for _, t in ipairs(list) do
     if t.alive then
-      local dx, dy = t.x - hit_x, t.y - hit_y
+      local dx, dy = t.x - x, t.y - y
       local d = math.sqrt(dx * dx + dy * dy)
       if d < near then near = d end
     end
   end
-
-  -- 治疗弹按"回血量"计分（同一把尺子）；其余按落点上的真实爆炸伤害
-  local dealt = weapon.heal or 0
-  if not is_heal then
-    local hits = Physics.blast(hit_x, hit_y, weapon.radius, weapon.damage, targets, nil)
-    for _, h in ipairs(hits) do dealt = dealt + h.damage end
-  end
-  dealt = dealt * (weapon.ai_mult or 1)
-
-  local score = dealt * DAMAGE_W
-                + (hit_enemy and HIT_BONUS or 0)
-                - math.min(near, NEAR_CAP) * NEAR_W
-  if #avoid > 0 and (weapon.damage or 0) > 0 then
-    local hits = Physics.blast(hit_x, hit_y, weapon.radius, weapon.damage, avoid, nil)
-    for _, h in ipairs(hits) do score = score - h.damage * SELF_W * (weapon.ai_mult or 1) end
-  end
-  if (weapon.ammo or 0) < 0 then score = score - SHELL_PENALTY - shell_bar end
-  return score, near
+  return near
 end
 
--- 规划器：持有候选队列，可以分帧推进
+local function score_of(delta, weapon, near, ctx)
+  local w = AI.WEIGHTS
+  local mult = weapon.ai_mult or 1   -- 预演只看得到一枚的武器（散射/集束）在数据里声明这个折扣
+  local s = delta.damage * mult * w.damage
+            + delta.hits * mult * w.hit
+            + delta.heal * w.heal
+            + delta.drown * w.drown
+            + delta.trap * w.trap
+            + math.min(delta.dig, w.dig_cap) * w.dig
+            - delta.own_damage * mult * w.self
+            - delta.own_drown * w.drown
+            - delta.own_trap * w.trap
+            - math.min(near, w.near_cap) * w.near
+  return s - ammo_cost(weapon, ctx)
+end
+
+-- 一句话说明"它为什么赢"：写进日志与观察口，人读得懂，agent 也能匹配
+local function reason_of(weapon, delta)
+  local parts = {}
+  if delta.damage > 0 then parts[#parts + 1] = string.format("伤%d", math.floor(delta.damage + 0.5)) end
+  if delta.heal > 0 then parts[#parts + 1] = string.format("回%d", math.floor(delta.heal + 0.5)) end
+  if delta.trap > 0 then parts[#parts + 1] = string.format("埋%d", delta.trap) end
+  if delta.drown > 0 then parts[#parts + 1] = string.format("入水%d", delta.drown) end
+  if delta.dig > 0 and #parts == 0 then parts[#parts + 1] = string.format("挖%d", delta.dig) end
+  if delta.own_damage > 0 then parts[#parts + 1] = string.format("自伤%d", math.floor(delta.own_damage + 0.5)) end
+  if #parts == 0 then parts[#parts + 1] = "封路" end
+  return weapon.id .. " " .. table.concat(parts, " ")
+end
+
+-- ---------- 规划器：持有候选队列，可分帧推进 ----------
 local Planner = {}
 Planner.__index = Planner
 
-local function jobs_for(weapon, a0, a1, a_step, p0, p1, p_step)
-  local jobs = {}
-  -- 激光只看角度：它走直线、不落不炸，力度对结果没有影响
-  local step_p = (weapon.kind == "laser") and 1.0 or p_step
-  for angle = a0, a1, a_step do
-    for power = p0, p1, step_p do
-      jobs[#jobs + 1] = { weapon, angle, power }
-    end
-  end
-  return jobs
-end
-
--- 开始规划。返回可推进的规划器，或 nil（没有目标 / 没有可用武器）
+-- 开始规划。allowed 是"这只虫子现在能用的武器表"（由上层给：有没有弹药、用不用得上）
 function AI.plan_begin(shooter, all_worms, terrain, wind, difficulty, allowed)
   local cfg = AI.DIFFICULTY[difficulty or "normal"]
-  local enemies, mine, wounded = {}, {}, {}
+  local ctx = { terrain = terrain, wind = wind, enemies = {}, mine = {}, wounded = {} }
   for _, w in ipairs(all_worms) do
     if w.alive then
       if w.team == shooter.team then
-        mine[#mine + 1] = w
-        if w.hp <= Worms.MAX_HP * AI.WOUNDED_RATIO then wounded[#wounded + 1] = w end
+        ctx.mine[#ctx.mine + 1] = w
+        if w.hp <= Worms.MAX_HP * AI.WOUNDED_RATIO then ctx.wounded[#ctx.wounded + 1] = w end
       else
-        enemies[#enemies + 1] = w
+        ctx.enemies[#ctx.enemies + 1] = w
       end
     end
   end
-  if #enemies == 0 then return nil end
+  if #ctx.enemies == 0 then return nil end
 
-  shell_bar = 0 -- 每轮从零开始攒：本回合限量弹的最好成绩
   local jobs = {}
-  for _, id in ipairs(allowed or { "bazooka" }) do
-    local weapon = Weapons.by_id(id)
-    if weapon then
-      -- 治疗弹打队友、其余打敌人；两者都用同一套"越近越好"的判据
-      local targets = ((weapon.heal or 0) > 0) and wounded or enemies
-      if #targets > 0 then
-        -- 激光是**射线**，没有抛物线：它的角度可以低到几乎水平（甚至朝下），
-        -- 用抛射弹那套 40°~140° 的仰角去扫，射线只会飞上天
-        local a0, a1, step = 40, 140, cfg.a_step
-        if weapon.kind == "laser" then a0, a1, step = -40, 80, 4 end
-        for _, job in ipairs(jobs_for(weapon, a0, a1, step, 0.25, 1.0, cfg.p_step)) do
-          jobs[#jobs + 1] = job
+  for _, spec in ipairs(allowed or {}) do
+    local weapon = (type(spec) == "table") and spec or Weapons.by_id(spec)
+    -- 能不能用，由武器表自己说（ai 字段）：throw 参战、self 只对自己用、false 不用
+    if weapon and weapon.ai ~= false and weapon.ai ~= "self" then
+      -- 有目标才试：治疗弹的"目标"是伤员，其余是敌人。
+      -- 筛选只由武器表与目标表决定；"值不值"（扎堆几只、伤员几个）交给评分说话
+      local targets = (weapon.effect == "heal") and ctx.wounded or ctx.enemies
+      local plan = PLANS[weapon.plan or "arc"]
+      if plan and #targets > 0 then
+        for _, aim in ipairs(plan.jobs(weapon, cfg)) do
+          jobs[#jobs + 1] = { weapon = weapon, aim = aim }
         end
       end
     end
@@ -211,9 +411,8 @@ function AI.plan_begin(shooter, all_worms, terrain, wind, difficulty, allowed)
   if #jobs == 0 then return nil end
 
   return setmetatable({
-    shooter = shooter, enemies = enemies, mine = mine, wounded = wounded,
-    terrain = terrain, wind = wind, cfg = cfg,
-    jobs = jobs, index = 1, phase = 1, best = nil, done = false,
+    shooter = shooter, ctx = ctx, wind = wind, cfg = cfg,
+    jobs = jobs, index = 1, phase = 1, best = nil, top = {}, done = false,
   }, Planner)
 end
 
@@ -225,37 +424,45 @@ function Planner:advance(batch)
     local job = self.jobs[self.index]
     self.index = self.index + 1
     spent = spent + 1
-    local weapon, angle, power = job[1], job[2], job[3]
-    local is_heal = (weapon.heal or 0) > 0
-    local targets = is_heal and self.wounded or self.enemies
-    local avoid = is_heal and {} or self.mine
+    local weapon, aim = job.weapon, job.aim
+    local plan = PLANS[weapon.plan or "arc"]
+    local targets = (weapon.effect == "heal") and self.ctx.wounded or self.ctx.enemies
 
-    local score, near
-    if weapon.kind == "laser" then
-      score, near = laser_score(self.shooter, weapon, angle, targets)
-    else
-      local hx, hy, hit = preview(self.shooter, weapon, angle, power,
-                                  self.wind, self.terrain, targets)
-      score, near = score_of(weapon, hx, hy, hit, targets, avoid)
-    end
-    -- 限量弹的成绩顺带抬高普通炮弹的门限：它要赢，就得**明显**比限量弹好
-    if (weapon.ammo or 0) >= 0 and score > shell_bar then
-      shell_bar = score
-    end
-    if not self.best or score > self.best.score then
-      self.best = { weapon = weapon, angle = angle, power = power, score = score, near = near }
-    end
+    local impact = plan.impact(self.ctx, self.shooter, weapon, aim)
+    local delta = EFFECTS[weapon.effect or "blast"](self.ctx, weapon, impact)
+    local near = nearest(impact.x or self.shooter.x, impact.y or self.shooter.y, targets)
+    local score = score_of(delta, weapon, near, self.ctx)
+
+    local cand = { weapon = weapon, aim = aim, score = score, near = near,
+                   delta = delta, reason = reason_of(weapon, delta) }
+    if not self.best or score > self.best.score then self.best = cand end
+    -- 留下前几名：观察口能看到"它都考虑过什么"，出问题时不必猜
+    self.top[#self.top + 1] = cand
+    if #self.top > 12 then table.remove(self.top, 1) end
   end
 
   if self.index > #self.jobs then
-    if self.phase == 1 and self.cfg.refine and self.best and self.best.weapon.kind ~= "laser" then
-      -- 精修一遍：围着粗扫找到的那一组细看，误差是之后才加的，这里要的是准
-      local cfg, b = self.cfg, self.best
-      self.jobs = jobs_for(b.weapon, b.angle - cfg.a_step, b.angle + cfg.a_step, 2,
-                           math.max(0.15, b.power - cfg.p_step),
-                           Physics.clamp_power(b.power + cfg.p_step), 0.02)
-      self.index, self.phase = 1, 2
-      return false
+    if self.phase == 1 and self.cfg.refine and self.best then
+      -- 精修一遍：围着粗扫找到的那一组细看（射线同样适用）
+      local plan = PLANS[self.best.weapon.plan or "arc"]
+      if plan.refine then
+        local b, cfg = self.best, self.cfg
+        local refined = {}
+        for angle = b.aim.angle - cfg.a_step, b.aim.angle + cfg.a_step, 2 do
+          for power = math.max(0.15, b.aim.power - cfg.p_step),
+                        Physics.clamp_power(b.aim.power + cfg.p_step), 0.02 do
+            refined[#refined + 1] = { angle = angle, power = power }
+          end
+        end
+        if #refined > 0 then
+          self.jobs = {}
+          for _, aim in ipairs(refined) do
+            self.jobs[#self.jobs + 1] = { weapon = b.weapon, aim = aim }
+          end
+          self.index, self.phase = 1, 2
+          return false
+        end
+      end
     end
     self.done = true
   end
@@ -270,10 +477,21 @@ function Planner:result()
   local aj, pj = math.floor(cfg.angle * 10), math.floor(cfg.power * 1000)
   return {
     weapon = b.weapon,
-    angle = b.angle + phos.sys.random(-aj, aj) / 10,
-    power = Physics.clamp_power(b.power + phos.sys.random(-pj, pj) / 1000),
+    angle = b.aim.angle + phos.sys.random(-aj, aj) / 10,
+    power = Physics.clamp_power(b.aim.power + phos.sys.random(-pj, pj) / 1000),
     near = b.near,
+    reason = b.reason,
   }
+end
+
+-- 给观察口用：当前排在前面的几个候选（武器 + 一句话理由），人读得懂
+function Planner:top_lines(count)
+  local sorted = {}
+  for _, c in ipairs(self.top) do sorted[#sorted + 1] = c end
+  table.sort(sorted, function(a, b) return a.score > b.score end)
+  local out = {}
+  for i = 1, math.min(count or 3, #sorted) do out[i] = sorted[i].reason end
+  return out
 end
 
 return AI

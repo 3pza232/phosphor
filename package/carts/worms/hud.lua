@@ -11,9 +11,11 @@ local Text = {
   -- 状态行只回答"轮到哪一方"
   zh = { angle = "角度", power = "力度", wind = "风", turn = "回合", sec = "秒",
         weapon = "武器", inf = "∞", fired = "本回合已开炮", terrain = "地形",
+        buried = "被埋住 炸开脱身",
         own = "己方", foe = "敌方", p1 = "玩家1", p2 = "玩家2", ally = "队友AI" },
   en = { angle = "ANGLE", power = "POWER", wind = "WIND", turn = "TURN", sec = "s",
         weapon = "WEAPON", inf = "∞", fired = "FIRED THIS TURN", terrain = "TERRAIN",
+        buried = "BURIED - blast out",
         own = "OURS", foe = "ENEMY", p1 = "P1", p2 = "P2", ally = "ALLY AI" },
 }
 -- 取当前语言那一列：查表规则在引擎里（`phos.lang.dict`，缺 en 回落中文）
@@ -28,7 +30,7 @@ end
 -- 一行里按顺序摆几段文字：**下一段的起点由前一段的实际宽度算**。
 -- 汉字 2 列、字母 1 列，写死列号只能适配一种语言；量宽度才能中英都排对
 local function seg(S, x, y, text, col)
-  S.print(x, y, text, col)
+  S:print(x, y, text, col)
   return x + phos.text.width(text)
 end
 
@@ -44,7 +46,7 @@ function Hud.draw(S, C, ctx)
   local _, _, pw = phos.screen.playfield()
   local play_w = pw or 58
   for row = 0, 2 do
-    S.print(0, row, string.rep(" ", play_w), C.white, ctx.sky)
+    S:print(0, row, string.rep(" ", play_w), C.white, ctx.sky)
   end
 
   -- 第 0 行：回合数、倒计时、风、轮到谁。段与段之间固定留 2 格
@@ -74,6 +76,10 @@ function Hud.draw(S, C, ctx)
   local note, note_col
   if ctx.phase == "flying" then
     note, note_col = ctx.flight_note or "", C.orange
+  elseif w and w.buried then
+    -- 被地形炮埋住：走不动，只能自己炸开（这就是那件武器的牵制作用），必须说清楚，
+    -- 否则玩家只会以为"卡住了"
+    note, note_col = t.buried, C.yellow
   elseif ctx.shots_left == 0 then
     note, note_col = t.fired, C.dark_gray
   end
@@ -113,7 +119,7 @@ function Hud.draw(S, C, ctx)
     else
       power = tostring(spec.damage or 0)
     end
-    S.print(1, 2, phos.text.fit(
+    S:print(1, 2, phos.text.fit(
       string.format("%s %s %s   x%s", t.weapon, name, power, ammo_txt), play_w - 2 - note_w),
       (n == 0) and C.dark_gray or C.white)
   end
@@ -121,7 +127,7 @@ function Hud.draw(S, C, ctx)
     -- 不贴右边框：留 NOTE_MARGIN 格空白，压着边框反而更乱（视觉上是"挤在角落里"）
     local x = play_w - phos.text.width(note) - NOTE_MARGIN
     if x > 20 then
-      S.print(x, 2, note, note_col)
+      S:print(x, 2, note, note_col)
     end
   end
 
@@ -131,7 +137,7 @@ function Hud.draw(S, C, ctx)
   -- f.text 是"没有数字"的说明（落海、燃烧、没弹药），此时不该硬拼出一个 -0
   for _, f in ipairs(ctx.floats or {}) do
     local text = f.text or string.format("-%d", math.floor((f.damage or 0) + 0.5))
-    S.print(f.x, f.y, text, (f.text and (f.color or C.white)) or C.white)
+    S:print(f.x, f.y, text, (f.text and (f.color or C.white)) or C.white)
   end
 end
 
@@ -146,9 +152,9 @@ function Hud.hp_bar(S, C, x, y, frac, plate)
   local f = math.max(0, math.min(1, frac or 0))
   local n = math.ceil(f * 6)
   local fill = (f > 0.6 and C.cyan) or (f > 0.25 and C.yellow) or C.red
-  S.print(x - 3, y, "[", C.white, plate)
-  S.print(x - 2, y, string.rep("=", n) .. string.rep("-", 6 - n), fill, plate)
-  S.print(x + 4, y, "]", C.white, plate)
+  S:print(x - 3, y, "[", C.white, plate)
+  S:print(x - 2, y, string.rep("=", n) .. string.rep("-", 6 - n), fill, plate)
+  S:print(x + 4, y, "]", C.white, plate)
 end
 
 return Hud

@@ -456,7 +456,7 @@ if phos.layer then ... else ... end    -- 探的是"这个接口在不在"，不
 |------|------|----------|------|
 | P0 地基 | `Cell.alpha`（默认 255）+ `core/layered_screen`（create/find/merge_over） | `core/screen.hpp`、`core/layered_screen.*`（新） | 单测级：合并结果 == 手工预期；门禁全绿 |
 | P1 增量接线 | `tick_playing` 在 `cart_->draw()` 后加**一处** `if (layers.active()) layers.merge_over(screen_)`；层缓冲挂到卡带宿主上下文，随插拔创建/销毁 | `core/app.cpp`（仅此一处）、`core/host_context*`、`cart/cartridge.cpp`（生命周期挂钩） | 无层卡带：反汇编级也能确认无新增行为（结构性零改动）；未建层的出厂卡带逐字节一致 |
-| P2 卡带 API | `phos.layer`、`ui.region` 的 layer 锚点、DevKit 注解与模板、文档；`phos_api → 2` | `api/host_api.cpp`、`api/ui_api.cpp`、`api/draw_region.*`、`core/version.hpp`、`package/devkit/*`、`docs/*` | 新接口冒烟（devkit 的**演示卡带**，另加一张真用图层的出厂卡带 `carts/tetris`）；`--check-api` 绿；不建层的旧卡带照旧 |
+| P2 卡带 API | `phos.layer`、`ui.region` 的 layer 锚点、DevKit 注解与模板、文档；`phos_api → 2` | `api/host_api.cpp`、`api/ui_api.cpp`、`api/draw_region.*`、`core/version.hpp`、`package/devkit/*`、`docs/*` | 新接口冒烟（devkit 的**演示卡带**，另加两张真用图层的出厂卡带：`carts/tetris` 四层、`carts/worms` 前景/读数/浮窗三层且画面逐字节不变）；`--check-api` 绿；不建层的旧卡带照旧 |
 | P3 通道 | `state.query.layers`、**顶层** `merge_ms`、`screen.read(layer=…)`；（可选）事件订阅 | `core/app_control.cpp`、`docs/agent-interface.md`、`tools/*` | control_test 扩展断言 |
 | P4 增配 | `text.ink_box`、`input.duration` / `input.keys`、`sys.frame`（`input.text` 早就在，不算本批新增） | `render/*`（度量回调装配）、`api/*`、`core/input.*` | 各自冒烟 + devkit 示例 |
 
@@ -486,7 +486,7 @@ if phos.layer then ... else ... end    -- 探的是"这个接口在不在"，不
 | 层是否对主机脚本（boot.lua 等）开放 | 暂不开放（层归卡带） | 有真实诉求时 |
 | 事件订阅做不做 | 可选，P3 末尾评估 | 有 agent 侧真实诉求时 |
 | 演示卡带放出厂还是 devkit | 已定：devkit 示例（`package/devkit/examples/layers/`），不进出厂列表 | 已落地 |
-| 出厂卡带要不要有一张真用图层的 | 要：`package/carts/tetris/`（井+已落定方块 / 下落块 / 特效 / 浮窗四层，`phos_api = 2`）。示例卡带仍只在 devkit —— 不为了展示而往架子上摆一张"样板"，摆一张真能玩的 | 已落地 |
+| 出厂卡带要不要有一张真用图层的 | 要，而且不止一张：`package/carts/tetris/`（井+已落定方块 / 下落块 / 特效 / 浮窗四层）与 `package/carts/worms/`（前景 / 读数 / 浮窗三层——它原是手排次序的立即式绘制，改成分层后画面逐字节不变）。示例卡带仍只在 devkit —— 不为了展示往架子上摆"样板"，摆真能玩的 | 已落地 |
 
 ---
 

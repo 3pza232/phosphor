@@ -240,6 +240,7 @@ end
 `docs/api-reference.md` 的 `phos.layer` 一节）。这是**可选**能力：不建层的卡带走的
 仍是原来的单层路径，主机连一次合成都不会做，也不需要为它改写。
 
-两个可读的样板：`package/devkit/examples/layers/`（最小演示：世界 / HUD / 浮窗三层）与
-`package/carts/tetris/`（真实玩法卡带：井与已落定方块走底层，下落中的方块 / 特效 / 浮窗
-各占一层；`fx` 层只写字形，所以压在世界上仍透得出来）。
+三个可读的样板：`package/devkit/examples/layers/`（最小演示：世界 / HUD / 浮窗三层）、
+`package/carts/tetris/`（井与已落定方块走底层，下落中的方块 / 特效 / 浮窗各占一层；
+`fx` 层只写字形，所以压在世界上仍透得出来）与 `package/carts/worms/`（前景 / 读数 / 浮窗
+三层——那原本是"手排次序"的立即式绘制，改成按 z 叠之后**画面逐字节不变**）。

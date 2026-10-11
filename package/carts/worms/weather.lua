@@ -293,12 +293,12 @@ end
 -- 天空：底色 + 星 / 日 / 月 / 云 / 风痕。cx, cy 是相机原点的世界坐标
 function Weather:draw_sky(S, C, cx, cy, time, wind)
   local r, g, b = self:sky_rgb()
-  S.clear(nil, C.rgb(r, g, b))
+  S:clear(nil, C.rgb(r, g, b))
 
   -- 星星只属于清朗的夜：屏幕空间（"无限远"的东西不该跟着镜头平移）
   if self:is_night() and not self:is_severe() then
     for _, s in ipairs(self.stars) do
-      S.put(s.i, s.j, "·", self.col.star)
+      S:put(s.i, s.j, "·", self.col.star)
     end
   end
 
@@ -312,9 +312,9 @@ function Weather:draw_sky(S, C, cx, cy, time, wind)
       for k = 0, math.floor(c.w / 2) do
         local x = i + k
         if x >= 0 and x < self.vw then
-          S.put(x, j, "~", tone)
+          S:put(x, j, "~", tone)
           if j + 1 < self.vh and (k % 3 ~= 1) then
-            S.put(x, j + 1, "~", tone)
+            S:put(x, j + 1, "~", tone)
           end
         end
       end
@@ -330,16 +330,20 @@ function Weather:draw_sky(S, C, cx, cy, time, wind)
       local x = math.floor((time * 70 * dir + k * 41) % (self.vw - 6)) + 3
       local y = 4 + k * 4
       if y < self.vh then
-        S.put(x, y, dir > 0 and "`" or "'", self.col.cloud)
+        S:put(x, y, dir > 0 and "`" or "'", self.col.cloud)
       end
     end
   end
 
-  -- 闪电：一整片提亮半屏，只在零点几秒内
-  if self.flash > 0 then
-    S.fill(0, 0, self.vw, math.max(1, math.floor(self.vh * 0.55)), " ", nil,
-      C.rgb(120, 130, 170))
-  end
+end
+
+-- 闪电：一整片提亮半屏，只在零点几秒内。
+-- **单独一个方法**、由上层画在 fx 层（世界与角色都已画完之后）：夹在 draw_sky 里的话，
+-- 紧接着的地形会把它的下半部整个盖掉，闪电就只能照亮天空、照不到地形与虫子
+function Weather:draw_flash(S, C)
+  if self.flash <= 0 then return end
+  S:fill(0, 0, self.vw, math.max(1, math.floor(self.vh * 0.55)), " ", nil,
+    C.rgb(120, 130, 170))
 end
 
 function Weather:draw_sun_moon(S, C)
@@ -363,7 +367,7 @@ function Weather:draw_sun_moon(S, C)
     for _, cell in ipairs(MOON_CELLS) do
       local x, y = i + cell[1], j + cell[2]
       if x >= 0 and x < self.vw and y >= 0 and y < self.vh then
-        S.put(x, y, cell[3], tone)
+        S:put(x, y, cell[3], tone)
       end
     end
     return
@@ -374,7 +378,7 @@ function Weather:draw_sun_moon(S, C)
       local ch = row:sub(c, c)
       local x, y = i + c - 1, j + k - 1
       if ch ~= " " and x >= 0 and x < self.vw and y >= 0 and y < self.vh then
-        S.put(x, y, ch, tone)
+        S:put(x, y, ch, tone)
       end
     end
   end
@@ -400,12 +404,12 @@ function Weather:draw_precip(S, C)
   for _, d in ipairs(self.drops) do
     local i, j = math.floor(d.i), math.floor(d.j)
     if j >= 3 and j < self.vh and i >= 0 and i < self.vw then
-      S.put(i, j, glyph, tone)
+      S:put(i, j, glyph, tone)
       -- 大风时往来路补一格：雨雪被拉成一条斜线，速度感全靠它
       if st.heavy and self.wind_dir ~= 0 then
         local ti = i - self.wind_dir * 2
         if ti >= 0 and ti < self.vw and j - 1 >= 3 then
-          S.put(ti, j - 1, glyph, C.gray)
+          S:put(ti, j - 1, glyph, C.gray)
         end
       end
     end
@@ -419,7 +423,7 @@ function Weather:draw_heat(S, C)
     local i = (k * 17 + math.floor(self.anim * 2)) % self.vw
     local j = self.vh - 3 - ((k * 7 + math.floor(self.anim * 6)) % step)
     if j >= 3 then
-      S.put(i, j, "~", C.orange)
+      S:put(i, j, "~", C.orange)
     end
   end
 end

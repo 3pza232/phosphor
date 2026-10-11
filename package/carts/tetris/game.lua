@@ -7,7 +7,7 @@ local Game = {}
 
 Game.W, Game.H = 10, 20
 
---: 消行闪光的时长（秒）。它同时是"行还在但已判定消掉"的那一小段
+-- 消行闪光的时长（秒）。它同时是"行还在但已判定消掉"的那一小段
 local CLEAR_TIME = 0.22
 
 -- 七种方块。每种给四个格子在 **4×4 方框**里的偏移，旋转就是整体转 90°
@@ -24,7 +24,7 @@ local PIECES = {
   L = { color = "orange", cells = { { 3, 2 }, { 1, 3 }, { 2, 3 }, { 3, 3 } } },
 }
 
---: 消行得分：一次消 1~4 行。乘当前等级
+-- 消行得分：一次消 1~4 行。乘当前等级
 local CLEAR_SCORE = { 0, 100, 300, 500, 800 }
 
 function Game.color_key(kind) return PIECES[kind] and PIECES[kind].color or "white" end

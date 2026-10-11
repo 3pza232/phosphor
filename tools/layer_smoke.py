@@ -26,8 +26,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from phos import Host, main_guard, reporter  # noqa: E402
 
 #: devkit 里的图层示例卡带（世界 / HUD / 浮窗三层），不在出厂卡带列表里。
-#: 出厂卡带里也有一张真用图层的（`carts/tetris`），但那是**玩法卡带**——
-#: 门禁这里测的是契约本身，用最小示例更稳（改动玩法不会牵连这条门禁）
+#: 出厂卡带里也有真用图层的（`carts/tetris` 四层、`carts/worms` 三层），但那些是
+#: **玩法卡带**——门禁这里测的是契约本身，用最小示例更稳（改玩法不会牵连这条门禁）
 DEMO_CART = "devkit/examples/layers"
 WORLD_MARK = "WORLD LAYER"
 HUD_MARK = "LAYERS DEMO"

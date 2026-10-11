@@ -137,10 +137,6 @@ function Terrain:solid(x, y)
   return self.rows[y]:byte(x) == BYTE_ONE
 end
 
-function Terrain:in_water(x, y)
-  return y >= self.WATER_Y and not self:solid(x, y)
-end
-
 -- 爆炸：挖掉半径内的地形（圆形，边缘带一点噪声）。
 -- 完美的圆看着像贴图，锯齿状的坑才像"被炸过"——而且这层噪声还能让
 -- 后续的抛物线多几种落点，不是每次都在同一个光滑碗里打转。

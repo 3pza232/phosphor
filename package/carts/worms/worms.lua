@@ -12,9 +12,11 @@ Worms.__index = Worms
 
 Worms.MAX_HP = 100
 Worms.WALK_SPEED = 10      -- 子格/秒（= 5 格/秒）
--- 起跳初速（负值 = 向上）。跳跃高度 = v²/2g，12 对应 ≈3 子格（1.5 格）：
+-- 空中水平速度：比地面慢（约七成），但**不为零**——起跳后还能左右微调，落点才控得住
+Worms.AIR_SPEED = 7        -- 子格/秒
+-- 起跳初速（负值 = 向上）。跳跃高度 = v²/2g，14 对应 ≈4 子格（2 格）：
 -- 够翻过一块台阶、够离开脚下的爆炸圈，但不足以变成"飞"
-Worms.JUMP_VY = -12
+Worms.JUMP_VY = -14
 Worms.HIT_RADIUS = 3       -- 被弹药命中的判定半径（子格）
 -- 阵亡爆炸：谁倒下都会炸一下（最高 50），波及身边单位 —— 于是"残血扎堆"要付代价。
 -- 但**伤害不在这里结算**：只把死讯报给上层（on_death），由它排队统一处理。
@@ -125,10 +127,13 @@ function Worms:supported(w)
   return t:solid(x - 1, y) or t:solid(x, y) or t:solid(x + 1, y)
 end
 
--- 走：只在地面上走；前方台阶高出 2 子格以上就停住（爬坡要靠跳）
+-- 走：地面上是常速，**空中也能微调**（略慢）；前方台阶高出 2 子格以上就停住（爬坡要靠跳）。
+-- 空中可动是要紧的：起跳后若水平冻结，"走 + 跳"就是两次互不相干的操作，
+-- 落点只好在起跳那一帧定死——手感差的大半来源就在这儿
 function Worms:move(w, dir, dt)
-  if not w.alive or not w.on_ground then return end
-  local nx = w.x + dir * Worms.WALK_SPEED * dt
+  if not w.alive then return end
+  local speed = w.on_ground and Worms.WALK_SPEED or Worms.AIR_SPEED
+  local nx = w.x + dir * speed * dt
   if nx < 3 or nx > self.terrain.W - 3 then w.facing = dir return end
   if self.terrain:solid(math.floor(nx), math.floor(w.y)) then
     w.facing = dir
@@ -155,6 +160,7 @@ function Worms:update(dt)
         w.fall_from = w.y
       end
       if not w.on_ground then
+        w.buried = false -- 已经在空中：不管之前埋得多深，这一帧起它已经出来了
         w.vy = w.vy + Physics.GRAVITY * dt
         w.y = w.y + w.vy * dt
         if w.vy >= 0 and self:supported(w) then
@@ -167,9 +173,16 @@ function Worms:update(dt)
           end
         end
       else
-        -- 贴地：吸附到地表，上坡下坡时不会浮空
-        local _, gy = self.terrain:find_ground(math.floor(w.x), math.floor(w.y + 2))
-        if gy then w.y = gy end
+        -- 贴地：吸附到地表，上坡下坡时不浮空。**只允许一格以内的修正** ——
+        -- find_ground 是"向上找最近的支撑面"，不设上限的话，被地形炮灌了土的虫子
+        -- 会被一路顶回地表，而那正是这件武器该有的效果的反面：它要的是把人**埋住**
+        if self.terrain:solid(math.floor(w.x), math.floor(w.y)) then
+          w.buried = true -- 身处实心地形：不吸附、走不动（move 的实心判定会挡住），只能自己炸开
+        else
+          w.buried = false
+          local _, gy = self.terrain:find_ground(math.floor(w.x), math.floor(w.y + 2))
+          if gy and math.abs(gy - w.y) <= 1 then w.y = gy end
+        end
       end
       if w.y >= self.terrain.WATER_Y then
         self:kill(w)

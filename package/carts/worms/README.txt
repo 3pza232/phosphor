@@ -16,6 +16,8 @@ manifest.lua   卡带身份证。id / name / desc（双语）/ version 直接改
                也可运行时 phos.panel.resize(w)）；
                save = true 才会用到 phos.save.*；entry 指向入口脚本。
 main.lua       入口。只做三件事：装配模块 / 把输入翻成"意图" / 把状态画出来。
+               绘制分三层：世界（天空+地形）写底层，前景 fx / 读数 hud / 浮窗 overlay
+               各一层，见 main.lua 顶部与 init 的说明。
                要动手的地方都标了「填」：Text 文案表、init、update、draw、debug_state。
 game.lua       玩法规则。不读键盘、不画东西、不发声音——只按 move/act/update 推进局面，
                并 return 事件表告诉 main.lua"发生了什么"。

@@ -13,7 +13,7 @@ Game.W, Game.H = 57, 40
 local BRICK_COLS, BRICK_ROWS = 14, 6
 local BRICK_W = 3                      -- 每块砖 3 字符宽
 local BRICK_STRIDE = 4                 -- 含 1 格间隙：14 列刚好 56 格
-local PADDLE_W, PADDLE_H = 9, 1
+local PADDLE_W = 9                      -- 挡板 9 字符宽；高只有 1 行，不必单列常量
 local BALL_R = 1
 local PADDLE_ROW = Game.H - 3
 local PADDLE_SPEED = 46.0              -- 格/秒
@@ -246,7 +246,7 @@ function Game:color_of(tier)
   return TIER_COLOR[tier] or "white"
 end
 
-Game.PADDLE_W, Game.PADDLE_H, Game.PADDLE_ROW = PADDLE_W, PADDLE_H, PADDLE_ROW
+Game.PADDLE_W, Game.PADDLE_ROW = PADDLE_W, PADDLE_ROW
 Game.BRICK_W, Game.BRICK_STRIDE = BRICK_W, BRICK_STRIDE
 Game.BRICK_COLS, Game.BRICK_ROWS = BRICK_COLS, BRICK_ROWS
 

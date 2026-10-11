@@ -33,15 +33,15 @@ local Text = {
 -- 取当前语言那一列：查表规则在引擎里（`phos.lang.dict`，缺 en 回落中文）
 local function L() return phos.lang.dict(Text) end
 
---: 一格方块画成 BLOCK×BLOCK 个字符。内容区是 62×45 字符，1 格 1 字符的话井只占
---: 10×20、在屏幕中间空荡荡一小块；铺成 2×2 之后井是 20×40，高度基本吃满。
---: 棋盘坐标仍是 game.lua 里的 10×20 —— 放大只发生在画的时候
+-- 一格方块画成 BLOCK×BLOCK 个字符。内容区是 62×45 字符，1 格 1 字符的话井只占
+-- 10×20、在屏幕中间空荡荡一小块；铺成 2×2 之后井是 20×40，高度基本吃满。
+-- 棋盘坐标仍是 game.lua 里的 10×20 —— 放大只发生在画的时候
 local BLOCK = 2
 
---: 井内区左上角。井框画在它外面一圈（22×42），底下还留两行写等级与提示
+-- 井内区左上角。井框画在它外面一圈（22×42），底下还留两行写等级与提示
 local WELL_X, WELL_Y = 21, 2
 
---: 消行闪光 / 加分浮字的存在时长（秒）
+-- 消行闪光 / 加分浮字的存在时长（秒）
 local FLOAT_TIME = 0.9
 
 local game
@@ -106,7 +106,7 @@ local function play(ev)
     Sfx.clear(ev.cleared)
     -- 消行的那几行在井里闪一下，进账浮在井上方。
     -- 乘等级要乘在**数字**上：写成 string.format(...) * level 的话，乘法会作用在字符串上
-    -- 并把它变成 number，print 当场拒绝（这个坑我踩过，卡带直接报错拔卡）
+    -- 并把它变成 number，而 print 只收字符串（传数字会当场报错）
     local gain = (({ 0, 100, 300, 500, 800 })[ev.cleared] or 800) * game.level
     add_float(string.format("+%d", gain), WELL_X + Game.W - 4, WELL_Y + 8)
   end
@@ -178,7 +178,7 @@ end
 -- 把一个棋盘格铺成 BLOCK×BLOCK 个字符。px, py 是这一格**左上角的字符坐标**：
 -- 底层写的是内容区绝对坐标，层里写的是区域局部坐标。
 -- 两个入口分得清清楚楚：区域必须用冒号调用（`r:put`）—— 把方法当函数传（`r.put`）
--- 会丢掉 self，运行时报 "expected userdata"（这个坑我刚踩过）
+-- 会丢掉 self，运行时报 "expected userdata"
 local function blit_screen(px, py, ch, color, bg)
   for dy = 0, BLOCK - 1 do
     for dx = 0, BLOCK - 1 do phos.screen.put(px + dx, py + dy, ch, color, bg) end
@@ -271,12 +271,8 @@ end
 -- 铺底板用 `clear`（恒写底色 → 整块不透明），于是这一块真的把世界挡住了
 local function draw_overlay()
   local C = phos.color
-  local function plate()
-    r_overlay:clear(C.gray, C.dark_gray)
-    r_overlay:frame(L().paused)
-  end
   if paused then
-    plate()
+    r_overlay:clear(C.gray, C.dark_gray)
     r_overlay:frame(L().paused)
     r_overlay:print(2, 3, string.format(L().score, game.score), C.white)
     r_overlay:print(2, 5, L().resume:format(phos.input.key_name("start")), C.cyan)
@@ -314,7 +310,7 @@ function debug_state()
     rows[y] = table.concat(line)
   end
   -- 当前块连**四个格子的方框坐标**一起报：旋转与踢墙都会挪方块，
-  -- 只报 kind + x/y 的调用方还得自己推形状与朝向，推错了就白算（我吃过这个亏）
+  -- 只报 kind + x/y 的调用方还得自己推形状与朝向，推错了就白算
   local piece = nil
   if game.piece then
     local cells = {}

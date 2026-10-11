@@ -29,6 +29,24 @@ local Supply = require("supply")
 -- 声明 22 格侧栏后内容区只有 58 格宽，画到 58 列之后的像素会被主机裁掉，
 -- 世界右侧那一截就永远看不见（"最右边的敌人不见了"就是这么来的）
 local VIEW_CW, VIEW_CH = 80, 45
+
+-- 三层的绘制区域（层在 init 里建）。区域随**可玩区**重建：展开/收起侧栏会改宽度，
+-- 区域不跟着改就会把右半屏裁掉。前景与读数各一块，浮窗需要时自己现建一块
+local r_base, r_fx, r_hud
+local function refresh_regions()
+	local _, _, pw, ph_ = phos.screen.playfield()
+	if not (pw and pw > 8 and ph_ and ph_ > 8) then
+		return
+	end
+	-- 底层也走区域：于是所有绘制函数都拿到"一块画布"，
+	-- 内部统一用冒号调用（phos.screen 的方法是普通函数，区域的方法是方法，包一层就统一了）
+	if not r_base then
+		local cw, ch = phos.screen.size()
+		r_base = phos.ui.region(0, 0, cw, ch)
+	end
+	r_fx = phos.ui.region(0, 0, pw, ph_, { layer = "fx" })
+	r_hud = phos.ui.region(0, 0, pw, ph_, { layer = "hud" })
+end
 local BYTE_ONE = string.byte("1")
 -- 一个字符格四个子位的组合 → 象限字形（位：1 左上、2 右上、4 左下、8 右下）
 local GLYPH = {
@@ -99,7 +117,6 @@ local active = {} -- active[team] = 当前操作的虫子
 local captain = nil -- 己方队长：开局定死的那只，见 worm_is_human
 local aim_power, charge_mode, switch_delay, ai_delay, winner
 local weapon_index, ai_plan
-local hold_angle, hold_power = 0, 0 -- 按住时长：驱动"越按越快"的加速度
 local ai_decided, ai_walk_t, ai_walk_dir = false, 0, nil -- AI 是否已决定走位 / 还要走多久 / 往哪走（捡补给用）
 local ai_reason, ai_run_away = nil, false -- 走位理由（观察口用）/ 是否在往后撤
 local ai_repositioned = false -- 本回合是否已经为"够不着"换过一次位置
@@ -245,19 +262,14 @@ local Text = {
 -- 取当前语言那一列：查表规则在引擎里（`phos.lang.dict`，缺 en 回落中文）
 local function L() return phos.lang.dict(Text) end
 
--- 按**显示宽度**右侧补空格。不能用 string.format 的 %-Ns：那个按字节补，
--- 汉字被算成 3 字节，"队友交给 AI" 这类混排会整列歪掉
-local function pad(s, width)
-	local n = width - phos.text.width(s)
-	return n > 0 and (s .. string.rep(" ", n)) or s
-end
+
 -- 生命值那一行：上下限与步长。长按的速率是"每秒多少点"，最后统一取整成 10 的倍数
 local HP_MIN, HP_MAX, HP_STEP = 10, 800, 10
 local HP_RATE, HP_RATE_MAX = 30, 240
 
 local menu = { row = 1, mode = "pve", mine = 4, theirs = 4, ally_ai = false, diff = 2, hp = 100 }
 local menu_flash = 0
-local hp_hold, hp_frac = 0, 0 -- 菜单里按住 ←→ 的累计时长 / 不足一步的余量
+local hp_frac = 0 -- 菜单里按住 ←→ 时"不足一步的余量"（按住多久由 phos.input.duration 给）
 
 -- 血量只能落在 10 的倍数上：点按、长按加速、上下限夹取全走这一个入口
 local function set_menu_hp(v)
@@ -368,12 +380,21 @@ local function refresh_view()
 	if weather then
 		weather:resize(VIEW_CW, VIEW_CH)
 	end
+	refresh_regions()
 end
 
 function init()
 	build_palette()
+	-- 分层：天空与地形照旧画**底层**（phos.screen），前景（特效/瞄准/角色/雨雪）一层、
+	-- 读数与浮字一层、浮窗一层，按 z 叠上去。
+	-- 层的空白格是透明的，而"保留底色"在**同一层内**照样成立（先铺底板再画边框，
+	-- 与过去直接写屏的先后完全同义），所以分层与直接写屏画出来的画面一致
+	phos.layer.create("fx", { z = 10 })
+	phos.layer.create("hud", { z = 20 })
+	phos.layer.create("overlay", { z = 30 })
 	refresh_view()
-	phos.audio.music(Music) -- 轻缓欢快的循环 BGM（换卡时主机会自动停）
+	-- 菜单不放音乐：进卡带先静音，等真的开局（start_match）再起 BGM。
+	-- 菜单是一个"让人读说明、选人数"的地方，有鼓点反而吵
 	screen, menu_flash, help_open = "menu", 0, false
 	menu.row = 1
 	phos.panel.resize(0) -- 菜单不需要侧栏：留着那条竖线会压住浮窗
@@ -384,6 +405,7 @@ local function start_match()
 	ally_ai = menu.ally_ai
 	phos.panel.resize(PANEL_W)
 	refresh_view()
+	phos.audio.music(Music) -- 正式开局才起 BGM（换卡时主机会自动停）
 	-- 血量上限由菜单决定，必须在造虫子**之前**设好：每只虫的初始血量取自它
 	Worms.MAX_HP = menu.hp
 	terrain = Terrain.new()
@@ -475,9 +497,11 @@ local function menu_input(dt)
 	-- 累成整步再加，所以无论按多快，血量永远是 10 的倍数
 	if menu.row == 4 then
 		local dir = phos.input.down("left") and -1 or (phos.input.down("right") and 1 or 0)
-		hp_hold = (dir ~= 0) and (hp_hold + dt) or 0
 		if dir ~= 0 and not phos.input.pressed("left") and not phos.input.pressed("right") then
-			hp_frac = hp_frac + accel(hp_hold, HP_RATE, HP_RATE_MAX) * dt
+			-- "按住多久"直接问主机（phos.input.duration）：不必自己攒计时，
+			-- 也就不会有"松开忘了清零"那类 bug
+			local held = (dir < 0) and phos.input.duration("left") or phos.input.duration("right")
+			hp_frac = hp_frac + accel(held, HP_RATE, HP_RATE_MAX) * dt
 			local steps = math.floor(hp_frac / HP_STEP)
 			if steps > 0 then
 				hp_frac = hp_frac - steps * HP_STEP
@@ -485,7 +509,7 @@ local function menu_input(dt)
 			end
 		end
 	else
-		hp_hold, hp_frac = 0, 0
+		hp_frac = 0
 	end
 
 	-- A / ENTER：在"开始游戏"上开局，"队友交给 AI"上开关。
@@ -541,9 +565,10 @@ local function player_input(dt)
 
 	-- 左右：蓄力态调力度（点按 1%、长按加速），非蓄力态走路
 	local left, right = phos.input.down("left"), phos.input.down("right")
-	hold_power = (left or right) and (hold_power + dt) or 0
 	if charge_mode then
-		local rate = accel(hold_power, POWER_RATE, POWER_RATE_MAX)
+		-- 按住的那一个键已经按了多久，加速曲线就用多久（松手即 0，不必自己清零）
+		local held = left and phos.input.duration("left") or phos.input.duration("right")
+		local rate = accel(held, POWER_RATE, POWER_RATE_MAX)
 		if phos.input.pressed("left") then
 			aim_power = Physics.clamp_power(aim_power - TAP_POWER)
 		elseif phos.input.pressed("right") then
@@ -564,16 +589,16 @@ local function player_input(dt)
 
 	-- 上下：点按 1°、长按越走越快。下限 -60° 表示"朝下打"
 	local up, down = phos.input.down("up"), phos.input.down("down")
-	hold_angle = (up or down) and (hold_angle + dt) or 0
+	local held = up and phos.input.duration("up") or phos.input.duration("down")
 	local ad = 0
 	if phos.input.pressed("up") then
 		ad = TAP_ANGLE
 	elseif phos.input.pressed("down") then
 		ad = -TAP_ANGLE
 	elseif up then
-		ad = accel(hold_angle, ANGLE_RATE, ANGLE_RATE_MAX) * dt
+		ad = accel(held, ANGLE_RATE, ANGLE_RATE_MAX) * dt
 	elseif down then
-		ad = -accel(hold_angle, ANGLE_RATE, ANGLE_RATE_MAX) * dt
+		ad = -accel(held, ANGLE_RATE, ANGLE_RATE_MAX) * dt
 	end
 	if ad ~= 0 then
 		w.angle = math.max(ANGLE_MIN, math.min(ANGLE_MAX, w.angle + ad))
@@ -960,49 +985,20 @@ local function after_settle()
 	ai_reason, ai_run_away = nil, false
 	ai_repositioned = false
 	burst = nil -- 换手时旧的连发队列必须清掉
-	hold_angle, hold_power = 0, 0 -- 新回合从"慢速微调"开始，不留上一轮的加速度
+	-- 这里不再清"按住时长"：它由主机按按键状态给（松手即 0）。
+	-- 于是换手时按着不放就继续快，松开自然回到慢速微调——比硬清零更合手感
 end
 
--- AI 这一炮能用的武器。判断依据是"这局势值不值得用这一件"：
---   * 攻击弹有弹药就能用；集束/超级只在敌人**扎堆**时才划算（几次小爆炸打散人就是浪费）
---   * 治疗弹只在**队友血量低于一半**时才拿出来（见 AI.WOUNDED_RATIO）
---   * 追踪弹与传送不列入：它们的飞行方式没法用同一份 physics 预演，
---     硬塞进这套评分只会算出假成绩
+-- AI 这一炮能用的武器：有弹药，且武器表声明给电脑用（`spec.ai` 不是 false/self）。
+-- "这局势值不值得用这一件"不在这里判——那是评分的事（见 ai.lua 的 AI.WEIGHTS）
 local function ai_weapons(w)
 	local out = {}
-	local foe = (w.team == 1) and 2 or 1
-	local foes = worms:of_team(foe)
-	local bunched = false
-	for _, e in ipairs(foes) do
-		for _, o in ipairs(foes) do
-			if e ~= o and math.abs(e.x - o.x) < 18 and math.abs(e.y - o.y) < 10 then
-				bunched = true
-			end
-		end
-	end
-	local wounded = false
-	for _, m in ipairs(worms:of_team(w.team)) do
-		if m.hp <= Worms.MAX_HP * AI.WOUNDED_RATIO then
-			wounded = true
-		end
-	end
-
 	for _, spec in ipairs(Weapons.LIST) do
-		if Weapons.has_ammo(w, spec) then
-			local ok = false
-			if spec.id == "heal" then
-				ok = wounded
-			elseif spec.id == "cluster" then
-				ok = bunched
-			elseif spec.id == "super" then
-				ok = bunched or #foes <= 1
-			-- 见上面的头注释：追踪弹 / 传送 / 天基炮 / 地形弹一律不列入
-			elseif spec.id ~= "missile" and spec.id ~= "teleport" and spec.id ~= "orbital" and spec.id ~= "terrain" then
-				ok = true
-			end
-			if ok then
-				out[#out + 1] = spec.id
-			end
+		-- 谁能进候选由**武器表自己**声明（spec.ai）：throw 参战 / self 只对自己用 / false 不用。
+		-- 加一件武器只需在武器表写下这一项；值不值得用、扎堆打划不划算，
+		-- 由 ai.lua 的评分按"世界变化量"说了算
+		if spec.ai ~= false and spec.ai ~= "self" and Weapons.has_ammo(w, spec) then
+			out[#out + 1] = spec
 		end
 	end
 	return out
@@ -1212,6 +1208,7 @@ function update(dt)
 		help_open = not help_open
 		phos.audio.paused(help_open) -- 看键位表时连音乐一起停
 		phos.panel.resize(help_open and 0 or PANEL_W)
+		refresh_regions() -- 可玩区宽度变了：前景与读数的区域要跟着重建
 	end
 	if screen == "menu" then
 		menu_flash = menu_flash + dt
@@ -1232,6 +1229,8 @@ function update(dt)
 	supply:update(dt, turn.round, terrain, worms, on_supply_pickup)
 
 	if winner then
+		-- 分出胜负就停乐：回到菜单后应当安静（重开一局时 start_match 会再起）
+		phos.audio.stop_music()
 		if phos.input.pressed("start") or phos.input.pressed("a") then
 			screen = "menu"
 			menu_flash = 0
@@ -1429,7 +1428,7 @@ end
 local function put_at(S, wx, wy, ch, col)
 	local i, j = camera:cell_of(wx, wy)
 	if in_view(i, j) then
-		S.put(i, j, ch, col)
+		S:put(i, j, ch, col)
 		return true
 	end
 	return false
@@ -1480,12 +1479,12 @@ local function draw_world(S, C)
 				-- 看上去像地形被"镂"掉一块。**地形是底图，底图必须把底色也占住**。
 				-- 只填满格而不填半格：地表那圈半格要留出天空，否则轮廓会变方
 				if bits == 15 then
-					S.fill(i, j, 1, 1, " ", col, col)
+					S:fill(i, j, 1, 1, " ", col, col)
 				else
-					S.put(i, j, GLYPH[bits + 1], col)
+					S:put(i, j, GLYPH[bits + 1], col)
 				end
 			elseif water then
-				S.put(i, j, "≈", COL.water)
+				S:put(i, j, "≈", COL.water)
 			end
 		end
 	end
@@ -1593,8 +1592,8 @@ end
 -- 隔好几格才点一下，"炮口朝哪"就只能靠猜。
 --   近身 AIM_NEAR_SUB：逐格点 + 白色，微调一度都看得出来
 --   远处：隔一格点 + 武器色，只作方向示意，不去把整屏点满
--- 地形那一段**照画**，但换字形与颜色：早先为了"别在土里打洞"而整段跳过，
--- 结果地形把后半条线吃掉了——玩家反而看不出炮口指向哪、这一炮会不会撞山。
+-- 地形那一段**照画**，但换字形与颜色：整段跳过的话，地形会把后半条线吃掉——
+-- 玩家就看不出炮口指向哪、这一炮会不会撞山。
 -- 现在土里用暗色的 +、空中用亮色的 ·（一格仍只放一个字形），"线钻进山体"看得见。
 -- （末端的 > < 是"力度标尺"而不是路径，所以照画、不跳过）
 local function draw_aim(S, C)
@@ -1641,8 +1640,8 @@ local function draw_aim(S, C)
 	-- 两行都**不垫底板**：省略底色 = 保留该格原有的底（世界自己的色），于是读数
 	-- 只是"压在画面上的一层字"，既不会挖出一块块黑方块，也没有"底比字身宽一格"
 	-- 这件事。可读性靠配色：白/黄/绿与地形（偏绿、偏暗）拉得开
-	S.print(lx, ly, label, charge_mode and C.yellow or C.white)
-	S.print(lx, ly + 1, bar, charge_mode and C.yellow or C.green)
+	S:print(lx, ly, label, charge_mode and C.yellow or C.white)
+	S:print(lx, ly + 1, bar, charge_mode and C.yellow or C.green)
 end
 
 local function draw_actors(S, C)
@@ -1660,15 +1659,15 @@ local function draw_actors(S, C)
 				end
 				-- 虫标**不垫底板**：省略底色 = 保留这一格原有的底色（phos.screen.put 的 keep
 				-- 语义），于是它直接压在世界的底上，也就没有"底比字身宽出一格"这件事。
-				-- 早先之所以垫，是怕"透明空洞"——那是**省略底色会变黑**的误解：保留底色
-				-- 拿到的是世界的底（天空/土层色），不是黑洞
-				S.put(i, j, "@", col)
+				-- 保留底色拿到的是世界的底（天空/土层色），不是黑洞——"省略底色会变黑"
+				-- 是个误解，所以这里不必垫
+				S:put(i, j, "@", col)
 				-- 标记只画在"轮到人"的那只虫上：队友交给 AI 时，标识不该跟着跳过去。
 				-- 脚下那一排 === 去掉了：它压在斜坡/土上时读起来像地形的一部分，
 				-- 比头顶那个闪动的箭头更吵。选中是谁，看 @ 的颜色与箭头就够
 				if w == current_worm() and human_turn() then
 					local blink = (math.floor(flash * 4) % 2 == 0)
-					S.put(i, j - 1, blink and "V" or "^", C.white)
+					S:put(i, j - 1, blink and "V" or "^", C.white)
 				end
 				-- 血条同样不垫底板（nil = 透明）：底板是**整格**粒度，垫上就比字身
 				-- 宽出一格；压在斜坡或水面上时更像"挖了个洞"
@@ -1681,7 +1680,7 @@ local function draw_actors(S, C)
 		-- 高速弹的气浪"来保证看得见；在战况里挖黑方块比看不见更难看
 		local i, j = camera:cell_of(p.x, p.y)
 		if in_view(i, j) then
-			S.put(i, j, "*", C.white)
+			S:put(i, j, "*", C.white)
 			-- 高速弹的**气浪**：沿速度方向在弹体后面点两格，越远越淡。
 			-- 慢速高抛弹不画——它本来就不"破空"，画了只会糊
 			local sp = math.sqrt((p.vx or 0) ^ 2 + (p.vy or 0) ^ 2)
@@ -1694,38 +1693,43 @@ local function draw_actors(S, C)
 	end
 end
 
--- 画一个"只写字形、不动背景"的框：边线斜角用 + 补齐（浮窗 API 的标题会让
--- 右上角缺一段，而且它自带不透明底），所以这里自己画
-local function box(S, C, x, y, w, h, title, tone)
+-- 在区域里画一个框（边框 + 嵌在上边的标题）：边线斜角用 + 补齐。
+-- 一律用**区域局部坐标**，越界由区域自己夹住；边框只写字形、不动背景，
+-- 于是它压在本区域刚铺好的底板上——与"先整块铺底、再画边框"的先后同义
+local function box(r, title, tone)
+	local w, h = r.w, r.h
 	for i = 1, w do
-		S.put(x + i - 1, y, "-", tone)
-		S.put(x + i - 1, y + h - 1, "-", tone)
+		r:put(i - 1, 0, "-", tone)
+		r:put(i - 1, h - 1, "-", tone)
 	end
 	for j = 1, h do
-		S.put(x, y + j - 1, "|", tone)
-		S.put(x + w - 1, y + j - 1, "|", tone)
+		r:put(0, j - 1, "|", tone)
+		r:put(w - 1, j - 1, "|", tone)
 	end
-	S.put(x, y, "+", tone)
-	S.put(x + w - 1, y, "+", tone)
-	S.put(x, y + h - 1, "+", tone)
-	S.put(x + w - 1, y + h - 1, "+", tone)
-	-- 标题是"需要强调"的字样之一：给它一块底色，压在边框上才清楚（同一块浮层底板）
+	r:put(0, 0, "+", tone)
+	r:put(w - 1, 0, "+", tone)
+	r:put(0, h - 1, "+", tone)
+	r:put(w - 1, h - 1, "+", tone)
+	-- 标题是"需要强调"的字样之一：给它一块底色，压在边框上才清楚（同一块浮窗底板）
 	if title then
-		S.print(x + 2, y, " " .. title .. " ", tone, COL.plate)
+		r:print(2, 0, " " .. title .. " ", tone, COL.plate)
 	end
 end
 
 -- M 地图总览：整幅地形剖面 + 双方位置 + 空中弹药 + 风向。
 -- 侧栏放不下这些（8v8 时光血量就占十几行），所以挪进浮窗；
 -- 它**不暂停**：弹药还在飞的时候也能看一眼全局，不用牺牲一个回合
-local function draw_map_overlay(S, C)
+local function draw_map_overlay(C)
 	local t = L()
 	local mw = math.min(VIEW_CW - 8, 58)
 	local mh = math.min(VIEW_CH - 14, 18)
 	local x = math.floor((VIEW_CW - mw) / 2)
 	local y = 4 -- 往下方放一些：上边留给状态行与瞄准读数
-	S.fill(x, y, mw, mh + 3, " ", nil, COL.plate)
-	box(S, C, x, y, mw, mh + 3, t.map_title, C.white)
+	-- 浮窗自己占一块区域、压在 overlay 层：坐标变成区域局部的，
+	-- 越界由区域夹住；整块铺底用 clear（恒写底色 = 不透）
+	local r = phos.ui.region(x, y, mw, mh + 3, { layer = "overlay" })
+	r:clear(C.white, COL.plate)
+	box(r, t.map_title, C.white)
 
 	-- 地形剖面：每列向下取一次表面高度，往下画实心；水面单独一色
 	local sx, sy = terrain.W / (mw - 2), terrain.H / mh
@@ -1745,9 +1749,9 @@ local function draw_map_overlay(S, C)
 		for i = 0, mw - 3 do
 			local solid = (tops[i] > 0 and wy >= tops[i])
 			if solid then
-				S.put(x + 1 + i, y + 1 + j, "#", COL.top)
+				r:put(1 + i, 1 + j, "#", COL.top)
 			elseif wy >= terrain.WATER_Y then
-				S.put(x + 1 + i, y + 1 + j, "~", COL.water)
+				r:put(1 + i, 1 + j, "~", COL.water)
 			end
 		end
 	end
@@ -1758,7 +1762,7 @@ local function draw_map_overlay(S, C)
 			local i = math.max(0, math.min(mw - 3, math.floor(w.x / sx)))
 			local j = math.max(0, math.min(mh - 1, math.floor(w.y / sy)))
 			local col = (w.team == 1) and C.yellow or C.red
-			S.put(x + 1 + i, y + 1 + j, (w == current_worm()) and "O" or "@", col, COL.plate)
+			r:put(1 + i, 1 + j, (w == current_worm()) and "O" or "@", col, COL.plate)
 		end
 	end
 
@@ -1767,7 +1771,7 @@ local function draw_map_overlay(S, C)
 	for _, p in ipairs(projectiles) do
 		local i = math.max(0, math.min(mw - 3, math.floor(p.x / sx)))
 		local j = math.max(0, math.min(mh - 1, math.floor(p.y / sy)))
-		S.put(x + 1 + i, y + 1 + j, "*", C.white, COL.plate)
+		r:put(1 + i, 1 + j, "*", C.white, COL.plate)
 	end
 
 	-- 空投箱：地图上标成 P。它是走位决策的一部分——"箱在哪、在不在我这边"
@@ -1776,52 +1780,52 @@ local function draw_map_overlay(S, C)
 		local c = supply.crate
 		local i = math.max(0, math.min(mw - 3, math.floor(c.x / sx)))
 		local j = math.max(0, math.min(mh - 1, math.floor(c.y / sy)))
-		S.put(x + 1 + i, y + 1 + j, "P", C.green, COL.plate)
+		r:put(1 + i, 1 + j, "P", C.green, COL.plate)
 	end
 
-	S.print(
-		x + 2,
-		y + mh + 1,
-		string.format(t.map_info, turn.round, Hud.wind_text(turn.wind),
-		              t.side[turn.team] or t.side[1], #projectiles),
-		C.white
-	)
+	r:print(2, mh + 1,
+	        string.format(t.map_info, turn.round, Hud.wind_text(turn.wind),
+	                      t.side[turn.team] or t.side[1], #projectiles),
+	        C.white)
 end
 
 -- 键位浮板：按 K 弹出来，居中在本卡带的可玩区里（不压到侧栏）
-local function draw_help(S, C)
+local function draw_help(C)
 	local t = L()
 	local px, py, pw, ph_ = phos.screen.playfield()
 	local w, h = math.min(52, pw - 2), 22
 	local x = px + math.floor((pw - w) / 2)
 	local y = py + math.floor((ph_ - h) / 2)
 	-- 浮窗要**整块不透明**，连边框那一圈也要：只填内框的话，边框上压着地形/天空，
-	-- 浮窗就成了"半透明"的（与 M 地图浮窗不一致，也读不清）。所以整块 w×h 先铺底，
-	-- 再往上画边框与文字——与 draw_map_overlay 同一套做法
-	S.fill(x, y, w, h, " ", nil, COL.plate)
-	box(S, C, x, y, w, h, t.help_title, C.white)
-	S.print(x + 2, y + 1, t.help_head, C.yellow)
+	-- 浮窗就成了"半透明"的（与 M 地图浮窗不一致，也读不清）。所以先 clear 整块铺底，
+	-- 再往上画边框与文字——与 draw_map_overlay 同一套做法（同样落在 overlay 层）
+	local r = phos.ui.region(x, y, w, h, { layer = "overlay" })
+	r:clear(C.white, COL.plate)
+	box(r, t.help_title, C.white)
+	r:print(2, 1, t.help_head, C.yellow)
 	-- 键名列按**显示宽度**补齐："空格"（4 列）与 "SPACE"（5 列）都对齐到同一列
 	local KEY_W = 7
 	for i, line in ipairs(t.help) do
-		S.print(x + 2, y + 2 + i, pad(line[1], KEY_W), C.white)
-		S.print(x + 3 + KEY_W, y + 2 + i, phos.text.fit(line[2], w - KEY_W - 5), C.gray)
+		r:print(2, 2 + i, phos.text.pad(line[1], KEY_W), C.white)
+		r:print(3 + KEY_W, 2 + i, phos.text.fit(line[2], w - KEY_W - 5), C.gray)
 	end
 end
 
 local function draw_menu()
-	local C, S = phos.color, phos.screen
+	local C, S = phos.color, r_base
 	local t = L()
 	-- 不刷底色：主机每帧已经把内容区填成**当前主题的底色**（还带显像管效果），
 	-- 卡带再刷一层会连主题设置一起盖掉
-	S.print(2, 1, "WORMS", C.yellow)
-	S.print(2, 2, t.subtitle, C.gray)
+	S:print(2, 1, "WORMS", C.yellow)
+	S:print(2, 2, t.subtitle, C.gray)
 
 	local px, py, pw, ph_ = phos.screen.playfield()
 	local w, h = math.min(52, pw - 2), 17
 	local x = px + math.floor((pw - w) / 2) + 1
 	local y = py + math.floor((ph_ - h) / 2) + 1
-	box(S, C, x - 1, y - 1, w, h, t.menu_title, C.white)
+	-- 窗口画在一块区域里（锚底层：菜单底下没有别的东西要叠，不必单占一层）
+	local r = phos.ui.region(x - 1, y - 1, w, h)
+	box(r, t.menu_title, C.white)
 	local mark = function(row)
 		return (menu.row == row) and ">" or " "
 	end
@@ -1832,29 +1836,29 @@ local function draw_menu()
 	-- 所以"我方人数"（8 列）与"OUR SQUAD"（9 列）排出来都是齐的
 	local LABEL_W = 12
 	local function row(i, label, value)
-		return string.format("%s %s < %s >", mark(i), pad(label, LABEL_W), value)
+		return string.format("%s %s < %s >", mark(i), phos.text.pad(label, LABEL_W), value)
 	end
 
 	if menu.mode == "pve" then
-		S.print(x, y, row(1, t.label.mode, t.mode.pve), hi(1))
-		S.print(x, y + 1, "   " .. t.note.pve, C.dark_gray)
-		S.print(x, y + 2, row(2, t.label.mine, menu.mine), hi(2))
-		S.print(x, y + 3, row(3, t.label.theirs, menu.theirs), hi(3))
+		r:print(1, 1, row(1, t.label.mode, t.mode.pve), hi(1))
+		r:print(1, 2, "   " .. t.note.pve, C.dark_gray)
+		r:print(1, 3, row(2, t.label.mine, menu.mine), hi(2))
+		r:print(1, 4, row(3, t.label.theirs, menu.theirs), hi(3))
 	else
-		S.print(x, y, row(1, t.label.mode, t.mode.pvp), hi(1))
-		S.print(x, y + 1, "   " .. t.note.pvp, C.dark_gray)
+		r:print(1, 1, row(1, t.label.mode, t.mode.pvp), hi(1))
+		r:print(1, 2, "   " .. t.note.pvp, C.dark_gray)
 	end
-	S.print(x, y + 4, row(4, t.label.hp, menu.hp), hi(4))
-	S.print(x, y + 5, "   " .. string.format(t.note.hp, HP_MIN, HP_MAX, HP_STEP), C.dark_gray)
+	r:print(1, 5, row(4, t.label.hp, menu.hp), hi(4))
+	r:print(1, 6, "   " .. string.format(t.note.hp, HP_MIN, HP_MAX, HP_STEP), C.dark_gray)
 	if menu.mode == "pve" then
-		S.print(x, y + 6, row(5, t.label.ally, menu.ally_ai and t.yes or t.no), hi(5))
-		S.print(x, y + 7, "   " .. (menu.ally_ai and t.note.ally_on or t.note.ally_off), C.dark_gray)
-		S.print(x, y + 8, row(6, t.label.diff, t.diff[DIFFS[menu.diff]] or DIFFS[menu.diff]), hi(6))
-		S.print(x, y + 9, "   " .. t.note.diff, C.dark_gray)
+		r:print(1, 7, row(5, t.label.ally, menu.ally_ai and t.yes or t.no), hi(5))
+		r:print(1, 8, "   " .. (menu.ally_ai and t.note.ally_on or t.note.ally_off), C.dark_gray)
+		r:print(1, 9, row(6, t.label.diff, t.diff[DIFFS[menu.diff]] or DIFFS[menu.diff]), hi(6))
+		r:print(1, 10, "   " .. t.note.diff, C.dark_gray)
 	end
-	S.print(x, y + 11, string.format("%s %s", mark(7), t.start),
+	r:print(1, 12, string.format("%s %s", mark(7), t.start),
 	        (menu.row == 7) and C.yellow or C.gray)
-	S.print(x + 2, y + 13, phos.text.fit(t.menu_hint, w - 4), C.dark_gray)
+	r:print(3, 14, phos.text.fit(t.menu_hint, w - 4), C.dark_gray)
 end
 
 function draw()
@@ -1863,19 +1867,25 @@ function draw()
 		draw_menu()
 		return
 	end
-	draw_sky(S, C)
-	draw_world(S, C)
-	draw_effects(S, C)
+	-- 底层：天空与地形照旧直接写 screen（这一层由主机画、也由主机清）
+	draw_sky(r_base, C)
+	draw_world(r_base, C)
+	-- 前景一层：特效、瞄准、角色、雨雪。它们之间的先后仍在代码里（同一层内先写先叠），
+	-- 只是整体压在世界之上——这样"谁在谁上面"就不必再靠注释互相提醒
+	draw_effects(r_fx, C)
 	-- 瞄准线、预测线、力度读数只在"轮到我、还没开炮"时出现：一发射立刻收掉，
 	-- 免得玩家盯着上一炮的刻度去瞄下一炮。
 	-- 它画在**角色之前**：高抛时线会穿过自己的头顶，压在血条与选标下面才不会糊成一团
 	if turn.phase == "aim" and human_turn() and not winner then
-		draw_aim(S, C)
+		draw_aim(r_fx, C)
 	end
-	draw_actors(S, C)
+	draw_actors(r_fx, C)
 	-- 雨雪画在**角色之后**：它是前景，要盖在人和地形上；日月云星留在地形之前，
 	-- 于是它们天然只出现在山坡上方的空处，不必逐格判断
-	weather:draw_precip(S, C)
+	weather:draw_precip(r_fx, C)
+	-- 闪电压在**世界与角色之上**（但仍在读数层之下）：从前的写法把它夹在天空那一趟里，
+	-- 紧随其后的地形会把提亮盖掉，闪电就等于只能照亮天空——分层之后它才真的照亮全场
+	weather:draw_flash(r_fx, C)
 
 	local w = current_worm()
 	local weapon = selected_weapon()
@@ -1883,7 +1893,7 @@ function draw()
 	-- 信息栏要拿天空色**重铺**那三行（Hud.draw 的 ctx.sky）：这样它压在水面或山体上时
 	-- 依旧等于"透明"，而不会漏出世界那一层的底色
 	local sky_r, sky_g, sky_b = weather:sky_rgb()
-	Hud.draw(S, C, {
+	Hud.draw(r_hud, C, {
 		sky = C.rgb(sky_r, sky_g, sky_b),
 		worm = w,
 		wind = turn.wind,
@@ -1914,8 +1924,9 @@ function draw()
 		local t = L()
 		-- 居中要按**显示宽度**算：`#msg` 数的是字节，中文/混排会被推到偏左
 		local msg = (t.win[winner] or t.win[1]) .. "   " .. t.win_hint
-		S.print(VIEW_CW // 2 - phos.text.width(msg) // 2, VIEW_CH // 2, msg, C.white,
-		        phos.color.black)
+		-- 横幅压在读数层上（底色是实的，所以它盖得住下面的一切）
+		r_hud:print(VIEW_CW // 2 - phos.text.width(msg) // 2, VIEW_CH // 2, msg, C.white,
+		            phos.color.black)
 	end
 
 	Panel.draw({
@@ -1934,10 +1945,10 @@ function draw()
 		leader = captain,
 	})
 	if map_open then
-		draw_map_overlay(S, C)
+		draw_map_overlay(C)
 	end
 	if help_open then
-		draw_help(S, C)
+		draw_help(C)
 	end
 end
 
@@ -2080,8 +2091,8 @@ function debug_state()
 		local side = (m.team == 1) and out.hp1 or out.hp2
 		side[#side + 1] = m.alive and math.floor(m.hp) or -1
 	end
-	-- 每只虫**逐只**的位置与状态。算弹道、判命中都要 (x, y)：只给 x 的话，agent 想知道
-	-- 炮弹落在哪就得去读地图反推地形（我就这么绕过一大圈，还打偏了）。数组顺序 =
+	-- 每只虫**逐只**的位置与状态。算弹道、判命中都要 (x, y)：只给 x 的话，调用方
+	-- 想知道炮弹落在哪就得去读地图反推地形，又慢又不准。数组顺序 =
 	-- 出场顺序 = worm_id/order1/order2 的下标，于是"第 i 只虫"在所有字段里指的是同一只。
 	-- ground 是它脚下那一列的地表高度：炮口与落点都以它为基准，比"只给个 y"更好用
 	out.units = {}
@@ -2103,7 +2114,7 @@ function debug_state()
 	end
 	-- 地表剖面：每 GROUND_STEP 个子格取一次高度。**这是让 agent 能自己瞄准的那一项** ——
 	-- 光有双方坐标还不够，还得知道中途中地形多高，否则算不出炮弹会不会撞山、落在哪
-	-- （我上一次是去读地图反推的，又慢又不准）。与 units 同样是数组：深度 4 序列化下，
+	-- 与 units 同样是数组：深度 4 序列化下，
 	-- 纯数组就是真正的 JSON 数组，agent 直接当列表读
 	local GROUND_STEP = 8
 	out.ground_step = GROUND_STEP
@@ -2113,8 +2124,8 @@ function debug_state()
 			out.ground[#out.ground + 1] = surface_at(gx)
 		end
 	end
-	-- 世界尺寸 + 各队 x 的跨度。字段名直说是什么——早先这组叫 x1/x2/y1/y2，
-	-- 而 y1/y2 装的其实是敌方的 **x**：名字骗人比没有字段更糟
+	-- 世界尺寸 + 各队 x 的跨度。字段名直说是什么：宽度就是宽度、队别就是队别 ——
+	-- 名字骗人比没有字段更糟（这一组是 agent 算弹道要用的，读错一个字就全盘错）
 	out.world_w, out.world_h = terrain and terrain.W or 0, terrain and terrain.H or 0
 	local function x_span(team)
 		local lo, hi = nil, nil
