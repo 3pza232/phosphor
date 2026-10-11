@@ -57,7 +57,7 @@ function phos.screen.playfield() end
 ---写入单个字符（越界裁到内容区，不会画到侧栏或机身装饰上；省略 bg = 保留该格原有背景）
 ---@param x integer
 ---@param y integer
----@param ch string
+---@param ch string|integer 字符（也可给**码点**整数）
 ---@param fg phos.Color|nil
 ---@param bg phos.Color|nil
 function phos.screen.put(x, y, ch, fg, bg) end
@@ -75,7 +75,7 @@ function phos.screen.print(x, y, text, fg, bg) end
 ---@param y integer
 ---@param w integer
 ---@param h integer
----@param ch string
+---@param ch string|integer 字符（也可给**码点**整数）
 ---@param fg phos.Color|nil
 ---@param bg phos.Color|nil
 function phos.screen.fill(x, y, w, h, ch, fg, bg) end
@@ -128,7 +128,7 @@ function phos.panel.blit(x, y, rows, fg, bg) end
 ---写一个字符（越界裁到面板内；省略 bg = 保留该格原有背景）
 ---@param x integer 面板局部坐标
 ---@param y integer
----@param ch string
+---@param ch string|integer 字符（也可给**码点**整数）
 ---@param fg phos.Color|nil
 ---@param bg phos.Color|nil
 function phos.panel.put(x, y, ch, fg, bg) end
@@ -146,7 +146,7 @@ function phos.panel.print(x, y, text, fg, bg) end
 ---@param y integer
 ---@param w integer
 ---@param h integer
----@param ch string
+---@param ch string|integer 字符（也可给**码点**整数）
 ---@param fg phos.Color|nil
 ---@param bg phos.Color|nil
 function phos.panel.fill(x, y, w, h, ch, fg, bg) end
@@ -318,6 +318,23 @@ function phos.input.released(key) end
 ---@return string
 function phos.input.key_name(key) end
 
+---该键已按住的秒数（松开或没按过 = 0）。按逻辑帧累计。
+---"按住越走越快"这类手感用它，不必自己攒计时
+---@param key string
+---@return number
+function phos.input.duration(key) end
+
+---本帧新按下的键（任意一个），返回虚拟键名或 nil。
+---给"让玩家按一个键来完成绑定"用：拿到键名可以存进 phos.save，
+---再用 phos.input.key_name() 显示成键盘上真实的键。
+---主机保留键（Esc / F2）不在其中——它们永远属于主机。
+---@return string|nil
+function phos.input.any_pressed() end
+
+---主机见过的所有键名（内置十颗在最前）。写"按任意键改绑定"这类界面时遍历它
+---@return string[]
+function phos.input.keys() end
+
 ---本帧输入的文本（UTF-8，无输入时为空串）
 ---语义是"本帧"：每帧清空，所以在 update 里读到的就是这一帧新敲的字符。
 ---可含中文等多字节字符；退格以 '\b'（U+0008）送达，需自行处理。
@@ -345,6 +362,35 @@ function phos.input.field(cfg) end
 ---@field feed fun(self: phos.TextField) 消费"本帧"输入（每帧一次；同一帧重复调用幂等）
 ---@field clear fun(self: phos.TextField) 清空缓冲
 
+---可选图层：世界照旧写底层（phos.screen），这里只声明"叠在它上面的缓冲"。
+---不调用 create 的卡带完全不受影响 —— 主机连一次合成都不会做，
+---既有实现也不需要改写成"分层"的写法
+---@class phos.layer
+phos.layer = {}
+
+---建层（重名幂等：同名再取一次还是那层）。z 越大越靠上；层数有上限（6），超出报错
+---@param name string 层名（只在本卡带内有意义）
+---@param opts table|nil { z = integer }（缺省 0；z 越大越靠上）
+---@return phos.Layer
+function phos.layer.create(name, opts) end
+
+---层序（z 升序，同 z 保持注册先后）→ 名字数组
+---@return string[]
+function phos.layer.order() end
+
+---注销一层。之后写到它的绘制区域会回落到内容区，并留一次日志
+---@param name string
+---@return boolean
+function phos.layer.remove(name) end
+
+---图层句柄（由 phos.layer.create 返回）。usertype：注解不配 `= {}`，
+---与 phos.TextField 同一套写法（--check-api 因此不校验其成员）
+---@class phos.Layer
+---@field name string 层名
+---@field visible boolean 整层显隐（不可见的层在合成时跳过）
+---@field z integer 层序（越大越靠上）
+---@field clear fun(self: phos.Layer) 整层清成透明：上层每帧"从空开始"的写法
+
 ---创建一个**绘制区域**：带裁剪的矩形，坐标一律相对区域左上角，越界不画。
 ---两种用法同源：
 ---  * **非浮动分区**：侧栏某块放小地图、游戏区某块放状态条
@@ -358,7 +404,7 @@ function phos.input.field(cfg) end
 ---@param y integer
 ---@param w integer
 ---@param h integer
----@param opts table|nil surface = "screen"（默认，内容区）| "panel"（侧栏面板）
+---@param opts table|nil surface = "screen"（默认，内容区）| "panel"（侧栏面板）；layer = 层名（锚定到该图层，坐标原点仍是内容区左上角）
 ---@return phos.Region
 function phos.ui.region(x, y, w, h, opts) end
 
@@ -367,7 +413,7 @@ function phos.ui.region(x, y, w, h, opts) end
 ---@field y integer 实际左上角 y
 ---@field w integer 实际宽度
 ---@field h integer 实际高度
----@field surface string "screen" 或 "panel"
+---@field surface string 锚定面："screen"（内容区）/ "panel"（侧栏）/ 层名
 ---@field clear fun(self: phos.Region, fg: phos.Color|nil, bg: phos.Color|nil) 省略 bg = 黑（总是写底色）
 ---@field put fun(self: phos.Region, x: integer, y: integer, ch: any, fg: phos.Color|nil, bg: phos.Color|nil) 省略 bg = 保留该格原有背景
 ---@field print fun(self: phos.Region, x: integer, y: integer, text: string, fg: phos.Color|nil, bg: phos.Color|nil) 省略 bg = 保留该格原有背景
@@ -380,13 +426,6 @@ function phos.ui.region(x, y, w, h, opts) end
 ---@field body fun(self: phos.Region, x: integer, y: integer, w: integer, text: string, max_lines: integer|nil)
 ---@field sprite fun(self: phos.Region, x: integer, y: integer, rows: string[], colors: table, step: integer|nil)
 
----本帧新按下的键（任意一个），返回虚拟键名或 nil。
----给"让玩家按一个键来完成绑定"用：拿到键名可以存进 phos.save，
----再用 phos.input.key_name() 显示成键盘上真实的键。
----主机保留键（Esc / F2）不在其中——它们永远属于主机。
----@return string|nil
-function phos.input.any_pressed() end
-
 ---文本度量：全角字符（CJK 等）占两格，排版请用它而不是 #str（那是字节数）
 ---@class phos.text
 phos.text = {}
@@ -395,6 +434,13 @@ phos.text = {}
 ---@param text string
 ---@return integer
 function phos.text.width(text) end
+
+---字形在**格内**的墨迹框（像素，相对格左缘）。字体是比例字体，墨迹通常比一整格窄 ——
+---要"底板/装饰贴住字身"就得按它算，而不是按整格猜。
+---拿不到字体度量时（无头运行、字体未就绪）返回整格宽并置 approx = true
+---@param ch string
+---@return integer xoff, integer width, boolean approx
+function phos.text.ink_box(ch) end
 
 ---按显示宽度截断，绝不切出半个全角字符
 ---@param text string
@@ -508,6 +554,10 @@ function phos.sys.time() end
 ---当前逻辑帧率
 ---@return integer
 function phos.sys.fps() end
+
+---当前逻辑帧号（与 state.query 的 frame 同源）："每 N 帧做一次"不必自己数
+---@return integer
+function phos.sys.frame() end
 
 ---确定性随机整数 [lo, hi]
 ---@param lo integer

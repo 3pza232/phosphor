@@ -4,6 +4,7 @@
 
 #include "api/assets_api.hpp"
 #include "api/audio_api.hpp"
+#include "api/layer_api.hpp"
 #include "api/lua_value.hpp"
 #include "api/ui_api.hpp"
 #include "cart/cartridge.hpp"
@@ -171,6 +172,13 @@ void register_host_api(sol::state& lua, HostContext& host) {
         const int w = text::display_width(s);
         return w >= cols ? s : std::string(static_cast<size_t>(cols - w), ' ') + s;
     };
+    // 字形在格内的墨迹框（xoff, width, approx）：比例字体的墨迹比一整格窄，
+    // "底板/装饰按字身算宽度"要靠它。拿不到字体度量时给整格宽并注明 approx
+    text_api["ink_box"] = [&host](const sol::object& ch) {
+        const char32_t cp = api::read_char(ch, U' ');
+        const GlyphBox box = host.glyph_metrics ? host.glyph_metrics(cp) : GlyphBox{0, kCellPx, true};
+        return std::make_tuple(box.xoff, box.width, box.approx);
+    };
 
     // --- phos.input ---
     sol::table input = phos.create_named("input");
@@ -183,6 +191,15 @@ void register_host_api(sol::state& lua, HostContext& host) {
     input["key_name"] = [](const std::string& key) { return key_display_name(key); };
     // 本帧输入的文本（UTF-8；可含多字节字符与退格 '\b'）
     input["text"] = [&host]() { return host.input->text(); };
+    // 已按住的秒数：长按类手感（"按住越走越快"）不必由卡带自己攒计时
+    input["duration"] = [&host](const std::string& key) { return host.input->duration(key); };
+    // 主机见过的所有键名（内置十颗排在最前）：写"按任意键改绑定"这类界面时遍历它
+    input["keys"] = [&host, &lua]() {
+        sol::table out = lua.create_table();
+        int index = 1;
+        for (const std::string& name : host.input->names()) out[index++] = name;
+        return out;
+    };
 
     // 本帧新按下的键（任意一个），返回虚拟键名或 nil。
     // 给"让玩家按一个键来完成绑定"用：拿到名字可以存进存档，
@@ -274,6 +291,8 @@ void register_host_api(sol::state& lua, HostContext& host) {
     sol::table sys = phos.create_named("sys");
     sys["time"] = [&host]() { return host.time; };
     sys["fps"] = [&host]() { return host.fps; };
+    // 当前逻辑帧号："每 N 帧做一次"不必自己数（与 state.query 的 frame 同源）
+    sys["frame"] = [&host]() { return host.frame; };
     sys["random"] = [&host](int lo, int hi) {
         if (lo > hi) std::swap(lo, hi);
         return std::uniform_int_distribution<int>(lo, hi)(host.rng);
@@ -330,12 +349,14 @@ void register_host_api(sol::state& lua, HostContext& host) {
         return out;
     };
 
-    // 组件层（边框/浮窗/菜单/进度条/正文/精灵/导航）
+    // 组件层（边框/浮窗/菜单/进度条/正文/精灵/导航/绘制区域）
     register_ui_api(lua, host);
     // 音频层（合成音/音符/打击乐/音序器音乐/采样）
     register_audio_api(lua, host);
     // 资源层（包内文本/按行/存在性/大小/列表）
     register_assets_api(lua, host);
+    // 图层（可选的新能力：不建层的卡带完全不受影响）
+    register_layer_api(lua, host);
 }
 
 } // namespace phos

@@ -20,6 +20,9 @@ struct Cell {
     Color bg = Color::black;
     /// 列宽：1 = 半角；2 = 全角头格；0 = 续格（右半，由左邻格决定外观）
     uint8_t cols = 1;
+    /// 底色是否存在：0 = 透明（层合成时跳过底色），非 0 = 存在。
+    /// 只有**图层缓冲**会用到 0——底层网格的每一次写入都是不透明的（见 Layer / LayeredScreen）
+    uint8_t alpha = 255;
 };
 
 /// 字符网格：游戏画面的逻辑抽象，与渲染完全解耦。
@@ -48,6 +51,15 @@ public:
 
     /// 读某格；越界返回空白格（不抛异常，便于渲染循环直接遍历）
     const Cell& at(int x, int y) const;
+
+    /// 整格搬运：把一格已成形的状态（含 cols 与 alpha）原样放到 (x, y)。
+    /// 与 `put` 的分工是明确的——`put` 面向"写一个字符"（解析 keep、维护宽字符邻格），
+    /// 这个面向"搬运一格"（层合成）。卡带侧写画面请继续用 put / print / fill
+    void set(int x, int y, const Cell& cell);
+
+    /// 整屏清成**透明格**（空格 + alpha=0）：图层缓冲"这一帧从空开始"的写法。
+    /// 底层网格不用它——底层的清屏永远不透明（见 fill / clear）
+    void clear_transparent();
 
     /// 空白格：所有"越界读"共用同一个值，调用方不必各自造一个空对象
     static const Cell& empty();

@@ -29,15 +29,19 @@ namespace phos {
 /// 它在 Lua 侧的名字是 `surface`。
 /// 构造时会与表层的可用范围**求交**（越界部分直接不要），所以 x/y/w/h 给出的
 /// 就是实际可画范围，卡带据此排版即可。
+///
+/// `layer` 非空时，区域改锚定到该**图层**（坐标原点在内容区左上角，与 screen 同域）：
+/// 写入落在那块层缓冲上，合成时再叠到世界之上。
 class DrawRegion {
 public:
-    DrawRegion(HostContext& host, std::string anchor, int x, int y, int w, int h);
+    DrawRegion(HostContext& host, std::string anchor, std::string layer, int x, int y, int w, int h);
 
     int x() const { return x_; }
     int y() const { return y_; }
     int w() const { return w_; }
     int h() const { return h_; }
-    const std::string& anchor() const { return anchor_; }
+    /// 区域锚定的面：内容区（"screen"）/ 侧栏（"panel"）/ 层名
+    const std::string& anchor() const { return layer_.empty() ? anchor_ : layer_; }
 
     // 坐标均为区域局部坐标；颜色由 Lua 绑定层转换后传入
     void clear(Color fg, Color bg);
@@ -55,7 +59,10 @@ public:
                 const std::map<char, Color>& colors, int step);
 
 private:
-    Screen& screen() const { return *host_.screen; }
+    /// 本区域写入的目标网格：锚定层时是那块层缓冲，否则是整屏
+    Screen& screen() const;
+    /// 锚定到的层；未锚定层、或层已被注销时返回 nullptr（含一次留痕）
+    Layer* resolved_layer() const;
     /// 本区域对应的一块面。每次现取：面板宽度可在运行时改，缓存就会用旧几何
     Surface surface_of() const;
     /// 区域在**当前**面宽下还能用的宽度：w_ 是构造时与当时面宽的交集，面板变窄后会偏大
@@ -69,6 +76,8 @@ private:
 
     HostContext& host_;
     std::string anchor_;
+    std::string layer_;                      // 空 = 不锚定层
+    mutable bool warned_missing_layer_ = false;  // 层不存在只留一次痕（每帧都留会刷满日志）
     int x_ = 0, y_ = 0, w_ = 0, h_ = 0;
 };
 

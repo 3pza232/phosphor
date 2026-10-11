@@ -52,3 +52,16 @@ inline void pop_back_utf8(std::string& text) {
 }
 
 } // namespace phos::text
+
+namespace phos {
+
+/// 一个字形在**格内**的墨迹框（像素）：相对格左缘的偏移与宽度。
+/// 字体是比例字体，墨迹通常比一整格窄——"底板贴住字身"这类排版得按它算。
+/// 拿不到字体度量时（无头、字体未就绪）退回整格宽并置 `approx`
+struct GlyphBox {
+    int xoff = 0;
+    int width = 0;
+    bool approx = true;
+};
+
+} // namespace phos

@@ -64,6 +64,8 @@ void App::apply_font_scheme(int index, Renderer* renderer) {
         std::string error;
         if (!renderer->reload_fonts(font_files_, error))
             log::warn("font atlas rebuild failed: " + error);
+        // 墨迹度量随字体链走：换字体后回调依旧取当前字形的框
+        host_.glyph_metrics = [renderer](char32_t cp) { return renderer->ink_box(cp); };
     }
 
     config_.font = font_scheme_;

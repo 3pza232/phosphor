@@ -2,6 +2,8 @@
 
 #include "core/text.hpp"
 
+#include <algorithm>
+
 namespace phos {
 
 const Color Color::black{0, 0, 0};
@@ -37,12 +39,16 @@ void blank(Cell& c) {
 
 void Screen::put(int x, int y, char32_t ch, Color fg, Color bg) {
     if (y < 0 || y >= h_) return;
-    // 背景色带"别动背景"标记时，先解析成该格当前背景（全屏唯一的解析点）
-    if (bg.keep && x >= 0 && x < w_) {
+    // 背景色带"别动背景"标记时，先解析成该格当前背景（全屏唯一的解析点）。
+    // 这一路同时意味着"不改变该格底色的存在性"——图层的字形覆盖靠它
+    const bool keeps_bg = bg.keep;
+    if (keeps_bg && x >= 0 && x < w_) {
         bg = cells_[static_cast<size_t>(y) * w_ + x].bg;
         bg.keep = false;
     }
     const int width = text::char_width(ch);
+    // 给了底色就是"这一格的底存在"；带 keep 的写入不动它
+    const uint8_t alpha = keeps_bg ? 0 : 255;
 
     // 先清理被覆盖的旧内容：写到续格上要连带清掉它的头格，
     // 写到全角头格上要连带清掉它的续格——否则会留下半个宽字符
@@ -53,11 +59,13 @@ void Screen::put(int x, int y, char32_t ch, Color fg, Color bg) {
             blank(head);
             head.fg = fg;
             head.bg = bg;
+            if (!keeps_bg) head.alpha = alpha;
         } else if (target.cols == 2 && x + 1 < w_) {
             Cell& tail = cells_[static_cast<size_t>(y) * w_ + x + 1];
             blank(tail);
             tail.fg = fg;
             tail.bg = bg;
+            if (!keeps_bg) tail.alpha = alpha;
         }
     }
     if (x < 0 || x >= w_ || width == 0) return;
@@ -67,6 +75,7 @@ void Screen::put(int x, int y, char32_t ch, Color fg, Color bg) {
     c.fg = fg;
     c.bg = bg;
     c.cols = static_cast<uint8_t>(width);
+    if (!keeps_bg) c.alpha = alpha;
 
     // 续格顺手写上；落在最后一列时没有右邻格可写，最右侧就只剩头格——这是原始网格
     // 原有的行为，外壳自己的排版依赖它：贴边时看得见半个宽字，比整格少一个字好。
@@ -77,7 +86,19 @@ void Screen::put(int x, int y, char32_t ch, Color fg, Color bg) {
         tail.fg = fg;
         tail.bg = bg;
         tail.cols = 0;
+        if (!keeps_bg) tail.alpha = alpha;
     }
+}
+
+void Screen::set(int x, int y, const Cell& cell) {
+    if (x < 0 || y < 0 || x >= w_ || y >= h_) return;
+    cells_[static_cast<size_t>(y) * w_ + x] = cell;
+}
+
+void Screen::clear_transparent() {
+    Cell transparent_cell;
+    transparent_cell.alpha = 0;
+    std::fill(cells_.begin(), cells_.end(), transparent_cell);
 }
 
 void Screen::print(int x, int y, std::string_view text, Color fg, Color bg) {

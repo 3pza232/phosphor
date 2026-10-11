@@ -11,6 +11,20 @@ namespace phos {
 
 namespace {
 
+/// 图层清单 → JSON 数组（空数组 = 该卡带没建层）。
+/// 次序与合成一致（z 升序），agent 据此知道谁压在谁上面
+std::string layers_json(const LayeredScreen& layers) {
+    std::string out = "[";
+    bool first = true;
+    for (const Layer* layer : layers.ordered()) {
+        if (!first) out += ",";
+        out += "{\"name\":" + json::quote(layer->name) + ",\"z\":" + std::to_string(layer->z) +
+               ",\"visible\":" + (layer->visible ? "true" : "false") + "}";
+        first = false;
+    }
+    return out + "]";
+}
+
 /// 屏幕文本 → JSON 字符串数组
 std::string screen_lines_json(const Screen& screen) {
     std::istringstream stream(screen.to_text());
@@ -43,7 +57,7 @@ std::string App::control_state_json() const {
     out << "\"frame\":" << frame_count_ << ",\"mode\":" << json::quote(mode_name())
         << ",\"playing\":" << (playing_ ? "true" : "false")
         << ",\"stepping\":" << (control_stepping_ ? "true" : "false")
-        << ",\"pending_steps\":" << pending_steps_ << ",\"fps\":" << fps_
+        << ",\"pending_steps\":" << pending_steps_
         << ",\"grid_w\":" << screen_.width() << ",\"grid_h\":" << screen_.height()
         << ",\"content_w\":" << kContentW << ",\"content_h\":" << kContentH
         << ",\"panel_w\":" << host_.panel_w << ",\"seed\":" << rng_seed_
@@ -59,6 +73,8 @@ std::string App::control_state_json() const {
         << ",\"crt_level\":" << config_.crt_level
         << ",\"fps\":" << config_.fps
         << ",\"render_fps\":" << host_.fps
+        << ",\"merge_ms\":" << cart_merge_ms_
+        << ",\"layers\":" << layers_json(host_.layers)
         << ",\"video\":" << json::quote(headless_ ? "headless" : "window")
         << ",\"control_port\":" << control_port_
         << ",\"music_volume\":" << config_.music_volume
@@ -172,9 +188,28 @@ void App::execute_control(const ControlCommand& command) {
     }
 
     if (name == "screen.read") {
+        // 默认读**合并结果**（整屏，与既有语义一致）；带 layer 时读单份内容：
+        // layer = "screen" 读的同样是合并后的整屏（层是就地合并进 screen_ 的，没有
+        // "合并前的那一层"可读），之所以收这个取值，只是让"我读的是整屏"能被显式写出来；
+        // 其余按卡带注册的层名读那一层自己。层缓冲是内容区局部坐标，所以行数就是内容区高
+        const std::string which = args.str("layer");
+        const Screen* source = &screen_;
+        std::string label = "merged";
+        if (!which.empty() && which != "screen") {
+            const Layer* layer = host_.layers.find(which);
+            if (!layer) {
+                control_.reply_error(command.id, "no such layer: " + which);
+                return;
+            }
+            source = &layer->cells;
+            label = which;
+        } else if (which == "screen") {
+            label = "screen";
+        }
         std::ostringstream payload;
-        payload << "\"width\":" << screen_.width() << ",\"height\":" << screen_.height()
-                << ",\"frame\":" << frame_count_ << ",\"lines\":" << screen_lines_json(screen_);
+        payload << "\"layer\":" << json::quote(label) << ",\"width\":" << source->width()
+                << ",\"height\":" << source->height() << ",\"frame\":" << frame_count_
+                << ",\"lines\":" << screen_lines_json(*source);
         control_.reply(command.id, payload.str());
         return;
     }

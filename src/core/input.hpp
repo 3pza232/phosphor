@@ -1,5 +1,7 @@
 #pragma once
 
+#include "core/defaults.hpp"
+
 #include <array>
 #include <optional>
 #include <string>
@@ -64,6 +66,7 @@ public:
     Input() : names_(kBuiltinKeyNames.begin(), kBuiltinKeyNames.end()) {
         cur_.assign(names_.size(), false);
         prev_.assign(names_.size(), false);
+        down_at_.assign(names_.size(), -1.0f);  // 内置键是预注册的，不走 slot()
     }
 
     /// 注入输入（键盘回调、agent 控制通道共用此入口）
@@ -80,6 +83,10 @@ public:
     bool pressed(Key key) const { return pressed(key_name(key)); }
     bool released(Key key) const { return released(key_name(key)); }
 
+    /// 该键已按住的秒数（松开或没按过 = 0）。按**逻辑帧**累计，
+    /// 于是"越按越快"这类手感不必由卡带自己攒计时
+    float duration(std::string_view name) const;
+
     /// 目前见过的所有键名（内置的排在最前）。状态汇报与"按键提示"用它遍历
     const std::vector<std::string>& names() const { return names_; }
 
@@ -94,6 +101,7 @@ public:
     void next_frame() {
         prev_ = cur_;
         text_.clear();
+        clock_ += 1.0f / static_cast<float>(kLogicFps);
     }
     void release_all();
 
@@ -110,6 +118,8 @@ private:
     std::vector<std::string> names_;
     std::vector<bool> cur_{};
     std::vector<bool> prev_{};
+    std::vector<float> down_at_{};  // 每个键最近一次按下的时刻（<0 = 松着）
+    float clock_ = 0.0f;            // 逻辑帧时钟（见 next_frame）
     std::string text_;
 };
 

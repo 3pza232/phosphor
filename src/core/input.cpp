@@ -57,12 +57,21 @@ int Input::slot(std::string_view name) {
     names_.emplace_back(name);
     cur_.push_back(false);
     prev_.push_back(false);
+    down_at_.push_back(-1.0f);
     return static_cast<int>(names_.size() - 1);
 }
 
 void Input::set_key(std::string_view name, bool down) {
     if (name.empty()) return;
-    cur_[static_cast<size_t>(slot(name))] = down;
+    const size_t index = static_cast<size_t>(slot(name));
+    cur_[index] = down;
+    down_at_[index] = down ? clock_ : -1.0f;
+}
+
+float Input::duration(std::string_view name) const {
+    const int index = find(name);
+    if (index < 0 || down_at_[static_cast<size_t>(index)] < 0.0f) return 0.0f;
+    return clock_ - down_at_[static_cast<size_t>(index)];
 }
 
 void Input::push_text(std::string text) {
@@ -77,6 +86,7 @@ std::string Input::any_pressed() const {
 
 void Input::release_all() {
     std::fill(cur_.begin(), cur_.end(), false);
+    std::fill(down_at_.begin(), down_at_.end(), -1.0f);
 }
 
 } // namespace phos

@@ -31,7 +31,9 @@ phosphor --new carts/mygame --id mygame --name "My Game" --author "你"
 所以标题里带引号也写不出坏 manifest；目标目录已存在时拒绝覆盖。
 
 **2. 起名与身份**——全在 `manifest.lua`：`id` / `name` / `desc`（双语）/ `version`、
-是否要右栏（`sidebar = { w = 18 }`）、是否要存档（`save = true`）。
+是否要右栏（`sidebar = { w = 18 }`）、是否要存档（`save = true`）、
+目标接口世代（`phos_api`：用到图层等新一代接口就写 `2`，旧主机便会在卡带架上明确拒绝它，
+而不是运行到那一行才失败——见 [cart-format.md](cart-format.md) 的「版本兼容」）。
 字段逐个说明见 [cart-format.md](cart-format.md)。
 
 **3. 写玩法**——模板已经把缝摆好：
@@ -69,7 +71,7 @@ phosphor --pack carts/mygame --json         # 机器可读结果
 
 | 文件 | 你要改什么 |
 |------|-----------|
-| `manifest.lua` | 身份：`id` / `name` / `desc`（双语）/ `version`；`sidebar = { w = 18 }` 决定右栏宽度（删掉这行 = 无右栏，也可运行时 `phos.panel.resize(w)`）；`save = true` 才有 `phos.save.*`；`entry` 指向入口 |
+| `manifest.lua` | 身份：`id` / `name` / `desc`（双语）/ `version`；`sidebar = { w = 18 }` 决定右栏宽度（删掉这行 = 无右栏，也可运行时 `phos.panel.resize(w)`）；`save = true` 才有 `phos.save.*`；`entry` 指向入口；用了图层（`phos.layer`）等新一代接口就写 `phos_api = 2` |
 | `main.lua` | 入口三件事：装配模块、把输入翻成"意图"、把状态画出来。「填」集中在文案表 `Text`、`init`、`update`、`draw`、`debug_state` |
 | `game.lua` | 玩法规则。不读键盘、不画东西、不发声音；要出声就 `return` 一张事件表 |
 | `panel.lua` | 右栏内容。坐标是面板局部的；定宽文案一律过 `phos.text.fit(text, pw - 2)` |
@@ -169,7 +171,8 @@ local Panel = require("ui.panel")  -- ui/panel.lua
 
 同目录（含子目录）的 `.lua` 打包时会一起收进卡带。拆分不只是"文件别太长"：
 换掉 `music.lua` 就换了曲、换掉 `game.lua` 就换了玩法，互不影响——这既是可读性，
-也是覆盖层 mod 能替换单个模块的前提。想读一个真实的多文件卡带，看 `carts/snake/`。
+也是覆盖层 mod 能替换单个模块的前提。想读一个真实的多文件卡带，看 `carts/snake/`；
+想读**分层**写法（世界 / 下落物 / 特效 / 浮窗各一层），看 `carts/tetris/`。
 
 ## 编辑器补全
 

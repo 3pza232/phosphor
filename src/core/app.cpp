@@ -148,6 +148,7 @@ int App::run(const CliOptions& opts) {
 
 void App::advance(float dt, Renderer* renderer, Window* window) {
     log::set_frame(frame_count_);  // 日志挂到帧时间线上
+    host_.frame = frame_count_;    // 卡带侧 phos.sys.frame() 的取值来源
 
     // 拔卡收缩动画期间独占画面（机器"断电"的一瞬）
     if (eject_collapse_ > 0.0f) {
@@ -187,14 +188,27 @@ void App::tick_playing(float dt) {
     shell_.draw_chassis(screen_);
     shell_.set_lamps_solid(true);
 
+    // 层与底层同一心智：每帧从透明开始。没建层的卡带这一步只是一次判断
+    if (host_.layers.active()) host_.layers.clear_all();
+
     using clock = std::chrono::steady_clock;
     const auto t0 = clock::now();
     bool ok = cart_->update(dt);
     const auto t1 = clock::now();
     // 插卡瞬间的画面抖动：隔帧跳过一次绘制，形成电压不稳的闪烁
     const bool flicker = insert_flash_ > 0.0f && (frame_count_ % 3 == 0);
-    if (ok && !flicker) ok = cart_->draw();
+    const bool drawn = ok && !flicker;
+    if (drawn) ok = cart_->draw();
     const auto t2 = clock::now();
+
+    // 图层合成：只在这一帧真的画过、且卡带建过层时发生。
+    // 没建层的卡带 `active()` 为假，这一步不存在——不是"快路径等价"，是根本没有它
+    cart_merge_ms_ = 0.0f;
+    if (drawn && ok && host_.layers.active()) {
+        const auto m0 = clock::now();
+        host_.layers.merge_over(screen_, host_.content_x, host_.content_y);
+        cart_merge_ms_ = std::chrono::duration<float, std::milli>(clock::now() - m0).count();
+    }
 
     if (insert_flash_ > 0.0f) {
         insert_flash_ -= dt;
@@ -402,6 +416,9 @@ int App::run_windowed(const CliOptions& opts) {
         return 3;
     }
     renderer.set_crt(active_crt_);
+    // 字形度量交给 API 层（phos.text.ink_box）：与绘制同一份图集度量。
+    // 无头模式不装它，调用方退回整格宽
+    host_.glyph_metrics = [&renderer](char32_t cp) { return renderer.ink_box(cp); };
 
     if (!console_.init(window.handle(), error))
         std::fprintf(stderr, "WARN: %s (debug panel unavailable)\n", error.c_str());
@@ -512,6 +529,7 @@ int App::run_windowed(const CliOptions& opts) {
         }
     }
 
+    host_.glyph_metrics = nullptr;  // 渲染器即将销毁：先收回度量回调
     console_.shutdown();
 
     write_final_outputs(opts);

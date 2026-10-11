@@ -15,6 +15,7 @@ void App::load_cart_path(const std::string& path) {
     audio_.stop_music();  // 上一张卡带的音乐到此为止
     cart_ = std::make_unique<Cartridge>();
     host_.time = 0.0;
+    host_.layers.reset(host_.content_w, host_.content_h);  // 层随卡带：新卡带从零开始
     input_.release_all();
     pending_releases_.clear();
 
@@ -60,6 +61,7 @@ void App::eject_cart() {
     host_.save = nullptr;
     host_.cart_files = nullptr;
     host_.cart_info = nullptr;
+    host_.layers.reset(host_.content_w, host_.content_h);  // 层随卡带销毁
     shell_.set_lamps_solid(false);
     input_.release_all();
     pending_releases_.clear();

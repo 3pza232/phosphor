@@ -174,6 +174,7 @@ private:
     float cart_draw_ms_ = 0.0f;
     float cart_update_peak_ms_ = 0.0f;  // 约 1 秒窗口内的峰值（瞬时值抓不到偶发卡顿）
     float cart_draw_peak_ms_ = 0.0f;
+    float cart_merge_ms_ = 0.0f;        // 图层合成耗时（没建层的卡带恒为 0）
     unsigned rng_seed_ = 0;
 
     DebugConsole console_;

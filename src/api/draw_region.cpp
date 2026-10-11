@@ -1,6 +1,7 @@
 #include "api/draw_region.hpp"
 
 #include "api/ui_api.hpp"
+#include "core/log.hpp"
 #include "core/text.hpp"
 
 #include <algorithm>
@@ -21,8 +22,9 @@ int anchor_w(const HostContext& host, const std::string& anchor) {
 
 } // namespace
 
-DrawRegion::DrawRegion(HostContext& host, std::string anchor, int x, int y, int w, int h)
-    : host_(host), anchor_(std::move(anchor)), x_(x), y_(y), w_(w), h_(h) {
+DrawRegion::DrawRegion(HostContext& host, std::string anchor, std::string layer, int x, int y,
+                       int w, int h)
+    : host_(host), anchor_(std::move(anchor)), layer_(std::move(layer)), x_(x), y_(y), w_(w), h_(h) {
     // 与锚定面的可用范围求交：越界部分直接不要，而不是让每次绘制各自做边缘判断。
     // 求交只做一次，字段给出的就是"实际能画的区域"。
     const int limit_w = anchor_w(host_, anchor_);
@@ -37,10 +39,34 @@ DrawRegion::DrawRegion(HostContext& host, std::string anchor, int x, int y, int 
     h_ = std::max(0, bottom - top);
 }
 
+Screen& DrawRegion::screen() const {
+    if (Layer* layer = resolved_layer()) return layer->cells;
+    return *host_.screen;
+}
+
+Layer* DrawRegion::resolved_layer() const {
+    if (layer_.empty()) return nullptr;
+    if (Layer* layer = host_.layers.find(layer_)) return layer;
+    // 层没了（注销过、或名字写错）：回落到内容区。画在别处比什么都不画更难查，
+    // 所以留痕——只留一次
+    if (!warned_missing_layer_) {
+        warned_missing_layer_ = true;
+        log::warn("phos.ui.region: layer \"" + layer_ + "\" 不存在，回落到内容区");
+    }
+    return nullptr;
+}
+
 // 局部 → 绝对：锚定面起点 + **区域自身的偏移** + 区域内坐标。
-// 少了中间那项，整块区域会落到面的左上角，而不是区域自己的位置
-int DrawRegion::abs_x(int x) const { return anchor_x(host_, anchor_) + x_ + x; }
-int DrawRegion::abs_y(int y) const { return host_.content_y + y_ + y; }
+// 少了中间那项，整块区域会落到面的左上角，而不是区域自己的位置。
+// 层缓冲自带原点（内容区局部），所以那一路上"锚定面起点"是 0
+int DrawRegion::abs_x(int x) const {
+    const int base = resolved_layer() ? 0 : anchor_x(host_, anchor_);
+    return base + x_ + x;
+}
+int DrawRegion::abs_y(int y) const {
+    const int base = resolved_layer() ? 0 : host_.content_y;
+    return base + y_ + y;
+}
 
 int DrawRegion::room_w() const {
     // w_ 是构造时与当时面宽的交集：面板之后被 phos.panel.resize 改窄，它就会偏大

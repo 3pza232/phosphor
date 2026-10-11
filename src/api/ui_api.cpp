@@ -168,17 +168,26 @@ void register_ui_api(sol::state& lua, HostContext& host) {
 
     ui["region"] = [&host](int x, int y, int w, int h, sol::optional<sol::table> opts) {
         std::string anchor = "screen";
+        std::string layer;
         if (opts) {
             sol::object requested = (*opts)["surface"];
             if (requested.is<std::string>()) anchor = requested.as<std::string>();
+            sol::object on_layer = (*opts)["layer"];
+            if (on_layer.is<std::string>()) layer = on_layer.as<std::string>();
         }
         // 名字写错时不能静默按内容区处理：卡带会以为自己在画侧栏，整块却落在游戏画面上，
         // 而且没有任何报错可查
         if (anchor != "screen" && anchor != "panel") {
-            log::warn("phos.ui.region: unknown surface \"" + anchor + "\"，按 screen 处理");
+            log::warn("phos.ui.region：surface 取值未知 \"" + anchor + "\"，按 screen 处理");
             anchor = "screen";
         }
-        return DrawRegion(host, anchor, x, y, w, h);
+        // 层锚定在内容区之上：region 的坐标原点始终是内容区左上角，
+        // 所以与 surface = "panel" 同时给出是矛盾的，这里以 layer 为准并留痕
+        if (!layer.empty() && anchor == "panel") {
+            log::warn("phos.ui.region: layer 与 surface=\"panel\" 同时给出，按 layer 处理");
+            anchor = "screen";
+        }
+        return DrawRegion(host, anchor, layer, x, y, w, h);
     };
 }
 

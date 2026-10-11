@@ -14,6 +14,7 @@
 ```lua
 phos.screen   -- 字符屏幕：一切画面表达
 phos.ui       -- 组件层：边框/浮窗/菜单/进度条/正文/精灵/导航/绘制区域
+phos.layer    -- 可选图层：把世界 / 下落物 / 特效 / 浮窗分开画（见下节）
 phos.panel    -- 右侧栏面板（需 manifest 声明 sidebar）
 phos.text     -- 文本度量与定宽裁剪（宽度单位是"列"，不是字节）
 phos.color    -- 颜色常量与自定义色
@@ -44,6 +45,7 @@ phos.cart     -- 当前卡带的身份（id / 标题 / 版本 / 作者 / 简介�
 
 ```lua
 w, h = phos.screen.size()                  -- 恒 80x45，**含侧栏覆盖的列**
+phos.screen.width, phos.screen.height      -- 同一对尺寸的常数字段（省一次调用；由主机固定）
 px, py, pw, ph = phos.screen.playfield()   -- 可玩区：内容区扣掉侧栏后的那一块
 
 -- 写入 --
@@ -110,11 +112,16 @@ phos.text.truncate("很长的中文标题", 8)  -- "很长的中"（8 列，绝�
 phos.text.fit("很长的中文标题", 8)       -- "很长的中…"（8 列；没超宽就原样返回）
 phos.text.pad("模式", 8)                -- "模式    "（右补到 8 列）
 phos.text.pad_left("42", 6)             -- "    42"（左补：取值右对齐）
+phos.text.ink_box("@")                  -- 13, 8, false（字形的墨迹框 xoff/width，像素）
 ```
 
 `phos.screen` / `phos.panel` / `phos.ui` 的写文字接口都按显示宽度推进，
 截断也发生在字符边界上——卡带不需要自己处理这些。全角字符的续格由主机维护，
 `phos.screen.get()` 问哪一格都会返回该字符。
+
+**`ink_box` 给的是"字形墨迹在格内占多宽"**（像素）：字体是比例字体，墨迹通常比一整格窄，
+所以要"底板/装饰贴住字身"就得按它算，而不是按整格猜。拿不到字体度量时（无头运行、
+字体未就绪）返回整格宽并置 `approx = true`。
 
 **定宽位置（侧栏、状态条）用 `fit` 而不是 `truncate`**：主机在右侧是硬切，
 写完超长的那一截就没了影，"按住更高"会变成"按住更"；`fit` 会补一个省略号，
@@ -226,6 +233,15 @@ phos.audio.stop_sample(hit)
 ```lua
 -- 边框（标题嵌在上边框，可留空）
 phos.ui.frame(x, y, w, h, "INVENTORY")
+```
+
+> **`frame` 只画边框，不铺底**。卡带侧的界面样式默认**保留背景**（见 `core/ui.cpp` 的
+> cart style）——卡带的浮窗/边框压在游戏画面上时，不该把底下糊成一块黑板。
+> 因此要一块**不透明浮窗**（挡住世界），得自己先铺底板：
+> `region:clear(fg, bg)`（或 `fill`）铺满，再往上画边框与文字。
+> 这与层的透明规则是同一件事的两面：**只写字形 = 透出世界，给了底色 = 盖住世界**
+
+```lua
 
 -- 居中浮窗：返回布局表 { x, y, w, h }，内容由卡带自己画
 local box = phos.ui.modal(40, 16, "SETTINGS")
@@ -301,6 +317,8 @@ win:print(2, 10, long_text)          -- 超出窗口的部分被裁掉，不会�
 ```
 
 - `opts.surface`：`"screen"`（默认，内容区）或 `"panel"`（侧栏面板）
+- `opts.layer`：把区域锚定到某个**图层**（见 `phos.layer` 一节）。坐标原点仍是内容区左上角；
+  层里的空白格是透明的，所以"只写字形"就等于把字压在世界之上
 - 构造时与表层可用范围**求交**，所以 `x`/`y`/`w`/`h` 字段给的就是实际可画范围
 - 可用的绘制方法：`clear` / `put` / `print` / `fill` / `blit`（多行）/ `frame` /
   `divider` / `bar` / `menu`（`h` 可省略，缺省按条目数）/ `body`（折行正文，
@@ -308,9 +326,73 @@ win:print(2, 10, long_text)          -- 超出窗口的部分被裁掉，不会�
   省略 `bg` 时**保留背景**，`clear` 省略 `bg` 时**写黑**（见 `phos.screen` 一节的 `bg` 规则）
 - **层级 = 调用顺序**：本机每帧清屏、卡带每帧重画，所以先画底图、再画窗口即可；
   窗口关闭时不再画它，底图自然就在（不需要"备份背景再还原"那类机制）
+- 上面这条说的是**底层**。要让"浮层"与"世界"各自独立、互不擦除，用 `phos.layer`——
+  那是可选能力：不用它的卡带，行为与以前完全一样
 - 字段 `x/y/w/h` 是**构造时**与表层求交的结果：运行时改了面板宽度（`phos.panel.resize`）
   后请重新创建区域。旧区域即使不重建也不会写到面外（写入会按当前面板宽度再裁一次），
   但它报的 `w` 会比实际能画的宽
+- 字段 `surface`：区域锚在哪张表层上 → `"screen"` / `"panel"`；锚到图层时返回**层名**
+  （便于自检"我确实画到那一层去了"，agent 也爱看这一项）
+- **`keep` 的解析域永远是"写入目标那张网格"**：区域的 `put` / `print` / `fill` 省略 `bg`
+  时保留的是**目标网格该格**的原底色——写内容区就保内容区的，写某层的区域就保**该层**的。
+  "保留底色"从不跨网格；跨层的"透下去"只有一条路：那一格**根本没写到**（见 `phos.layer`）
+
+## phos.layer
+
+**可选**图层：世界照旧画在底层（`phos.screen`），层只描述"叠在它上面的缓冲"。
+不调用 `phos.layer.create` 的卡带完全不受影响——主机连一次合成都不会做。
+
+```lua
+local hud = phos.layer.create("hud", { z = 20 })      -- 建层：z 越大越靠上
+local overlay = phos.layer.create("overlay", { z = 30 })
+local r = phos.ui.region(0, 0, 80, 45, { layer = "hud" })
+
+function draw()
+  draw_world()                                        -- 世界：照旧写 phos.screen
+  r:print(2, 1, "HP [=====]", phos.color.cyan)        -- 只给字形 → 字压在世界之上
+  if paused then
+    local w = phos.ui.region(20, 8, 40, 12, { layer = "overlay" })
+    w:clear(phos.color.gray, phos.color.dark_gray)     -- 先铺不透明底板 → 挡住世界
+    w:frame("PAUSE")                                   -- frame 只画边框，不铺底
+  end
+end
+```
+
+一层里的某一格落到画面上的规则（这就是"透明"的全部含义）：
+
+| 层里的那一格 | 合成结果 |
+|---|---|
+| 没写到（透明） | 原样透出下层 |
+| 只有字形（`print` / `put` 省略 `bg`） | 字形覆盖，**底色保留下面的** → 字压在世界底上 |
+| 给了底色（`fill`、`put` 带 `bg`） | 底色覆盖；字形槽以这一层为准（写空格 = 抹掉下层字形） |
+
+- **alpha 是布尔，不是半透明**：上面这张表就是全部规则——一格的"底色存不存在"只有两态，
+  没有 0~255 的插值。真半透明留给以后的世代（字节已预留，现在不做）
+- **想要"压暗世界"的半透观感，用抖屏**（字符机的惯用手法）：在 overlay 层按
+  `(x + y) % 2 == 0` 铺深色格、其余留透明——远看就是压暗，比亚像素级半透明更像这台机器：
+
+  ```lua
+  -- win 是锚在 overlay 层、盖住整个世界区域的 region
+  for y = 0, win.h - 1 do
+    for x = (y % 2 == 0) and 0 or 1, win.w - 1, 2 do
+      win:put(x, y, " ", phos.color.dark_gray, phos.color.dark_gray)  -- 铺底色 = 盖住
+    end
+  end
+  ```
+
+- 层**每帧由主机清成透明**，与底层"每帧重画"同一心智：这帧不再画它，它就消失
+- 层随卡带生命周期：插卡为空、拔卡销毁；层名只在本卡带内有意义
+- 层数上限 **6**：层数直接乘进每帧的合成开销，所以是硬上限，超出时 `create` 报错
+- 层名写错（区域锚定到不存在的层）：写入回落到内容区，并留一次日志——不会静默画到别处
+- `phos.layer.create(name, opts)` 返回**层句柄**：`handle.name`（只读）、`handle.visible`
+  （读写，整层显隐，合并时跳过）、`handle.z`（读写，调层序）、`handle:clear()`
+  （整层清成透明）。注意 `visible` / `z` 是**字段**不是方法：写 `handle.visible = false`
+- `phos.layer.order()` 返回层名数组（按 z 升序）；`phos.layer.remove(name)` 注销一层
+  （此后写入它的区域回落到内容区并留痕）
+- 单层读取（agent 用）：`screen.read(layer = "hud")` 读某一层自己的内容（内容区局部坐标）；
+  `layer = "screen"` 读**合并后的整屏**（层是就地合并进底层的，没有"合并前的那一层"可读，
+  所以这个取值与不写 `layer` 等价，只是把"我读的是整屏"明说出来）
+- 合并不影响游戏速度；`state.query` 的顶层 `merge_ms` 报出每帧合成耗时（没建层的卡带恒为 0）
 
 ## phos.input
 
@@ -321,6 +403,8 @@ win:print(2, 10, long_text)          -- 超出窗口的部分被裁掉，不会�
 -- 持续按住（在 update 中查询） --
 phos.input.down("left")  / "right" / "up" / "down"
 phos.input.down("a")     / "b"     / "x"  / "y"
+phos.input.duration("right")   -- 已按住的秒数（松开 = 0）：长按类手感不必自己攒计时
+phos.input.keys()              -- 主机见过的所有键名（写"按任意键改绑定"时遍历它）
 phos.input.down("start") / "select"
 -- 键盘专属的三颗：空格 / 逗号 / 句点（主机不给它们配手柄替代键）
 phos.input.down("space") / "comma" / "period"
@@ -469,6 +553,7 @@ cart.desc     -- 简介（按当前界面语言取；英文缺失时回落中文
 ```lua
 local t   = phos.sys.time()        -- 卡带运行秒数（从 init 起）
 local fps = phos.sys.fps()         -- 当前实际帧率
+local fr  = phos.sys.frame()        -- 当前逻辑帧号（"每 N 帧一次"不必自己数）
 local r   = phos.sys.random(1, 100) -- 区间随机整数（确定性模式下由种子驱动）
 phos.sys.seed(42)                   -- 重置随机种子
 

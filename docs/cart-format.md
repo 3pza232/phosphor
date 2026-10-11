@@ -59,7 +59,7 @@ return {
   desc     = { zh = "在终端里觅食的蛇。", en = "A snake hunting in the terminal." },
   sidebar  = { w = 16 },         -- 右侧栏面板宽度（0~32，缺省无侧栏）
   save     = true,               -- 是否需要存档空间（声明后 phos.save 可用）
-  phos_api = 1,                  -- 目标 API 版本，当前必须为 1
+  phos_api = 1,                  -- 目标 API 版本（当前世代 1 或 2，见「九、版本兼容」）
 
   -- 像素图标（卡带架展示；'.' 与空格为透明）
   icon = {
@@ -229,3 +229,17 @@ end
 
 - `phos_api` 字段声明目标 API 版本；主机对旧版本 API 保持向后兼容
 - 主机遇到更高 `phos_api` 的卡带 → 提示"此卡带需要更新版本的 PHOSPHOR"，拒绝加载
+- 当前世代：**1 = 基础接口；2 = 增加可选图层（`phos.layer`）与 `phos.text.ink_box` /
+  `phos.input.duration` / `phos.input.keys` / `phos.sys.frame`**。用到 2 才有的接口就必须
+  声明 `phos_api = 2`：否则旧主机照常加载它，到运行到那一行才失败；声明 2 会让它在
+  卡带架上就被明确拒绝。不用新接口的卡带请继续声明 `1`，兼容面更大
+
+## 十、分层（可选能力）
+
+想让"世界 / HUD / 浮窗"各自独立、互不擦除时，用 `phos.layer`（见
+`docs/api-reference.md` 的 `phos.layer` 一节）。这是**可选**能力：不建层的卡带走的
+仍是原来的单层路径，主机连一次合成都不会做，也不需要为它改写。
+
+两个可读的样板：`package/devkit/examples/layers/`（最小演示：世界 / HUD / 浮窗三层）与
+`package/carts/tetris/`（真实玩法卡带：井与已落定方块走底层，下落中的方块 / 特效 / 浮窗
+各占一层；`fx` 层只写字形，所以压在世界上仍透得出来）。

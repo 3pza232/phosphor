@@ -1,5 +1,7 @@
 #pragma once
 
+#include "core/text.hpp"
+
 #include "core/crt.hpp"
 #include "core/screen.hpp"
 #include "render/shader.hpp"
@@ -34,6 +36,10 @@ public:
 
     /// 绘制整个字符网格
     void draw(const Screen& screen);
+
+    /// 一个字形在格内的墨迹框（像素，相对格左缘）。按需装入字形，与绘制同一份度量；
+    /// 字体链里没有该字形时退回整格宽并置 approx
+    GlyphBox ink_box(char32_t cp);
 
     /// CRT 后处理参数（扫描线 / 孔径格栅 / 辉光 / 色调），由 App 综合档位与滤镜给出
     void set_crt(const CrtParams& params) { crt_ = params; }

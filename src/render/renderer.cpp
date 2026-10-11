@@ -379,4 +379,12 @@ void Renderer::draw(const Screen& screen) {
     glBindVertexArray(0);
 }
 
+GlyphBox Renderer::ink_box(char32_t cp) {
+    const Glyph* glyph = glyph_for(cp);
+    if (!glyph) return GlyphBox{0, cell_w_, true};
+    const float xoff = glyph->xoff * pack_scale_;
+    return GlyphBox{static_cast<int>(xoff < 0.0f ? xoff - 0.5f : xoff + 0.5f),
+                    static_cast<int>(glyph->w * pack_scale_ + 0.5f), false};
+}
+
 } // namespace phos
