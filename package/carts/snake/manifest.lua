@@ -1,4 +1,4 @@
--- SNAKE.EXE 卡带标签
+-- manifest.lua —— SNAKE.EXE 卡带标签
 return {
   id      = "snake",
   name    = "SNAKE",

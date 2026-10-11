@@ -1,4 +1,4 @@
--- RUNNER 卡带标签
+-- manifest.lua —— RUNNER 卡带标签
 return {
   id      = "runner",
   name    = "RUNNER",

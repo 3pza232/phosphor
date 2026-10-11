@@ -5,6 +5,8 @@
 
 #include <optional>
 #include <string>
+#include "core/layered_screen.hpp"
+
 #include <vector>
 
 
@@ -32,15 +34,17 @@ struct ScreenImage {
 /// 含该字形的字体提供，字形比半角宽一倍，自然跨两格。
 ///
 /// 失败返回 nullopt 并填 error。
+/// layers 非空时，按 z 升序把各图层叠画在 screen 之上（像素级合成，与窗口那条路同规则）：
+/// 只有给过底色的格才铺底，字形只画笔画，笔画之外透出下层。origin 是内容区在屏幕里的
+/// 字符格偏移。**不传 layers 就是纯底图**（不经过层合成这一步）。
 std::optional<ScreenImage> render_screen_image(const Screen& screen,
                                                const std::vector<std::string>& font_files,
                                                const ScreenImageOptions& options,
-                                               std::string& error);
+                                               std::string& error,
+                                               const LayeredScreen* layers = nullptr,
+                                               int origin_x = 0, int origin_y = 0);
 
 /// 写出 PNG（父目录按需创建）
 bool write_png(const ScreenImage& image, const std::string& path, std::string& error);
-
-/// 读入 PNG 并统一为 RGBA8（用于基线比对）
-std::optional<ScreenImage> load_png(const std::string& path, std::string& error);
 
 } // namespace phos

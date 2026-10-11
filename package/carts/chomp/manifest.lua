@@ -1,4 +1,4 @@
--- CHOMP 卡带标签
+-- manifest.lua —— CHOMP 卡带标签
 return {
   id      = "chomp",
   name    = "CHOMP",

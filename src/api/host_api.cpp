@@ -100,6 +100,35 @@ void register_host_api(sol::state& lua, HostContext& host) {
         content_surface(host).blit(x, y, api::read_rows(rows), api::read_color(fg, Color::white),
                                    api::read_color(bg, Color::black));
     };
+    // 三件"手排次序做不到"的事：叠一笔、只改底色、落半格。
+    // 前两件与 put 同组（底色省略 = 保留），第三件没有底色参数
+    screen["blend"] = [&host](int x, int y, sol::object ch, sol::object fg) {
+        return content_surface(host).blend(x, y, api::read_char(ch, U' '),
+                                           api::read_color(fg, Color::white));
+    };
+    screen["back"] = [&host](int x, int y, sol::object bg) {
+        content_surface(host).back(x, y, api::read_color(bg, Color::black));
+    };
+    screen["back_rect"] = [&host](int x, int y, int w, int h, sol::object bg) {
+        content_surface(host).back_rect(x, y, w, h, api::read_color(bg, Color::black));
+    };
+    screen["plot"] = [&host](int x, int y, sol::object fg) {
+        content_surface(host).plot(x, y, api::read_color(fg, Color::white));
+    };
+    // 位掩码 → 象限字形。"这一格的四个子位里哪几个有内容"由卡带自己算（那是它的数据），
+    // 但**位序**与字形表归引擎 —— 副本一旦有两份，迟早有一份把左上和右上写反，
+    // 画出来的东西与判定就对不上
+    screen["quadrant"] = [](int bits) {
+        std::string glyph;
+        text::append_utf8(glyph, Screen::quadrant_glyph(static_cast<uint8_t>(bits)));
+        return glyph;
+    };
+    // 子格坐标 → 格 + 子位：卡带的相机、降水、光柱共用这一份换算。
+    // 各处自己写 floor(u/2) 会长出两套网格，差半格就是"看着陷进墙里"
+    screen["cell_of"] = [](int x2, int y2) {
+        const Screen::SubCell at = Screen::cell_of(x2, y2);
+        return std::make_tuple(at.x, at.y, static_cast<int>(at.bit));
+    };
     screen["get"] = [&host](int x, int y) {
         const Surface surface = content_surface(host);
         const Cell& c = surface.at(x, y);
@@ -146,6 +175,20 @@ void register_host_api(sol::state& lua, HostContext& host) {
     panel["blit"] = [&host](int x, int y, sol::object rows, sol::object fg, sol::object bg) {
         panel_surface(host).blit(x, y, api::read_rows(rows), api::read_color(fg, Color::white),
                                  api::read_color(bg, Color::black));
+    };
+    // 与 phos.screen 同一组：叠一笔 / 只改底色 / 落半格（面板里的图例、进度条都用得上）
+    panel["blend"] = [&host](int x, int y, sol::object ch, sol::object fg) {
+        return panel_surface(host).blend(x, y, api::read_char(ch, U' '),
+                                         api::read_color(fg, Color::white));
+    };
+    panel["back"] = [&host](int x, int y, sol::object bg) {
+        panel_surface(host).back(x, y, api::read_color(bg, Color::black));
+    };
+    panel["back_rect"] = [&host](int x, int y, int w, int h, sol::object bg) {
+        panel_surface(host).back_rect(x, y, w, h, api::read_color(bg, Color::black));
+    };
+    panel["plot"] = [&host](int x, int y, sol::object fg) {
+        panel_surface(host).plot(x, y, api::read_color(fg, Color::white));
     };
 
     // --- phos.text（文本度量） ---

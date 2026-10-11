@@ -1,4 +1,4 @@
--- BRICKS —— 打砖块
+-- manifest.lua —— 打砖块
 return {
   id = "bricks",
   name = "BRICKS",

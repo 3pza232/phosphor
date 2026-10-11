@@ -30,9 +30,9 @@ local Supply = require("supply")
 -- 世界右侧那一截就永远看不见（"最右边的敌人不见了"就是这么来的）
 local VIEW_CW, VIEW_CH = 80, 45
 
--- 三层的绘制区域（层在 init 里建）。区域随**可玩区**重建：展开/收起侧栏会改宽度，
--- 区域不跟着改就会把右半屏裁掉。前景与读数各一块，浮窗需要时自己现建一块
-local r_base, r_fx, r_hud
+-- 各层的绘制区域（层在 init 里建）。区域随**可玩区**重建：展开/收起侧栏会改宽度，
+-- 区域不跟着改就会把右半屏裁掉。浮窗需要时自己现建一块
+local r_base, r_fx, r_aim, r_actors, r_weather, r_hud
 local function refresh_regions()
 	local _, _, pw, ph_ = phos.screen.playfield()
 	if not (pw and pw > 8 and ph_ and ph_ > 8) then
@@ -45,28 +45,12 @@ local function refresh_regions()
 		r_base = phos.ui.region(0, 0, cw, ch)
 	end
 	r_fx = phos.ui.region(0, 0, pw, ph_, { layer = "fx" })
+	r_aim = phos.ui.region(0, 0, pw, ph_, { layer = "aim" })
+	r_actors = phos.ui.region(0, 0, pw, ph_, { layer = "actors" })
+	r_weather = phos.ui.region(0, 0, pw, ph_, { layer = "weather" })
 	r_hud = phos.ui.region(0, 0, pw, ph_, { layer = "hud" })
 end
 local BYTE_ONE = string.byte("1")
--- 一个字符格四个子位的组合 → 象限字形（位：1 左上、2 右上、4 左下、8 右下）
-local GLYPH = {
-	" ",
-	"▘",
-	"▝",
-	"▀",
-	"▖",
-	"▌",
-	"▞",
-	"▛",
-	"▗",
-	"▚",
-	"▐",
-	"▜",
-	"▄",
-	"▙",
-	"▟",
-	"█",
-}
 local HIT_R2 = Worms.HIT_RADIUS * Worms.HIT_RADIUS
 local DEFAULT_POWER = 0.75 -- 开局力度：满力度也不是无敌，七成半正好上手
 local ANGLE_MIN, ANGLE_MAX = -60, 180
@@ -74,13 +58,14 @@ local ANGLE_MIN, ANGLE_MAX = -60, 180
 -- 前 AIM_NEAR_SUB 子格算"近身段"，逐格点，让炮口朝向看得准
 local AIM_STEP_SUB, AIM_NEAR_SUB = 2, 24
 
--- 瞄准手感：**点一下走 1 格，按住越走越快**。点按负责精准、长按负责跨度，
--- 两者共用一个键；加速在 RAMP_T 秒内从 RATE 升到 RATE_MAX（线性）
+-- 瞄准手感：**点一下走一格，按住才加速**。点按负责精准、长按负责跨度，两者共用一个键。
+-- 基准速率刻意压低、RAMP_T 拉长：一次"轻按"（约 0.1~0.2 秒）只该动 1~2 度 / 1~2%，
+-- 要大幅度就按住等它加速到位——否则微调会被按住的几帧推过头
 local TAP_POWER = 0.01 -- 力度：点一下 1%
-local POWER_RATE, POWER_RATE_MAX = 0.10, 0.80
+local POWER_RATE, POWER_RATE_MAX = 0.05, 0.45
 local TAP_ANGLE = 1 -- 角度：点一下 1°
-local ANGLE_RATE, ANGLE_RATE_MAX = 6, 55
-local RAMP_T = 0.9 -- 从"慢"加到"快"所用时间（秒）
+local ANGLE_RATE, ANGLE_RATE_MAX = 3, 32
+local RAMP_T = 1.3 -- 从"慢"加到"快"所用时间（秒）
 
 -- 长按加速：t 秒内从 base 线性升到 top。单位随调用处（力度/秒、度/秒、血/秒）
 local function accel(t, base, top)
@@ -96,9 +81,9 @@ local function build_palette()
 		water = phos.color.rgb(26, 66, 130),
 		spark = phos.color.rgb(255, 232, 150),
 		smoke = phos.color.rgb(96, 96, 104),
-		-- 「浮层底板」：凡是压在世界上、必须永远读得清的信息（虫标 / 血条 / 力度读数 /
-		-- 伤害浮字 / K 浮窗）都垫这一块。底板不透明，所以脚下是土、是水、还是半格斜坡，
-		-- 都不会出现"透明空洞"。世界内的东西（尘土、火花、云）保持透明，它们本来就属于地形层
+		-- 「浮层底板」：只有**两块浮窗**（M 地图、K 键位表）用它 —— 那两块要盖住世界、
+		-- 自成一块面板。除此之外一律**不写底色**：虫标、血条、力度读数、伤害浮字、
+		-- 云雪风都只是"压在世界上的一层字"，笔画之外透出地形（见 PhosUi/region 的说明）
 		plate = phos.color.rgb(12, 16, 28),
 	}
 	-- 天色、云、星与降水都归 weather.lua：它们由**游戏内时钟**推出来
@@ -118,8 +103,10 @@ local captain = nil -- 己方队长：开局定死的那只，见 worm_is_human
 local aim_power, charge_mode, switch_delay, ai_delay, winner
 local weapon_index, ai_plan
 local ai_decided, ai_walk_t, ai_walk_dir = false, 0, nil -- AI 是否已决定走位 / 还要走多久 / 往哪走（捡补给用）
+local ai_walk_from_x, ai_walk_total = 0, 0 -- 本次走位的起点 x 与总时长（判"是不是撞了死胡同"用）
 local ai_reason, ai_run_away = nil, false -- 走位理由（观察口用）/ 是否在往后撤
 local ai_repositioned = false -- 本回合是否已经为"够不着"换过一次位置
+local ai_friendly_tried = false -- 本回合是否已为"避免误伤队友"挪过一次位
 local ai_last = "-" -- 上一次 AI 的决策摘要（观察口用）
 local cam = { x = 0, y = 0, hold = 0, focus = nil, pan = 0, pan_y = 0 }
 
@@ -157,6 +144,10 @@ local pvp = false
 local ally_ai = false -- PVE：我方队友交给 AI
 -- 难度档位：顺序即菜单里左右键的顺序，diff 存的是下标
 local DIFFS = { "easy", "normal", "hard" }
+-- 地图宽窄：宽度相对标准的倍率，顺序同样是菜单里左右键的顺序；
+-- MAP_KEYS 只用来取本地化名字（小 / 中 / 大）
+local MAPS = { 0.5, 1, 2 }
+local MAP_KEYS = { "small", "normal", "large" }
 -- ─── 界面文案 ────────────────────────────────────────────────────────────
 -- 所有写给玩家看的句子都从这里取：主机语言是英文时，写死的中文会原样显示。
 -- 排版一律用 phos.text.width 量宽度 —— 汉字 2 列、字母 1 列，
@@ -167,7 +158,7 @@ local Text = {
 		menu_title = "选择模式",
 		mode = { pve = "PVE 人机对战", pvp = "PVP 同机对战" },
 		label = { mode = "模式", mine = "我方人数", theirs = "敌方人数", hp = "生命值",
-		          ally = "队友交给 AI", diff = "难度" },
+		          ally = "队友交给 AI", diff = "难度", map = "地图宽窄" },
 		start = "开始游戏",
 		menu_hint = "↑↓ 选择   ←→ 调整（按住加速）   A / ENTER 确定",
 		note = {
@@ -180,6 +171,7 @@ local Text = {
 		},
 		yes = "是", no = "否",
 		diff = { easy = "简单", normal = "普通", hard = "困难" },
+		map = { small = "小", normal = "中", large = "大" },
 		help_title = "键位说明（K 关闭）",
 		help_head = "对局中",
 		help = {
@@ -215,7 +207,7 @@ local Text = {
 		menu_title = "MATCH SETUP",
 		mode = { pve = "PVE vs CPU", pvp = "PVP hot-seat" },
 		label = { mode = "MODE", mine = "OUR SQUAD", theirs = "ENEMY", hp = "HP",
-		          ally = "ALLY AI", diff = "DIFFICULTY" },
+		          ally = "ALLY AI", diff = "DIFFICULTY", map = "MAP WIDTH" },
 		start = "START MATCH",
 		menu_hint = "↑↓ SELECT   ←→ CHANGE (hold)   A / ENTER OK",
 		note = {
@@ -228,6 +220,7 @@ local Text = {
 		},
 		yes = "YES", no = "NO",
 		diff = { easy = "EASY", normal = "NORMAL", hard = "HARD" },
+		map = { small = "SMALL", normal = "NORMAL", large = "LARGE" },
 		help_title = "CONTROLS (K closes)",
 		help_head = "IN MATCH",
 		help = {
@@ -267,7 +260,8 @@ local function L() return phos.lang.dict(Text) end
 local HP_MIN, HP_MAX, HP_STEP = 10, 800, 10
 local HP_RATE, HP_RATE_MAX = 30, 240
 
-local menu = { row = 1, mode = "pve", mine = 4, theirs = 4, ally_ai = false, diff = 2, hp = 100 }
+local menu = { row = 1, mode = "pve", mine = 4, theirs = 4, map = 2,
+               ally_ai = false, diff = 2, hp = 100 }
 local menu_flash = 0
 local hp_frac = 0 -- 菜单里按住 ←→ 时"不足一步的余量"（按住多久由 phos.input.duration 给）
 
@@ -348,8 +342,11 @@ local function add_fx(x, y, r)
 end
 
 -- 伤害浮字：受击点上方冒出来。text 只在没有数字时用（落海、燃烧这类）。
--- lift 是再往上抬几格：补给的报账要停在**血条上方**，压着血条就白报了
+-- lift 是再往上抬几格：补给的报账要停在**血条上方**，压着血条就白报了。
+-- **颜色的规矩只在这里**：带伤害数字的一律红（挨打要一眼看出来），治疗与报账由调用方
+-- 显式给绿；不给色又不带数字的（落海、燃烧、天基炮预告）也由调用方显式给色
 local function add_float(wx, wy, damage, text, color, lift)
+	if not color and damage and damage >= 1 then color = phos.color.red end
 	local cx, cy = camera:cell_of(wx, wy)
 	local f = { x = cx + 1, y = cy - 1 - (lift or 0), damage = damage, text = text, color = color, t = 1.2 }
 	floats[#floats + 1] = f
@@ -387,11 +384,17 @@ function init()
 	build_palette()
 	-- 分层：天空与地形照旧画**底层**（phos.screen），前景（特效/瞄准/角色/雨雪）一层、
 	-- 读数与浮字一层、浮窗一层，按 z 叠上去。
-	-- 层的空白格是透明的，而"保留底色"在**同一层内**照样成立（先铺底板再画边框，
-	-- 与过去直接写屏的先后完全同义），所以分层与直接写屏画出来的画面一致
-	phos.layer.create("fx", { z = 10 })
-	phos.layer.create("hud", { z = 20 })
-	phos.layer.create("overlay", { z = 30 })
+	-- 层的空白格是透明的，而"保留底色"在**同一层内**照样成立（层内先铺底板再画边框，
+	-- 与直接写屏同一套先后规则），所以分层与直接写屏画出来的画面一致
+	-- 图层按**类别**分，不只是"前后"：世界（天空 + 地形 + 水）写底层，
+	-- 其余每类各一层。同类的东西再也不会因为"谁后写"互相擦掉，
+	-- 新加一块绘制也知道该往哪一层放
+	phos.layer.create("fx", { z = 10 })         -- 爆炸、燃烧、光柱、弹迹
+	phos.layer.create("aim", { z = 15 })        -- 瞄准线、炮口符号、力度读数
+	phos.layer.create("actors", { z = 20 })     -- 虫子本体与血条
+	phos.layer.create("weather", { z = 25 })    -- 雨雪、热浪、闪电
+	phos.layer.create("hud", { z = 30 })        -- 顶部读数、胜负横幅
+	phos.layer.create("overlay", { z = 40 })    -- 地图 / 键位表浮窗
 	refresh_view()
 	-- 菜单不放音乐：进卡带先静音，等真的开局（start_match）再起 BGM。
 	-- 菜单是一个"让人读说明、选人数"的地方，有鼓点反而吵
@@ -408,7 +411,7 @@ local function start_match()
 	phos.audio.music(Music) -- 正式开局才起 BGM（换卡时主机会自动停）
 	-- 血量上限由菜单决定，必须在造虫子**之前**设好：每只虫的初始血量取自它
 	Worms.MAX_HP = menu.hp
-	terrain = Terrain.new()
+	terrain = Terrain.new(MAPS[menu.map]) -- 宽度按菜单选的三档；高度与海平面不变
 	camera = Camera.new(terrain.W, terrain.H, VIEW_CW * 2, VIEW_CH * 2)
 	worms = Worms.new(terrain, { menu.mine, menu.theirs })
 	-- 队长在**这里**定死（开局第一只）：它决定"队友交给 AI"时谁还归玩家操作。
@@ -424,7 +427,7 @@ local function start_match()
 		m.power = DEFAULT_POWER
 	end
 	-- 天气与补给：都跟着"第几回合"走（见 update 里的回合钩子），开局各建一份。
-	-- 云、星、天色全在 weather 里，这里不再单开一份
+	-- 云、星、天色全在 weather 里，这里只持有一份
 	weather = Weather.new(terrain)
 	weather:resize(VIEW_CW, VIEW_CH)
 	supply = Supply.new()
@@ -444,11 +447,12 @@ local function start_match()
 	screen = "play"
 end
 
--- 菜单：模式 / 我方人数 / 敌方人数 / 生命值 / 队友 AI / 难度 / 开始
+-- 菜单：模式 / 我方人数 / 敌方人数 / 地图宽窄 / 生命值 / 队友 AI / 难度 / 开始
 local function menu_input(dt)
-	local rows = { 1, 2, 3, 4, 5, 6, 7 } -- 7 = 开始游戏；PVP 没有人数、队友与难度
+	-- 上下键走过的行，**每一行都得在这里**：漏一行就永远选不到它（连同排在它后面的"开始"）
+	local rows = { 1, 2, 3, 4, 5, 6, 7, 8 }
 	if menu.mode == "pvp" then
-		rows = { 1, 4, 7 }
+		rows = { 1, 4, 5, 8 }
 	end
 	local function move(dir)
 		local at = 1
@@ -484,10 +488,12 @@ local function menu_input(dt)
 		elseif menu.row == 3 then
 			menu.theirs = math.max(1, math.min(8, menu.theirs + step))
 		elseif menu.row == 4 then
-			set_menu_hp(menu.hp + step * HP_STEP)
+			menu.map = ((menu.map - 1 + step) % #MAPS) + 1
 		elseif menu.row == 5 then
-			menu.ally_ai = not menu.ally_ai
+			set_menu_hp(menu.hp + step * HP_STEP)
 		elseif menu.row == 6 then
+			menu.ally_ai = not menu.ally_ai
+		elseif menu.row == 7 then
 			menu.diff = ((menu.diff - 1 + step) % #DIFFS) + 1
 		end
 		phos.audio.beep(520, 0.04, { wave = "square", volume = 0.14 })
@@ -495,7 +501,7 @@ local function menu_input(dt)
 
 	-- 生命值那一行：点一下 10 点，**按住**则越快越快（与炮弹蓄力同一套加速曲线）。
 	-- 累成整步再加，所以无论按多快，血量永远是 10 的倍数
-	if menu.row == 4 then
+	if menu.row == 5 then
 		local dir = phos.input.down("left") and -1 or (phos.input.down("right") and 1 or 0)
 		if dir ~= 0 and not phos.input.pressed("left") and not phos.input.pressed("right") then
 			-- "按住多久"直接问主机（phos.input.duration）：不必自己攒计时，
@@ -515,9 +521,9 @@ local function menu_input(dt)
 	-- A / ENTER：在"开始游戏"上开局，"队友交给 AI"上开关。
 	-- 人数、生命值、难度行不给 A 绑定动作：那几行要的是"选到再调"，多一个会误触的快捷键更麻烦
 	if phos.input.pressed("a") or phos.input.pressed("start") then
-		if menu.row == 7 then
+		if menu.row == 8 then
 			start_match()
-		elseif menu.row == 5 then
+		elseif menu.row == 6 then
 			menu.ally_ai = not menu.ally_ai
 		end
 	end
@@ -625,7 +631,9 @@ end
 
 -- ---------- 命中判定 ----------
 
-local function probe(x, y)
+-- p 是**发这枚弹的弹丸**：命中判定要跳过它自己的射手。炮口就在射手身上
+-- （见 Physics.muzzle_of），不跳过的话出膛那一帧就"撞到自己"
+local function probe(x, y, p)
 	-- 左右出界与地面以下都算撞上；**顶部不算** —— 天空是敞开的，
 	-- 打太高就让它飞出去再落回来，不该在半空被凭空引爆
 	if x < 1 or x > terrain.W or y > terrain.H then
@@ -641,7 +649,7 @@ local function probe(x, y)
 		return "water"
 	end
 	for _, w in ipairs(worms.list) do
-		if w.alive then
+		if w.alive and w ~= (p and p.shooter) then
 			local dx, dy = w.x - x, w.y - y
 			if dx * dx + dy * dy <= HIT_R2 then
 				return "worm", w
@@ -693,33 +701,55 @@ local function update_strikes(dt)
 			end
 		else
 			s.age = s.age + dt
+			-- 光柱**从世界顶端往下扫**（spec.descend 子格/秒），沿途把一切破开。
+			-- 这是"天基"二字要紧的地方：柱子一瞬间贯到底的话，头顶的屋檐会被无视，
+			-- 看着像隔着屋顶打人；让它真的扫下来，先破开的必然是头顶那一层
+			-- 光柱的**世界列**：列数先定死（宽度 ÷ 2 格），再居中放到落点上。
+			-- 写成"从 x−半宽 到 x+半宽 取整"的话，落点的子格奇偶一变列数就在 3 与 4
+			-- 之间跳 —— 同一件武器，有时显得宽、有时显得窄（实测到的现象）。
+			-- 挖地与判伤都只认这一对**世界子格**边界：相机是"看"的事，不参与
+			local cols = math.max(1, math.floor(((spec.width or 6) + 1) / 2))
+			local c0 = math.floor(s.x / 2) - math.floor((cols - 1) / 2)
+			local c1 = c0 + cols - 1
+			local x0, x1 = c0 * 2, c1 * 2 + 1
+			s.c0, s.c1, s.x0, s.x1 = c0, c1, x0, x1
+
+			-- 柱尖下落：穿空气快、破土慢。速度分档是刻意的 —— "从天而降"要看得见，
+			-- 破土则要慢到不至一炮把山削平
+			-- 判"有没有碰到土"要看**柱尖下面那一行**：柱尖自己那一行刚被它挖空，
+			-- 拿它当判据的话，下一帧就以为身处空气、恢复高速 —— 等于没减速，一路钻穿地图
+			local ahead = math.floor(s.tip) + 1
+			local digging = false
+			for x = x0, x1 do
+				if terrain:solid(x, ahead) then
+					digging = true
+					break
+				end
+			end
+			local speed = digging and (spec.descend_dig or 4) or (spec.descend or 90)
+			local prev = s.tip
+			s.tip = math.min(terrain.H, s.tip + speed * dt)
+			if s.tip > prev then
+				terrain:carve_rect(x0, math.floor(prev), x1, math.floor(s.tip))
+			end
+
 			s.next_tick = s.next_tick - dt
 			if s.next_tick <= 0 then
 				s.next_tick = spec.tick
-				local half = (spec.width or 6) / 2
-				-- 挖：每跳在"当前地表"往下挖一个窄洞，六跳叠成一道竖井。
-				-- 顺带记住这个底，绘制时光柱要一直贯到它（见 draw_effects）
-				local gx = math.floor(s.x)
-				local gy = math.max(math.floor(s.y), surface_at(gx))
-				terrain:blast(gx, gy, 3)
-				s.floor = gy
-				-- 伤害 = **整根光柱**，而且按**格子**判：画出来的光柱就是 -half..half
-				-- 这几列（见 draw_effects），虫子的所在格落在里面就算挨打。
-				--   * 不看高度：站在光柱边缘的人未必会掉进坑里，拿"柱底"当下界会漏人
-				--   * 按格不按子格：拿子格比会出现"看着在光柱里、差半格所以不疼"——
-				--     光柱只有三格宽，半格之差就是"打中"与"打不中"的区别
-				local cs = camera:cell_of(s.x - half, 0)
-				local ce = camera:cell_of(s.x + half, 0)
+				-- 伤害只给**光柱已经扫过**的：柱尖越过它头顶才算命中。
+				-- 判据是**世界坐标**：站在那一列子格里（x0..x1）且被柱尖扫过头顶。
+				-- 用相机格去判的话，这条规则会随镜头位置变化 —— "打到谁"不该取决于
+				-- 玩家把镜头挪到哪，而且相机原点奇数时还会与挖出来的洞差半格
 				for _, q in ipairs(worms.list) do
-					if q.alive then
-						local qc = camera:cell_of(q.x, 0)
-						if qc >= cs and qc <= ce then
+					if q.alive and q.x >= x0 and q.x <= x1 then
+						local head = math.floor(q.y) - Worms.BODY_H
+						if s.tip >= head then
 							worms:damage(q, spec.damage)
 							add_float(q.x, q.y, spec.damage)
 						end
 					end
 				end
-				add_fx(s.x, s.y, 3)
+				add_fx(s.x, s.tip, 3)
 				phos.audio.beep(160, 0.08, { wave = "square", sweep = 60, volume = 0.2 })
 			end
 			if s.age >= spec.life then
@@ -924,7 +954,8 @@ local function resolve(p)
 	end
 	-- 天基炮：登记一次打击（等待 spec.delay 秒后开始释放，见 update_strikes）
 	if w.orbital then
-		strikes[#strikes + 1] = { x = p.x, y = p.y, t = w.orbital.delay, age = 0, next_tick = 0, spec = w.orbital }
+		strikes[#strikes + 1] = { x = p.x, y = p.y, t = w.orbital.delay, age = 0, next_tick = 0,
+		                          tip = 0, spec = w.orbital }
 		-- 记下落点与"开火时那一列的地表高度"：光柱烧完再量一次，
 		-- 就能读出它到底挖下去多少（观察口用）
 		strike_dbg = { x = math.floor(p.x), top0 = surface_at(math.floor(p.x)) }
@@ -982,10 +1013,12 @@ local function after_settle()
 	ai_plan = nil
 	ai_decided, ai_walk_t = false, 0 -- 新回合重新决定"要不要先走位"
 	ai_walk_dir = nil
+	ai_walk_from_x, ai_walk_total = 0, 0
 	ai_reason, ai_run_away = nil, false
 	ai_repositioned = false
+	ai_friendly_tried = false
 	burst = nil -- 换手时旧的连发队列必须清掉
-	-- 这里不再清"按住时长"：它由主机按按键状态给（松手即 0）。
+	-- "按住时长"不在这里清：它由主机按按键状态给（松手即 0）。
 	-- 于是换手时按着不放就继续快，松开自然回到慢速微调——比硬清零更合手感
 end
 
@@ -1002,6 +1035,35 @@ local function ai_weapons(w)
 		end
 	end
 	return out
+end
+
+-- 离这只虫最近的活敌人：赶路朝它走，躲藏背对它。一个活敌人都没有就返回 nil
+local function nearest_enemy(w)
+	local best, bd = nil, math.huge
+	for _, e in ipairs(worms.list) do
+		if e.alive and e.team ~= w.team then
+			local d = math.abs(e.x - w.x)
+			if d < bd then
+				best, bd = e, d
+			end
+		end
+	end
+	return best
+end
+
+-- 这只虫在 dir 方向上、这一带是否撞过死胡同。记录存在**虫身上**（w.blocked[dir] = 撞墙处的 x），
+-- 因此跨回合保留：同一张图里不同虫的遭遇不同，也不至于"下回合又钻进同一个死胡同"
+local function blocked_here(w, dir)
+	local bx = w.blocked and w.blocked[dir]
+	return bx ~= nil and math.abs(w.x - bx) < AI.STUCK_NEAR
+end
+
+-- 开始一段走位：**所有走位的唯一入口**。集中在这里记录起点 x 与总时长（死胡同检测要用），
+-- 否则几个调用点各写一份、漏掉一处就会漏检。dir 传 nil 表示"按朝向决定"（逃跑 / 躲藏）
+local function begin_walk(w, dir, duration, reason, run_away)
+	ai_walk_from_x, ai_walk_total = w.x, duration
+	ai_walk_t, ai_walk_dir, ai_run_away = duration, dir, run_away or false
+	ai_reason = reason
 end
 
 local function update_ai(dt)
@@ -1043,20 +1105,30 @@ local function update_ai(dt)
 		-- 走位时长按距离算，走到为止：固定的 walk_time 走不到 20 格外的箱子
 		if supply and supply:reachable(w, terrain) then
 			local c = supply.crate
-			ai_walk_t, ai_reason, ai_run_away = math.abs(c.x - w.x) / Worms.WALK_SPEED + 0.4, "supply", false
-			ai_walk_dir = (c.x >= w.x) and 1 or -1
+			begin_walk(w, (c.x >= w.x) and 1 or -1,
+			           math.abs(c.x - w.x) / Worms.WALK_SPEED + 0.4, "supply", false)
 		elseif w.exposed and w.exposed >= turn.round - 1 and phos.sys.random(1, 100) <= cfg.dodge then
-			ai_walk_t, ai_reason, ai_run_away = cfg.walk_time, "exposed", true
+			begin_walk(w, nil, cfg.walk_time, "exposed", true)
 		end
 	end
 	if ai_walk_t > 0 then
 		ai_walk_t = ai_walk_t - dt
 		local dir = ai_walk_dir or (ai_run_away and -w.facing or w.facing)
-		local before = w.x
-		worms:move(w, dir, dt)
-		-- 只有"走不动"才跳：跳是为了翻过挡住路的坡，不是为了好看
-		if w.x == before then
+		-- 走不动就跳：跳是为了翻过挡住路的坡（走/跳的判据都在 worms.lua，同一个口径）
+		if not worms:move(w, dir, dt) then
 			worms:jump(w)
+		end
+		-- **死胡同检测**：走了 STUCK_T 秒净位移还很小，就认定这个方向走不通，立刻收手
+		-- （不再把整段走位时间耗在拱墙上）。若这次是"赶路"（far / blocked），把方向与位置
+		-- 记在虫身上：下一回合经过这里时不再往同一个死胡同里钻，先试反方向或干脆躲
+		if ai_walk_total - ai_walk_t >= AI.STUCK_T
+			and math.abs(w.x - ai_walk_from_x) < AI.STUCK_MOVE then
+			if ai_walk_dir and (ai_reason == "far" or ai_reason == "blocked") then
+				w.blocked = w.blocked or {}
+				w.blocked[ai_walk_dir] = w.x
+			end
+			ai_walk_t, ai_walk_dir = 0, nil
+			ai_reason, ai_last = "dead_end", "死胡同 收手"
 		end
 		return
 	end
@@ -1077,23 +1149,64 @@ local function update_ai(dt)
 	end
 	local plan = ai_plan:result()
 	ai_plan = nil
-	-- 算完了但够不着：先换个位置再重算，而不是硬打一发没意义的
-	-- （每回合只换一次：换完再算还是够不着，就认了，否则会无限挪下去）
-	if plan and plan.near and plan.near > cfg.good_dist and not ai_repositioned then
-		ai_repositioned = true
-		ai_walk_t, ai_reason, ai_run_away = cfg.walk_time, "blocked", false
+	-- 误伤自省：这一炮会打到队友、时间还够、本回合还没为此挪过 —— 先挪一小段再重新瞄，
+	-- 尽量避开（**一次为限**：挪不出干净角度就照打，误伤不是硬禁止）。方向取"背离会被
+	-- 打到的那名队友"，挪完下一帧的重规划会重新挑角度 / 换武器 / 换目标
+	if plan and plan.mate and turn.left > AI.WALK_LEAVE and not ai_friendly_tried then
+		ai_friendly_tried = true
+		local dir = (plan.mate_x and plan.mate_x >= w.x) and -1 or 1
+		begin_walk(w, dir, AI.WALK_CHUNK, "friendly", false)
+		ai_last = "避队友 挪位"
 		return
 	end
-	if plan then
+	-- 这一炮算不算"打得到"：被地形挡住，或者落点离目标差得远，都算够不着。
+	-- 挡住这条必须在这里判：被挡的炮往往炸在自己脚边，"落点差"看着不大，
+	-- 但那一炮等于白打 —— 预演阶段已经把 blocked 报出来了（见 ai.lua 的 preview）
+	-- "被挡"只对**爆炸类**算白打：它的价值全在落点上，撞在山坡上就没了。
+	-- 治疗弹不在此列 —— 它撞在山坡上也可能正好罩住趴在那儿的伤员
+	-- （实测里就有"被挡但落点差 1"的治疗弹，那是好炮，不该赶着它去别处）
+	local reach = plan and ((plan.blocked and plan.weapon.effect == "blast")
+		or (plan.near and plan.near > cfg.good_dist))
+	local enemy = nearest_enemy(w)
+	-- 够不着、而且**时间还够**：接着往敌人那边赶路，而不是随便打一发。
+	-- 大地图上用完激光这类远程手段之后，站在原地把无限普通弹打出去就是白费回合：
+	-- 一回合有 60 秒，走到射程里再打才是这一回合该干的事。
+	-- 每段只走 WALK_CHUNK 秒就回来重算一遍 —— 一次走太久会冲过射程，也没机会改主意
+	if reach and enemy and turn.left > AI.WALK_LEAVE then
+		local dir = (enemy.x >= w.x) and 1 or -1
+		-- 这个方向、这一带上次撞过死胡同：先试往反方向绕；两头都堵死就别硬耗，就地对空躲
+		-- （与其把整回合拱在墙上，不如留着时间看下回合地形 / 战况有没有变）
+		if blocked_here(w, dir) then
+			if blocked_here(w, -dir) then
+				begin_walk(w, nil, turn.left, "dead_end", true)
+				ai_last = "死胡同 原地躲"
+				return
+			end
+			dir, ai_reason = -dir, "around"
+		else
+			ai_reason = plan.blocked and "blocked" or "far"
+		end
+		ai_repositioned = true
+		begin_walk(w, dir, AI.WALK_CHUNK, ai_reason, false)
+		return
+	end
+	if plan and not reach then
 		w.angle, aim_power = plan.angle, plan.power
+		-- 理由串里已经有武器名（见 ai.lua 的 reason_of），这里不再重复一遍
 		ai_last = string.format(
 			"%s %d° 力%d 落点差%d",
-			plan.weapon.id,
+			plan.reason or plan.weapon.id,
 			math.floor(plan.angle + 0.5),
 			math.floor(plan.power * 100 + 0.5),
 			math.floor((plan.near or -1) + 0.5)
 		)
 		fire(w, plan.weapon)
+	elseif plan then
+		-- 时间不够了、又确实够不着：**消极处理**。这一炮不开（乱打只会伤到队友），
+		-- 背向敌人挪一点就地躲起来，走满剩下的时间，回合到点自然换手
+		begin_walk(w, enemy and ((enemy.x >= w.x) and -1 or 1) or -w.facing, turn.left, "hide", true)
+		ai_last = "够不着 躲起来"
+		return
 	else
 		turn:next_team()
 		pick_active(turn.team)
@@ -1358,7 +1471,8 @@ function update(dt)
 		if e.kind == "drowned" then
 			add_float(e.worm.x, e.worm.y, 0, L().drowned, phos.color.blue)
 		elseif e.kind == "landed" then
-			add_float(e.worm.x, e.worm.y, e.damage, nil, phos.color.orange)
+			-- 摔伤也是伤害：不给色 → add_float 按"有伤害数字"给红
+			add_float(e.worm.x, e.worm.y, e.damage)
 		end
 	end
 
@@ -1407,8 +1521,16 @@ function update(dt)
 		end
 	end
 
-	-- 回合计时只在"轮到我瞄准"时走：开炮期间停下来是刻意的
 	if turn.phase == "aim" and not winner and not switch_delay then
+		-- 当前这只虫已经不在了（坠落、落海、被炸死）：**立刻换手**。
+		-- 不换的话，玩家会对着"已经不存在的那只虫"干等完 60 秒倒计时 ——
+		-- 看着就是卡死；而"全队阵亡该分胜负"也只在结算时才查，最后一只死了同样卡
+		local cur = current_worm()
+		if not (cur and cur.alive) then
+			after_settle()
+			return
+		end
+		-- 回合计时只在"轮到我瞄准"时走：开炮期间停下来是刻意的
 		local t = turn:tick(dt)
 		if t.timeout then
 			after_settle()
@@ -1434,18 +1556,22 @@ local function put_at(S, wx, wy, ch, col)
 	return false
 end
 
--- 天空：整块交给 weather.lua —— 天色、日月、星、云、风痕、雷电都由**游戏内时钟**
--- 与天气推出来，这里只把相机原点、时间与风递过去，不再自己摊一遍
+-- 天空：整块交给 weather.lua —— 天色、日月、星、云都由**游戏内时钟**与天气推出来，
+-- 这里只把相机原点递过去，不再自己摊一遍。风痕、降水与闪电不在这里：
+-- 它们是前景（要压在人与地形上），画在天气层，见 draw
 local function draw_sky(S, C)
 	local cx, cy = camera:origin()
-	weather:draw_sky(S, C, cx, cy, flash, turn.wind)
+	weather:draw_sky(S, C, cx, cy)
 end
 
 local function draw_world(S, C)
 	local cx, cy = camera:origin()
 	local rows = terrain.rows
+	-- 取格法与 camera:cell_of 必须**同一套**：视口格 i 覆盖子格 2i 与 2i+1。
+	-- 差一格（例如写成 2*i+1）就会"画的是一处、判的是另一处"——
+	-- "看着还有空间却走不过去""贴着墙能挤进去半格"都是这么来的
 	for j = 0, VIEW_CH - 1 do
-		local y0 = cy + 2 * j + 1
+		local y0 = cy + 2 * j
 		local r0, r1 = rows[y0], rows[y0 + 1]
 		local water = y0 >= terrain.WATER_Y
 		-- 深处逐格变暗：整屏一个颜色太单调，硬造一条分界线又会留下接缝，
@@ -1454,7 +1580,7 @@ local function draw_world(S, C)
 		-- 底色压暗过：纯"草绿"在整屏占比这么大时太亮太跳，白字压上去反而看不清
 		local col = C.rgb(math.floor(18 + t * 26), math.floor(52 + t * 62), math.floor(32 + t * 34))
 		for i = 0, VIEW_CW - 1 do
-			local x = cx + 2 * i + 1
+			local x = cx + 2 * i
 			local bits = 0
 			if r0 then
 				if r0:byte(x) == BYTE_ONE then
@@ -1481,7 +1607,9 @@ local function draw_world(S, C)
 				if bits == 15 then
 					S:fill(i, j, 1, 1, " ", col, col)
 				else
-					S:put(i, j, GLYPH[bits + 1], col)
+					-- 位序与字形表都在引擎（phos.screen.quadrant）：卡带只报"这一格
+					-- 哪几个子位是土"，字形与位序不许有第二份副本
+					S:put(i, j, phos.screen.quadrant(bits), col)
 				end
 			elseif water then
 				S:put(i, j, "≈", COL.water)
@@ -1543,23 +1671,29 @@ local function draw_effects(S, C)
 		local half = (s.spec.width or 6) / 2
 		if s.t > 0 then
 			if math.floor(flash * 8) % 2 == 0 then
-				for d = -half, half, 1 do
+				-- 落点标记：比光柱窄一格（两端各收一个子格）。**纯外观** ——
+				-- 挖地与判伤用的是 s.x0/s.x1 那一对世界子格，与这里无关
+				for d = -half + 1, half - 1, 1 do
 					put_at(S, s.x + d, s.y, (d == 0) and "V" or "-", C.cyan)
 				end
 			end
 		else
-			-- 光柱：从世界顶端一路贯到**它烧穿到的地方**（井挖深了也跟着往下伸，
-			-- 画面与"整根柱子都伤人"的判定才对得上）。中心实线、两侧虚线，
-			-- 这个宽度就是判定宽度
-			local bottom = math.max(s.y, s.floor or 0)
-			for d = -half, half, 1 do
-				local ch = (d == 0) and "|" or ((math.abs(d) == half) and ":" or "|")
-				for wy = 1, bottom do
-					put_at(S, s.x + d, wy, ch, C.cyan)
+			-- 光柱：从世界顶端贯到**柱尖此刻所在** —— 画的就是它扫下来的位置。
+			-- 逐**格**画、每格同样的一笔：按子格画的话一格里会写两次，后一笔盖掉前一笔。
+			-- 半格（世界格与屏幕格错开半格时）暂时不画 —— 那要引擎提供子格绘制，
+			-- 卡带自己凑屏幕列只会越凑越歪（这一版就是这么错的）
+			local tip = math.max(1, math.floor(s.tip))
+			local c0, c1 = s.c0, s.c1
+			if c0 and c1 then
+				for c = c0, c1 do
+					for wy = 1, tip do
+						put_at(S, c * 2, wy, "|", C.cyan)
+					end
 				end
-			end
-			for d = -half - 1, half + 1, 1 do
-				put_at(S, s.x + d, bottom, "=", C.white)
+				-- 柱尖正在破开的那一层画一根亮横线：它跟着往下走，"下落"就看得见
+				for c = c0 - 1, c1 + 1 do
+					put_at(S, c * 2, tip, "=", C.white)
+				end
 			end
 		end
 	end
@@ -1645,33 +1779,45 @@ local function draw_aim(S, C)
 end
 
 local function draw_actors(S, C)
+	local ox, oy = camera:origin()
 	for _, w in ipairs(worms.list) do
 		if w.alive then
-			-- 画在**脚上方那一格**：地形占着脚下那格的下一半，画在原格会看到
-			-- '@' 陷在 '#' 里；抬高半格就正好站在地表上
-			local i, j = camera:cell_of(w.x, w.y - 1)
-			if in_view(i, j) then
-				local col
-				if w.team == 1 then
-					col = (pvp or turn.team == 1) and C.yellow or C.orange
-				else
-					col = (pvp or turn.team == 2) and C.red or C.purple
+			local col
+			if w.team == 1 then
+				col = (pvp or turn.team == 1) and C.yellow or C.orange
+			else
+				col = (pvp or turn.team == 2) and C.red or C.purple
+			end
+			-- 角色是**半格小人**：宽 1 子格、高 2 子格（与身体判定同一个尺寸）。
+			-- 画法：把身体真正占的**两个子位**按所属的格分组，每格用 quadrant 合成字形。
+			-- 只画它占的那两个子位 —— 用"整格高"的半块去画"只占半格"的身体，
+			-- 多出来的半格会盖在土上（看着像陷进地形），脚落在格上半的角色还会比别的矮半格
+			local vx2, vy2 = math.floor(w.x - ox), math.floor(w.y - oy)
+			local cells = {}
+			for row = vy2 - 1, vy2 do
+				local gx, gy, bit = phos.screen.cell_of(vx2, row)
+				if in_view(gx, gy) then
+					local key = gx .. "," .. gy
+					local cell = cells[key]
+					if not cell then
+						cell = { gx = gx, gy = gy, bits = 0 }
+						cells[key] = cell
+					end
+					cell.bits = cell.bits + bit
 				end
-				-- 虫标**不垫底板**：省略底色 = 保留这一格原有的底色（phos.screen.put 的 keep
-				-- 语义），于是它直接压在世界的底上，也就没有"底比字身宽出一格"这件事。
-				-- 保留底色拿到的是世界的底（天空/土层色），不是黑洞——"省略底色会变黑"
-				-- 是个误解，所以这里不必垫
-				S:put(i, j, "@", col)
-				-- 标记只画在"轮到人"的那只虫上：队友交给 AI 时，标识不该跟着跳过去。
-				-- 脚下那一排 === 去掉了：它压在斜坡/土上时读起来像地形的一部分，
-				-- 比头顶那个闪动的箭头更吵。选中是谁，看 @ 的颜色与箭头就够
+			end
+			for _, cell in pairs(cells) do
+				-- 不垫底板：blend 只落这一笔，笔画之外透出世界（土层/天空色）
+				S:blend(cell.gx, cell.gy, phos.screen.quadrant(cell.bits), col)
+			end
+			-- 选标与血条都画在角色**上方**（血条，再上是选标）：压在角色身上会看成"角色变高了"
+			local i, j = camera:cell_of(w.x, w.y)
+			if in_view(i, j) then
+				Hud.hp_bar(S, C, i, j - 2, w.hp / Worms.MAX_HP)
 				if w == current_worm() and human_turn() then
 					local blink = (math.floor(flash * 4) % 2 == 0)
-					S:put(i, j - 1, blink and "V" or "^", C.white)
+					S:put(i, j - 3, blink and "V" or "^", C.white)
 				end
-				-- 血条同样不垫底板（nil = 透明）：底板是**整格**粒度，垫上就比字身
-				-- 宽出一格；压在斜坡或水面上时更像"挖了个洞"
-				Hud.hp_bar(S, C, i, j - 2, w.hp / Worms.MAX_HP, nil)
 			end
 		end
 	end
@@ -1848,17 +1994,18 @@ local function draw_menu()
 		r:print(1, 1, row(1, t.label.mode, t.mode.pvp), hi(1))
 		r:print(1, 2, "   " .. t.note.pvp, C.dark_gray)
 	end
-	r:print(1, 5, row(4, t.label.hp, menu.hp), hi(4))
-	r:print(1, 6, "   " .. string.format(t.note.hp, HP_MIN, HP_MAX, HP_STEP), C.dark_gray)
+	r:print(1, 5, row(4, t.label.map, t.map[MAP_KEYS[menu.map]]), hi(4))
+	r:print(1, 6, row(5, t.label.hp, menu.hp), hi(5))
+	r:print(1, 7, "   " .. string.format(t.note.hp, HP_MIN, HP_MAX, HP_STEP), C.dark_gray)
 	if menu.mode == "pve" then
-		r:print(1, 7, row(5, t.label.ally, menu.ally_ai and t.yes or t.no), hi(5))
-		r:print(1, 8, "   " .. (menu.ally_ai and t.note.ally_on or t.note.ally_off), C.dark_gray)
-		r:print(1, 9, row(6, t.label.diff, t.diff[DIFFS[menu.diff]] or DIFFS[menu.diff]), hi(6))
-		r:print(1, 10, "   " .. t.note.diff, C.dark_gray)
+		r:print(1, 8, row(6, t.label.ally, menu.ally_ai and t.yes or t.no), hi(6))
+		r:print(1, 9, "   " .. (menu.ally_ai and t.note.ally_on or t.note.ally_off), C.dark_gray)
+		r:print(1, 10, row(7, t.label.diff, t.diff[DIFFS[menu.diff]] or DIFFS[menu.diff]), hi(7))
+		r:print(1, 11, "   " .. t.note.diff, C.dark_gray)
 	end
-	r:print(1, 12, string.format("%s %s", mark(7), t.start),
-	        (menu.row == 7) and C.yellow or C.gray)
-	r:print(3, 14, phos.text.fit(t.menu_hint, w - 4), C.dark_gray)
+	r:print(1, 13, string.format("%s %s", mark(8), t.start),
+	        (menu.row == 8) and C.yellow or C.gray)
+	r:print(3, 15, phos.text.fit(t.menu_hint, w - 4), C.dark_gray)
 end
 
 function draw()
@@ -1877,24 +2024,23 @@ function draw()
 	-- 免得玩家盯着上一炮的刻度去瞄下一炮。
 	-- 它画在**角色之前**：高抛时线会穿过自己的头顶，压在血条与选标下面才不会糊成一团
 	if turn.phase == "aim" and human_turn() and not winner then
-		draw_aim(r_fx, C)
+		draw_aim(r_aim, C)
 	end
-	draw_actors(r_fx, C)
-	-- 雨雪画在**角色之后**：它是前景，要盖在人和地形上；日月云星留在地形之前，
-	-- 于是它们天然只出现在山坡上方的空处，不必逐格判断
-	weather:draw_precip(r_fx, C)
-	-- 闪电压在**世界与角色之上**（但仍在读数层之下）：从前的写法把它夹在天空那一趟里，
-	-- 紧随其后的地形会把提亮盖掉，闪电就等于只能照亮天空——分层之后它才真的照亮全场
-	weather:draw_flash(r_fx, C)
+	draw_actors(r_actors, C)
+	-- 风痕与雨雪画在**角色之后**：它们是前景，要落在人与地形之上；日月云星留在地形之前，
+	-- 于是它们天然只出现在山坡上方的空处，不必逐格判断。
+	-- "雨滴落在地形上"能同格共存：层是**像素级**叠上去的（见 Renderer::draw_layers），
+	-- 笔画之外透出地形，两种内容能同格共存
+	weather:draw_wind(r_weather, C, turn.wind)
+	weather:draw_precip(r_weather, C)
+	-- 闪电不在这里：它与日月云同属**天空那一趟**（世界底层、地形之前），
+	-- 所以山体会挡住它 —— 画在天气层上它会"照亮"山体与虫子，那是滤镜不是闪电
 
 	local w = current_worm()
 	local weapon = selected_weapon()
 	local left = (weapon and w and w.ammo[weapon.id]) or 0
-	-- 信息栏要拿天空色**重铺**那三行（Hud.draw 的 ctx.sky）：这样它压在水面或山体上时
-	-- 依旧等于"透明"，而不会漏出世界那一层的底色
-	local sky_r, sky_g, sky_b = weather:sky_rgb()
+	-- 信息栏不铺底（见 hud.lua）：它是独立一层，按像素压在世界上，笔画之外透出世界
 	Hud.draw(r_hud, C, {
-		sky = C.rgb(sky_r, sky_g, sky_b),
 		worm = w,
 		wind = turn.wind,
 		time_text = turn:time_text(),
@@ -2002,6 +2148,7 @@ function debug_state()
 		help = help_open,
 		mine = menu.mine,
 		theirs = menu.theirs,
+		map = MAP_KEYS[menu.map] or "-",   -- 本局地图宽窄档位（世界宽度见 world_w）
 		menu_row = menu.row,
 		hp_max = menu.hp,
 		diff = DIFFS[menu.diff] or "normal",
@@ -2014,6 +2161,16 @@ function debug_state()
 		map_open = map_open,
 		burst_left = burst and (burst.total - burst.done) or 0,
 		strikes = #strikes,
+		-- 雷：闪光还剩多少毫秒、这一道折线有几行、起点在第几列。
+		-- 报出来才能核对"闪电真的画在天空那一趟、形状在这一闪里固定"
+		flash_ms = weather and math.floor((weather.flash or 0) * 1000) or 0,
+		bolt_rows = (weather and weather.bolt) and #weather.bolt or 0,
+		bolt_x = (weather and weather.bolt and weather.bolt[1]) and weather.bolt[1].x or -1,
+		-- 光柱的列边界（世界子格）与柱尖：画、挖、伤人共用这一对边界，
+		-- 报出来就能核对"看得见的宽度 == 打得动的宽度"
+		strike_x0 = (strikes[1] and strikes[1].x0) or -1,
+		strike_x1 = (strikes[1] and strikes[1].x1) or -1,
+		strike_tip = (strikes[1] and math.floor(strikes[1].tip)) or -1,
 		-- 天气 / 时钟 / 补给 / 阵亡爆炸：新加的四样都要能在观察口里读到，
 		-- 否则"天气转了没有、箱子落下来没有"就只能靠眼看
 		weather = weather and weather.state or "-",
@@ -2052,7 +2209,10 @@ function debug_state()
 		alive2 = worms and worms:alive_count(2) or 0,
 		projectiles = #(projectiles or {}),
 		charge = charge_mode,
+		-- 相机原点（世界子格）：核对"世界 → 屏幕"换算要看它 —— 原点是奇数时，
+		-- 世界的格边界落在屏幕格正中，画与挖最容易在这里差半格
 		cam_x = math.floor(cam.x),
+		cam_y = math.floor(cam.y),
 		cam_pan = math.floor(cam.pan),
 		cam_pan_y = math.floor(cam.pan_y),
 		-- 相机原点的实际 y（子格）。纵向平移与边缘夹紧都要看它，不是看意图值
@@ -2109,6 +2269,7 @@ function debug_state()
 			facing = m.facing or 0,
 			power = math.floor((m.power or 0) * 100),  -- AI 的虫可能还没存过力度
 			human = worm_is_human(m) and 1 or 0,       -- 归谁操作：1 = 玩的人，0 = 电脑
+			buried = m.buried and 1 or 0,              -- 身体在土里（被埋住）：走不动跳不动，只能炸开
 			leader = (m == captain) and 1 or 0,        -- 队长：队友交给 AI 时唯一还归玩家的
 		}
 	end

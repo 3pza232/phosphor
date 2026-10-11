@@ -91,7 +91,13 @@ bool App::write_screenshot(const std::string& path, int& width, int& height,
     options.cell_w = kCellPx;
     options.cell_h = kCellPx;
     options.crt = active_crt_;
-    const auto image = render_screen_image(screen_, font_files_, options, error);
+    // 截图必须与窗口所见一致：底 + 逐层叠画（像素级合成），
+    // 而不是合成后的文本网格 —— 那条路一格只有一个字形，会把下层"顶掉"
+    const bool layered = playing_ && host_.layers.active();
+    const Screen& base = layered ? base_screen_ : screen_;
+    const auto image = render_screen_image(base, font_files_, options, error,
+                                           layered ? &host_.layers : nullptr,
+                                           host_.content_x, host_.content_y);
     if (!image) return false;
     if (!write_png(*image, path, error)) return false;
     width = image->width;

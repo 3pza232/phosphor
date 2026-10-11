@@ -11,7 +11,8 @@ namespace phos {
 /// 一块图层缓冲：与内容区同构的网格，格带 `alpha`（0 = 这一格不存在）。
 ///
 /// 卡带按需创建；不创建时主循环里连一次合并都不会发生（见 App::tick_playing）。
-/// 层只描述"叠在底层之上"的缓冲：既不参与既有写入路径，也不进渲染器
+/// 层只描述"叠在底层之上"的缓冲：不参与底层（`phos.screen`）的写入路径 ——
+/// 它由渲染器在画完底层之后逐层叠上（`Renderer::draw_layers`，像素级合成）
 struct Layer {
     std::string name;   // 卡带自己起的名字，只在本卡带内有意义
     int z = 0;          // 越大越靠上
@@ -30,7 +31,6 @@ public:
     void reset(int w, int h);
 
     bool active() const { return !layers_.empty(); }
-    const std::vector<Layer>& layers() const { return layers_; }
 
     /// 所有层清成透明。每帧推进前调用一次：层与底层**同一心智**（每帧重画），
     /// 于是"这帧不再画它"就等于它消失，不会在层里留下上一帧的残影

@@ -27,7 +27,7 @@ import socket
 import subprocess
 import sys
 import time
-from typing import Any, Iterable
+from typing import Any, Iterable, Sequence
 
 
 def free_port() -> int:
@@ -294,3 +294,43 @@ def main_guard(fn: Any) -> None:
     except KeyboardInterrupt:
         print("interrupted", file=sys.stderr)
         sys.exit(130)
+
+
+# ---------------------------------------------------------------- 像素核对（门禁共用）
+# 读像素的门禁（draw_smoke / gl_smoke）共用同一套采样原语：格子尺寸一律从
+# "图像尺寸 ÷ 网格尺寸"推，绝不写死 16 —— 主题几何一改，写死的列号就全错。
+
+#: 象限采样点（相对格子的比例）：左上 / 右上 / 左下 / 右下
+QUADRANTS = ((0.25, 0.25), (0.75, 0.25), (0.25, 0.75), (0.75, 0.75))
+
+
+def luminance(pixel: Sequence[float]) -> float:
+    return 0.299 * pixel[0] + 0.587 * pixel[1] + 0.114 * pixel[2]
+
+
+def patch_mean(image: Any, cx: float, cy: float, radius: int = 3) -> tuple[float, float, float]:
+    """以 (cx, cy) 为中心取一小块的平均色：抗 CRT 扫描线的逐行明暗。"""
+    total = [0.0, 0.0, 0.0]
+    count = 0
+    for y in range(max(0, int(cy - radius)), int(cy + radius) + 1):
+        for x in range(max(0, int(cx - radius)), int(cx + radius) + 1):
+            pixel = image.getpixel((x, y))
+            total[0] += pixel[0]
+            total[1] += pixel[1]
+            total[2] += pixel[2]
+            count += 1
+    return (total[0] / count, total[1] / count, total[2] / count)
+
+
+def cell_rect(col: int, row: int, shot: tuple[int, int], grid: tuple[int, int]):
+    """整屏列/行 → 像素矩形（左, 上, 右, 下）。"""
+    cw = shot[0] / grid[0]
+    ch = shot[1] / grid[1]
+    return (col * cw, row * ch, (col + 1) * cw, (row + 1) * ch)
+
+
+def cell_quadrants(image: Any, rect: tuple[float, float, float, float]):
+    """一格四个象限的平均色（顺序：左上、右上、左下、右下）。"""
+    x0, y0, x1, y1 = rect
+    w, h = x1 - x0, y1 - y0
+    return [patch_mean(image, x0 + w * rx, y0 + h * ry) for rx, ry in QUADRANTS]

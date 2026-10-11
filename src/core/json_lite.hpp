@@ -26,7 +26,6 @@ public:
 
     bool has(std::string_view key) const;
     std::string str(std::string_view key, std::string_view fallback = "") const;
-    double num(std::string_view key, double fallback = 0.0) const;
     int integer(std::string_view key, int fallback = 0) const;
 
     /// 布尔读取：接受 true/false，以及字符串 "1"/"true"/"down"/"on"/"yes"（其余算 false）
@@ -48,6 +47,10 @@ private:
         bool boolean = false;
         std::shared_ptr<Object> object;  // Kind::object：嵌套对象
     };
+
+    /// 原样取数（integer 的实现基础）。对外只暴露 integer：本协议里所有数值字段都是整数，
+    /// 没有调用方需要 double，多开一个出口只会让"该用哪个"变得含糊
+    double num(std::string_view key, double fallback = 0.0) const;
 
     std::map<std::string, Entry> values_;
     std::vector<std::string> duplicates_;

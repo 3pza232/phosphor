@@ -104,6 +104,18 @@ void DrawRegion::blit(int x, int y, const std::vector<std::string>& rows, Color 
     surface_of().blit(x, y, rows, fg, bg);
 }
 
+bool DrawRegion::blend(int x, int y, char32_t ch, Color fg) {
+    return surface_of().blend(x, y, ch, fg);
+}
+
+void DrawRegion::back(int x, int y, Color bg) { surface_of().back(x, y, bg); }
+
+void DrawRegion::back_rect(int x, int y, int w, int h, Color bg) {
+    surface_of().back_rect(x, y, w, h, bg);
+}
+
+void DrawRegion::plot(int x2, int y2, Color fg) { surface_of().plot(x2, y2, fg); }
+
 void DrawRegion::frame(std::string_view title) {
     ui::frame(screen(), ui::Rect{abs_x(0), abs_y(0), room_w(), h_}, title, style());
 }

@@ -1,4 +1,4 @@
--- LIFE —— 康威生命游戏
+-- manifest.lua —— 康威生命游戏
 -- name 是卡带架与侧栏显示的标题；id 建议与目录同名
 return {
   id = "life",

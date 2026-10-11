@@ -24,7 +24,8 @@
 namespace phos {
 
 /// 应用生命周期与主循环（固定逻辑帧 + 渲染帧）。
-/// 四层可替换内容：游戏机主题（skin）/ 显像管滤镜（filter）/ 启动动画（boot）/ 卡带（cart）。
+/// 六类可替换内容：游戏机主题（skin）/ 显像管滤镜（filter）/ 启动动画（boot）/
+/// 音效包（sound）/ 字体方案（font）/ 卡带（cart）。
 class App {
 public:
     /// 运行主机。返回进程退出码（约定见 agent-interface.md）。
@@ -90,6 +91,10 @@ private:
     void poll_control();
     void execute_control(const ControlCommand& command);
     void complete_step_request();
+    /// 落地一条 frame.read：读回当前帧缓冲（仅窗口路径），可选写 PNG，然后回包。
+    /// 必须由渲染循环在 draw/draw_layers 之后、swap_buffers 之前调用——后缓冲在
+    /// swap 之后即失效，读回时机只有那里是正确的
+    void complete_frame_read(class Renderer* renderer);
     std::string control_state_json() const;
     std::string carts_json() const;
     std::string shelf_json() const;
@@ -137,6 +142,10 @@ private:
     static constexpr float kEjectCollapseTime = 0.35f;
 
     Screen screen_;
+    /// 图层合成**之前**的那一帧（壳 + 卡带画的世界）。有图层的卡带渲染走它：
+    /// 各图层由渲染器按 z 逐层叠画，做到"一格能同时看见两层的笔画"。
+    /// 屏幕文本与 agent 读的仍是合成结果 screen_（一格一个字形）
+    Screen base_screen_;
     Input input_;
     HostContext host_;
     Shell shell_;
@@ -200,6 +209,8 @@ private:
     bool control_stepping_ = false;      // 时间由 agent 驱动的"单步模式"
     int pending_steps_ = 0;              // 待推进的逻辑帧数
     int step_request_id_ = -1;           // 待回包的 time.step 请求 id
+    int frame_read_id_ = -1;             // 待回包的 frame.read 请求 id（<0 = 无）
+    std::string frame_read_path_;        // frame.read 的落盘路径（空 = 只回统计）
     std::string cart_path_;              // 当前卡带路径（供 cart.reload）
     std::vector<std::pair<std::string, int>> pending_releases_;  // 注入按键的定时释放（按名字记）
 };

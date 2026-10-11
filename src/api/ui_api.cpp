@@ -62,15 +62,17 @@ void register_ui_api(sol::state& lua, HostContext& host) {
         ui::divider(*host.screen, r.x, r.y, r.w, style.dim, style.bg);
     };
 
-    ui["menu"] = [&host, rect_at](int x, int y, int w, sol::table items, int selected, int h) {
+    // h 可省略：缺省按条目数（与 region:menu 同一语义；省略时行数由内容决定）
+    ui["menu"] = [&host, rect_at](int x, int y, int w, sol::table items, int selected,
+                                  sol::optional<int> h) {
         ui::Style style = cart_style(host);
         std::vector<std::string> list;
         for (size_t i = 1; i <= items.size(); ++i) {
             sol::object v = items[i];
             list.push_back(v.is<std::string>() ? v.as<std::string>() : std::string());
         }
-        if (h <= 0) h = static_cast<int>(list.size());
-        ui::menu(*host.screen, rect_at(x, y, w, h), list, selected, style);
+        const int height = (h && *h > 0) ? *h : static_cast<int>(list.size());
+        ui::menu(*host.screen, rect_at(x, y, w, height), list, selected, style);
     };
 
     ui["bar"] = [&host, rect_at](int x, int y, int w, float ratio) {
@@ -79,10 +81,13 @@ void register_ui_api(sol::state& lua, HostContext& host) {
         ui::bar(*host.screen, r.x, r.y, r.w, ratio, style);
     };
 
-    ui["text"] = [&host, rect_at](int x, int y, int w, const std::string& body, int max_lines) {
+    // max_lines 可省略：缺省 1 行（与 region:body 同一语义）
+    ui["text"] = [&host, rect_at](int x, int y, int w, const std::string& body,
+                                  sol::optional<int> max_lines) {
         ui::Style style = cart_style(host);
         ui::Rect r = rect_at(x, y, w, 1);
-        ui::text_block(*host.screen, r.x, r.y, r.w, body, max_lines > 0 ? max_lines : 1, style);
+        const int lines = max_lines.value_or(0);
+        ui::text_block(*host.screen, r.x, r.y, r.w, body, lines > 0 ? lines : 1, style);
     };
 
     ui["center_text"] = [&host](int y, const std::string& text) {
@@ -92,9 +97,10 @@ void register_ui_api(sol::state& lua, HostContext& host) {
     };
 
     /// 像素精灵：rows 为字符画，colors 是 字符→颜色 映射（键必须是**单字节**字符，
-    /// 用 '█' 这类多字节字符查不到表、会退化成风格色），step 为缩放步长。
+    /// 用 '█' 这类多字节字符查不到表、会退化成风格色），step 为缩放步长（可省略，缺省 1）。
     /// 只有 '.' 与空格透明，其余字符都算实心像素。
-    ui["sprite"] = [&host, rect_at](int x, int y, sol::object rows, sol::object colors, int step) {
+    ui["sprite"] = [&host, rect_at](int x, int y, sol::object rows, sol::object colors,
+                                    sol::optional<int> step) {
         ui::Style style = cart_style(host);
         std::vector<std::string> art = api::read_rows(rows);
         std::map<char, Color> palette = color_map(colors);
@@ -103,9 +109,10 @@ void register_ui_api(sol::state& lua, HostContext& host) {
         for (const auto& row : art)
             w = w > static_cast<int>(row.size()) ? w : static_cast<int>(row.size());
         ui::Rect r = rect_at(x, y, w, h);
+        const int scale = step.value_or(1);
         // 以左上角定位：icon 语义为居中，此处用中心点换算
         ui::icon(*host.screen, art, palette, r.x + w / 2, r.y + h / 2,
-                 step < 1 ? 1 : step, 1.0f, style.accent);
+                 scale < 1 ? 1 : scale, 1.0f, style.accent);
     };
 
     /// 列表导航：返回 (新下标, 动作)，动作为 "none" / "confirm" / "cancel"
@@ -148,6 +155,24 @@ void register_ui_api(sol::state& lua, HostContext& host) {
         [](DrawRegion& r, int x, int y, sol::object rows, sol::object fg, sol::object bg) {
             r.blit(x, y, api::read_rows(rows), api::read_color(fg, Color::white),
                    api::read_background(bg));
+        },
+        // 区域里的 blend / back / back_rect / plot 与 put 同组（**保留底色**）：
+        // 覆盖层压在游戏画面上时，字缝里透出的是底图而不是黑块
+        "blend",
+        [](DrawRegion& r, int x, int y, sol::object ch, sol::object fg) {
+            return r.blend(x, y, api::read_char(ch, U' '), api::read_color(fg, Color::white));
+        },
+        "back",
+        [](DrawRegion& r, int x, int y, sol::object bg) {
+            r.back(x, y, api::read_background(bg));
+        },
+        "back_rect",
+        [](DrawRegion& r, int x, int y, int w, int h, sol::object bg) {
+            r.back_rect(x, y, w, h, api::read_background(bg));
+        },
+        "plot",
+        [](DrawRegion& r, int x, int y, sol::object fg) {
+            r.plot(x, y, api::read_color(fg, Color::white));
         },
         "frame",
         [](DrawRegion& r, sol::object title) {

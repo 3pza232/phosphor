@@ -1,4 +1,4 @@
--- 玩法：挡板、球、砖块与关卡（不碰音频 / 存档 / 输入）
+-- game.lua —— 玩法：挡板、球、砖块与关卡（不碰音频 / 存档 / 输入）
 --
 -- 设计上刻意**不用随机数**：球的发射角度固定，碰撞完全确定，
 -- 于是"第 N 帧得几分"是钉死的 —— 帧号与分数一一对应，复盘时对得上。
@@ -105,7 +105,7 @@ function Game:brick_at(cx, cy)
   if col < 1 or col > BRICK_COLS then return nil end
   if cx % BRICK_STRIDE >= BRICK_W then return nil end
   local key = cy * BRICK_COLS + col
-  return self.bricks[key], key, col - 1, cy
+  return self.bricks[key], key
 end
 
 function Game:launch()
@@ -167,7 +167,7 @@ function Game:step_ball(dt)
     end
 
     -- 砖块：命中即碎，按行给分
-    local brick, key, col, row = self:brick_at(math.floor(self.ball_x), math.floor(self.ball_y))
+    local brick, key = self:brick_at(math.floor(self.ball_x), math.floor(self.ball_y))
     if brick then
       self.bricks[key] = nil
       self.bricks_left = self.bricks_left - 1

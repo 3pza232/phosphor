@@ -67,7 +67,8 @@ Screen 的不同调用者**。无头模式下 `Screen::to_text()` 是唯一消�
   当前世代 **2**（1 = 基础接口；2 = 图层与新的观测面）。
 - 一致性门禁：`--check-api` 比对 DevKit 注解与实装；控制通道契约由
   `tools/control_test.py` 守；画面行为由 `tools/window_smoke.py` /
-  `tools/cart_smoke.py` 守。
+  `tools/cart_smoke.py` 守；**同格多笔与子位落笔**由 `tools/draw_smoke.py` 守
+  （读像素，见 `draw-api.md`）。
 
 ### 1.4 痛点（全部来自仓库里真实发生过的事）
 
@@ -123,8 +124,9 @@ P1~P3 的共同点是：**分层这件事目前靠卡带作者按序重画来自
 
 1. **不用就是零成本**。卡带不调用 `phos.layer.create`，主循环里连一次
    合并都不发生（仅多一次布尔判断）——G5 由此成立。
-2. **渲染器零改动**。合并产出的还是今天那张 `Screen`，
-   `render/renderer.cpp` 与 `render/screen_image.cpp` 不动。
+2. **既有渲染路径零改动**。合并产出的还是同一张 `Screen`，
+   `render/renderer.cpp` 与 `render/screen_image.cpp` 的既有路径不动；
+   图层的像素叠画是**新增**的 `Renderer::draw_layers` 调用，不改既有代码。
 3. **旧写入路径零改动**。`phos.screen` / `phos.panel` / `ui.region`（不带 layer）
    照旧写今天那张网格；`keep` 语义、裁剪规则、`Surface` 一字不改。
 4. **心智与现状一致**。"每帧重画"不变：建了层的卡带，每层仍每帧重画，
@@ -456,7 +458,7 @@ if phos.layer then ... else ... end    -- 探的是"这个接口在不在"，不
 |------|------|----------|------|
 | P0 地基 | `Cell.alpha`（默认 255）+ `core/layered_screen`（create/find/merge_over） | `core/screen.hpp`、`core/layered_screen.*`（新） | 单测级：合并结果 == 手工预期；门禁全绿 |
 | P1 增量接线 | `tick_playing` 在 `cart_->draw()` 后加**一处** `if (layers.active()) layers.merge_over(screen_)`；层缓冲挂到卡带宿主上下文，随插拔创建/销毁 | `core/app.cpp`（仅此一处）、`core/host_context*`、`cart/cartridge.cpp`（生命周期挂钩） | 无层卡带：反汇编级也能确认无新增行为（结构性零改动）；未建层的出厂卡带逐字节一致 |
-| P2 卡带 API | `phos.layer`、`ui.region` 的 layer 锚点、DevKit 注解与模板、文档；`phos_api → 2` | `api/host_api.cpp`、`api/ui_api.cpp`、`api/draw_region.*`、`core/version.hpp`、`package/devkit/*`、`docs/*` | 新接口冒烟（devkit 的**演示卡带**，另加两张真用图层的出厂卡带：`carts/tetris` 四层、`carts/worms` 前景/读数/浮窗三层且画面逐字节不变）；`--check-api` 绿；不建层的旧卡带照旧 |
+| P2 卡带 API | `phos.layer`、`ui.region` 的 layer 锚点、DevKit 注解与模板、文档；`phos_api → 2` | `api/host_api.cpp`、`api/ui_api.cpp`、`api/draw_region.*`、`core/version.hpp`、`package/devkit/*`、`docs/*` | 新接口冒烟（devkit 的**演示卡带**，另加两张真用图层的出厂卡带：`carts/tetris` 四层、`carts/worms` 六层且画面逐字节不变）；`--check-api` 绿；不建层的旧卡带照旧 |
 | P3 通道 | `state.query.layers`、**顶层** `merge_ms`、`screen.read(layer=…)`；（可选）事件订阅 | `core/app_control.cpp`、`docs/agent-interface.md`、`tools/*` | control_test 扩展断言 |
 | P4 增配 | `text.ink_box`、`input.duration` / `input.keys`、`sys.frame`（`input.text` 早就在，不算本批新增） | `render/*`（度量回调装配）、`api/*`、`core/input.*` | 各自冒烟 + devkit 示例 |
 
@@ -486,7 +488,7 @@ if phos.layer then ... else ... end    -- 探的是"这个接口在不在"，不
 | 层是否对主机脚本（boot.lua 等）开放 | 暂不开放（层归卡带） | 有真实诉求时 |
 | 事件订阅做不做 | 可选，P3 末尾评估 | 有 agent 侧真实诉求时 |
 | 演示卡带放出厂还是 devkit | 已定：devkit 示例（`package/devkit/examples/layers/`），不进出厂列表 | 已落地 |
-| 出厂卡带要不要有一张真用图层的 | 要，而且不止一张：`package/carts/tetris/`（井+已落定方块 / 下落块 / 特效 / 浮窗四层）与 `package/carts/worms/`（前景 / 读数 / 浮窗三层——它原是手排次序的立即式绘制，改成分层后画面逐字节不变）。示例卡带仍只在 devkit —— 不为了展示往架子上摆"样板"，摆真能玩的 | 已落地 |
+| 出厂卡带要不要有一张真用图层的 | 要，而且不止一张：`package/carts/tetris/`（井+已落定方块 / 下落块 / 特效 / 浮窗四层）与 `package/carts/worms/`（按类别分六层：特效 / 瞄准线 / 角色 / 雨雪天气 / 读数 / 浮窗）。示例卡带仍只在 devkit —— 不为了展示往架子上摆"样板"，摆真能玩的 | 已落地 |
 
 ---
 

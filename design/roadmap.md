@@ -123,7 +123,8 @@ CPU 截图路径每次现读字体链（无需处理）；测试环境固定为 
 单个 `.cpp` 并不罕见。判断标准是**内聚**而不是行数：像磁带码界面那样"自成一整套状态机"
 （两页、滚动、输入缓冲、结果行）就值得独立成文件，现已拆到 `shell/tape_view.cpp`；
 而音频子系统虽 600 余行，其内容（波形 / 混音 / 设备）本就是一件事，硬拆只会把概念切碎。
-当前实际行数（快照）：`core/audio.cpp` ≈ 561、`core/app.cpp` ≈ 425、`shell/shell.cpp` ≈ 414。
+当时（拆分刚完成）的实际行数快照：`core/audio.cpp` ≈ 561、`core/app.cpp` ≈ 425、
+`shell/shell.cpp` ≈ 414 —— 只作历史参考，此后主线仍在改，别拿它当现状。
 
 以下清单是当时的拆分记录（均已落地）：
 
@@ -191,7 +192,8 @@ CPU 截图路径每次现读字体链（无需处理）；测试环境固定为 
 
 游戏机自身的性质由 `tools/` 里的脚本守（清单、用途与跑法见仓库 `README.md` 的"开发脚本"表）：
 `control_test.py` 控制通道契约、`window_smoke.py` 窗口路径冒烟、`cart_smoke.py` 卡带运行冒烟
-（跑得完 / 不出错 / 有画面 / 同种子可复现）、`layer_smoke.py` 图层契约、
+（跑得完 / 不出错 / 有画面 / **驱动局** / 同种子可复现）、`layer_smoke.py` 图层契约、
+`draw_smoke.py` 叠加与半格契约（读像素）、
 `agent_play.py` 与 `agent_shell_demo.py` 两个 agent 演示、`clean.py` 清理 `build/`、
 `phos.py` 共用客户端库；`--check-api` 核对 DevKit 注解与实装一致。
 

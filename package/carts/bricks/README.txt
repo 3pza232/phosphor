@@ -1,51 +1,37 @@
-BRICKS - Breakout
+BRICKS —— 打砖块
 =================
 
-Break every brick in the wall (84 of them, six tiers worth 10..60 points)
-without dropping the ball. Three lives, then level 2 starts with a faster
-ball (x1.07 per level). High score is stored in the cart save file.
+把整面墙打完（84 块，六层，分值 10..60），期间别让球掉下去。
+三条命，命用完进下一关，球会更快（每关 ×1.07）。最高分存在卡带存档里。
 
-Controls
+操作
 --------
-  left/right  move the paddle
-  A           launch the ball / restart after game over
-  ENTER       pause / resume
-  SHIFT       restart from level 1
-  ESC         host pause menu
+  左右      移动挡板
+  A         发球 / 游戏结束后重开
+  回车      暂停 / 继续
+  Shift     从第 1 关重开
+  Esc       主机暂停菜单
 
-The machine has no gamepad: the four face buttons ARE the letters A/B/X/Y on
-the keyboard, and both the sidebar and the centre prompts ask the host for the
-real key name (phos.input.key_name), so what is printed is what you press.
+本机没有手柄：四个面键**就是**键盘上的 A/B/X/Y，侧栏与画面中央的提示都
+通过 phos.input.key_name 向主机要真名，所以印出来的就是你该按的键。
 
-Music is a four-section arcade loop (bpm 138, order A B A C A B D C, ~28s
-before it repeats) in music.lua.
+音乐是 music.lua 里一段四段式街机循环（bpm 138，顺序 A B A C A B D C，
+约 28 秒一轮）。
 
-Files
+文件
 -----
-  manifest.lua   cart identity (id / entry / sidebar / save = true)
-  main.lua       lifecycle glue: input -> game -> draw + sound
-  game.lua       paddle, ball, bricks, levels. No audio, no save, no input
-  panel.lua      sidebar rendering (read-only)
-  sfx.lua        sound effects only (swap this file to retune the cart)
-  music.lua      two-bar looping tune
-  scores.lua     high score persistence
+  manifest.lua   卡带身份（id / entry / sidebar / save = true）
+  main.lua       生命周期胶水：输入 → 规则 → 绘制与发声
+  game.lua       挡板、球、砖块、关卡。不碰音频、存档、输入
+  panel.lua      侧栏绘制（只读）
+  sfx.lua        只有音效（想改音色就换这个文件）
+  music.lua      两小节循环曲
+  scores.lua     最高分持久化
 
-No randomness by design
------------------------
-There is no random number anywhere in this cart: the launch angle is
-fixed and the ball moves on a fixed timestep, so an identical input
-sequence always produces an identical score. That is what makes the
-tests able to assert exact values ("score is 10 at frame 200").
-
-The bottom status line (READY | PAD 24 | BALL 28,35 | SPD 21) is the
-machine readout: it is drawn for players, and the test suite reads it
-to verify paddle and ball state.
-
-Testing note
+刻意没有随机
 ------------
-phos.input.pressed() is edge triggered. A test that presses a key twice
-must release it in between:
+本卡带里没有任何随机数：出球角度固定、球按固定步长走，所以**同样的输入
+序列永远得到同样的分数**。这条是给回放与排查用的：任何一局都能完整重演。
 
-    input 250 start down
-    input 255 start up
-    input 280 start down
+底部那行状态（READY | PAD 24 | BALL 28,35 | SPD 21）是这台机器的读数：
+它画给玩家看，同时也把挡板与球的真实状态摆在了明面上。

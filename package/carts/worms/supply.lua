@@ -11,6 +11,9 @@
 -- 与 turn.lua / worms.lua 同一套分工——逻辑模块只维护状态
 
 local Weapons = require("weapons")
+-- 读 Worms.STEP_SUB（行走能迈的高度）：可达性判据必须与角色真正走得动的范围同源，
+-- 自己另写一个数字就会判"能到"而实际走不到
+local Worms = require("worms")
 
 local Supply = {}
 Supply.__index = Supply
@@ -126,17 +129,21 @@ function Supply:reachable(w, terrain)
   if math.abs(dx) > Supply.AI_RANGE then
     return false
   end
-  local step = (dx >= 0) and 6 or -6
-  local prev = terrain.top[math.floor(w.x)]
+  -- 沿途逐段比**真正的地表**（terrain:foot_row），不读 top：top 是生成时的高度场，
+  -- 打出来的洞不会反映在里面，按它判"可达"会让 AI 白跑一趟
+  local step = (dx >= 0) and 8 or -8
+  local prev
   for x = w.x, c.x, step do
-    local top = terrain.top[math.floor(x)]
-    if not top then
+    local col = math.floor(x)
+    local gy = terrain:foot_row(col, col, 1)
+    if not gy then
       return false
     end
-    if prev and math.abs(top - prev) > 6 then
-      return false -- 落差太大：跳不上去
+    -- 落差上限与角色行走的台阶高度**同一个数**：比它大的坡 AI 根本走不上去
+    if prev and math.abs(gy - prev) > Worms.STEP_SUB then
+      return false
     end
-    prev = top
+    prev = gy
   end
   return true
 end

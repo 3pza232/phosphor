@@ -118,7 +118,7 @@ PHOSPHOR 最终交付的不只是一个 exe，而是一套小型生态：
 | 界面 | `core/ui` 原语 + 外壳（开机/卡带架/设置/暂停/故障）；机身皮肤与指示灯 |
 | 内容包 | skin / palette / boot / sound / font 五类可替换，全部即时生效并持久化 |
 | 观测 | ImGui 仪表盘（性能/主机/卡带/内容包/输入，CRT 参数可实时调） |
-| 演示卡带 | SNAKE（模块化范式 + 历史分数）、LIFE（康威生命游戏 + 资源图案库 + 可编辑棋盘）、BRICKS（打砖块 + 最高分存档）、CHOMP、RUNNER、WORMS（时钟天气 / 空投补给 / 阵地战，例示"重卡带"） |
+| 演示卡带 | SNAKE（模块化范式 + 历史分数）、LIFE（康威生命游戏 + 资源图案库 + 可编辑棋盘）、BRICKS（打砖块 + 最高分存档）、CHOMP、RUNNER、TETRIS（消行 + 分层绘制）、WORMS（时钟天气 / 空投补给 / 阵地战，例示"重卡带"） |
 | 机器接口 | CLI：`--cart/--scan/--json/--headless/--frames/--dump-screen/--dump-every/--seed/--screenshot/--log/--save-dir/--control/--version`；控制通道（NDJSON over TCP：读屏/查状态（含卡带自报状态与运行形态）/注入输入（含主机保留键 Esc）/单步/热重载/截图/传档/按路径装卡）；窗口模式下人可围观（标题标明 `[live]`/`[stepping]`）；agent 实例 `tools/agent_play.py`（开窗挑一张卡带玩起来，通用）、`agent_shell_demo.py`（操作系统界面） |
 | DevKit | `--new` 从模板生成骨架（资源示例 + 磁带码往返）；`--pack` 打包并校验；`--check-api` 校验注解与实装一致（函数、子表、**字段**）；`devkit/phos.lua` 提供编辑器补全 |
 

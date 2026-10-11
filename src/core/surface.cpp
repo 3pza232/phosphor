@@ -18,14 +18,14 @@ void Surface::put(int x, int y, char32_t ch, Color fg, Color bg) {
 
 void Surface::print(int x, int y, std::string_view text, Color fg, Color bg) {
     if (y < 0 || y >= h_) return;
-    // 右缘按**显示宽度**截断（汉字算两格）。起笔落在面外时 x 可负，
-    // 那时保留整行、由下面的逐格判断丢弃左边看不见的部分
-    const std::string clipped = text::truncate(text, w_ - x);
+    // 右缘按**显示宽度**截断（汉字算两格），一次解码走完：先截成串再逐码点写
+    // 会把同一段文本解码两遍。起笔落在面外时 x 可负，那时保留整行、
+    // 由逐格判断丢弃左边看不见的部分
     int col = x;
-    for (char32_t cp : text::decode(clipped)) {
+    for (char32_t cp : text::decode(text)) {
         const int cols = text::char_width(cp);
         if (cols == 0) continue;
-        if (col + cols > w_) break;  // 右边界放不下就停，宁少画不错位
+        if (col >= 0 && col + cols > w_) break;  // 右边界放不下就停，宁少画不错位
         if (col >= 0) screen_.put(ox_ + col, oy_ + y, cp, fg, bg);
         col += cols;
     }
@@ -49,6 +49,32 @@ void Surface::blit(int x, int y, const std::vector<std::string>& rows, Color fg,
 
 const Cell& Surface::at(int x, int y) const {
     return inside(x, y) ? screen_.at(ox_ + x, oy_ + y) : Screen::empty();
+}
+
+bool Surface::blend(int x, int y, char32_t ch, Color fg) {
+    if (!inside(x, y)) return false;
+    return screen_.blend(ox_ + x, oy_ + y, ch, fg);
+}
+
+void Surface::back(int x, int y, Color bg) {
+    if (!inside(x, y)) return;
+    screen_.back(ox_ + x, oy_ + y, bg);
+}
+
+void Surface::back_rect(int x, int y, int w, int h, Color bg) {
+    const int x0 = std::max(x, 0);
+    const int y0 = std::max(y, 0);
+    const int x1 = std::min(x + w, w_);
+    const int y1 = std::min(y + h, h_);
+    for (int row = y0; row < y1; ++row)
+        for (int col = x0; col < x1; ++col) screen_.back(ox_ + col, oy_ + row, bg);
+}
+
+void Surface::plot(int x2, int y2, Color fg) {
+    // 越界的是**子格**：一格 = 2 子格，所以边界是 w_*2 / h_*2
+    if (x2 < 0 || y2 < 0 || x2 >= w_ * 2 || y2 >= h_ * 2) return;
+    // 面局部子格 → 网格子格：只做平移，位序由 Screen::plot 一处推导
+    screen_.plot(ox_ * 2 + x2, oy_ * 2 + y2, fg);
 }
 
 char32_t Surface::glyph_at(int x, int y) const {

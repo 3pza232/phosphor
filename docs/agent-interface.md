@@ -114,9 +114,10 @@ phosphor --pack carts/snake --json
 | 命令 | 参数 | 说明 |
 |------|------|------|
 | `ping` | — | 连通性探测 |
-| `state.query` | `path?` | 主机状态：帧号、模式（含 `TAPE` 磁带码界面）、运行形态（`video`/`control_port`）、网格/内容区尺寸、面板宽度、皮肤/滤镜/启动动画/音效包/**字体方案**（顶层 `font` 是生效方案，全部可选在各 `packs.*` 里，如 `packs.font`；`packs.filter` 等装的是**屏幕上画的名字**，`packs.filter_ids` 等是逐位对应的**稳定 id**——要比对状态值或记住某一项就用 id，名字会随界面语言变）、**界面语言**（`language`：`zh`/`en`）、**菜单光标**（`cursor`：当前菜单选中第几行，`-1` = 当前模式没有菜单）、**卡带架顺序**（`shelf`：架上的卡带 id 数组，按玩家眼里的顺序＝最近打开优先；`cursor` 就是它的下标，于是"数到第几张再插卡"是可编程的）、音量、CRT 档位、**画面刷新率**（`fps`：30/60/120/180 之一，逻辑帧率恒为 60Hz，所以它只改刷新率与 CPU 占用、不改游戏速度；`render_fps` 是主机实测的刷新率）、音频是否就绪、**音乐状态**（`music.on` / `section` / `index` / `count`）、卡带元信息、卡带开销（`cart.update_ms` / `cart.draw_ms` = 最近一帧；`cart.update_peak_ms` / `cart.draw_peak_ms` = 约 1 秒窗口内的峰值，查偶发卡顿看这个；`cart.lua_mem_kb` = Lua 堆；`merge_ms` = 图层合成耗时，**卡带没建层时恒为 0**、`layers` = 该卡带的图层清单（名称/z/可见性，z 升序；空数组 = 没建层））、按住的键、存档概况、**通道自身状态**（`stepping` = 是否单步模式、`pending_steps` = 还欠几帧、`seed` = 本次随机种子、`host_time` = 卡带眼里的秒数、`last_error` = 最近一次命令的失败原因）。带 `path` 时另返回卡带 Lua 全局值（点分路径）；卡带定义 `debug_state()` 时另返回其内容（见下节） |
+| `state.query` | `path?` | 主机与卡带状态（字段见下方「state.query 字段表」）；带 `path` 时另返回卡带 Lua 全局值（点分路径），卡带定义 `debug_state()` 时另返回其内容（见下节） |
 | `screen.read` | `layer?` | 当前屏幕网格：`layer`（读的是哪一份）/`width`/`height`/`frame` + `lines`（逐行文本数组）。不带 `layer` 读**合并结果**（= 整屏，与以前一致）；`layer = "screen"` 读的也是合并后的整屏，只是把"我读的是整屏"明说出来；带层名读该层自己的内容（内容区局部坐标）。**底层没有"合并前"的单独读法**——层是就地合并进底层的；"只想看世界"请让卡带把层隐起来（`layers` 里能看到，或卡带自己给开关） |
-| `screenshot` | `path` | 当前画面写成 PNG（含滤镜/扫描线等后处理），返回像素尺寸 |
+| `screenshot` | `path` | 当前画面写成 PNG（**CPU 光栅化**，无头可用；含滤镜/扫描线等后处理），返回像素尺寸 |
+| `frame.read` | `path?` | 读回**当前帧缓冲的真实像素**（`glReadPixels`，含着色器与逐层叠画）——与 CPU 的 `screenshot` 互补，是 GL 渲染路唯一的像素出口。**仅窗口路径可用**（无头报错）。返回 `width`/`height`/`lit_ratio`（亮像素占比）/`mean_luma`；带 `path` 时另写一张 PNG（行序翻转成与 `screenshot` 同向，可直接对照）。`tools/gl_smoke.py` 用它核对"不是全黑""同格两笔""半格""逐层叠画" |
 | `carts.scan` | — | 扫描 `carts/` 目录，返回卡带列表（含 `error`） |
 | `input.inject` | `key`, `down`(bool)，可选 `frames` | 注入虚拟键（可用键名见 [api-reference.md](api-reference.md) 的「phos.input」一节）；`frames` 表示按住 N 个逻辑帧后自动释放。命令本身**立即回包**，实时与单步模式下都一样。`key` 也可为主机保留键 `escape`（见下节） |
 | `input.text` | `text` | 注入一段文本（UTF-8，可含中文），与玩家敲键盘等价。**只在下一逻辑帧可见**（文本是按帧的，下一帧自动清空） |
@@ -129,6 +130,40 @@ phosphor --pack carts/snake --json
 | `cart.reload` | — | 热重载当前卡带（改完代码立即生效） |
 | `cart.eject` | — | 弹出卡带，回到系统界面 |
 | `quit` | — | 关闭主机进程 |
+
+### `state.query` 字段表
+
+`state.query` 的响应是一个扁平对象，按下表读；`id` / `ok` 之外全部同级展开。
+
+| 字段 | 含义 |
+|------|------|
+| `frame` | 逻辑帧号 |
+| `mode` | 当前模式（含 `TAPE` 磁带码界面） |
+| `playing` | 是否正在玩某张卡带 |
+| `stepping` / `pending_steps` | 是否单步模式 / 还欠几帧（见「时间语义」） |
+| `video` / `control_port` | 运行形态（`window` / `headless`）/ 控制端口（0 = 未开） |
+| `grid_w` / `grid_h` | **整屏网格**尺寸（默认 84×51，随皮肤几何；`screen.read` 读的是它） |
+| `content_w` / `content_h` | **内容区**尺寸（恒 80×45，卡带只面对它） |
+| `panel_w` | 侧栏面板宽度（0 = 无面板） |
+| `skin` / `filter` / `boot` / `sound` / `font` | 生效的皮肤 / 滤镜 / 启动动画 / 音效包 / 字体方案（**名字**） |
+| `packs` | 各类型的可选清单：`skin` / `filter` / `boot` / `sound` 是**屏幕上画的名字**数组，`*_ids` 是逐位对应的**稳定 id**；字体是 `font` 名字数组。要比对状态值或记住某一项**用 id**，名字随界面语言变 |
+| `language` | 界面语言（`zh` / `en`） |
+| `cursor` | 菜单光标行号（`-1` = 当前模式没有菜单） |
+| `shelf` | 卡带架顺序（卡带 id 数组，最近打开优先）；`cursor` 就是它的下标——"数到第几张再插卡"因此可编程 |
+| `crt_level` | 显像管档位 |
+| `fps` / `render_fps` | 画面刷新率档位（30/60/120/180）/ 主机实测刷新率。逻辑帧率恒为 60Hz，所以档位只改刷新率与 CPU 占用、不改游戏速度 |
+| `music_volume` / `sfx_volume` | 两路音量（0~100） |
+| `audio` / `voices` / `dropped` | 音频是否就绪 / 活跃声部数 / 请求队列丢弃数 |
+| `music` | `{ on, section, index, count }`：是否在播 / 当前乐段名 / 曲序位置 / 曲序总数 |
+| `cart` | 卡带元信息与开销：`id` / `name` / `version` / `author` / `path` / `sidebar_w`；`update_ms` / `draw_ms`（最近一帧）、`update_peak_ms` / `draw_peak_ms`（约 1 秒窗口峰值，查偶发卡顿看这个）、`lua_mem_kb`（Lua 堆）。未插卡时为 `null` |
+| `merge_ms` | 图层合成耗时（**卡带没建层时恒为 0**） |
+| `layers` | 该卡带的图层清单（名称 / z / 可见性，z 升序；空数组 = 没建层） |
+| `held_keys` | 当前按住的虚拟键名数组 |
+| `save` | 存档概况 `{ available, entries }` |
+| `seed` / `host_time` | 本次随机种子 / 卡带眼里的运行秒数 |
+| `last_error` | 最近一次卡带错误（**命令失败本身即时以 `error` 回包，不写入这里**） |
+| `path` / `value` | 仅当请求带 `path` 时：所查路径与其 Lua 值（不可序列化的值表示为 `{"__type": "…"}`） |
+| `debug` | 仅当卡带定义 `debug_state()` 时：它返回的内容 |
 
 ### 事件
 
@@ -166,8 +201,11 @@ $w.WriteLine('{"id":3,"cmd":"quit"}')
 > 参考实现：`tools/control_test.py`——本仓库的回归脚本，
 > 覆盖握手、状态查询、单步确定性、读屏、注入输入、热重载、扫描与退出码；
 > `tools/window_smoke.py` 覆盖**窗口路径**（开窗跑时钟、菜单→开局、按键、`time.step` 精确性）；
-> `tools/cart_smoke.py` 覆盖**卡带运行**：出厂卡带跑得完、不出错、有画面，
-> 且同种子跑两遍逐字节一致（不比对像素——画面本来就该随卡带内容变）。
+> `tools/cart_smoke.py` 覆盖**卡带运行**：出厂卡带跑得完、不出错、有画面，且同种子跑两遍
+> 逐字节一致（不比对像素——画面本来就该随卡带内容变），另有一段**驱动局**把卡带真玩起来；
+> `tools/draw_smoke.py` 覆盖**绘制契约**：读像素核对同格两笔、只写底色与子位落笔。
+> `tools/gl_smoke.py` 覆盖 **GL 渲染路**：开窗用 `frame.read` 读回真实帧，核对不是全黑、
+> 同格两笔、半格与逐层叠画（CPU 的 `screenshot` 覆盖不到着色器与图层叠画）。
 > 完整应用见：`agent_play.py`（开窗挑一张卡带玩起来，任意卡带都行）、
 > `agent_shell_demo.py`（操作系统界面）。各脚本的跑法见仓库 README 的"开发脚本"表。
 

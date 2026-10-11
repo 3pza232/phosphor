@@ -32,6 +32,14 @@ local HIT_R2 = Worms.HIT_RADIUS * Worms.HIT_RADIUS
 AI.PREVIEW_DT = 1 / 30      -- 预演的时间步（秒）：真正的物理，只是不画画面
 AI.PREVIEW_MAX_T = 14       -- 一枚弹药最多预演这么久
 AI.BATCH = 20               -- 每帧最多预演多少组（预算：稳在一帧之内）
+
+-- 赶路时的死胡同检测（判定逻辑在 main.lua 的 update_ai，阈值放这里与性格参数同处）
+AI.STUCK_T = 0.9            -- 观察多久还没挪动就判死胡同（秒）
+AI.STUCK_MOVE = 3           -- "挪动了"的最小净位移（子格）：0.9 秒常速能走约 9 格，远大于它
+AI.STUCK_NEAR = 6           -- 离上次撞墙处这么近，就当作还在同一个死胡同口
+-- 激光（ray 计划）的瞄准抖动比例：它是**没有风偏**的直线，同样的角度抖动会被距离
+-- 放大成好几格的横向偏移，所以手抖要按比例压小（见 Planner:result）
+AI.RAY_AIM_SCALE = 0.25
 -- 血量不超过这个比例就算"伤员"，值得用治疗弹。
 -- 用"不超过"而不是"低于"：本作的伤害值（8/10/25/30/50）经常正好把血打到 50，
 -- 卡在严格小于上会让最需要治疗的那只恰好被跳过
@@ -49,14 +57,28 @@ AI.WEIGHTS = {
   dig_cap = 40,    -- 挖地形的计分上限：一炮能挖的格数无上限（天基炮连跳、贯穿的激光），
                    -- 不封顶的话"挖土多"会盖过"打到人"，AI 就会挑着对空气开炮
   self = 0.8,      -- 自伤（每点，乘这个系数）
+  mate = 5.0,      -- 打到**队友**（每点）：比自伤高得多——自伤是自己付代价，
+                   -- 误伤队友等于替对面打掉一条命。权重必须高过 damage，否则
+                   -- "炸到 1 个敌人 + 1 个队友"在账面上仍然赚
+  mate_flat = 40,  -- 打到队友再加一笔**定额**罚分：让"会打到队友"的炮明显劣于"干净"的炮，
+                   -- 但只要战果够大仍可能值（"误伤不是硬禁止"）。单靠按点的 mate 权重时，
+                   -- 小伤害武器（激光 22）误伤一个队友还不足以压低整炮，定额罚正好补上
   near = 1.0,      -- 离目标越远越差：没打中时靠它挑"谁离得最近"
   near_cap = 60,   -- 偏离扣分的上限
+  blocked = 45,    -- 抛物线被地形挡住（预演走到半路撞地）：这种炮多半炸在自己脚边，
+                   -- 光靠"落点远"扣分不够：近处自伤还可能被算成"打到自己人"的收益
   -- 机会成本：**按稀缺度定价**。不用"本回合已评出的最高分"当门限——那种算法依赖评估顺序，
   -- 换个顺序结论就变，加一件武器还可能悄悄改掉别人的定价。
   -- 无限弹（ammo<0）几乎免费；限量弹按 1/剩余发数 计价：剩 1 发就是 30 分，剩 4 发只有 7.5 分
   ammo = 30,
   ammo_free = 2,   -- 无限弹的固定小成本（"打光了也有得打"，不是免费随便打）
 }
+
+-- 赶路的两个参数。放在这里而不是 main.lua：**"要多积极地找架打"属于性格**，
+-- 与难度档位是同一类东西，将来调难度档时该在一起看
+AI.WALK_CHUNK = 1.5   -- 每次赶路先走这么久，再重算一遍（一次走太久会冲过射程）
+AI.WALK_LEAVE = 8     -- 回合只剩这么多秒就不再赶路：改为就地消极处理
+                      -- （大地图上跑过去要十几秒，走到一半没时间开炮等于白走）
 
 -- 难度：决定"算得多细""手有多稳""什么时候肯换位置"，但**没有一档是必中**——
 -- 越难只是把误差压小、扫描做细、走位更积极，最后一击仍要看风向与地形
@@ -101,13 +123,15 @@ local function preview(ctx, shooter, weapon, aim)
     return nil
   end
 
-  local t = 0
+  local t, kind = 0, nil
   while t < AI.PREVIEW_MAX_T do
-    local kind = Physics.step(p, AI.PREVIEW_DT, ctx.wind, probe)
+    kind = Physics.step(p, AI.PREVIEW_DT, ctx.wind, probe)
     t = t + AI.PREVIEW_DT
     if kind then break end
   end
-  return { x = p.x, y = p.y, hit = hit_worm }
+  -- blocked：这一炮**被地形挡住了**（预演走到半路撞地）。上层据此专门扣分——
+  -- 炮口就在自己身上，被挡住的炮往往炸回自己脚边，"落点离目标远"这一项还不够说明问题
+  return { x = p.x, y = p.y, hit = hit_worm, blocked = (kind == "terrain") }
 end
 
 -- ---------- 瞄准求解器：产出"试哪些瞄法" ----------
@@ -176,12 +200,27 @@ PLANS.ray = {
 
 -- ---------- 效果：把落点翻译成"世界变化量"（全部纯计算，不许改世界） ----------
 -- delta 字段就是评分表的输入，加新效果时**顺手加字段**即可，评分不必改：
---   damage / hits / heal / drown / trap / dig / own_damage / own_drown / own_trap
+--   damage / hits / heal / drown / trap / dig
+--   own_*  射手**自己**吃到的（自伤 / 自己掉水里 / 自己被埋）
+--   mate_* 除射手以外的**自己队**吃到的（误伤队友）—— 两者分开记，因为权重不同
 local EFFECTS = {}
 
 local function new_delta()
   return { damage = 0, hits = 0, heal = 0, drown = 0, trap = 0, dig = 0,
-           own_damage = 0, own_drown = 0, own_trap = 0 }
+           own_damage = 0, own_drown = 0, own_trap = 0,
+           mate_damage = 0, mate_drown = 0, mate_trap = 0 }
+end
+
+-- 把"自己队吃到的伤害"分流进 own_* 还是 mate_*：射手本人算自伤，其余算误伤队友
+local function count_friendly(d, ctx, point, damage, near_water_hit)
+  if point == ctx.shooter then
+    d.own_damage = d.own_damage + damage
+    if near_water_hit then d.own_drown = d.own_drown + 1 end
+  else
+    d.mate_damage = d.mate_damage + damage
+    if near_water_hit then d.mate_drown = d.mate_drown + 1 end
+    d.mate_x = point.x  -- 记下会被打到的队友位置：上层靠它决定"往哪边挪来避让"
+  end
 end
 
 -- 水边判定：脚下离水面这么近就算"一炸就下去"（子格）。纯几何，不改世界
@@ -202,8 +241,7 @@ EFFECTS.blast = function(ctx, weapon, impact)
   end
   if #ctx.mine > 0 then
     for _, h in ipairs(Physics.blast(impact.x, impact.y, r, dmg, ctx.mine, nil)) do
-      d.own_damage = d.own_damage + h.damage
-      if near_water(ctx, h.point) then d.own_drown = d.own_drown + 1 end
+      count_friendly(d, ctx, h.point, h.damage, near_water(ctx, h.point))
     end
   end
   return d
@@ -245,19 +283,31 @@ EFFECTS.mound = function(ctx, weapon, impact)
       end
     end
   end
-  -- 谁被埋住：身体落在新增格里的都算（含自己人 —— 埋到自己人头上要扣分）
+  -- 谁被埋住：身体落在新增格里的都算（含自己人 —— 埋到自己人头上要扣分）。
+  -- 每只**只计一次**：用局部 trapped 标记，不能拿累计的 d.trap 当判据 ——
+  -- 第一只被判埋之后 d.trap 就 > 0，后面的敌人会一个个被误判成"已计过"而提前收手
   for _, e in ipairs(ctx.enemies) do
+    local trapped = false
     for y = math.floor(e.y) - 5, math.floor(e.y) do
       for x = math.floor(e.x) - 1, math.floor(e.x) + 1 do
-        if filled[x .. "," .. y] then d.trap = d.trap + 1 break end
+        if filled[x .. "," .. y] then trapped = true break end
       end
-      if d.trap > 0 and d.trap % 1 == 0 then break end
+      if trapped then break end
     end
+    if trapped then d.trap = d.trap + 1 end
   end
   for _, m in ipairs(ctx.mine) do
     if m.alive then
       for y = math.floor(m.y) - 5, math.floor(m.y) do
-        if filled[math.floor(m.x) .. "," .. y] then d.own_trap = d.own_trap + 1 break end
+        if filled[math.floor(m.x) .. "," .. y] then
+          if m == ctx.shooter then
+            d.own_trap = d.own_trap + 1
+          else
+            d.mate_trap = d.mate_trap + 1
+            d.mate_x = m.x  -- 记下会被埋的队友位置，供上层挪位避让
+          end
+          break
+        end
       end
     end
   end
@@ -279,7 +329,7 @@ EFFECTS.strike = function(ctx, weapon, impact)
   end
   for _, m in ipairs(ctx.mine) do
     if m.alive and math.abs(m.x - impact.x) <= half then
-      d.own_damage = d.own_damage + math.min(m.hp, (o.damage or 0) * ticks)
+      count_friendly(d, ctx, m, math.min(m.hp, (o.damage or 0) * ticks), false)
     end
   end
   -- 挖穿：光柱那一列还有多少实心格（每格 1 分地记，权重很低）
@@ -315,6 +365,16 @@ EFFECTS.beam = function(ctx, weapon, impact)
         end
       end
     end
+    -- 射线同样会伤到自己队：漏掉这一段的话，AI 会挑着"穿过队友"的角度打激光
+    for _, m in ipairs(ctx.mine) do
+      if m.alive and not hit_any[m] then
+        local dx, dy = m.x - x, m.y - 3 - y
+        if dx * dx + dy * dy <= r * r then
+          hit_any[m] = true
+          count_friendly(d, ctx, m, weapon.damage or 0, near_water(ctx, m))
+        end
+      end
+    end
   end
   return d
 end
@@ -343,7 +403,7 @@ local function nearest(x, y, list)
   return near
 end
 
-local function score_of(delta, weapon, near, ctx)
+local function score_of(delta, weapon, near, ctx, blocked)
   local w = AI.WEIGHTS
   local mult = weapon.ai_mult or 1   -- 预演只看得到一枚的武器（散射/集束）在数据里声明这个折扣
   local s = delta.damage * mult * w.damage
@@ -355,19 +415,29 @@ local function score_of(delta, weapon, near, ctx)
             - delta.own_damage * mult * w.self
             - delta.own_drown * w.drown
             - delta.own_trap * w.trap
+            - delta.mate_damage * mult * w.mate
+            - delta.mate_drown * w.drown
+            - delta.mate_trap * w.trap
+            -- 打到队友再扣一笔定额（与伤害多少无关）：把"会误伤"整体压下去，
+            -- 让它只在战果明显更大时才被选中
+            - ((delta.mate_damage > 0 or delta.mate_drown > 0 or delta.mate_trap > 0)
+               and w.mate_flat or 0)
             - math.min(near, w.near_cap) * w.near
+            - (blocked and w.blocked or 0)   -- 抛物线被地形挡住：这一炮等于白打
   return s - ammo_cost(weapon, ctx)
 end
 
 -- 一句话说明"它为什么赢"：写进日志与观察口，人读得懂，agent 也能匹配
-local function reason_of(weapon, delta)
+local function reason_of(weapon, delta, blocked)
   local parts = {}
+  if blocked then parts[#parts + 1] = "被挡" end
   if delta.damage > 0 then parts[#parts + 1] = string.format("伤%d", math.floor(delta.damage + 0.5)) end
   if delta.heal > 0 then parts[#parts + 1] = string.format("回%d", math.floor(delta.heal + 0.5)) end
   if delta.trap > 0 then parts[#parts + 1] = string.format("埋%d", delta.trap) end
   if delta.drown > 0 then parts[#parts + 1] = string.format("入水%d", delta.drown) end
   if delta.dig > 0 and #parts == 0 then parts[#parts + 1] = string.format("挖%d", delta.dig) end
   if delta.own_damage > 0 then parts[#parts + 1] = string.format("自伤%d", math.floor(delta.own_damage + 0.5)) end
+  if delta.mate_damage > 0 then parts[#parts + 1] = string.format("误伤%d", math.floor(delta.mate_damage + 0.5)) end
   if #parts == 0 then parts[#parts + 1] = "封路" end
   return weapon.id .. " " .. table.concat(parts, " ")
 end
@@ -379,7 +449,9 @@ Planner.__index = Planner
 -- 开始规划。allowed 是"这只虫子现在能用的武器表"（由上层给：有没有弹药、用不用得上）
 function AI.plan_begin(shooter, all_worms, terrain, wind, difficulty, allowed)
   local cfg = AI.DIFFICULTY[difficulty or "normal"]
-  local ctx = { terrain = terrain, wind = wind, enemies = {}, mine = {}, wounded = {} }
+  -- shooter 也放进 ctx：效果函数要分清"这一炮伤到的是射手本人还是队友"
+  local ctx = { terrain = terrain, wind = wind, shooter = shooter,
+                enemies = {}, mine = {}, wounded = {} }
   for _, w in ipairs(all_worms) do
     if w.alive then
       if w.team == shooter.team then
@@ -430,11 +502,19 @@ function Planner:advance(batch)
 
     local impact = plan.impact(self.ctx, self.shooter, weapon, aim)
     local delta = EFFECTS[weapon.effect or "blast"](self.ctx, weapon, impact)
-    local near = nearest(impact.x or self.shooter.x, impact.y or self.shooter.y, targets)
-    local score = score_of(delta, weapon, near, self.ctx)
+    -- 求解器自己给出"离目标多近"时以它为准：射线没有落点，拿炮口到目标的距离当 near
+    -- 会得出几百子格，于是激光的"够不着"判断永远为真（它会站在那儿对空气开炮）
+    local near = impact.near
+        or nearest(impact.x or self.shooter.x, impact.y or self.shooter.y, targets)
+    local blocked = impact.blocked   -- 抛物线被地形挡住（见 preview）
+    local score = score_of(delta, weapon, near, self.ctx, blocked)
 
     local cand = { weapon = weapon, aim = aim, score = score, near = near,
-                   delta = delta, reason = reason_of(weapon, delta) }
+                   blocked = blocked, delta = delta,
+                   reason = reason_of(weapon, delta, blocked),
+                   -- 误伤标记与被打到的队友位置：上层据此先尝试挪位避让
+                   mate = (delta.mate_damage > 0 or delta.mate_drown > 0 or delta.mate_trap > 0),
+                   mate_x = delta.mate_x }
     if not self.best or score > self.best.score then self.best = cand end
     -- 留下前几名：观察口能看到"它都考虑过什么"，出问题时不必猜
     self.top[#self.top + 1] = cand
@@ -448,10 +528,18 @@ function Planner:advance(batch)
       if plan.refine then
         local b, cfg = self.best, self.cfg
         local refined = {}
-        for angle = b.aim.angle - cfg.a_step, b.aim.angle + cfg.a_step, 2 do
-          for power = math.max(0.15, b.aim.power - cfg.p_step),
-                        Physics.clamp_power(b.aim.power + cfg.p_step), 0.02 do
-            refined[#refined + 1] = { angle = angle, power = power }
+        if b.weapon.plan == "ray" then
+          -- 激光是没风偏的直线，粗扫 4° 一格太糙：围着最优解 0.5° 一格细修，
+          -- 否则"算准了却差半度"会一路放大成目标旁好几格（力度对它无意义，只修角度）
+          for angle = b.aim.angle - cfg.a_step, b.aim.angle + cfg.a_step, 0.5 do
+            refined[#refined + 1] = { angle = angle, power = 1.0 }
+          end
+        else
+          for angle = b.aim.angle - cfg.a_step, b.aim.angle + cfg.a_step, 2 do
+            for power = math.max(0.15, b.aim.power - cfg.p_step),
+                          Physics.clamp_power(b.aim.power + cfg.p_step), 0.02 do
+              refined[#refined + 1] = { angle = angle, power = power }
+            end
           end
         end
         if #refined > 0 then
@@ -474,13 +562,22 @@ end
 function Planner:result()
   local b, cfg = self.best, self.cfg
   if not b then return nil end
-  local aj, pj = math.floor(cfg.angle * 10), math.floor(cfg.power * 1000)
+  -- 激光是没风偏的直线：同样的角度抖动会被距离放大成好几格的横向偏移，
+  -- 所以人工手抖按 RAY_AIM_SCALE 压小（这也是"AI 的激光怎么老歪"的来历）
+  local spread = (b.weapon.plan == "ray") and AI.RAY_AIM_SCALE or 1.0
+  local aj, pj = math.floor(cfg.angle * 10 * spread), math.floor(cfg.power * 1000)
   return {
     weapon = b.weapon,
     angle = b.aim.angle + phos.sys.random(-aj, aj) / 10,
     power = Physics.clamp_power(b.aim.power + phos.sys.random(-pj, pj) / 1000),
     near = b.near,
+    -- blocked 必须一起交出去：上层靠它判"这一炮是不是白打（要不要先换个位置）"。
+    -- 漏掉这个字段的话，上层读到的永远是 nil，那条判断就成了摆设
+    blocked = b.blocked,
     reason = b.reason,
+    -- 误伤信息交给上层：它会先尝试挪位避让（见 main.lua 的 update_ai）
+    mate = b.mate,
+    mate_x = b.mate_x,
   }
 end
 

@@ -201,21 +201,27 @@ void App::tick_playing(float dt) {
     if (drawn) ok = cart_->draw();
     const auto t2 = clock::now();
 
-    // 图层合成：只在这一帧真的画过、且卡带建过层时发生。
-    // 没建层的卡带 `active()` 为假，这一步不存在——不是"快路径等价"，是根本没有它
-    cart_merge_ms_ = 0.0f;
-    if (drawn && ok && host_.layers.active()) {
-        const auto m0 = clock::now();
-        host_.layers.merge_over(screen_, host_.content_x, host_.content_y);
-        cart_merge_ms_ = std::chrono::duration<float, std::milli>(clock::now() - m0).count();
-    }
-
+    // 插卡闪烁画在**合成之前**：它是外壳的效果，要留在"底"上被渲染出来，
+    // 而不是只出现在屏幕文本里
     if (insert_flash_ > 0.0f) {
         insert_flash_ -= dt;
         effects::draw_insert_flash(screen_, content_rect(),
                                    active_filter_.slots[static_cast<size_t>(PaletteSlot::white)],
                                    active_filter_.slots[static_cast<size_t>(PaletteSlot::green)],
                                    frame_count_);
+    }
+
+    // 图层：只在这一帧真的画过、且卡带建过层时发生。
+    // 没建层的卡带 `active()` 为假，这一步不存在——不是"快路径等价"，是根本没有它。
+    //
+    // 这里做的是**文本视图**的合成（一格一个字形，取最上面那层）。**渲染不读它**：
+    // 渲染用 base_screen_ + 各图层逐层叠画，那是像素级叠加，一格能同时看见两层的笔画
+    cart_merge_ms_ = 0.0f;
+    if (drawn && ok && host_.layers.active()) {
+        base_screen_ = screen_;
+        const auto m0 = clock::now();
+        host_.layers.merge_over(screen_, host_.content_x, host_.content_y);
+        cart_merge_ms_ = std::chrono::duration<float, std::milli>(clock::now() - m0).count();
     }
 
     cart_update_ms_ = std::chrono::duration<float, std::milli>(t1 - t0).count();
@@ -254,6 +260,7 @@ void App::tick_playing(float dt) {
 void App::tick_boot(float dt) {
     host_.time += dt;
     boot_elapsed_ += dt;
+    shell_.advance_boot(dt);   // Shell::update 在开机期间不被调用，自检的时钟由这里推进
     if (boot_script_ && (!boot_script_->update(dt) || !boot_script_->draw())) {
         // 动画脚本出错：回退内置自检，不中断开机流程。
         // 必须留痕——静默回退会让作者以为自己的脚本生效了，排查时无从下手
@@ -499,7 +506,15 @@ int App::run_windowed(const CliOptions& opts) {
             }
         }
 
-        renderer.draw(screen_);
+        // 有图层的卡带：底（合成前的世界）+ 逐层叠画 —— 像素级"叠"，
+        // 于是雨滴能落在地形的笔画之上、笔画之外仍是地形。
+        // 没建层的卡带只画一块网格（不经过层合成）
+        const bool layered = playing_ && host_.layers.active();
+        renderer.draw(layered ? base_screen_ : screen_);
+        if (layered) renderer.draw_layers(host_.layers, host_.content_x, host_.content_y);
+        // frame.read 的读回点：本帧已画完、尚未 swap。放在调试台之前，
+        // 读回的是卡带画面本身，不含仪表盘
+        complete_frame_read(&renderer);
         if (console_.open) {
             DebugInfo info;
             fill_debug_info(info);

@@ -187,8 +187,8 @@ phosphor/
 │   ├── main.cpp
 │   ├── agent/  api/  cart/  core/  devkit/  pack/  platform/  render/  shell/
 ├── package/               # 程序包内容源（构建时整份复制到输出目录）
-│   ├── carts/             # 出厂卡带（snake / bricks / life / chomp / runner / worms）
-│   ├── theme/             # 出厂内容包：skin / boot / palette / sound / font
+│   ├── carts/             # 出厂卡带（snake / bricks / life / chomp / runner / tetris / worms）
+│   ├── theme/             # 出厂内容包：skin / boot / palette / sound / font，另有 icon 窗口图标
 │   ├── devkit/            # 模板卡带 / phos.lua 注解 / 说明
 │   └── mods/  saves/      # 覆盖层与存档目录（各带 README 引导）
 ├── tools/                 # 主机侧验证与演示脚本（Python）
@@ -228,7 +228,8 @@ PHOSPHOR/
 │   ├── boot/     启动动画
 │   ├── palette/  显像管配色与 CRT 参数
 │   ├── sound/    音效包
-│   └── font/     字体方案（default 方案含中文思源黑体）
+│   ├── font/     字体方案（default 方案含中文思源黑体）
+│   └── icon/     窗口与任务栏图标（phos_icon.jpg）
 ├── carts/                 # 卡带存放处（卡带架扫描这里）
 ├── devkit/                # 模板卡带 / phos.lua 注解（创作卡带用）
 ├── mods/                  # 覆盖层 Mod

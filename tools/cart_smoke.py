@@ -55,6 +55,21 @@ MIN_PNG_BYTES = 8192
 #: 屏幕文本里的实字符下限：宿主外壳至少有边框与铭牌，一个都不剩说明没画东西
 MIN_VISIBLE_CHARS = 200
 
+#: 驱动局（soak）：把卡带**真的玩起来**再跑一段。
+#: 无输入地跑，卡带会一直停在菜单里，玩法那条路一次都走不到 —— 天气、瞄准、回合、
+#: AI 全在菜单外面，坏了也测不出来（WORMS 的闪电就是这么漏过去的）。
+#: 种子挑的是"开局就在暴风雨里"的那个：天气与闪电只有这种局面才走得到。
+SOAK_SEED = 19
+SOAK_FRAMES = 1800
+
+#: 驱动时按的键：先把菜单走到底（靠画面记号找"开始"，见下面 walk_to_start），
+#: 之后轮流按这些键 —— 覆盖走位、跳跃、开炮、切武器、开合浮窗
+SOAK_KEYS = ("right", "left", "up", "down", "space", "x", "b", "m", "k")
+
+#: 光标停在"开始"那一行时，卡带会在行首画 ">"。**认记号不认行号**：数按键次数
+#: 是脆的（菜单一加行就停错地方），而且这种脆法不会让门禁变红，只会让它白测一场
+START_MARKERS = ("开始", "START")
+
 EXE = "./phosphor.exe"
 SCRATCH_DIR = Path("tests-out")
 
@@ -120,11 +135,70 @@ def run_once(cart_id: str, seed: int, frames: int, tag: str) -> tuple[int, str, 
     return result.returncode, result.stdout, result.stderr, (png.read_bytes() if png.exists() else b"")
 
 
+def soak(cart_id: str) -> tuple[bool, str]:
+    """把卡带玩起来跑一段，返回（是否干净, 说明）。
+
+    与 `run_once` 的分工：那边测"主机属性"（跑得完、可复现、有画面），
+    这边测"玩法那条路真的走过" —— 卡带在菜单里睡 240 帧与玩过 30 秒是两件事。
+
+    干净 = 主机没报卡带错误、模式仍停在 PLAYING。卡带一抛错，主机会转到错误画面
+    并安全弹出，模式就不再是 PLAYING 了 —— 这条断言正是为了抓那一类。
+    """
+    from phos import Host  # 延迟导入：phos.py 与本文件同目录
+
+    saves = SCRATCH_DIR / "saves-soak"
+    shutil.rmtree(saves, ignore_errors=True)
+    SCRATCH_DIR.mkdir(parents=True, exist_ok=True)
+    try:
+        with Host(cart=f"carts/{cart_id}", headless=True, timeout=RUN_TIMEOUT,
+                  extra=["--seed", str(SOAK_SEED), "--save-dir", str(saves)]) as host:
+            host.step(20)
+            # 菜单 → 开局：每按一次下键就问一次"光标在开始项上了吗"
+            for _ in range(14):
+                if _start_focused(host):
+                    break
+                host.key("down", frames=2)
+            host.key("a", frames=2)
+
+            step = SOAK_FRAMES // len(SOAK_KEYS)
+            for key in SOAK_KEYS:
+                host.key(key, frames=2)
+                host.step(step)
+
+            state = host.state()
+            text = host.screen_text()
+    except Exception as error:  # 通道断了 / 进程死了都算失败，且要说清是什么
+        return False, f"驱动局跑不完：{error}"
+
+    mode = str(state.get("mode", "?"))
+    if "cart error" in text.lower():
+        line = next((l.strip() for l in text.splitlines() if "cart error" in l.lower()), "")
+        return False, f"驱动局里卡带报错：{line[:120]}"
+    if mode != "PLAYING":
+        return False, f"驱动局结束时模式是 {mode}（卡带已被弹出？）"
+    return True, f"{SOAK_FRAMES} 帧驱动局（seed {SOAK_SEED}）干净、模式仍为 PLAYING"
+
+
+def _start_focused(host) -> bool:
+    """光标是否停在"开始"那一项上。
+
+    判据是**同一行里既有光标记号 `>` 又有开始字样**：机身边框与侧栏也在行里，
+    所以不能要求 `>` 在行首（那会永远判假，测试白跑一场还不报错）。
+    侧栏的记号后面跟的是队伍名，撞不出"开始"两字，所以这条同时判两样足够稳。
+    """
+    for line in host.screen_text().splitlines():
+        if ">" in line and any(marker in line for marker in START_MARKERS):
+            return True
+    return False
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="卡带冒烟：跑得完 / 不出错 / 有画面 / 可复现")
     parser.add_argument("--cart", action="append", default=[], help="只跑这张卡带（可重复给）")
     parser.add_argument("--seed", type=int, default=DEFAULT_SEED, help="随机种子")
     parser.add_argument("--frames", type=int, default=DEFAULT_FRAMES, help="每遍跑多少逻辑帧")
+    parser.add_argument("--no-soak", action="store_true",
+                        help="跳过「把卡带玩起来」的驱动局（只测主机属性时用）")
     args = parser.parse_args()
 
     if not Path(EXE).exists():
@@ -163,6 +237,10 @@ def main() -> int:
         if not same:
             print(f"        两遍的产物留在 {SCRATCH_DIR}/（{cart_id}.run1.* 与 .run2.*）")
             print(f"        {first_difference(text, text2)}")
+
+        if not args.no_soak:
+            clean, detail = soak(cart_id)
+            report.check(clean, f"{cart_id}: {detail}")
 
     return report.finish()
 

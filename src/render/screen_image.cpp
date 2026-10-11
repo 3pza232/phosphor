@@ -113,7 +113,9 @@ void post_process(Canvas& canvas, const CrtParams& crt) {
 std::optional<ScreenImage> render_screen_image(const Screen& screen,
                                                const std::vector<std::string>& font_files,
                                                const ScreenImageOptions& options,
-                                               std::string& error) {
+                                               std::string& error,
+                                               const LayeredScreen* layers,
+                                               int origin_x, int origin_y) {
     FontChain fonts;
     std::string load_error;
     for (const std::string& path : font_files) {
@@ -144,6 +146,31 @@ std::optional<ScreenImage> render_screen_image(const Screen& screen,
     image.rgba.assign(static_cast<size_t>(image.width) * static_cast<size_t>(image.height) * 4, 0);
     canvas.data = image.rgba.data();
 
+    // 一格的字形：先按**追加顺序**画笔迹，最后画 ch —— ch 是最前面那一笔。
+    // 顺序必须与 GL 那条路（Renderer::emit_glyphs）一致：两条路画的是同一张图，
+    // 截图与无头回归才有意义
+    const auto draw_pens = [&](const Screen& grid, int cx, int cy, int x0, int y0) {
+        const Cell& cell = grid.at(cx, cy);
+        const auto one = [&](char32_t ch, const Color& fg) {
+            if (ch == U' ') return;
+            // 全角字符的位图天然比半角宽一倍，贴在同一基线上就自然跨两格
+            GlyphBitmap bitmap = fonts.rasterize(ch, static_cast<float>(cell_h));
+            if (bitmap.width <= 0 || bitmap.height <= 0) {
+                if (ch == U'?') return;
+                bitmap = fonts.rasterize(U'?', static_cast<float>(cell_h));  // 无字形：占位
+                if (bitmap.width <= 0 || bitmap.height <= 0) return;
+            }
+            // 全角字形把"字身框"在两格槽里居中：字体的推进宽度只有一格（16px），
+            // 不居中的话汉字会挤在左边、右边空出一格。半角直接用字体的推进位置
+            int glyph_x = x0 + bitmap.xoff;
+            if (cell.cols == 2) glyph_x += (cell_w * 2 - bitmap.advance) / 2;
+            blend_glyph(canvas, bitmap.pixels, bitmap.width, bitmap.height, glyph_x,
+                        y0 + static_cast<int>(baseline) + bitmap.yoff, fg, options.crt.glow);
+        };
+        for (const Screen::Ink& ink : grid.inks(cx, cy)) one(ink.ch, ink.fg);
+        one(cell.ch, cell.fg);
+    };
+
     for (int cy = 0; cy < screen.height(); ++cy) {
         for (int cx = 0; cx < screen.width(); ++cx) {
             const Cell& cell = screen.at(cx, cy);
@@ -154,22 +181,27 @@ std::optional<ScreenImage> render_screen_image(const Screen& screen,
             const int x0 = cx * cell_w;
             const int y0 = cy * cell_h;
             fill_cell(canvas, x0, y0, cell_w * cell.cols, cell_h, cell.bg);
-            if (cell.ch == U' ') continue;
+            draw_pens(screen, cx, cy, x0, y0);
+        }
+    }
 
-            // 全角字符的位图天然比半角宽一倍，贴在同一基线上就自然跨两格
-            GlyphBitmap bitmap = fonts.rasterize(cell.ch, static_cast<float>(cell_h));
-            if (bitmap.width <= 0 || bitmap.height <= 0) {
-                if (cell.ch == U'?') continue;
-                bitmap = fonts.rasterize(U'?', static_cast<float>(cell_h));  // 无字形：占位
-                if (bitmap.width <= 0 || bitmap.height <= 0) continue;
+    // 图层：按 z 升序逐层叠画。规则与 GL 那条路一致 —— 只有给过底色的格才铺底
+    // （铺了就盖住下面），字形只画自己的笔画，笔画之外透出下层
+    if (layers) {
+        for (const Layer* layer : layers->ordered()) {
+            if (!layer->visible) continue;
+            const Screen& src = layer->cells;
+            for (int cy = 0; cy < src.height(); ++cy) {
+                for (int cx = 0; cx < src.width(); ++cx) {
+                    const Cell& cell = src.at(cx, cy);
+                    if (cell.cols == 0) continue;   // 续格：整格由左邻的宽字形覆盖
+                    const int x0 = (origin_x + cx) * cell_w;
+                    const int y0 = (origin_y + cy) * cell_h;
+                    if (cell.alpha != 0)
+                        fill_cell(canvas, x0, y0, cell_w * cell.cols, cell_h, cell.bg);
+                    draw_pens(src, cx, cy, x0, y0);
+                }
             }
-            // 全角字形把"字身框"在两格槽里居中：字体的推进宽度只有一格（16px），
-            // 不居中的话汉字会挤在左边、右边空出一格。半角沿用既有位置，
-            // 免得动了已经定下来的 ASCII 像素基线。
-            int glyph_x = x0 + bitmap.xoff;
-            if (cell.cols == 2) glyph_x += (cell_w * 2 - bitmap.advance) / 2;
-            blend_glyph(canvas, bitmap.pixels, bitmap.width, bitmap.height, glyph_x,
-                        y0 + static_cast<int>(baseline) + bitmap.yoff, cell.fg, options.crt.glow);
         }
     }
 
@@ -200,22 +232,6 @@ bool write_png(const ScreenImage& image, const std::string& path, std::string& e
         return false;
     }
     return true;
-}
-
-std::optional<ScreenImage> load_png(const std::string& path, std::string& error) {
-    int width = 0, height = 0, channels = 0;
-    unsigned char* loaded = stbi_load(path.c_str(), &width, &height, &channels, 4);
-    if (!loaded) {
-        error = "cannot read PNG: " + path;
-        return std::nullopt;
-    }
-
-    ScreenImage image;
-    image.width = width;
-    image.height = height;
-    image.rgba.assign(loaded, loaded + static_cast<size_t>(width) * height * 4);
-    stbi_image_free(loaded);
-    return image;
 }
 
 } // namespace phos

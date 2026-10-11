@@ -12,12 +12,6 @@ bool uses_cell(const Cell& cell) {
     return cell.alpha != 0 || cell.ch != U' ' || cell.cols == 0;
 }
 
-/// 抹掉一格的字形（保留底色与存在性）：宽字被上层截断时用
-void drop_glyph(Cell& cell) {
-    cell.ch = U' ';
-    cell.cols = 1;
-}
-
 /// 合成后的宽字符归一。一格只有一个字形槽，而宽字占两格：
 /// 上层若压掉了某宽字的续格（或留下无头的续格），这个字就渲染不出来，
 /// 于是把不成对的格子降级成空格——底色留着，只是不再有字
@@ -29,7 +23,7 @@ void normalize_wide_chars(Screen& target, int ox, int oy, int w, int h) {
             const bool tail_ok = x + 1 < w && target.at(ox + x + 1, oy + y).cols == 0;
             if (tail_ok) continue;
             Cell fixed = cell;
-            drop_glyph(fixed);
+            fixed.clear_glyph();
             target.set(ox + x, oy + y, fixed);
         }
     }
@@ -42,7 +36,7 @@ void normalize_wide_chars(Screen& target, int ox, int oy, int w, int h) {
             const bool head_ok = x > 0 && target.at(ox + x - 1, oy + y).cols == 2;
             if (head_ok) continue;
             Cell fixed = cell;
-            drop_glyph(fixed);
+            fixed.clear_glyph();
             target.set(ox + x, oy + y, fixed);
         }
     }
@@ -121,8 +115,26 @@ bool LayeredScreen::merge_over(Screen& target, int origin_x, int origin_y) {
                 const Cell& cell = src.at(x, y);
                 if (!uses_cell(cell)) continue;
 
-                Cell merged = target.at(origin_x + x, origin_y + y);
-                // 字形槽：这层用到了这格，就以它的内容为准（空格 = 抹掉下层的字形）
+                const int px = origin_x + x, py = origin_y + y;
+                Cell merged = target.at(px, py);
+                // 这一层自己的叠笔：它们在本层字形之后、下层内容之前（合成按"先深后浅"），
+                // 所以倒着 prepend 一遍，让最早的那一笔落在最深处
+                const std::vector<Screen::Ink>& src_inks = src.inks(x, y);
+                for (auto it = src_inks.rbegin(); it != src_inks.rend(); ++it) {
+                    target.prepend_ink(px, py, it->ch, it->fg);
+                }
+                // 下层原有的字形：这一层画的是**可见字形**时，把下层那一笔压到后面去 ——
+                // 于是"下层的字 + 上层的字"在合成结果里是**叠加**（两笔都画），
+                // 而不是后来的把先前的顶掉。这一层只写空格时照旧（空格 = 抹掉下层字形）
+                if (cell.ch != U' ' && merged.ch != U' ' && merged.ch != cell.ch) {
+                    target.prepend_ink(px, py, merged.ch, merged.fg);
+                }
+                // 这一格的字形换人了：下层的**子位累积**随之作废，
+                // 否则之后再来半笔会拿旧的位掩码去合成，画出谁也没要过的形状。
+                // 用空格抹掉下层字形这一路同样要作废 —— 掩码记住的是"哪几个子位有笔"，
+                // 字形没了，这份记账也不再成立
+                target.forget_plot_bits(px, py);
+                // 字形槽：这层用到了这格，就以它的内容为准
                 merged.ch = cell.ch;
                 merged.fg = cell.fg;
                 merged.cols = cell.cols;
@@ -131,7 +143,7 @@ bool LayeredScreen::merge_over(Screen& target, int origin_x, int origin_y) {
                     merged.bg = cell.bg;
                     merged.alpha = 255;
                 }
-                target.set(origin_x + x, origin_y + y, merged);
+                target.set(px, py, merged);
             }
         }
     }

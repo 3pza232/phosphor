@@ -34,20 +34,18 @@ local function seg(S, x, y, text, col)
   return x + phos.text.width(text)
 end
 
-local NOTE_MARGIN = 6 -- 第 2 行右端的状态文字与右边框之间的留白（格）
+local NOTE_GAP = 3 -- 发射状态文字与"x 弹药数"之间的固定间距（格）
 
 function Hud.draw(S, C, ctx)
   local t = L()
   local w = ctx.worm
-  -- 先擦掉这三行：地形与水是先前画的，读数之间有空隙，不擦的话山体会从缝里透出来。
-  -- 擦的时候**要带底色**（用天空色）：世界里的水与山体都自带底色，只清字形的话，
-  -- 镜头压到它们上面时信息栏会露出那层底色。重铺成天空色，信息栏才始终浮在世界之上。
-  -- 宽度取**本卡带的可玩区**而不是写死 58：侧栏宽度一改，写死的那份就会擦错一截
+  -- 这三行**既不铺底也不擦**：信息栏是透明的一层，字直接压在世界上，笔画之外就是
+  -- 天空、山体或飘过的雪 —— 这正是要的效果（天气该从读数背后穿过去）。
+  -- 铺一条底色会让它看着像贴上去的色带，还会把雪挡在外面。
+  -- 宽度取**本卡带的可玩区**而不是写死 58：侧栏宽度一改，写死的那份就会算错一截
   local _, _, pw = phos.screen.playfield()
   local play_w = pw or 58
-  for row = 0, 2 do
-    S:print(0, row, string.rep(" ", play_w), C.white, ctx.sky)
-  end
+
 
   -- 第 0 行：回合数、倒计时、风、轮到谁。段与段之间固定留 2 格
   local cx = seg(S, 1, 0, string.format("%s %d", t.turn, ctx.round or 1), C.white)
@@ -83,7 +81,7 @@ function Hud.draw(S, C, ctx)
   elseif ctx.shots_left == 0 then
     note, note_col = t.fired, C.dark_gray
   end
-  local note_w = note and (phos.text.width(note) + 2) or 0
+  local weapon_end -- 武器那一行画到第几列（发射状态跟在它后面，见下）
 
   -- 第 1 行：角度（可以是负的 = 朝下）、力度、力度条
   if w and w.alive then
@@ -119,14 +117,16 @@ function Hud.draw(S, C, ctx)
     else
       power = tostring(spec.damage or 0)
     end
-    S:print(1, 2, phos.text.fit(
-      string.format("%s %s %s   x%s", t.weapon, name, power, ammo_txt), play_w - 2 - note_w),
-      (n == 0) and C.dark_gray or C.white)
+    local line = phos.text.fit(
+      string.format("%s %s %s   x%s", t.weapon, name, power, ammo_txt), play_w - 2)
+    S:print(1, 2, line, (n == 0) and C.dark_gray or C.white)
+    weapon_end = 1 + phos.text.width(line)
   end
-  if note then
-    -- 不贴右边框：留 NOTE_MARGIN 格空白，压着边框反而更乱（视觉上是"挤在角落里"）
-    local x = play_w - phos.text.width(note) - NOTE_MARGIN
-    if x > 20 then
+  if note and weapon_end then
+    -- 发射状态紧跟弹药数（固定间距）：它说的就是"这一炮"，摆到右边框底下就与武器脱节了。
+    -- 一行放不下就整条不画 —— 宁可少一句，也不要压到边框上或中途截断
+    local x = weapon_end + NOTE_GAP
+    if x + phos.text.width(note) <= play_w then
       S:print(x, 2, note, note_col)
     end
   end
@@ -137,24 +137,25 @@ function Hud.draw(S, C, ctx)
   -- f.text 是"没有数字"的说明（落海、燃烧、没弹药），此时不该硬拼出一个 -0
   for _, f in ipairs(ctx.floats or {}) do
     local text = f.text or string.format("-%d", math.floor((f.damage or 0) + 0.5))
-    S:print(f.x, f.y, text, (f.text and (f.color or C.white)) or C.white)
+    -- 颜色**只由 add_float 一处决定**（伤害红、治疗绿、落海蓝……），这里只负责画。
+    -- 在这里按"有没有文字"再挑一次色的话，伤害数字会被画成白色 —— 规矩就分成了两处
+    S:print(f.x, f.y, text, f.color or C.white)
   end
 end
 
--- 血条：画在虫子头顶。plate 由调用方给，nil = 不垫底板（保留该格原本的底色）。
+-- 血条：画在虫子头顶，**不垫底板**（不传底色 = 保留该格原本的底，不会挖出黑洞）。
+-- 底板是**整格**粒度的：垫上就比字身宽出一格，压在斜坡或水面上更像"挖了个洞"。
+-- 可读性靠配色：地形偏绿，满血用**青色**，括号用白色压住两端 ——
+-- 无论压在山体还是海里都读得出来。
 -- frac 是当前血量**比例**（0~1）：血量上限由开局菜单决定（10~800），
--- 所以这里一律按比例算格子与配色 —— 拿绝对值算的话，800 血的一局会永远显示满血青色。
--- 底板是**整格**粒度的：垫上就比字身宽出一格，压在斜坡或水面上更像"挖了个洞"，
--- 所以本作不垫（省略底色拿到的是世界自己的底，不会变黑洞）。
--- 可读性靠配色：地形偏绿，满血用**青色**，括号用白色压住两端——
--- 无论压在山体还是海里都读得出来
-function Hud.hp_bar(S, C, x, y, frac, plate)
+-- 所以这里一律按比例算格子与配色 —— 拿绝对值算的话，800 血的一局会永远显示满血青色
+function Hud.hp_bar(S, C, x, y, frac)
   local f = math.max(0, math.min(1, frac or 0))
   local n = math.ceil(f * 6)
   local fill = (f > 0.6 and C.cyan) or (f > 0.25 and C.yellow) or C.red
-  S:print(x - 3, y, "[", C.white, plate)
-  S:print(x - 2, y, string.rep("=", n) .. string.rep("-", 6 - n), fill, plate)
-  S:print(x + 4, y, "]", C.white, plate)
+  S:print(x - 3, y, "[", C.white)
+  S:print(x - 2, y, string.rep("=", n) .. string.rep("-", 6 - n), fill)
+  S:print(x + 4, y, "]", C.white)
 end
 
 return Hud

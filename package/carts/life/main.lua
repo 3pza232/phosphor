@@ -1,4 +1,4 @@
--- LIFE —— 康威生命游戏（卡带入口：装配模块 + 生命周期粘合）
+-- main.lua —— 康威生命游戏（卡带入口：装配模块 + 生命周期粘合）
 --
 -- 操作（键位与 keyboard 一一对应，见 phos.input.key_name）：
 --   方向键   移动光标
@@ -38,7 +38,8 @@ local function stamp_at_cursor()
 end
 
 function init()
-  Patterns.load()
+  local _, pattern_err = Patterns.load()
+  if pattern_err then print("[life] " .. pattern_err) end
   board = Board.new(Board.W, Board.H)
   board:soup(SOUP_DENSITY)
   cursor_x, cursor_y = math.floor(Board.W / 2), math.floor(Board.H / 2)

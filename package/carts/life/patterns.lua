@@ -1,4 +1,4 @@
--- 图案库：从包内 assets/patterns.txt 读取（演示 phos.assets.rows）
+-- patterns.lua —— 图案库：从包内 assets/patterns.txt 读取（演示 phos.assets.rows）
 --
 -- 文件格式：
 --   [名字]        图案开始
@@ -8,7 +8,6 @@
 local Patterns = {}
 
 Patterns.list = {}
-Patterns.error = nil
 
 local function parse(rows)
   local current = nil
@@ -32,19 +31,19 @@ local function parse(rows)
   end
 end
 
+-- 读图案库，返回 list, err。读不到或一条都没解析出来时**退回内置滑翔机**，
+-- 卡带永远可用；err 交给上层留痕——静默兜底会让人以为图案库生效了
 function Patterns.load()
   Patterns.list = {}
   local rows = phos.assets.rows("assets/patterns.txt")
   if not rows then
-    Patterns.error = "assets/patterns.txt missing"
-    -- 兜底：至少给一个滑翔机，保证卡带永远可用
     Patterns.list = { { name = "滑翔机", rows = { ".#.", "..#", "###" } } }
-    return Patterns.list
+    return Patterns.list, "图案库缺失（assets/patterns.txt），已退回内置滑翔机"
   end
   parse(rows)
   if #Patterns.list == 0 then
-    Patterns.error = "no pattern parsed"
     Patterns.list = { { name = "滑翔机", rows = { ".#.", "..#", "###" } } }
+    return Patterns.list, "图案库没解析出任何图案，已退回内置滑翔机"
   end
   return Patterns.list
 end

@@ -31,6 +31,17 @@ public:
     void fill(int x, int y, int w, int h, char32_t ch, Color fg, Color bg);
     /// 一次写多行（每行一条字符串），逐行按 print 的规则
     void blit(int x, int y, const std::vector<std::string>& rows, Color fg, Color bg);
+    /// 追加一笔（**叠加**：不清掉这一格已有的字形与笔迹）。
+    /// 同格里两笔各自按字形覆盖率混合，"两个东西落在同一格"因此是叠加而不是顶替。
+    /// 只收半角字形（宽字要占两格，那是 put 的活）；返回 false = 越界或这一格已满
+    bool blend(int x, int y, char32_t ch, Color fg);
+    /// 只写底色：字形与已叠的笔迹都不动。"背景比字形宽一格"就是在本格之外再 back 一次
+    void back(int x, int y, Color bg);
+    /// 整块只写底色（与 fill 的分工：fill 连字形一起写）
+    void back_rect(int x, int y, int w, int h, Color bg);
+    /// 在**子位**上落一笔：x / y 是子格坐标（一格 = 2x2 子位）。
+    /// 同一格的多次 plot 合并成一个象限字形，位序见 Screen::quadrant_glyph
+    void plot(int x2, int y2, Color fg);
     /// 整面填成空格
     void clear(Color fg, Color bg) { fill(0, 0, w_, h_, U' ', fg, bg); }
 

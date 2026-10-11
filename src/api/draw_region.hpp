@@ -50,6 +50,13 @@ public:
     void fill(int x, int y, int w, int h, char32_t ch, Color fg, Color bg);
     /// 一次写多行（每行一条字符串）：地图/画面搬运用，避免逐格与逐行调用
     void blit(int x, int y, const std::vector<std::string>& rows, Color fg, Color bg);
+    /// 追加一笔（叠加，不清掉已有内容），返回 false = 越界或这一格已满
+    bool blend(int x, int y, char32_t ch, Color fg);
+    /// 只写底色（字形与已叠的笔迹都不动）/ 整块只写底色
+    void back(int x, int y, Color bg);
+    void back_rect(int x, int y, int w, int h, Color bg);
+    /// 子格落笔：坐标是**子格**（一格 = 2x2 子位）
+    void plot(int x2, int y2, Color fg);
     void frame(std::string_view title);
     void divider(int y);
     void bar(int x, int y, int w, float ratio);

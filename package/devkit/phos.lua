@@ -102,6 +102,52 @@ function phos.screen.get(x, y) end
 ---@param bg phos.Color|nil
 function phos.screen.blit(x, y, rows, fg, bg) end
 
+---在**同一格**追加一笔（叠加）：不清掉这一格已有的字形与笔迹。
+---两笔各自按字形覆盖率混合，"两个东西落在同一格"因此是叠加而不是顶替
+---@param x integer
+---@param y integer
+---@param ch string|integer 字符（也可给**码点**整数）
+---@param fg phos.Color|nil
+---@return boolean ok false = 越界，或这一格已叠满（3 笔）
+function phos.screen.blend(x, y, ch, fg) end
+
+---只写这一格的**底色**：字形与已叠的笔迹都不动。
+---"背景比字形宽一格"就在本格之外再 back 一次
+---@param x integer
+---@param y integer
+---@param bg phos.Color|nil 省略 = 黑（与 fill 同组：这是"写底"的调用）
+function phos.screen.back(x, y, bg) end
+
+---整块只写底色（与 fill 的分工：fill 连字形一起写）
+---@param x integer
+---@param y integer
+---@param w integer
+---@param h integer
+---@param bg phos.Color|nil
+function phos.screen.back_rect(x, y, w, h, bg) end
+
+---在**子位**上落一笔：一格 = 2x2 子位（(x, y) 是子格坐标）。
+---同一格的多次 plot 合并成一个象限字形，位序由引擎定义（左上 / 右上 / 左下 / 右下）
+---@param x integer 子格坐标（0 ~ 宽度*2-1）
+---@param y integer 子格坐标（0 ~ 高度*2-1）
+---@param fg phos.Color|nil
+function phos.screen.plot(x, y, fg) end
+
+---位掩码 → 象限字形（1 左上 / 2 右上 / 4 左下 / 8 右下，0 = 空格、15 = 整格）。
+---给"已经算好四个子位"的绘制用（地形、地图）：`put` 一次画完一格，比逐子位 plot 省。
+---**位序与字形表只有引擎这一份** —— 卡带自己抄一张，迟早把左上与右上写反
+---@param bits integer 0~15
+---@return string
+function phos.screen.quadrant(bits) end
+
+---子格坐标 → **格坐标 + 子位**（位 1/2/4/8）。一格 = 2x2 子格，
+---这一步换算是引擎契约：相机、降水、光柱都用它，各处自己写 `floor(u/2)`
+---会让同一屏长出两套网格，差半格就是"看着陷进墙里"
+---@param x integer 子格坐标
+---@param y integer
+---@return integer gx, integer gy, integer bit
+function phos.screen.cell_of(x, y) end
+
 ---侧栏面板（需在 manifest 声明 sidebar）
 ---@class phos.panel
 phos.panel = {}
@@ -124,6 +170,34 @@ function phos.panel.resize(w) end
 ---@param fg phos.Color|nil
 ---@param bg phos.Color|nil
 function phos.panel.blit(x, y, rows, fg, bg) end
+
+---在同一格追加一笔（叠加）；返回 false = 越界或这一格已叠满（3 笔）
+---@param x integer 面板局部坐标
+---@param y integer
+---@param ch string|integer 字符（也可给**码点**整数）
+---@param fg phos.Color|nil
+---@return boolean ok
+function phos.panel.blend(x, y, ch, fg) end
+
+---只写底色：字形与已叠的笔迹都不动
+---@param x integer 面板局部坐标
+---@param y integer
+---@param bg phos.Color|nil 省略 = 黑
+function phos.panel.back(x, y, bg) end
+
+---整块只写底色
+---@param x integer
+---@param y integer
+---@param w integer
+---@param h integer
+---@param bg phos.Color|nil
+function phos.panel.back_rect(x, y, w, h, bg) end
+
+---子格落笔（(x, y) 是子格坐标：一格 = 2x2 子位）
+---@param x integer
+---@param y integer
+---@param fg phos.Color|nil
+function phos.panel.plot(x, y, fg) end
 
 ---写一个字符（越界裁到面板内；省略 bg = 保留该格原有背景）
 ---@param x integer 面板局部坐标
@@ -419,6 +493,10 @@ function phos.ui.region(x, y, w, h, opts) end
 ---@field print fun(self: phos.Region, x: integer, y: integer, text: string, fg: phos.Color|nil, bg: phos.Color|nil) 省略 bg = 保留该格原有背景
 ---@field fill fun(self: phos.Region, x: integer, y: integer, w: integer, h: integer, ch: any, fg: phos.Color|nil, bg: phos.Color|nil) 省略 bg = 保留该格原有背景
 ---@field blit fun(self: phos.Region, x: integer, y: integer, rows: string[], fg: phos.Color|nil, bg: phos.Color|nil) 一次写多行；省略 bg = 保留该格原有背景
+---@field blend fun(self: phos.Region, x: integer, y: integer, ch: any, fg: phos.Color|nil) 同一格追加一笔（叠加）；返回是否画上
+---@field back fun(self: phos.Region, x: integer, y: integer, bg: phos.Color|nil) 只写底色：字形与已叠的笔迹都不动
+---@field back_rect fun(self: phos.Region, x: integer, y: integer, w: integer, h: integer, bg: phos.Color|nil) 整块只写底色
+---@field plot fun(self: phos.Region, x: integer, y: integer, fg: phos.Color|nil) 子格落笔（坐标是子格：一格 = 2x2）
 ---@field frame fun(self: phos.Region, title: string|nil)
 ---@field divider fun(self: phos.Region, y: integer)
 ---@field bar fun(self: phos.Region, x: integer, y: integer, w: integer, ratio: number)
@@ -551,7 +629,7 @@ phos.sys = {}
 ---@return number
 function phos.sys.time() end
 
----当前逻辑帧率
+---当前实际画面帧率（逻辑帧率恒为 60；逻辑帧号见 phos.sys.frame）
 ---@return integer
 function phos.sys.fps() end
 

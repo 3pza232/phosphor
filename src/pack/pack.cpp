@@ -114,16 +114,6 @@ bool load_skin(const std::string& dir, Skin& out, std::string& err) {
     out.id = std::move(id);
     out.name = std::move(name);
 
-    auto read_rows = [](const sol::object& obj) {
-        std::vector<std::string> rows;
-        if (!obj.is<sol::table>()) return rows;
-        sol::table tbl = obj.as<sol::table>();
-        for (size_t i = 1; i <= tbl.size(); ++i) {
-            sol::object v = tbl[i];
-            if (v.is<std::string>()) rows.push_back(v.as<std::string>());
-        }
-        return rows;
-    };
     auto read_str = [&t](const char* key, const std::string& fallback) {
         sol::object v = t[key];
         return v.is<std::string>() ? v.as<std::string>() : fallback;
@@ -144,8 +134,8 @@ bool load_skin(const std::string& dir, Skin& out, std::string& err) {
         out.screen_w = kContentW;
         out.screen_h = kContentH;
     }
-    auto top = read_rows(t["top"]);
-    auto bottom = read_rows(t["bottom"]);
+    auto top = api::read_rows(t["top"]);
+    auto bottom = api::read_rows(t["bottom"]);
     if (!top.empty()) out.top = std::move(top);
     if (!bottom.empty()) out.bottom = std::move(bottom);
     out.left = read_str("left", out.left);

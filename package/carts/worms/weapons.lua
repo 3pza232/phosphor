@@ -78,7 +78,10 @@ Weapons.LIST = {
   { id = "orbital", name = { zh = "天基炮", en = "ORBITAL" }, short = { zh = "天基", en = "ORBIT" },
     kind = "ballistic", plan = "arc", effect = "strike", ai = "throw",
     wind = 1.0, damage = 0, radius = 0, ammo = 2,
-    orbital = { delay = 2.0, life = 3.0, tick = 0.5, damage = 18, width = 6 } },
+    -- 下落分两档（子格/秒）：穿空气快（"从天而降"看得见），**碰到土就急剧减速** ——
+    -- 不减速的话它会在光柱持续时间里一路钻穿整张地图。宽度是画与挖共用的那一对列边界
+    orbital = { delay = 2.0, life = 3.0, tick = 0.5, damage = 18, width = 6,
+                descend = 90, descend_dig = 4 } },
   { id = "barrel", name = { zh = "燃油桶", en = "FUEL BARREL" }, short = { zh = "燃油", en = "BARREL" },
     kind = "ballistic", plan = "arc", effect = "blast", ai = "throw",
     damage = 35, radius = 3, wind = 0.3, burn = 3.0, ammo = 2 },
@@ -87,14 +90,14 @@ Weapons.LIST = {
   { id = "laser", name = { zh = "激光射线", en = "LASER" }, short = { zh = "激光", en = "LASER" },
     kind = "laser", plan = "ray", effect = "beam", ai = "throw",
     damage = 22, radius = 1, wind = 0,
-    speed = 900, width = 1, ammo = 4 },
+    speed = 900, width = 1, ammo = 5 },
   { id = "missile", name = { zh = "导弹", en = "MISSILE" }, short = { zh = "导弹", en = "HOMING" },
     -- 追踪弹暂不给 AI：它的飞行要靠"边飞边转向"，这套预演（打一发看落点）算不出真实弹道，
     -- 硬塞进来只会算出假成绩。想让它参战，就得在 ai.lua 的 PLANS 里加一个"会跟的预演"
     kind = "track", ai = false, damage = 45, radius = 4, wind = 0, turn_rate = 60, ammo = 2 },
   { id = "cluster", name = { zh = "集束炸弹", en = "CLUSTER" }, short = { zh = "集束", en = "BOMBS" },
     -- ai_mult 只用于 AI 的**评分**：它预演的是母弹落点，看不到 5 枚子弹药，
-    -- 不放大就会被 AI 当成"15 伤害的弱弹"。物理本身没被改动
+    -- 不放大就会被 AI 当成"15 伤害的弱弹"。它与物理无关（伤害就是表里的 damage）
     kind = "multi", plan = "arc", effect = "blast", ai = "throw",
     damage = 18, radius = 3, wind = 1.2, splits = 5,
     ai_mult = 3, ammo = 2 },

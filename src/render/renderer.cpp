@@ -61,6 +61,7 @@ uniform float u_glow;    // 字符辉光 0..1
 uniform float u_comp;    // 亮度补偿系数（>= 1.0）
 uniform vec2 u_darkline; // 暗线相位区间（由 kScanlineDarkStart/End 传入）
 uniform vec3 u_tint;     // 显像管整体色调
+uniform float u_layer;   // 1 = 这一趟画的是图层（笔画为实、笔画之外透明）
 
 out vec4 frag_color;
 
@@ -85,7 +86,15 @@ void main() {
     else if (sub < 2.0) mask.g = 1.0;
     else mask.b = 1.0;
 
-    frag_color = vec4(color * scanline * mask * u_comp * u_tint, 1.0);
+    vec3 lit = color * scanline * mask * u_comp * u_tint;
+    // 图层趟：只输出**字形笔画**，alpha 用覆盖率 —— 笔画之外是透明的，
+    // 下层（地形、角色……）的像素原样透出来。这才是"两层叠在同一格"，
+    // 而不是"上层把下层顶掉"
+    if (u_layer > 0.5) {
+        frag_color = vec4(v_fg * scanline * mask * u_comp * u_tint, alpha);
+        return;
+    }
+    frag_color = vec4(lit, 1.0);
 }
 )";
 
@@ -278,18 +287,40 @@ bool Renderer::build_font_atlas(std::unique_ptr<FontChain> fonts, std::string& e
     return true;
 }
 
-void Renderer::draw(const Screen& screen) {
-    const int sw = screen.width();
-    const int sh = screen.height();
+void Renderer::emit_backgrounds(const Screen& screen, int ox, int oy, bool given_bg_only) {
     const float cw = static_cast<float>(cell_w_);
     const float chh = static_cast<float>(cell_h_);
-    const float win_w = cw * sw;
-    const float win_h = chh * sh;
+    // 底色四边形：UV 指向图集空白处（采样恒为 0），fg 也传底色 —— 混出来就是纯底色
+    auto push_vert = [&](float px, float py, const Color& bg) {
+        float f = 1.0f / 255.0f;
+        vertices_.insert(vertices_.end(), {
+            px, py, 0.0f, 0.0f,
+            bg.r * f, bg.g * f, bg.b * f,
+            bg.r * f, bg.g * f, bg.b * f});
+    };
 
-    vertices_.clear();
-    // 每格最多两块四边形（底色 + 字形），每块 6 个顶点
-    vertices_.reserve(static_cast<size_t>(sw) * sh * 12 * 10);
+    for (int y = 0; y < screen.height(); ++y) {
+        for (int x = 0; x < screen.width(); ++x) {
+            const Cell& cell = screen.at(x, y);
+            if (cell.cols == 0) continue;  // 续格：整格由左邻的宽字形覆盖
+            // 图层：没给过底色的格**什么都不铺**，下层从这一格透出来
+            if (given_bg_only && cell.alpha == 0) continue;
 
+            const float bx0 = (ox + x) * cw, by0 = (oy + y) * chh;
+            const float bx1 = bx0 + (cell.cols == 2 ? cw * 2 : cw), by1 = by0 + chh;
+            push_vert(bx0, by0, cell.bg);
+            push_vert(bx1, by0, cell.bg);
+            push_vert(bx1, by1, cell.bg);
+            push_vert(bx0, by0, cell.bg);
+            push_vert(bx1, by1, cell.bg);
+            push_vert(bx0, by1, cell.bg);
+        }
+    }
+}
+
+void Renderer::emit_glyphs(const Screen& screen, int ox, int oy, bool layer, GlyphPick pick) {
+    const float cw = static_cast<float>(cell_w_);
+    const float chh = static_cast<float>(cell_h_);
     auto push_vert = [&](float px, float py, float u, float v, const Color& fg, const Color& bg) {
         float f = 1.0f / 255.0f;
         vertices_.insert(vertices_.end(), {
@@ -298,55 +329,67 @@ void Renderer::draw(const Screen& screen) {
             bg.r * f, bg.g * f, bg.b * f});
     };
 
-    for (int y = 0; y < sh; ++y) {
-        for (int x = 0; x < sw; ++x) {
+    // 推**一笔**：几何与底色归位都在这里，一笔一份四边形。
+    // 与"一格一份"的区别只在调用次数 —— 叠了笔的格会调它两次以上
+    const auto push_pen = [&](int x, int y, char32_t ch, const Color& fg, const Color& bg) {
+        // 字体链里没有该字形时退到占位符：宁可显示 '?'，也不留一格空白
+        const Glyph* glyph = glyph_for(ch);
+        if (!glyph) glyph = glyph_for(U'?');
+        if (!glyph) return;
+
+        const Glyph& g = *glyph;
+        const float s = pack_scale_;
+        const float gx = (ox + x) * cw + g.xoff * s;
+        const float gy = (oy + y) * chh + (font_ascent_ + g.yoff) * s;
+        const float gw = g.w * s;
+        const float gh = g.h * s;
+
+        // 字形四边形。宽字符的位图天然跨两格，续格自身不绘制
+        push_vert(gx, gy, g.u0, g.v0, fg, bg);
+        push_vert(gx + gw, gy, g.u1, g.v0, fg, bg);
+        push_vert(gx + gw, gy + gh, g.u1, g.v1, fg, bg);
+        push_vert(gx, gy, g.u0, g.v0, fg, bg);
+        push_vert(gx + gw, gy + gh, g.u1, g.v1, fg, bg);
+        push_vert(gx, gy + gh, g.u0, g.v1, fg, bg);
+    };
+
+    for (int y = 0; y < screen.height(); ++y) {
+        for (int x = 0; x < screen.width(); ++x) {
             const Cell& cell = screen.at(x, y);
-            if (cell.cols == 0) continue;  // 续格：整格由左邻的宽字形覆盖
-
-            // 字体链里没有该字形时退到占位符：宁可显示 '?'，也不留一格空白
-            const Glyph* glyph = glyph_for(cell.ch);
-            if (!glyph) glyph = glyph_for(U'?');
-            if (!glyph) continue;
-
-            const Glyph& g = *glyph;
-            const bool blank = cell.ch == U' ';
-            const float s = pack_scale_;
-            const float gx = x * cw + g.xoff * s;
-            const float gy = y * chh + (font_ascent_ + g.yoff) * s;
-            const float gw = g.w * s;
-            const float gh = g.h * s;
-
-            // 先铺**整格**背景。字形四边形只有位图那么大，而位图又只有墨迹那一小块，
-            // 不铺整格的话，窄字形四周会留着 glClear 的黑色。
-            // fg 也传 bg：这样无论采样到图集的哪个像素，alpha 混出来的都是背景色
-            {
-                const float bx0 = x * cw, by0 = y * chh;
-                const float bx1 = bx0 + (cell.cols == 2 ? cw * 2 : cw), by1 = by0 + chh;
-                push_vert(bx0, by0, 0.0f, 0.0f, cell.bg, cell.bg);
-                push_vert(bx1, by0, 0.0f, 0.0f, cell.bg, cell.bg);
-                push_vert(bx1, by1, 0.0f, 0.0f, cell.bg, cell.bg);
-                push_vert(bx0, by0, 0.0f, 0.0f, cell.bg, cell.bg);
-                push_vert(bx1, by1, 0.0f, 0.0f, cell.bg, cell.bg);
-                push_vert(bx0, by1, 0.0f, 0.0f, cell.bg, cell.bg);
+            if (cell.cols == 0) continue;   // 续格：宽字形由头格一次画完
+            // 趟的分配看这一格**有没有笔迹**：没有的走不透明趟，有的走覆盖率趟。
+            // 逐格分趟而不是整屏分趟 —— 一趟只能有一种写法，整屏分趟会把底也带上
+            const bool has_pens = !screen.inks(x, y).empty();
+            if (pick == GlyphPick::pens && !has_pens) continue;
+            if (pick == GlyphPick::plain && has_pens) continue;
+            // 注意：图层里"有字形但没底色"是**正常**的（雨滴就是这样），不能跳过
+            //
+            // 顺序：先按**追加顺序**推这一格的笔迹，最后才推 ch —— ch 是最前面那一笔。
+            // 同一格里于是"先深后浅"（底线、风痕、正在画的这一笔各归各位），
+            // 而不是后来者把前者顶掉
+            for (const Screen::Ink& ink : screen.inks(x, y)) {
+                if (ink.ch != U' ') push_pen(x, y, ink.ch, ink.fg, cell.bg);
             }
-
-            // 空格没有字形：底色那一步已经铺满这一格，再推一份同色四边形没有意义。
-            // 空格的占比通常在三成以上，省下的是每帧一次的整块顶点构建
-            if (blank) continue;
-
-            // 字形四边形。宽字符的位图天然跨两格，续格自身不绘制
-            push_vert(gx, gy, g.u0, g.v0, cell.fg, cell.bg);
-            push_vert(gx + gw, gy, g.u1, g.v0, cell.fg, cell.bg);
-            push_vert(gx + gw, gy + gh, g.u1, g.v1, cell.fg, cell.bg);
-            push_vert(gx, gy, g.u0, g.v0, cell.fg, cell.bg);
-            push_vert(gx + gw, gy + gh, g.u1, g.v1, cell.fg, cell.bg);
-            push_vert(gx, gy + gh, g.u0, g.v1, cell.fg, cell.bg);
+            if (cell.ch != U' ') push_pen(x, y, cell.ch, cell.fg, cell.bg);  // 空格没有字形
         }
     }
+}
 
+void Renderer::submit(float win_w, float win_h, bool layer, bool clear_first) {
     glViewport(0, 0, static_cast<int>(win_w), static_cast<int>(win_h));
-    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-    glClear(GL_COLOR_BUFFER_BIT);
+    // 清屏**整帧只能有一次**（画底那一趟）。逐层叠画时每层也要铺底，但那是画在
+    // 已经画好的画面上：谁再清一次，底就被抹掉，画面只剩各层的字形
+    if (clear_first) {
+        glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+        glClear(GL_COLOR_BUFFER_BIT);
+    }
+    // 图层趟按覆盖率混合：底趟全是 alpha = 1，开关对它没有影响
+    if (layer) {
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    } else {
+        glDisable(GL_BLEND);
+    }
 
     shader_.use();
     shader_.set_vec2("u_resolution", win_w, win_h);
@@ -364,6 +407,7 @@ void Renderer::draw(const Screen& screen) {
     // 使"档位越高结构越明显，但整体亮度基本不变"
     const float loss = crt_.scanline * kScanlineLossPerUnit + crt_.mask * kMaskLossPerUnit;
     set_float("u_comp", crt_.compensate ? 1.0f + loss : 1.0f);
+    set_float("u_layer", layer ? 1.0f : 0.0f);
     shader_.set_vec2("u_darkline", kScanlineDarkStart, kScanlineDarkEnd);
     glUniform3f(glGetUniformLocation(shader_.id(), "u_tint"),
                 crt_.tint.r / 255.0f, crt_.tint.g / 255.0f, crt_.tint.b / 255.0f);
@@ -377,6 +421,61 @@ void Renderer::draw(const Screen& screen) {
                  vertices_.data(), GL_DYNAMIC_DRAW);
     glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(vertices_.size() / 10));
     glBindVertexArray(0);
+}
+
+void Renderer::draw(const Screen& screen) {
+    win_w_px_ = static_cast<float>(cell_w_) * screen.width();
+    win_h_px_ = static_cast<float>(cell_h_) * screen.height();
+
+    vertices_.clear();
+    // 每格最多两块四边形（底色 + 字形），每块 6 个顶点
+    vertices_.reserve(static_cast<size_t>(screen.width()) * screen.height() * 12 * 10);
+    emit_backgrounds(screen, 0, 0, false);
+    // ① 底：**不透明**，整帧唯一一次清屏
+    submit(win_w_px_, win_h_px_, false, true);
+
+    // ② 字分两趟。没笔迹的格不透明（不动既有画面），有笔迹的格按字形覆盖率叠到
+    //    已经画好的底上 —— 同格里几笔于是各自留下自己的笔画，而不是后来者把前者顶掉。
+    //    两趟各自一次 submit：一趟只能有一种"透不透"
+    vertices_.clear();
+    emit_glyphs(screen, 0, 0, false, GlyphPick::plain);
+    if (!vertices_.empty()) submit(win_w_px_, win_h_px_, false, false);
+
+    vertices_.clear();
+    emit_glyphs(screen, 0, 0, true, GlyphPick::pens);
+    if (!vertices_.empty()) submit(win_w_px_, win_h_px_, true, false);
+}
+
+void Renderer::draw_layers(const LayeredScreen& layers, int origin_x, int origin_y) {
+    for (const Layer* layer : layers.ordered()) {
+        if (!layer->visible) continue;
+
+        // ① 铺这层的底：只有它**真的给了底色**的格才铺（铺了就盖住下面）
+        vertices_.clear();
+        emit_backgrounds(layer->cells, origin_x, origin_y, true);
+        if (!vertices_.empty()) submit(win_w_px_, win_h_px_, false, false);
+
+        // ② 画这层的字：笔画为实、笔画之外透明，于是与下层**叠**在一起，
+        //    而不是把下层的字形顶掉（雨滴落在山体上就是这样叠出来的）
+        vertices_.clear();
+        emit_glyphs(layer->cells, origin_x, origin_y, true);
+        if (!vertices_.empty()) submit(win_w_px_, win_h_px_, true, false);
+    }
+}
+
+bool Renderer::read_frame(std::vector<unsigned char>& rgba, int& width, int& height) {
+    const int w = static_cast<int>(win_w_px_);
+    const int h = static_cast<int>(win_h_px_);
+    if (w <= 0 || h <= 0) return false;  // 还没画过任何一帧
+
+    rgba.assign(static_cast<size_t>(w) * static_cast<size_t>(h) * 4, 0);
+    glPixelStorei(GL_PACK_ALIGNMENT, 1);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glReadBuffer(GL_BACK);  // 双缓冲下读回的才是刚画好的那一帧（默认 framebuffer 的后缓冲）
+    glReadPixels(0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, rgba.data());
+    width = w;
+    height = h;
+    return true;
 }
 
 GlyphBox Renderer::ink_box(char32_t cp) {

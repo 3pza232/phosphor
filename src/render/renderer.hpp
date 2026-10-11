@@ -3,6 +3,7 @@
 #include "core/text.hpp"
 
 #include "core/crt.hpp"
+#include "core/layered_screen.hpp"
 #include "core/screen.hpp"
 #include "render/shader.hpp"
 
@@ -37,15 +38,24 @@ public:
     /// 绘制整个字符网格
     void draw(const Screen& screen);
 
+    /// 在**已经画好的底**之上，按 z 升序把各图层逐层叠画一遍（像素级合成）。
+    /// 与"把层合并进一块网格再画"的区别：一格里能同时看到两层的笔画 ——
+    /// 层的字形只占自己的笔画，笔画之外是**透明**的，下面的地形/角色原样透出来
+    /// （文本视图仍是一格一个字形，见 LayeredScreen::merge_over）。
+    void draw_layers(const LayeredScreen& layers, int origin_x, int origin_y);
+
     /// 一个字形在格内的墨迹框（像素，相对格左缘）。按需装入字形，与绘制同一份度量；
     /// 字体链里没有该字形时退回整格宽并置 approx
     GlyphBox ink_box(char32_t cp);
 
+    /// 读回**当前帧缓冲**的像素（RGBA8，行序自下而上，遵循 OpenGL 约定）。
+    /// 这是 GL 渲染路唯一的像素出口：`screenshot` 走 CPU 光栅化，覆盖不到着色器
+    /// 分支与逐层叠画。只在窗口路径有意义，且必须在 draw() / draw_layers() 之后、
+    /// swap 之前调用——swap 之后后缓冲内容不再有定义。成功填 width/height 并返回 true。
+    bool read_frame(std::vector<unsigned char>& rgba, int& width, int& height);
+
     /// CRT 后处理参数（扫描线 / 孔径格栅 / 辉光 / 色调），由 App 综合档位与滤镜给出
     void set_crt(const CrtParams& params) { crt_ = params; }
-
-    int cell_w() const { return cell_w_; }
-    int cell_h() const { return cell_h_; }
 
 private:
     /// 图集里的一个字形
@@ -63,6 +73,30 @@ private:
     /// 返回 nullptr 表示字体链里没有这个字形（调用方改用占位符）。
     const Glyph* glyph_for(char32_t cp);
     void destroy();
+
+    /// 把一块网格的**底色**推成整格四边形（每格一块）。
+    /// given_bg_only = true 时只推**给过底色**的格（alpha != 0）—— 图层没铺底的格
+    /// 必须让下层透出来。它与 emit_glyphs / submit 的 layer 是**两件事**，
+    /// 名字因此不共用：那边说的是"按笔画覆盖率输出"，这边说的是"哪些格有底"
+    void emit_backgrounds(const Screen& screen, int origin_x, int origin_y, bool given_bg_only);
+    /// 一趟推哪些格的字形。**基屏的底与字必须分开趟**：着色器一趟只能有一种
+    /// "透不透"，把带笔迹的格与底趟混在一趟里，底色的四边形也会被按覆盖率输出
+    /// （覆盖率恒为 0 → 底色整块消失，画面全黑只剩字形笔画）
+    enum class GlyphPick {
+        all,    ///< 全部格（图层趟用：层里的格一律按覆盖率发）
+        plain,  ///< 只推**没有笔迹**的格（走不透明趟）
+        pens,   ///< 只推**有笔迹**的格（按覆盖率叠到已画好的底上）
+    };
+
+    /// 把一块网格的**字形**推成四边形（空格与续格不推）。
+    /// layer = true 时这些四边形在着色器里按笔画覆盖率输出 alpha，成为"叠"而不是"盖"
+    void emit_glyphs(const Screen& screen, int origin_x, int origin_y, bool layer,
+                     GlyphPick pick = GlyphPick::all);
+    /// 上传已攒好的顶点并下发一次绘制。
+    /// win_w/win_h 是窗口像素尺寸（图层缓冲比它小，NCD 换算得用它）；
+    /// layer 决定走"笔画透明"的着色分支；clear_first **整帧只能有一次** ——
+    /// 逐层叠画时每个铺底趟都要画在已经画好的画面上，谁再清一次就把底抹掉了
+    void submit(float win_w_px, float win_h_px, bool layer, bool clear_first);
 
     Shader shader_;
     unsigned vao_ = 0, vbo_ = 0;
@@ -83,6 +117,8 @@ private:
     bool atlas_full_ = false;                    // 装满了就不再尝试（只警告一次）
 
     std::vector<float> vertices_;  // 每帧重建的顶点数据
+    // 窗口像素尺寸：draw() 时记下，逐层叠画要拿它做 NDC 换算（层缓冲比窗口小）
+    float win_w_px_ = 0.0f, win_h_px_ = 0.0f;
 };
 
 } // namespace phos

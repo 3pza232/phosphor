@@ -23,6 +23,9 @@
 
 每个类型下可放任意多个包，主机内可随时切换。
 
+另有一个 `theme/icon/phos_icon.jpg`：窗口与任务栏图标。它是**单个文件、不是可选内容包**
+（放这里是为了随发行包一起到输出目录），主机开窗时读取，读不到就退回系统默认图标并留日志。
+
 ## 二、包的物理结构
 
 **一个包 = 一个文件夹 + 一个主脚本**（外加可选的 `assets/`）：
@@ -85,8 +88,8 @@ theme/skin/rust-cabinet/
 
 - `filter`：显像管滤镜（`none` = 原色原样）
 - `crt_level`：显像管档位 0=OFF 1=WEAK 2=MEDIUM 3=STRONG
-- `music_volume` / `sfx_volume`：两路音量各 0~100（界面里分开调）
   （实现为逐行扫描线 + 孔径格栅 + 辉光，见 `core/crt.hpp`）
+- `music_volume` / `sfx_volume`：两路音量各 0~100（界面里分开调）
 - `shelf_style`：卡带架样式（`list` 列表 / `window` 视窗轮播）
 - `font`：字体方案（`theme/font/<方案>/` 的目录名；缺字由回退字体兜底）
 - `language`：界面语言（`zh` / `en`）—— 主机界面、卡带架简介与启动动画文案都随它切换
@@ -104,7 +107,7 @@ theme/skin/rust-cabinet/
 
 ```lua
 return {
-  screen = { x = 2, y = 3, w = 80, h = 45 },  -- 内容区（"屏幕"）在网格中的位置
+  screen = { x = 2, y = 3 },  -- 内容区（"屏幕"）左上角；尺寸由主机固定为 80x45，写 w/h 会被忽略
   left  = "||",       -- 左右侧壁装饰字符（按行轮换使用）
   right = "||",
   top = {             -- 内容区上方的机身装饰行（宽度自动补齐/截断到网格宽）
@@ -135,7 +138,7 @@ return {
 - 文件：只需 `main.lua`
 - 脚本与卡带同构：`update(dt)` / `draw()`，可用 `phos.screen` / `phos.color` /
   `phos.ui` / `phos.sys` / `phos.audio`
-- 播放约 3.2 秒后自动进入卡带架，任意键可跳过
+- 播放约 3.2 秒后自动进入卡带架，按 A 或 Esc 跳过
 - **动画可以自带音效**：音频设备在开机动画之前就已就绪，
   所以 `phos.audio.beep / note / perc` 从第一帧起就能发声
   （例如 STATIC RAIN 的沙沙噪声、CART LOADER 的读写头咔哒）

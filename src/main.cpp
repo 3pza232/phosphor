@@ -23,7 +23,7 @@ static int run_scan(const std::string& dir, bool json) {
                 std::printf("%-16s %-20s %s\n", c.id.c_str(), c.name.c_str(),
                             c.version.c_str());
             else
-                std::printf("%-16s [BROKEN] %s\n", c.id.c_str(), c.error.c_str());
+                std::printf("%-16s [损坏] %s\n", c.id.c_str(), c.error.c_str());
         }
     }
     return 0;
@@ -70,18 +70,18 @@ static int run_check_api(const std::string& annotation_path, bool json) {
                     result.documented, list(result.undocumented).c_str(),
                     list(result.unimplemented).c_str());
     } else {
-        std::printf("api   : %s   (%d registered, %d documented)\n", annotation_path.c_str(),
+        std::printf("注解文件: %s（已注册 %d 项，注解里写了 %d 项）\n", annotation_path.c_str(),
                     result.implemented, result.documented);
         if (!result.undocumented.empty()) {
-            std::printf("missing in annotations (implemented but undocumented):\n");
+            std::printf("已实现但注解里没有：\n");
             for (const auto& name : result.undocumented)
                 std::printf("  - %s\n", name.c_str());
         }
         if (!result.unimplemented.empty()) {
-            std::printf("declared but not implemented:\n");
+            std::printf("注解里写了但没实现：\n");
             for (const auto& name : result.unimplemented) std::printf("  - %s\n", name.c_str());
         }
-        if (result.consistent()) std::printf("consistent: OK\n");
+        if (result.consistent()) std::printf("一致：OK\n");
     }
     return result.consistent() ? 0 : 2;
 }
@@ -149,38 +149,37 @@ int main(int argc, char** argv) {
         }
         if (*err == phos::kHelpRequest) {
             std::printf(
-                "PHOSPHOR - ASCII fantasy console\n"
-                "usage: phosphor [options]\n"
+                "PHOSPHOR —— ASCII 幻想游戏机\n"
+                "用法：phosphor [选项]\n"
                 "\n"
-                "runtime:\n"
-                "  --cart <path>     load cart directly (directory or .phos)\n"
-                "  --headless        run without window\n"
-                "  --frames <N>      exit after N logic frames\n"
-                "  --dump-screen     print screen text on exit\n"
-                "  --dump-every <N>  print screen every N frames\n"
-                "  --screenshot <p>  write the screen as PNG on exit (headless ok)\n"
-                "  --seed <n>        fixed random seed\n"
-                "  --control <port>  open control channel (NDJSON over local TCP)\n"
-                "  --log <file>      write host log (timestamp + frame number)\n"
+                "运行：\n"
+                "  --cart <路径>        直接载入卡带（目录或 .phos）\n"
+                "  --headless           不开窗口运行\n"
+                "  --frames <N>         跑完 N 个逻辑帧后退出\n"
+                "  --dump-screen        退出时打印屏幕文本\n"
+                "  --dump-every <N>     每 N 帧打印一次屏幕\n"
+                "  --screenshot <路径>  退出时把画面存成 PNG（无头模式同样可用）\n"
+                "  --seed <n>           固定随机种子\n"
+                "  --control <端口>     打开控制通道（本地 TCP 上的 NDJSON）\n"
+                "  --log <文件>         写主机日志（时间戳 + 帧号）\n"
                 "\n"
-                "devkit:\n"
-                "  --scan <dir>      list carts and exit\n"
-                "  --pack <dir>      pack cart directory into .phos and exit\n"
-                "  --out <file>      pack output path (default dist/<id>.phos)\n"
-                "  --new <name|dir>  create cart skeleton (a bare name goes to carts/<name>)\n"
-                "  --id <name>       cart id for --new (default: directory name)\n"
-                "  --name <title>    cart title for --new (default: same as id)\n"
-                "  --author <name>   cart author for --new (default: as in template)\n"
-                "  --save-dir <dir>  save directory (default: saves)\n"
-                "  --check-api       verify devkit/phos.lua against the registered API\n"
-                "  --json            machine-readable output\n"
+                "开发套件：\n"
+                "  --scan <目录>        列出卡带后退出\n"
+                "  --pack <目录>        把卡带目录打包成 .phos 后退出\n"
+                "  --out <文件>         打包输出路径（默认 dist/<id>.phos）\n"
+                "  --new <名字|目录>    生成卡带骨架（只给名字时落在 carts/<名字>）\n"
+                "  --id <名字>          --new 的卡带 id（默认取目录名）\n"
+                "  --name <标题>        --new 的卡带标题（默认与 id 相同）\n"
+                "  --author <作者>      --new 的卡带作者（默认取模板里的值）\n"
+                "  --save-dir <目录>    存档目录（默认 saves）\n"
+                "  --check-api          核对 devkit/phos.lua 与已注册 API 是否一致\n"
+                "  --json               机器可读输出\n"
                 "\n"
-                "info:\n"
-                "  --version         print version and exit\n"
-                "  --help, -h        print usage\n"
+                "信息：\n"
+                "  --version            打印版本后退出\n"
+                "  --help, -h           打印本说明\n"
                 "\n"
-                "exit codes: 0 ok | 1 bad arguments | 2 load/validation failed |\n"
-                "            3 internal error\n");
+                "退出码：0 正常 | 1 参数错误 | 2 载入/校验失败 | 3 内部错误\n");
             return 0;
         }
         std::fprintf(stderr, "ERROR: %s\n(--help for usage)\n", err->c_str());

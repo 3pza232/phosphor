@@ -1,39 +1,37 @@
-LIFE - Conway's Game of Life
-============================
+LIFE —— 康威生命游戏
+=====================
 
-A cellular automaton sandbox. The board is a torus (edges wrap around),
-so gliders travel forever instead of dying against a wall.
+一个元胞自动机沙盒。棋盘是**环面**（四边走通），所以滑翔机可以一直飞下去，
+而不是撞墙就死。
 
-Controls
+操作
 --------
-  arrows    move the cursor
-  A         toggle the cell under the cursor
-  B         stamp the selected pattern at the cursor
-  Y         next pattern
-  X         step one generation (while paused)
-  ENTER     run / pause
-  SHIFT     clear the board
-  ESC       host pause menu
+  方向键    移动光标
+  A         翻转光标下的细胞
+  B         在光标处盖上当前图案
+  Y         切换图案
+  X         单步推演一代（暂停时可用）
+  回车      运行 / 暂停
+  Shift     清空棋盘
+  Esc       主机暂停菜单
 
-The machine has no gamepad: the four face buttons ARE the letters A/B/X/Y on
-the keyboard, and the sidebar prints those same letters (it asks the host via
-phos.input.key_name), so the hints cannot drift from the real mapping.
+本机没有手柄：四个面键**就是**键盘上的 A/B/X/Y，侧栏印的也是这几个字母
+（它通过 phos.input.key_name 向主机要真名），所以提示不会和真实键位跑偏。
 
-Music is a slow ambient loop (bpm 62, sine/triangle, long holds) in music.lua.
+音乐是 music.lua 里一段缓慢的环境循环（bpm 62，正弦/三角波，长音）。
 
-Files
+文件
 -----
-  manifest.lua        cart identity (id / entry / sidebar)
-  main.lua            lifecycle glue: input -> board -> draw
-  board.lua           rules (B3/S23) and grid state, no audio or save
-  patterns.lua        pattern library reader
-  panel.lua           sidebar rendering (read-only)
-  assets/patterns.txt pattern data: [NAME] then rows of '#'/'.'
+  manifest.lua        卡带身份（id / entry / sidebar）
+  main.lua            生命周期胶水：输入 → 棋盘 → 绘制
+  board.lua           规则（B3/S23）与网格状态，不碰音频与存档
+  patterns.lua        图案库读取
+  panel.lua           侧栏绘制（只读）
+  assets/patterns.txt 图案数据：[NAME] 之后是若干行 '#'/'.'
 
-Why it is built this way
-------------------------
-board.lua never touches audio, save or input, so a mod can replace the
-rules (e.g. HighLife B36/S23) by swapping one file.
+为什么这样分
+------------
+board.lua 从不碰音频、存档与输入，所以想换规则（例如 HighLife B36/S23）
+只要替换它一个文件。
 
-The initial soup uses phos.sys.random; pass `--seed` to make a run
-reproducible.
+初始的"汤"用 phos.sys.random 生成；加 `--seed` 可以让一局可复现。

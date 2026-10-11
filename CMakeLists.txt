@@ -96,5 +96,5 @@ add_custom_target(assemble_package ALL
         -DDOCS=${CMAKE_SOURCE_DIR}/docs
         -DDEST=$<TARGET_FILE_DIR:phosphor>
         -P ${CMAKE_SOURCE_DIR}/tools/sync_package.cmake
-    COMMENT "Assembling PHOSPHOR package (real files: ready to ship as-is)")
+    COMMENT "同步 PHOSPHOR 运行包（真实文件，可直接发包）")
 add_dependencies(assemble_package phosphor)

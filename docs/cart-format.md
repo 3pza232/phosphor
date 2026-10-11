@@ -25,7 +25,6 @@ snake.phos  （zip 容器）
 约束：
 
 - 包内路径一律使用 `/`，大小写敏感
-- 单个资源文件 ≤ 4 MB，整包 ≤ 64 MB（主机实现可放宽，不得收紧）
 - 包内不允许可执行文件与动态库；卡带的一切行为只能通过 Lua 与 `phos.*` API 表达
 
 **打包**：开发期直接用目录形态（`--cart <dir>`），分发前用 DevKit 打包：
@@ -46,7 +45,7 @@ phosphor --new <dir> [--id <id>] [--name <标题>] [--author <你>]
 ```lua
 return {
   -- 必须字段 --
-  id       = "snake",            -- 小写字母/数字/连字符，存档与 mod 以它为键
+  id       = "snake",            -- 小写字母/数字/连字符；它同时是目录名、<id>.phos 与存档名
   name     = "SNAKE.EXE",        -- 显示名
   version  = "1.0.0",
   entry    = "main.lua",         -- 入口脚本
@@ -59,7 +58,7 @@ return {
   desc     = { zh = "在终端里觅食的蛇。", en = "A snake hunting in the terminal." },
   sidebar  = { w = 16 },         -- 右侧栏面板宽度（0~32，缺省无侧栏）
   save     = true,               -- 是否需要存档空间（声明后 phos.save 可用）
-  phos_api = 1,                  -- 目标 API 版本（当前世代 1 或 2，见「九、版本兼容」）
+  phos_api = 1,                  -- 目标 API 版本（当前世代 1 / 2 / 3，见「九、版本兼容」）
 
   -- 像素图标（卡带架展示；'.' 与空格为透明）
   icon = {
@@ -96,8 +95,8 @@ end
 function update(dt)
 end
 
--- 每个渲染帧调用。只允许作画（phos.screen.*），
--- 在此修改游戏状态属于未定义行为。
+-- 每个**逻辑帧**调用一次（与 update 同频；画面刷新率是另一回事，见 state.query.fps）。
+-- 只允许作画（phos.screen.*），在此修改游戏状态属于未定义行为。
 function draw()
 end
 ```
@@ -229,10 +228,12 @@ end
 
 - `phos_api` 字段声明目标 API 版本；主机对旧版本 API 保持向后兼容
 - 主机遇到更高 `phos_api` 的卡带 → 提示"此卡带需要更新版本的 PHOSPHOR"，拒绝加载
-- 当前世代：**1 = 基础接口；2 = 增加可选图层（`phos.layer`）与 `phos.text.ink_box` /
-  `phos.input.duration` / `phos.input.keys` / `phos.sys.frame`**。用到 2 才有的接口就必须
-  声明 `phos_api = 2`：否则旧主机照常加载它，到运行到那一行才失败；声明 2 会让它在
-  卡带架上就被明确拒绝。不用新接口的卡带请继续声明 `1`，兼容面更大
+- 当前世代：**1 = 基础接口；2 = 可选图层（`phos.layer`）与 `phos.text.ink_box` /
+  `phos.input.duration` / `phos.input.keys` / `phos.sys.frame`；3 = 墨迹叠加
+  （`phos.screen.blend`）、半格绘制（`plot` / `quadrant` / `cell_of`）与独立底色
+  （`back` / `back_rect`，及各自的区域版）**。用到哪一代才有的接口就声明到那代：
+  否则旧主机照常加载它，到运行到那一行才失败；声明得更高会让它在卡带架上就被明确拒绝。
+  不用新接口的卡带请继续声明 `1`，兼容面更大
 
 ## 十、分层（可选能力）
 
@@ -242,5 +243,9 @@ end
 
 三个可读的样板：`package/devkit/examples/layers/`（最小演示：世界 / HUD / 浮窗三层）、
 `package/carts/tetris/`（井与已落定方块走底层，下落中的方块 / 特效 / 浮窗各占一层；
-`fx` 层只写字形，所以压在世界上仍透得出来）与 `package/carts/worms/`（前景 / 读数 / 浮窗
-三层——那原本是"手排次序"的立即式绘制，改成按 z 叠之后**画面逐字节不变**）。
+`fx` 层只写字形，所以压在世界上仍透得出来）与 `package/carts/worms/`（按**类别**分六层：
+特效 / 瞄准线 / 角色 / 雨雪天气 / 读数 / 浮窗）。
+
+图层是**按像素**叠的：层的字形只占自己的笔画，笔画之外透出下层，所以雨滴能落在山体那一格上
+而与地形同格共存（见 `docs/api-reference.md` 的 `phos.layer` 一节）。屏幕**文本**视图仍是
+一格一个字形，取最上面那层。

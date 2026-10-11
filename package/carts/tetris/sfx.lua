@@ -1,4 +1,4 @@
--- 音效：只依赖 phos.audio，不接触游戏状态（mod 可整体替换）
+-- sfx.lua —— 音效：只依赖 phos.audio，不接触游戏状态（mod 可整体替换）
 
 local Sfx = {}
 

@@ -1,4 +1,4 @@
--- TETRIS —— 俄罗斯方块
+-- manifest.lua —— 俄罗斯方块
 return {
   id = "tetris",
   name = "TETRIS",

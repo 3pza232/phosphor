@@ -1,9 +1,11 @@
 #include "platform/window.hpp"
 
+#include "core/log.hpp"
 #include "core/text.hpp"
 
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
+#include <stb_image.h>
 
 #include <optional>
 
@@ -93,6 +95,25 @@ void char_callback(GLFWwindow*, unsigned int codepoint) {
     g_handlers.input->push_text(std::move(utf8));
 }
 
+/// 窗口与任务栏图标。取路径的约定与字体、主题相同：**相对运行目录**
+/// （发行目录就是 exe 所在目录，`theme/` 由构建时同步过去）。
+/// 读不到不算错误——少一张图不该让机器开不起来，退回系统默认图标即可，但必须留痕。
+/// stb_image 的实现体在 render/screen_image.cpp，这里只用它的声明（再定义一次会重复符号）。
+void apply_window_icon(GLFWwindow* window, const std::string& path) {
+    int width = 0, height = 0, channels = 0;
+    unsigned char* pixels = stbi_load(path.c_str(), &width, &height, &channels, 4);
+    if (!pixels) {
+        log::warn("icon: cannot read " + path + "（用系统默认图标）");
+        return;
+    }
+    GLFWimage image{};
+    image.width = width;
+    image.height = height;
+    image.pixels = pixels;
+    glfwSetWindowIcon(window, 1, &image);
+    stbi_image_free(pixels);
+}
+
 } // namespace
 
 Window Window::create(int width, int height, const std::string& title,
@@ -116,6 +137,8 @@ Window Window::create(int width, int height, const std::string& title,
         glfwTerminate();
         return {};
     }
+
+    apply_window_icon(win.window_, "theme/icon/phos_icon.jpg");
 
     glfwSetKeyCallback(win.window_, key_callback);
     glfwSetCharCallback(win.window_, char_callback);

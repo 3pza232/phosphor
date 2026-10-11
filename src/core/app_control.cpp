@@ -3,8 +3,11 @@
 #include "cart/cart_scanner.hpp"
 #include "core/app.hpp"
 #include "core/log.hpp"
+#include "render/renderer.hpp"
+#include "render/screen_image.hpp"
 
 #include <cstdio>
+#include <cstring>
 #include <sstream>
 
 namespace phos {
@@ -167,6 +170,60 @@ void App::complete_step_request() {
     step_request_id_ = -1;
 }
 
+void App::complete_frame_read(Renderer* renderer) {
+    if (frame_read_id_ < 0) return;
+    const int id = frame_read_id_;
+    const std::string path = frame_read_path_;
+    frame_read_id_ = -1;
+    frame_read_path_.clear();
+
+    // 无窗口（或渲染器尚未画过帧）时没有帧缓冲可读：如实报错，不静默返回空画面
+    int width = 0, height = 0;
+    std::vector<unsigned char> rgba;
+    if (!renderer || !renderer->read_frame(rgba, width, height)) {
+        control_.reply_error(id, "no framebuffer readable (frame.read needs the window path)");
+        return;
+    }
+
+    // 统计放在回包里："不是全黑"这类断言不必依赖 PNG 也能成立。
+    // 亮度阈值取 16：CRT 后处理会压暗，但真正的字形笔画远高于它
+    const size_t pixels = static_cast<size_t>(width) * static_cast<size_t>(height);
+    size_t lit = 0;
+    double luma_sum = 0.0;
+    for (size_t i = 0; i < pixels; ++i) {
+        const unsigned char* p = rgba.data() + i * 4;
+        const double luma = 0.299 * p[0] + 0.587 * p[1] + 0.114 * p[2];
+        luma_sum += luma;
+        if (luma > 16.0) ++lit;
+    }
+
+    std::ostringstream out;
+    out << "\"width\":" << width << ",\"height\":" << height
+        << ",\"lit_ratio\":" << (pixels ? static_cast<double>(lit) / pixels : 0.0)
+        << ",\"mean_luma\":" << (pixels ? luma_sum / pixels : 0.0);
+
+    if (!path.empty()) {
+        // 行序翻转：OpenGL 自下而上，PNG（以及 CPU 截图）自上而下 —— 翻过来才能与
+        // screenshot 的像素逐格对照
+        std::vector<unsigned char> flipped(pixels * 4);
+        const size_t stride = static_cast<size_t>(width) * 4;
+        for (int y = 0; y < height; ++y)
+            std::memcpy(flipped.data() + static_cast<size_t>(y) * stride,
+                        rgba.data() + static_cast<size_t>(height - 1 - y) * stride, stride);
+        ScreenImage image;
+        image.width = width;
+        image.height = height;
+        image.rgba = std::move(flipped);
+        std::string error;
+        if (!write_png(image, path, error)) {
+            control_.reply_error(id, error);
+            return;
+        }
+        out << ",\"path\":" << json::quote(path);
+    }
+    control_.reply(id, out.str());
+}
+
 void App::release_expired_inputs() {
     for (auto it = pending_releases_.begin(); it != pending_releases_.end();) {
         if (--it->second <= 0) {
@@ -229,6 +286,19 @@ void App::execute_control(const ControlCommand& command) {
         control_.reply(command.id, "\"path\":" + json::quote(path) + ",\"width\":" +
                                        std::to_string(width) + ",\"height\":" +
                                        std::to_string(height));
+        return;
+    }
+
+    if (name == "frame.read") {
+        // 读的是 GL 渲染出的真实帧（含着色器与逐层叠画），与 CPU 光栅化的 screenshot 互补。
+        // 无头没有帧缓冲，直接报错；有窗口时只登记请求——读回必须落在"画完这一帧、swap
+        // 之前"，那个时机只有渲染循环掌握（见 complete_frame_read）
+        if (headless_) {
+            control_.reply_error(command.id, "no framebuffer in headless mode (use screenshot)");
+            return;
+        }
+        frame_read_path_ = args.str("path");
+        frame_read_id_ = command.id;
         return;
     }
 

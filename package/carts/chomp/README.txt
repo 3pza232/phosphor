@@ -1,29 +1,26 @@
-CHOMP -- a neon maze muncher for PHOSPHOR
-=========================================
+CHOMP —— 霓虹迷宫吃豆（PHOSPHOR 卡带）
+=====================================
 
-Controls
-  方向键 / Arrow keys   move
-  Enter                 pause (the music pauses with it)
-  Shift                 restart the run
-  Esc                   host pause menu (the cart never sees it)
+操作
+  方向键               移动
+  回车                 暂停（音乐一起停）
+  Shift                重开一局
+  Esc                  主机暂停菜单（卡带看不到它）
 
-The maze is data
-  game.lua writes only the LEFT HALF and mirrors it at load: the maze stays
-  symmetric and there is half as much to hand-edit.  Characters:
-    '#' wall   '.' dot   'o' power pellet   ' ' empty (both ends of row 18 are
-  the tunnel: walk off one side and come out the other).
-  The shipped maze was generated from a "corridor band" spec and flood-filled
-  to prove every dot is reachable -- treat it as data and regenerate it if you
-  change the bands.
+迷宫是数据
+  game.lua 只写**左半边**，加载时镜像过去：迷宫天然对称，手工要改的内容少一半。字符含义：
+    '#' 墙   '.' 豆子   'o' 大力丸   ' ' 空
+  第 18 行两端是隧道：从一侧走出去会从另一侧出来。
+  出厂的迷宫来自一份"走廊带"规格，并做过洪泛填充，确保每颗豆子都走得到 ——
+  把它当**数据**看：改了走廊带，就重新生成一份。
 
-Ghosts
-  Four of them, four tempers: blinky chases, pinky cuts you off, inky swings
-  around the flank, clyde keeps his distance.  A power pellet turns the tables
-  for seven seconds -- eat them for 200/400/800/1600, and watch for the white
-  blink when the timer is about to run out.
+幽灵
+  四只，四种脾气：blinky 追、pinky 堵前路、inky 从侧翼兜、clyde 保持距离。
+  吃下大力丸后有 7 秒攻守易位 —— 吃幽灵依次 200/400/800/1600 分；
+  最后几秒幽灵会闪白，那是"快结束了"的读数。
 
-Modules
-  game.lua    rules only (no input, no drawing, no audio, no save)
-  main.lua    keys -> intents, and all drawing
-  panel.lua   the sidebar (score / lives / ghost roster)
-  sfx.lua     synthesized sound, music.lua a two-pattern A-minor loop
+模块
+  game.lua    只放规则（不碰输入、绘制、音频、存档）
+  main.lua    按键 → 意图，以及全部绘制
+  panel.lua   侧栏（分数 / 命数 / 幽灵名录）
+  sfx.lua     合成音效；music.lua 是两段式 A 小调循环

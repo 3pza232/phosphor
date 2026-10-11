@@ -32,19 +32,22 @@ phos.cart     -- 当前卡带的身份（id / 标题 / 版本 / 作者 / 简介�
 > 选择滤镜 `NONE` 时使用出厂原色——需要保留卡带原本配色的游戏应选它。
 
 > **坐标系**：`phos.screen` / `phos.panel` 使用**内容区局部坐标**，左上角为 `(0, 0)`；
-> 机身外壳（游戏机主题）由主机在外围绘制，卡带不需要关心网格在窗口中的位置。
+> 机身外壳（游戏机主题）由主机在外围绘制，卡带不需要关心内容区在窗口中的位置。
 >
-> 网格恒为 `80x45`，但**声明了右栏的卡带要按可玩区排版**：
+> **内容区恒为 `80x45`**，但整屏网格比它大（默认皮肤是 `84x51`：上下各 3 行机身、
+> 左右各 2 列侧壁，由皮肤几何决定）。卡带只面对内容区；`screen.read` 读的是整屏网格。
+> **声明了右栏的卡带要按可玩区排版**：
 > `local px, py, pw, ph = phos.screen.playfield()`（内容区扣掉右栏）。
 > 照 `size()` 从 0 画到最右边，那几列会藏在面板后面——玩家只看到"东西突然冒出来"。
 
 ## phos.screen
 
-逻辑屏幕是一个 `80 × 45` 的字符网格（**尺寸由主机固定**，与主题无关；
-左上角为 `(0, 0)`。每格包含：字符、前景色、背景色。
+逻辑屏幕是一个 `80 × 45` 的**内容区**（**尺寸由主机固定**，与主题和皮肤无关；
+左上角为 `(0, 0)`）。每格包含：字符、前景色、背景色。
+机身外壳在内容区之外，不属于 `phos.screen` 的坐标系。
 
 ```lua
-w, h = phos.screen.size()                  -- 恒 80x45，**含侧栏覆盖的列**
+w, h = phos.screen.size()                  -- 恒 80x45（内容区；**含侧栏覆盖的列**）
 phos.screen.width, phos.screen.height      -- 同一对尺寸的常数字段（省一次调用；由主机固定）
 px, py, pw, ph = phos.screen.playfield()   -- 可玩区：内容区扣掉侧栏后的那一块
 
@@ -57,6 +60,14 @@ phos.screen.fill(x, y, w, h, ch, fg, bg) -- 填充矩形
 phos.screen.blit(x, y, rows, fg, bg)   -- 一次写多行（地图/画面搬运；超宽按显示宽度截断）
 phos.screen.clear()                    -- 全清（空格 + 默认色）
 phos.screen.clear(fg, bg)              -- 指定底色清屏
+
+-- 同一格里的"两样东西" -- 
+phos.screen.blend(x, y, ch, fg)        -- 追加一笔（叠加）：两笔都画，不是后来者顶掉前者
+phos.screen.back(x, y, bg)             -- 只写这一格的底色：字形与已叠的笔迹都不动
+phos.screen.back_rect(x, y, w, h, bg)  -- 整块只写底色
+phos.screen.plot(x2, y2, fg)           -- 在**子位**上落一笔：(x2,y2) 是子格坐标（一格 = 2x2）
+phos.screen.quadrant(bits)             -- 位掩码 → 象限字形（1 左上 / 2 右上 / 4 左下 / 8 右下）
+phos.screen.cell_of(x2, y2)            -- 子格坐标 → 格坐标 + 子位（引擎唯一的这套换算）
 
 -- 读取（调试/AI 友好，性能开销由主机吸收） --
 ch, fg, bg = phos.screen.get(x, y)
@@ -73,7 +84,7 @@ ch, fg, bg = phos.screen.get(x, y)
 |---|---|
 | `screen.put` / `screen.print`、`panel.put` / `panel.print` | **保留该格原有背景**（"透明底"）：字压在地形、天空、底图上都不留色块 |
 | `ui.region` 的 `put` / `print` / `fill` / `blit` | 同上，一律保留背景（覆盖层压在游戏画面上不会糊出一块块黑底） |
-| `screen.fill` / `screen.blit` / `screen.clear`、`panel.fill` / `panel.blit` / `panel.clear`、`ui.region.clear` | **总是写底色**（省略 = 黑）——这些调用常被用来"整块搬运/清一块地方"，默认透明会让底图从字缝里透出来，清屏则变成什么都不做 |
+| `screen.fill` / `screen.blit` / `screen.clear` / `screen.back` / `screen.back_rect`、`panel.fill` / `panel.blit` / `panel.clear` / `panel.back` / `panel.back_rect`、`ui.region.clear` | **总是写底色**（省略 = 黑）——这些调用常被用来"整块搬运/清一块地方"，默认透明会让底图从字缝里透出来，清屏则变成什么都不做 |
 
 所以"要让这块地方不透底"是**显式给色**，而不是指望默认值：
 `phos.screen.print(x, y, text, fg, bg)`。
@@ -88,6 +99,21 @@ ch, fg, bg = phos.screen.get(x, y)
 - 反过来，"**不要底板**"完全可行，而且往往更好看：**省略 `bg`** 即可 ——
   省掉的是底板，**不是**这一格的底（世界的底色留着，不会变黑洞）。
   例：WORMS 里虫子的 `@` 标与它头顶的箭头就不垫底板，压在天空/土层上都不留色块
+
+### 同一格里放两样东西：`blend` 与 `plot`
+
+一格只有一个字形槽，但**不是只能放一样东西**：`put` 是"把这一格改成这个字"（替换），
+`blend` 是"再画一笔"（叠加）。两笔在渲染时各自按**字形覆盖率**混合 ——
+于是"两种内容落在同一格"两笔都看得见，重叠处后面那笔的颜色占优。
+
+- 只收半角字形；同一格最多叠 **3 笔**（含 `put` 那一笔）。满了 `blend` 返回 `false`
+  并且**不画**（已画上的内容只增不减），日志里留一次痕
+- **`plot` 管半格**：一格分 2×2 子位，多次 `plot` 落在同一格会合并成一个象限字形
+  （位序由引擎定义：左上 / 右上 / 左下 / 右下），卡带不必自带那张字形表
+- **底色可以单独铺**：`back` / `back_rect` 只写底色，"背景比字形宽一格"就在本格之外
+  再 `back` 一次
+- **文本通道是有损的**：`screen.read` 与 `--dump-screen` 一格只导出一个字形
+  （最前面那一笔），所以"同格两笔"只有画面与 `screenshot` 看得全
 
 ## phos.color
 
@@ -205,7 +231,7 @@ phos.audio.stop_sample(hit)
 | `wave` | `sine` / `square` / `triangle` / `saw` / `noise` | `square` |
 | `freq` | 起始频率 Hz | 440 |
 | `sweep` | 扫频终点 Hz（坠落音/上升音） | 无 |
-| `dur` | 总时长（含释放段） | 0.1 |
+| `dur` | 总时长（含释放段） | `beep` 0.1；`note` 预置 0.25 |
 | `volume` | 0..1 | 0.35 |
 | `attack` / `release` | 起振 / 释放时长 | 0.004 / 0.05 |
 
@@ -255,9 +281,9 @@ phos.ui.menu(x, y, w, { "SWORD", "SHIELD", "POTION" }, selected, h)
 phos.ui.bar(x, y, w, hp / max_hp)
 phos.ui.divider(x, y, w)
 phos.ui.center_text(y, "GAME OVER")
-phos.ui.text(x, y, w, "long body text...", 3)   -- 最多 3 行，超出加省略号
+phos.ui.text(x, y, w, "long body text...", 3)   -- 最多 3 行，超出加省略号（max_lines 可省略，缺省 1 行）
 
--- 像素精灵：rows 为字符画，colors 为 字符→颜色（'.' 与空格透明），step 为缩放步长
+-- 像素精灵：rows 为字符画，colors 为 字符→颜色（'.' 与空格透明），step 为缩放步长（可省略，缺省 1）
 phos.ui.sprite(x, y, { "..##..", ".####." }, { ["#"] = { 80, 255, 120 } }, 1)
 
 -- 列表导航（内部复用输入抽象）：返回 新下标, 动作
@@ -294,6 +320,10 @@ phos.panel.print(x, y, text, fg, bg)
 phos.panel.fill(x, y, w, h, ch, fg, bg)
 phos.panel.blit(x, y, rows, fg, bg)     -- 一次写多行（恒写底色，省略 = 黑）
 phos.panel.clear(fg, bg)        -- 只清面板区（恒写底色）
+phos.panel.blend(x, y, ch, fg)  -- 同格追加一笔（叠加）
+phos.panel.back(x, y, bg)       -- 只写底色：字形与已叠的笔迹都不动
+phos.panel.back_rect(x, y, w, h, bg)
+phos.panel.plot(x2, y2, fg)     -- 子格落笔（一格 = 2x2 子位）
 phos.panel.resize(w)            -- 运行时改宽度（0 = 收起，上限 32）；返回实际宽度
 ```
 
@@ -320,10 +350,12 @@ win:print(2, 10, long_text)          -- 超出窗口的部分被裁掉，不会�
 - `opts.layer`：把区域锚定到某个**图层**（见 `phos.layer` 一节）。坐标原点仍是内容区左上角；
   层里的空白格是透明的，所以"只写字形"就等于把字压在世界之上
 - 构造时与表层可用范围**求交**，所以 `x`/`y`/`w`/`h` 字段给的就是实际可画范围
-- 可用的绘制方法：`clear` / `put` / `print` / `fill` / `blit`（多行）/ `frame` /
+- 可用的绘制方法：`clear` / `put` / `print` / `fill` / `blit`（多行）/ `blend`（同格叠加）/
+  `back` / `back_rect`（只写底色）/ `plot`（子格落笔）/ `frame` /
   `divider` / `bar` / `menu`（`h` 可省略，缺省按条目数）/ `body`（折行正文，
   `max_lines` 可省略）/ `sprite`（`step` 可省略）。其中 `put` / `print` / `fill` / `blit`
-  省略 `bg` 时**保留背景**，`clear` 省略 `bg` 时**写黑**（见 `phos.screen` 一节的 `bg` 规则）
+  省略 `bg` 时**保留背景**，`clear` 省略 `bg` 时**写黑**（见 `phos.screen` 一节的 `bg` 规则）；
+  `blend` / `back` / `back_rect` / `plot` 与 `put` 同组，也**保留背景**
 - **层级 = 调用顺序**：本机每帧清屏、卡带每帧重画，所以先画底图、再画窗口即可；
   窗口关闭时不再画它，底图自然就在（不需要"备份背景再还原"那类机制）
 - 上面这条说的是**底层**。要让"浮层"与"世界"各自独立、互不擦除，用 `phos.layer`——
@@ -393,6 +425,15 @@ end
   `layer = "screen"` 读**合并后的整屏**（层是就地合并进底层的，没有"合并前的那一层"可读，
   所以这个取值与不写 `layer` 等价，只是把"我读的是整屏"明说出来）
 - 合并不影响游戏速度；`state.query` 的顶层 `merge_ms` 报出每帧合成耗时（没建层的卡带恒为 0）
+
+**两层叠在同一格**：渲染是**按像素**叠的 —— 底层（世界）先画，各层再按 z 升序各画一遍：
+只有给过底色的格才铺底，字形只画自己的笔画，**笔画之外是透明的**。于是雨滴落在地形格上时，
+雨滴的笔画压在地形像素之上、笔画之外仍是地形 —— 两种内容同格共存，而不是"上层把下层顶掉"。
+
+**屏幕文本是另一回事**：文本视图一格只有一个字形槽，`screen.read` 与 `--dump-screen` 取的是
+合并结果（最前面那一笔赢），所以**文本里看不到"同格的两种内容"**，只有画面与 `screenshot`
+看得到。同格共存不必再挤到不同的层上：`phos.screen.blend` 直接叠一笔、`plot` 落半格
+（见 `phos.screen` 一节）。
 
 ## phos.input
 
