@@ -16,6 +16,13 @@ int read_channel(const sol::object& object, int fallback) {
     return rounded < 0 ? 0 : (rounded > 255 ? 255 : rounded);
 }
 
+double read_number(const sol::table& table, const char* key, double fallback) {
+    const sol::object value = table[key];
+    if (!value.is<double>() && !value.is<int>()) return fallback;
+    const double number = value.as<double>();
+    return std::isfinite(number) ? number : fallback;  // NaN / ±inf：当没给
+}
+
 Color read_color(const sol::object& object, Color fallback) {
     if (object.is<Color>()) return object.as<Color>();
     if (!object.is<sol::table>()) return fallback;

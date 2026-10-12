@@ -279,15 +279,10 @@ std::vector<SoundPack> scan_sounds(const std::string& dir) {
             if (perc.is<std::string>() && !perc.as<std::string>().empty())
                 percussion_spec(perc.as<std::string>()[0], tone);
 
-            auto number = [&spec](const char* key, float fallback) {
-                sol::object v = spec[key];
-                if (v.is<double>() || v.is<int>()) return v.as<float>();
-                return fallback;
-            };
-            tone.freq = number("freq", tone.freq);
-            tone.freq_end = number("sweep", tone.freq_end);
-            tone.dur = number("dur", tone.dur);
-            tone.volume = number("volume", tone.volume);
+            tone.freq = static_cast<float>(api::read_number(spec, "freq", tone.freq));
+            tone.freq_end = static_cast<float>(api::read_number(spec, "sweep", tone.freq_end));
+            tone.dur = static_cast<float>(api::read_number(spec, "dur", tone.dur));
+            tone.volume = static_cast<float>(api::read_number(spec, "volume", tone.volume));
             out.tones[event] = tone;
         }
         return true;

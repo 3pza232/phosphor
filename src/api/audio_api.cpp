@@ -1,6 +1,7 @@
 #include "api/audio_api.hpp"
 
 #include "api/host_api.hpp"
+#include "api/lua_value.hpp"
 #include "cart/cart_files.hpp"
 #include "core/audio.hpp"
 
@@ -23,18 +24,12 @@ ToneSpec tone_from_table(const sol::object& obj, ToneSpec base) {
     sol::object wave = t["wave"];
     if (wave.is<std::string>()) base.wave = wave_from_name(wave.as<std::string>());
 
-    auto number = [&t](const char* key, float fallback) {
-        sol::object v = t[key];
-        if (!v.is<double>() && !v.is<int>()) return fallback;
-        const double d = v.as<double>();
-        return std::isfinite(d) ? static_cast<float>(d) : fallback;  // NaN / ±inf 当没给
-    };
-    base.freq = number("freq", base.freq);
-    base.freq_end = number("sweep", base.freq_end);
-    base.dur = number("dur", base.dur);
-    base.volume = number("volume", base.volume);
-    base.attack = number("attack", base.attack);
-    base.release = number("release", base.release);
+    base.freq = static_cast<float>(api::read_number(t, "freq", base.freq));
+    base.freq_end = static_cast<float>(api::read_number(t, "sweep", base.freq_end));
+    base.dur = static_cast<float>(api::read_number(t, "dur", base.dur));
+    base.volume = static_cast<float>(api::read_number(t, "volume", base.volume));
+    base.attack = static_cast<float>(api::read_number(t, "attack", base.attack));
+    base.release = static_cast<float>(api::read_number(t, "release", base.release));
     return base;
 }
 

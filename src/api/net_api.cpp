@@ -2,6 +2,7 @@
 
 #include "api/host_api.hpp"
 #include "api/inspect.hpp"
+#include "api/lua_value.hpp"
 #include "core/text.hpp"
 #include "net/net.hpp"
 
@@ -223,17 +224,14 @@ Net::Options read_options(const sol::optional<sol::table>& opts) {
     Net::Options options;
     if (!opts) return options;
     const sol::table table = *opts;
-    auto number = [&table](const char* key, int fallback) {
-        sol::object value = table[key];
-        if (value.is<double>() || value.is<int>()) return value.as<int>();
-        return fallback;
-    };
     // 端口/对端数来自脚本：越界值丢弃、回退默认，免得把非法值塞进 socket 调用
     auto port_of = [](int v, int fallback) { return (v < 0 || v > 65535) ? fallback : v; };
-    options.port = port_of(number("port", options.port), options.port);
+    options.port =
+        port_of(static_cast<int>(api::read_number(table, "port", options.port)), options.port);
     options.discovery_port =
-        port_of(number("discovery_port", options.discovery_port), options.discovery_port);
-    const int peers = number("max_peers", options.max_peers);
+        port_of(static_cast<int>(api::read_number(table, "discovery_port", options.discovery_port)),
+                options.discovery_port);
+    const int peers = static_cast<int>(api::read_number(table, "max_peers", options.max_peers));
     options.max_peers = peers < 1 ? options.max_peers : (peers > 64 ? 64 : peers);
     sol::object name = table["name"];
     if (name.is<std::string>()) options.name = name.as<std::string>();

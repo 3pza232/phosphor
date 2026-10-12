@@ -29,6 +29,10 @@ char32_t read_char(const sol::object& object, char32_t fallback);
 /// `phos.color.rgb` 与 `read_color` 的通道都走它：坏值不会变成乱跳的通道
 int read_channel(const sol::object& object, int fallback = 0);
 
+/// 从表里读一个数值字段：非数字、NaN、±无穷 → fallback。
+/// 音效包、联机选项、音频参数都读数值表，"坏值怎么处理"只有这一份实现
+double read_number(const sol::table& table, const char* key, double fallback);
+
 /// `{ "第一行", "第二行" }` → 行列表。非字符串项跳过：
 /// 脚本里给错类型的一项不该让整块画面都画不出来。
 std::vector<std::string> read_rows(const sol::object& object);
