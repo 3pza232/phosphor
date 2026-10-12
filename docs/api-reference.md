@@ -30,7 +30,8 @@ phos.net      -- 局域网联机：开房 / 加入 / 收发消息 / 发现（见
 
 > `phos.color` 的 12 色常量取自**当前主题声明的色板**（`skin.lua` 的 `palette`，指向
 > `theme/palette/<名>/`）。设置里没有单独的"色板"项；换主题即换色板，卡带里的
-> `phos.color.green` 等随之热更新。主题未声明或找不到时回落内置色板 `NONE (RAW)`（原色原样）。
+> `phos.color.green` 等随之热更新。主题**未声明**色板时用 `default`；声明了却找不到对应包
+> 时才回落内置色板 `NONE (RAW)`（原色原样）。
 
 > **坐标系**：`phos.screen` / `phos.panel` 使用**内容区局部坐标**，左上角为 `(0, 0)`；
 > 机身外壳（游戏机主题）由主机在外围绘制，卡带不需要关心内容区在窗口中的位置。
@@ -139,10 +140,10 @@ local c = phos.color.rgb(255, 128, 0)   -- 自定义色（会被 palette 做辉�
 phos.text.width("中文 abc")            -- 8  （2+2 全角 + 1 空格 + 3 半角）
 phos.text.width("hello")               -- 5
 phos.text.truncate("很长的中文标题", 8)  -- "很长的中"（8 列，绝不切出半个字）
-phos.text.fit("很长的中文标题", 8)       -- "很长的中…"（8 列；没超宽就原样返回）
+phos.text.fit("很长的中文标题", 8)       -- "很长的…"（超宽才截，末尾留一个"…"；没超宽原样返回）
 phos.text.pad("模式", 8)                -- "模式    "（右补到 8 列）
 phos.text.pad_left("42", 6)             -- "    42"（左补：取值右对齐）
-phos.text.ink_box("@")                  -- 13, 8, false（字形的墨迹框 xoff/width，像素）
+phos.text.ink_box("@")                  -- xoff, width, approx（字形墨迹框，像素；随字体而变）
 ```
 
 `phos.screen` / `phos.panel` / `phos.ui` 的写文字接口都按显示宽度推进，
@@ -229,14 +230,15 @@ phos.audio.play_sample(hit, { volume = 0.8, loop = false })
 phos.audio.stop_sample(hit)
 ```
 
-`beep` / `note` 的参数表字段（均可缺省）：
+`beep` / `note` 的选项表字段（写在末尾的 `opts` 里，均可缺省）。注意 `beep(freq, dur)`
+的前两个是**位置参数、必填**，下表的默认值对 `beep` 不适用：
 
 | 字段 | 含义 | 默认 |
 |------|------|------|
 | `wave` | `sine` / `square` / `triangle` / `saw` / `noise` | `square` |
-| `freq` | 起始频率 Hz | 440 |
+| `freq` | 起始频率 Hz | 440（`note` 用） |
 | `sweep` | 扫频终点 Hz（坠落音/上升音） | 无 |
-| `dur` | 总时长（含释放段） | `beep` 0.1；`note` 预置 0.25 |
+| `dur` | 总时长（含释放段） | 0.25（`note` 用） |
 | `volume` | 0..1 | 0.35 |
 | `attack` / `release` | 起振 / 释放时长 | 0.004 / 0.05 |
 

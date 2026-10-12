@@ -172,7 +172,7 @@ phos.net.events()                     -- {{ type="connected"|"disconnected", pee
 
 -- ── 发现 ────────────────────────────────────────────────
 phos.net.discover(seconds?)           -- 广播查询并收集应答：
-                                      -- {{ name, address, port, players }, ...}
+                                      -- {{ name, address, port, players, open }, ...}
 ```
 
 约定：

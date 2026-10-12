@@ -16,7 +16,7 @@
   K         键位表（暂停）              回车  结算后回菜单        Esc  返回卡带架
 
 模块（每块只做一件事）
-  manifest.lua  卡带身份（sidebar 22 格、save = false、phos_api = 2）
+  manifest.lua  卡带身份（sidebar 22 格、save = false、phos_api = 4）
   main.lua      总装配：模式菜单、输入翻译、绘制、跨模块取舍、agent 观察口
   terrain.lua   地形：生成 / 破坏 / 查询（不碰虫子与物理）
   physics.lua   重力 / 风 / 子格步进 / 碰撞 / 爆炸 —— **唯一物理真源**

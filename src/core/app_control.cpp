@@ -106,9 +106,9 @@ std::string App::control_state_json() const {
     }
     if (!last_error_.empty()) out << ",\"last_error\":" << json::quote(last_error_);
 
-    // 内容包：**名字**（屏幕上画的就是它，会随语言变）与**id**（稳定标识，与名字逐位对应）。
-    // 脚本要比对状态里的当前值、或记住某一项时必须用 id——拿名字去比 id 会假失败，
-    // 换个界面语言就全错。字体方案的标识本身就是 id，所以它只有一份 `font`
+    // 内容包：**显示名**（屏幕上画的就是它，当前取包文件夹名）与**id**（稳定标识，
+    // 与显示名逐位对应）。脚本要比对状态里的当前值、或记住某一项时必须用 id——
+    // 显示名可能重名或随包改名，拿它去比 id 会假失败。字体方案没有独立显示名，只有 `font`
     auto pack_json = [](const auto& packs, auto id_of) {
         std::string out;
         for (const auto& pack : packs) {

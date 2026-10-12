@@ -31,7 +31,7 @@ phosphor [选项]
   --dump-screen          退出时把屏幕网格以文本打印到 stdout
   --dump-every <N>       每 N 帧打印一次屏幕（流式观察）
   --screenshot <path>    退出时把画面写成 PNG（CPU 光栅化，无头同样可用）
-  --save-dir <dir>       存档与机台配置的落点（默认 saves/；工具脚本据此隔离）
+  --save-dir <dir>       卡带存档的落点（默认 saves/；机台配置 config.json 固定挨着 exe）
   --seed <n>             固定随机种子
 
 确定性输入由**控制通道**承担（`input.inject` + `time.step`）：不需要额外文件，
@@ -145,8 +145,8 @@ phosphor --pack carts/snake --json
 | `grid_w` / `grid_h` | **整屏网格**尺寸（默认 84×51，随皮肤几何；`screen.read` 读的是它） |
 | `content_w` / `content_h` | **内容区**尺寸（恒 80×45，卡带只面对它） |
 | `panel_w` | 侧栏面板宽度（0 = 无面板） |
-| `skin` / `palette` / `boot` / `sound` / `font` | 生效的皮肤 / 色板 / 启动动画 / 音效包 / 字体方案（**名字**）。`palette` 由主题（skin）声明派生，非用户可切换项 |
-| `packs` | 各类型的可选清单：`skin` / `palette` / `boot` / `sound` 是**屏幕上画的名字**数组，`*_ids` 是逐位对应的**稳定 id**；字体是 `font` 名字数组。要比对状态值或记住某一项**用 id**，名字随界面语言变 |
+| `skin` / `palette` / `boot` / `sound` / `font` | 生效的皮肤 / 色板 / 启动动画 / 音效包 / 字体方案（**id**，稳定标识）。`palette` 由主题（skin）声明派生，非用户可切换项 |
+| `packs` | 各类型可选清单：`skin` / `palette` / `boot` / `sound` 是**显示名**数组（屏幕上画的就是它，当前取包文件夹名），`*_ids` 是与之一一对应的**稳定 id**；字体只有 `font`（字体方案的标识本身就是 id）。要比对状态值或记住某一项**用 id**（显示名可能重名或随包改名，id 不会） |
 | `language` | 界面语言（`zh` / `en`） |
 | `cursor` | 菜单光标行号（`-1` = 当前模式没有菜单） |
 | `shelf` | 卡带架顺序（卡带 id 数组，最近打开优先）；`cursor` 就是它的下标——"数到第几张再插卡"因此可编程 |
