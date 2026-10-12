@@ -1,6 +1,6 @@
 #pragma once
 
-#include "core/screen.hpp"
+#include "core/color.hpp"
 
 namespace phos {
 

@@ -10,6 +10,7 @@
 #include "core/json_lite.hpp"
 #include "core/palette.hpp"
 #include "core/skin.hpp"
+#include "core/surface.hpp"
 #include "core/text.hpp"
 #include "core/text_input.hpp"
 #include "pack/builtin.hpp"
@@ -231,6 +232,70 @@ TEST(config_roundtrip) {
 
     std::error_code ec;
     std::filesystem::remove(path, ec);  // 清理临时文件；删不掉也无所谓
+}
+
+// ---------------------------------------------------------------- screen / surface
+
+TEST(screen_quadrant_bit_order) {
+    CHECK_EQ(Screen::quadrant_glyph(0), U' ');
+    CHECK_EQ(Screen::quadrant_glyph(1), char32_t(0x2598));   // 左上
+    CHECK_EQ(Screen::quadrant_glyph(2), char32_t(0x259D));   // 右上
+    CHECK_EQ(Screen::quadrant_glyph(4), char32_t(0x2596));   // 左下
+    CHECK_EQ(Screen::quadrant_glyph(8), char32_t(0x2597));   // 右下
+    CHECK_EQ(Screen::quadrant_glyph(15), char32_t(0x2588));  // 整格
+}
+
+TEST(screen_cell_of) {
+    const Screen::SubCell tl = Screen::cell_of(0, 0);
+    CHECK_EQ(tl.x, 0);
+    CHECK_EQ(tl.y, 0);
+    CHECK_EQ(int(tl.bit), 1);
+    CHECK_EQ(int(Screen::cell_of(1, 1).bit), 8);  // 右下
+    CHECK_EQ(Screen::cell_of(2, 0).x, 1);         // 第三列 = 第 1 格
+}
+
+TEST(screen_put_clips_and_keeps_bg) {
+    Screen s(4, 2);
+    s.put(-1, 0, U'X');  // 越界一律静默丢弃
+    s.put(4, 0, U'X');
+    s.put(0, 9, U'X');
+    CHECK_EQ(s.at(0, 0).ch, U' ');
+
+    s.put(0, 0, U'A', Color::white, rgb_clamped(10, 20, 30));
+    CHECK_EQ(int(s.at(0, 0).bg.r), 10);
+    s.put(0, 0, U'B');  // 默认底色 = keep：保留原有底色
+    CHECK_EQ(int(s.at(0, 0).bg.r), 10);
+    CHECK_EQ(s.at(0, 0).ch, U'B');
+}
+
+TEST(screen_wide_char_head_and_tail) {
+    Screen s(4, 1);
+    s.put(0, 0, U'中');
+    CHECK_EQ(int(s.at(0, 0).cols), 2);  // 头格
+    CHECK_EQ(int(s.at(1, 0).cols), 0);  // 续格没有字形
+    CHECK_EQ(s.glyph_at(1, 0), U'中');  // 续格报头格字符
+}
+
+TEST(screen_back_with_keep_is_noop) {
+    Screen s(2, 1);
+    s.put(0, 0, U'A', Color::white, Color::black);
+    s.back(0, 0, kKeepBg);  // keep = 不动背景
+    CHECK_EQ(int(s.at(0, 0).bg.r), 0);
+    s.back(0, 0, rgb_clamped(50, 60, 70));  // 真底色：写入
+    CHECK_EQ(int(s.at(0, 0).bg.g), 60);
+}
+
+TEST(surface_clips_to_bounds) {
+    Screen screen(6, 3);
+    Surface surface(screen, 0, 0, 3, 2);  // 面只有左上 3x2
+    surface.put(0, 0, U'#', Color::white, Color::black);
+    surface.put(3, 0, U'#', Color::white, Color::black);  // 面外：丢弃
+    CHECK_EQ(screen.at(0, 0).ch, U'#');
+    CHECK_EQ(screen.at(3, 0).ch, U' ');
+
+    surface.fill(0, 0, 1000000, 1000000, U'.', Color::white, kKeepBg);  // 超大尺寸：与面求交
+    CHECK_EQ(screen.at(2, 1).ch, U'.');
+    CHECK_EQ(screen.at(3, 1).ch, U' ');  // 面外未被填
 }
 
 } // namespace

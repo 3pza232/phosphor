@@ -1,7 +1,7 @@
 #pragma once
 
+#include "core/color.hpp"
 #include "core/defaults.hpp"
-#include "core/screen.hpp"
 #include "core/ui.hpp"
 
 #include <string>
