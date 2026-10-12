@@ -27,6 +27,7 @@ HERE = Path(__file__).resolve().parent
 
 #: 无头门禁：不依赖图形环境
 HEADLESS_GATES = [
+    ("unit", "unit_smoke.py", "纯逻辑单元测试（C++；颜色/文本/配置/色板/主题；无 GL）"),
     ("control", "control_test.py", "控制通道契约（握手/单步/读屏/注入/热重载/退出）"),
     ("draw", "draw_smoke.py", "叠加/半格契约（CPU 像素；需要 Pillow）"),
     ("layer", "layer_smoke.py", "图层合成契约（含不建层的零开销）"),

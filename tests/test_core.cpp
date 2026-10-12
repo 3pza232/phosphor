@@ -1,0 +1,236 @@
+// 纯逻辑单元测试：只覆盖不依赖 GL / GLFW / Lua 的核心（颜色、文本、配置、色板、主题…）。
+// 这些是"最该有测试、也最容易崩"的纯函数；有窗口/渲染参与的部分由 tools/ 下的
+// 集成脚本（window_smoke / draw_smoke 等）覆盖。
+
+#include "harness.hpp"
+
+#include "core/color.hpp"
+#include "core/config.hpp"
+#include "core/crt.hpp"
+#include "core/json_lite.hpp"
+#include "core/palette.hpp"
+#include "core/skin.hpp"
+#include "core/text.hpp"
+#include "core/text_input.hpp"
+#include "pack/builtin.hpp"
+
+#include <filesystem>
+#include <string>
+
+using namespace phos;
+using namespace phos::text;
+
+namespace {
+
+// ---------------------------------------------------------------- color
+
+TEST(color_channel_clamp) {
+    CHECK_EQ(int(clamp_channel(-1)), 0);
+    CHECK_EQ(int(clamp_channel(0)), 0);
+    CHECK_EQ(int(clamp_channel(255)), 255);
+    CHECK_EQ(int(clamp_channel(256)), 255);
+}
+
+TEST(color_rgb_clamped) {
+    const Color c = rgb_clamped(-10, 128, 999);
+    CHECK_EQ(int(c.r), 0);
+    CHECK_EQ(int(c.g), 128);
+    CHECK_EQ(int(c.b), 255);
+}
+
+TEST(color_scale_does_not_wrap) {
+    const Color up = scale_color(Color{200, 100, 0}, 2.0f);
+    CHECK_EQ(int(up.r), 255);  // 400 不会回绕
+    CHECK_EQ(int(up.g), 200);
+    const Color down = scale_color(Color{200, 100, 0}, 0.5f);
+    CHECK_EQ(int(down.r), 100);
+}
+
+TEST(color_keep_flag) {
+    CHECK(kKeepBg.keep);
+    CHECK(!Color{}.keep);
+    CHECK_EQ(int(Color::black.r), 0);
+    CHECK_EQ(int(Color::white.r), 230);
+}
+
+// ---------------------------------------------------------------- text
+
+TEST(text_char_width) {
+    CHECK_EQ(char_width(U'\n'), 0);
+    CHECK_EQ(char_width(U'A'), 1);
+    CHECK_EQ(char_width(U'中'), 2);
+}
+
+TEST(text_display_width) {
+    CHECK_EQ(display_width("hello"), 5);
+    CHECK_EQ(display_width("中文 abc"), 8);
+}
+
+TEST(text_truncate_never_splits_wide) {
+    CHECK_EQ(truncate("abc", 2), std::string("ab"));
+    CHECK_EQ(truncate("中中中", 3), std::string("中"));  // 切不到第 2 个整字就停
+}
+
+TEST(text_utf8_roundtrip) {
+    CHECK_EQ(decode("中").size(), size_t(1));
+    CHECK_EQ(int(decode("中")[0]), 0x4E2D);
+    std::string s;
+    append_utf8(s, U'中');
+    CHECK_EQ(s, std::string("中"));
+    pop_back_utf8(s);
+    CHECK(s.empty());
+}
+
+// ---------------------------------------------------------------- text_input
+
+TEST(text_input_filters) {
+    CHECK(TextInput::accept_hex(U'0'));
+    CHECK(TextInput::accept_hex(U'f'));
+    CHECK(TextInput::accept_hex(U'A'));
+    CHECK(!TextInput::accept_hex(U'g'));
+    CHECK(!TextInput::accept_hex(U'中'));
+    CHECK(TextInput::accept_digits(U'5'));
+    CHECK(!TextInput::accept_digits(U'a'));
+}
+
+TEST(text_input_limit_and_backspace) {
+    TextInput in(TextInput::accept_any, 3);
+    in.apply("abc");
+    CHECK_EQ(in.value(), std::string("abc"));
+    CHECK_EQ(in.count(), size_t(3));
+    in.apply("d");  // 超限：丢弃
+    CHECK_EQ(in.value(), std::string("abc"));
+    in.apply(std::string(1, kBackspace) + "d");  // 退格后补 d
+    CHECK_EQ(in.value(), std::string("abd"));
+    in.clear();
+    CHECK(in.empty());
+    CHECK_EQ(in.count(), size_t(0));
+}
+
+TEST(text_input_backspace_removes_whole_codepoint) {
+    TextInput in;
+    in.apply("中");
+    CHECK_EQ(in.count(), size_t(1));
+    in.apply(std::string(1, kBackspace));
+    CHECK(in.empty());  // 删掉整个码点，不是删一个字节
+}
+
+// ---------------------------------------------------------------- json
+
+TEST(json_escape_and_quote) {
+    CHECK_EQ(json::escape("a\nb"), std::string("a\\nb"));
+    CHECK_EQ(json::quote("a\"b"), std::string("\"a\\\"b\""));
+}
+
+TEST(json_parse_object) {
+    json::Object obj;
+    std::string err;
+    CHECK(obj.parse("{\"a\":1,\"b\":\"x\",\"c\":true,\"n\":{\"k\":2}}", err));
+    CHECK_EQ(obj.integer("a"), 1);
+    CHECK_EQ(obj.str("b"), std::string("x"));
+    CHECK(obj.flag("c"));
+    CHECK_EQ(obj.integer("missing", 7), 7);
+    const json::Object* nested = obj.object("n");
+    CHECK(nested != nullptr);
+    CHECK_EQ(nested->integer("k"), 2);
+}
+
+TEST(json_parse_rejects_garbage) {
+    json::Object obj;
+    std::string err;
+    CHECK(!obj.parse("not json at all", err));
+    CHECK(!err.empty());
+}
+
+// ---------------------------------------------------------------- palette / builtin
+
+TEST(palette_slot_names) {
+    CHECK_EQ(kPaletteSlots, size_t(12));
+    CHECK_EQ(std::string(palette_slot_name(PaletteSlot::purple)), std::string("purple"));
+    CHECK_EQ(std::string(palette_slot_name(PaletteSlot::dark_gray)), std::string("dark_gray"));
+}
+
+TEST(builtin_and_raw_palette) {
+    const Palette p = builtin_palette();
+    CHECK_EQ(p.slots[static_cast<size_t>(PaletteSlot::red)].r, Color::red.r);
+    CHECK_EQ(p.slots[static_cast<size_t>(PaletteSlot::white)].g, Color::white.g);
+
+    const Palette raw = raw_palette();  // 回退链最后一环：不做色调
+    CHECK_EQ(raw.id, std::string("none"));
+    CHECK_EQ(raw.scan_strength, 0.0f);
+}
+
+// ---------------------------------------------------------------- crt
+
+TEST(crt_params_by_level) {
+    const Palette raw = raw_palette();  // scan_strength = 0：扫描线强度由档位决定
+    CHECK_EQ(std::string(crt_level_name(0)), std::string("OFF"));
+    CHECK_EQ(std::string(crt_level_name(-5)), std::string("OFF"));      // 越界钳到两端
+    CHECK_EQ(std::string(crt_level_name(99)), std::string("STRONG"));
+    CHECK(!crt_params_for_level(0, raw).compensate);  // OFF 不做亮度补偿
+    CHECK(crt_params_for_level(3, raw).compensate);
+    CHECK(crt_params_for_level(3, raw).scanline > crt_params_for_level(1, raw).scanline);
+}
+
+TEST(crt_palette_overrides_scanline) {
+    Palette pal;
+    pal.scan_strength = 0.5f;  // 色板声明了扫描线强度：非 OFF 档位以它为准
+    CHECK_EQ(crt_params_for_level(2, pal).scanline, 0.5f);
+    CHECK_EQ(crt_params_for_level(0, pal).scanline, 0.0f);  // OFF 档位不受色板影响
+    CHECK_EQ(int(crt_params_for_level(2, pal).tint.r), int(pal.tint.r));
+}
+
+// ---------------------------------------------------------------- skin
+
+TEST(skin_builtin_geometry) {
+    const Skin s = builtin_skin();
+    CHECK_EQ(s.grid_w(), s.screen_x * 2 + s.screen_w);
+    CHECK_EQ(s.grid_h(), int(s.top.size()) + s.screen_h + int(s.bottom.size()));
+    CHECK_EQ(s.screen_w, kContentW);
+    const ui::Rect r = content_rect(s);
+    CHECK_EQ(r.x, s.screen_x);
+    CHECK_EQ(r.y, s.screen_y);
+    CHECK_EQ(r.w, s.screen_w);
+    CHECK_EQ(r.h, s.screen_h);
+    CHECK(!s.lamps.empty());
+}
+
+// ---------------------------------------------------------------- config
+
+TEST(config_defaults_when_missing) {
+    const Config c = load_config("phosphor-unit-file-that-does-not-exist.json");
+    CHECK_EQ(c.skin, std::string("default"));
+    CHECK_EQ(c.fps, kDefaultFps);
+    CHECK_EQ(c.crt_level, kDefaultCrtLevel);
+    CHECK_EQ(c.music_volume, kDefaultMusicVolume);
+    CHECK_EQ(c.sfx_volume, kDefaultSfxVolume);
+}
+
+TEST(config_roundtrip) {
+    const std::filesystem::path path =
+        std::filesystem::temp_directory_path() / "phosphor_unit_config.json";
+
+    Config c;
+    c.skin = "neon-husk";
+    c.boot = "spectrum";
+    c.language = "en";
+    c.crt_level = 3;
+    c.fps = 120;
+    c.music_volume = 42;
+    c.sfx_volume = 13;
+    save_config(path.string(), c);
+
+    const Config r = load_config(path.string());
+    CHECK_EQ(r.skin, std::string("neon-husk"));
+    CHECK_EQ(r.boot, std::string("spectrum"));
+    CHECK_EQ(r.language, std::string("en"));
+    CHECK_EQ(r.crt_level, 3);
+    CHECK_EQ(r.fps, 120);
+    CHECK_EQ(r.music_volume, 42);
+    CHECK_EQ(r.sfx_volume, 13);
+
+    std::error_code ec;
+    std::filesystem::remove(path, ec);  // 清理临时文件；删不掉也无所谓
+}
+
+} // namespace

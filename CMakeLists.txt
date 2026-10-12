@@ -108,6 +108,35 @@ if(WIN32)
     target_sources(phosphor PRIVATE "${CMAKE_BINARY_DIR}/phos_icon.rc")
 endif()
 
+# --- 纯逻辑单元测试：不依赖 GL / GLFW / Lua，可无窗口、无显卡运行 ---
+# 只编译"纯逻辑"那一批源文件（颜色/文本/配置/色板/主题/表面…），直接编进测试可执行文件；
+# 与主机共享同一份源码，所以测的就是真代码。默认开启，tools/run_checks.py 会调用它
+option(PHOSPHOR_BUILD_TESTS "构建纯逻辑单元测试" ON)
+if(PHOSPHOR_BUILD_TESTS)
+    add_executable(phosphor_tests
+        tests/main.cpp
+        tests/test_core.cpp
+        src/core/color.cpp
+        src/core/text.cpp
+        src/core/text_input.cpp
+        src/core/log.cpp
+        src/core/json_lite.cpp
+        src/core/config.cpp
+        src/core/palette.cpp
+        src/core/skin.cpp
+        src/core/crt.cpp
+        src/core/screen.cpp
+        src/core/surface.cpp
+        src/core/layered_screen.cpp
+        src/pack/builtin.cpp)
+    target_include_directories(phosphor_tests PRIVATE ${CMAKE_SOURCE_DIR}/src)
+    if(MINGW)
+        target_link_options(phosphor_tests PRIVATE -static-libgcc -static-libstdc++)
+    endif()
+    enable_testing()
+    add_test(NAME phosphor_unit COMMAND phosphor_tests)
+endif()
+
 # --- 程序包组装：exe + package/ 骨架 ---
 # 每次构建都把内容目录（卡带 / devkit / 主题 / mods / saves / docs）同步到构建目录；
 # 合并式复制的规则与告警见 tools/sync_package.cmake
