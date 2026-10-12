@@ -68,7 +68,8 @@ cmake -G Ninja -DPHOSPHOR_SANITY=ON ../    # 自检构建：慢，只用于排�
 
 | 脚本 | 用途 | 跑法 |
 |---|---|---|
-| `run_checks.py` | **一键跑全部门禁并汇总**：默认无头门禁（control/draw/layer/cart/net），`--gui` 再加开窗门禁。测试逻辑仍在各自脚本里，它只管调度与汇总 | `python ../tools/run_checks.py [--gui]` |
+| `run_checks.py` | **一键跑全部门禁并汇总**：默认无头门禁（unit/control/draw/layer/cart/net），`--gui` 再加开窗门禁。测试逻辑仍在各自脚本里，它只管调度与汇总 | `python ../tools/run_checks.py [--gui]` |
+| `unit_smoke.py` | 纯逻辑单元测试：跑 `phosphor_tests`（C++，源码在 `tests/`），覆盖颜色/文本/配置/色板/主题等不依赖 GL·Lua 的核心——无窗口无显卡即可跑 | `python ../tools/unit_smoke.py` |
 | `control_test.py` | 控制通道契约：握手 / 单步精确 / 读屏 / 注入 / 热重载 / 退出 | `python ../tools/control_test.py` |
 | `window_smoke.py` | 窗口路径冒烟：菜单→开局→按键→单步 →**实时浸泡**→干净退出（确定性部分全走单步，只有最后几秒实时；需要图形环境） | `python ../tools/window_smoke.py [--seconds 3] [--cart carts/x]` |
 | `cart_smoke.py` | 卡带冒烟：出厂卡带各跑一段，断言跑得完 / 不出错 / 有画面 / **同种子跑两遍逐字节一致**；不比对像素——画面本来就该随内容变 | `python ../tools/cart_smoke.py [--frames 3000] [--cart worms]` |
@@ -92,6 +93,7 @@ cmake -G Ninja -DPHOSPHOR_SANITY=ON ../    # 自检构建：慢，只用于排�
 | `docs/` | **使用文档**：玩家手册 / 卡带作者手册 / API 参考 / 格式与内容包 / agent 接口 |
 | `design/` | 开发期设计文档与计划（不随发行包发布） |
 | `tools/` | 开发脚本（自测、演示、构建期同步） |
+| `tests/` | C++ 纯逻辑单元测试（`phosphor_tests` 目标；由 `run_checks.py` 的 unit 门禁调用） |
 | `build/` | 构建产物，**同时就是可直接分发/试玩的运行目录**：`carts/ devkit/ theme/ mods/ saves/ docs/` 与 exe 同级，全部是真实文件（不含任何路径联接） |
 
 ## 文档

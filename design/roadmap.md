@@ -191,6 +191,7 @@ CPU 截图路径每次现读字体链（无需处理）；测试环境固定为 
 ## 四、宿主级验证：都在 `tools/`
 
 游戏机自身的性质由 `tools/` 里的脚本守（清单、用途与跑法见仓库 `README.md` 的"开发脚本"表）：
+纯逻辑由 `tests/`（C++，`phosphor_tests`，经 `tools/unit_smoke.py`）守、
 `control_test.py` 控制通道契约、`window_smoke.py` 窗口路径冒烟、`cart_smoke.py` 卡带运行冒烟
 （跑得完 / 不出错 / 有画面 / **驱动局** / 同种子可复现）、`layer_smoke.py` 图层契约、
 `draw_smoke.py` 叠加与半格契约（读像素）、
