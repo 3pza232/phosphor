@@ -37,12 +37,15 @@ struct ScreenImage {
 /// layers 非空时，按 z 升序把各图层叠画在 screen 之上（像素级合成，与窗口那条路同规则）：
 /// 只有给过底色的格才铺底，字形只画笔画，笔画之外透出下层。origin 是内容区在屏幕里的
 /// 字符格偏移。**不传 layers 就是纯底图**（不经过层合成这一步）。
+/// overlay 非空时再压一层主机 chrome（侧栏分隔线，对应 GL 的 draw_overlay），
+/// 使截图与窗口一致（有图层的卡带，分隔线不在 base 里）
 std::optional<ScreenImage> render_screen_image(const Screen& screen,
                                                const std::vector<std::string>& font_files,
                                                const ScreenImageOptions& options,
                                                std::string& error,
                                                const LayeredScreen* layers = nullptr,
-                                               int origin_x = 0, int origin_y = 0);
+                                               int origin_x = 0, int origin_y = 0,
+                                               const Screen* overlay = nullptr);
 
 /// 写出 PNG（父目录按需创建）
 bool write_png(const ScreenImage& image, const std::string& path, std::string& error);

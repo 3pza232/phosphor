@@ -2,6 +2,8 @@
 
 #include "core/color.hpp"
 
+#include <cmath>
+
 namespace phos {
 
 struct Palette;
@@ -31,6 +33,13 @@ inline constexpr float kMaskLossPerUnit = 0.55f;
 
 /// 机器扫描线档位：0=OFF 1=WEAK 2=MEDIUM 3=STRONG
 inline constexpr int kCrtLevelCount = 4;
+
+/// 一条扫描线相位（0..1）：`frag_y` 是**像素中心**的自下而上坐标（与 gl_FragCoord 同约定，
+/// 底行 0.5、顶行 H-0.5）。CPU 光栅化与窗口着色器共用这一份换算——两处各写一份迟早差半个
+/// 像素，而周期取整数时差这半像素会让相位永远够不到暗线区间，扫描线整条消失
+inline float crt_scanline_phase(float frag_y) {
+    return std::fmod(frag_y / kScanlinePeriodPx, 1.0f);
+}
 
 /// 档位换算为后处理参数；tint 恒取色板，scanline 在色板声明 >0 且档位非 OFF 时以色板为准，
 /// glow / mask 由档位决定

@@ -94,9 +94,11 @@ bool App::write_screenshot(const std::string& path, int& width, int& height,
     // 而不是合成后的文本网格 —— 那条路一格只有一个字形，会把下层"顶掉"
     const bool layered = playing_ && host_.layers.active();
     const Screen& base = layered ? base_screen_ : screen_;
+    // 有图层的卡带，分隔线只在 chrome_ 里（base 快照在写分隔线之前），截图要补上才与窗口一致
+    const Screen* overlay = (layered && host_.panel_w > 0) ? &chrome_ : nullptr;
     const auto image = render_screen_image(base, font_files_, options, error,
                                            layered ? &host_.layers : nullptr,
-                                           host_.content_x, host_.content_y);
+                                           host_.content_x, host_.content_y, overlay);
     if (!image) return false;
     if (!write_png(*image, path, error)) return false;
     width = image->width;

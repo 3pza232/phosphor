@@ -90,8 +90,11 @@ void post_process(Canvas& canvas, const CrtParams& crt) {
     const float comp = crt.compensate ? 1.0f + loss : 1.0f;
 
     for (int y = 0; y < canvas.height; ++y) {
-        const float fy = static_cast<float>(canvas.height - 1 - y);
-        const float phase = std::fmod(fy / kScanlinePeriodPx, 1.0f);
+        // 与 GL 对齐：gl_FragCoord 是像素**中心**（底行 y≈0.5、顶行 ≈H-0.5）。少了这半个
+        // 像素，当周期取整数（kScanlinePeriodPx=3）时 phase 只会落在 {0,1/3,2/3}，永远够
+        // 不到暗线区间（0.68..），扫描线在 CPU 这条路上会彻底失效
+        const float fy = static_cast<float>(canvas.height) - 0.5f - static_cast<float>(y);
+        const float phase = crt_scanline_phase(fy);
         const float scan =
             1.0f - crt.scanline * smoothstep(kScanlineDarkStart, kScanlineDarkEnd, phase);
 
@@ -115,7 +118,8 @@ std::optional<ScreenImage> render_screen_image(const Screen& screen,
                                                const ScreenImageOptions& options,
                                                std::string& error,
                                                const LayeredScreen* layers,
-                                               int origin_x, int origin_y) {
+                                               int origin_x, int origin_y,
+                                               const Screen* overlay) {
     FontChain fonts;
     std::string load_error;
     for (const std::string& path : font_files) {
@@ -201,6 +205,21 @@ std::optional<ScreenImage> render_screen_image(const Screen& screen,
                         fill_cell(canvas, x0, y0, cell_w * cell.cols, cell_h, cell.bg);
                     draw_pens(src, cx, cy, x0, y0);
                 }
+            }
+        }
+    }
+
+    // 主机 chrome（侧栏分隔线）：与 GL 的 draw_overlay 对应，压在所有图层之上。
+    // 有图层的卡带，分隔线不在 base 里，截图缺了它就跟窗口差一列
+    if (overlay) {
+        for (int cy = 0; cy < overlay->height(); ++cy) {
+            for (int cx = 0; cx < overlay->width(); ++cx) {
+                const Cell& cell = overlay->at(cx, cy);
+                if (cell.cols == 0) continue;
+                const int x0 = (origin_x + cx) * cell_w;
+                const int y0 = (origin_y + cy) * cell_h;
+                if (cell.alpha != 0) fill_cell(canvas, x0, y0, cell_w * cell.cols, cell_h, cell.bg);
+                draw_pens(*overlay, cx, cy, x0, y0);
             }
         }
     }

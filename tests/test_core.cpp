@@ -17,6 +17,7 @@
 #include "pack/builtin.hpp"
 #include "shell/shelf_search.hpp"
 
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <string>
@@ -197,6 +198,19 @@ TEST(crt_palette_overrides_scanline) {
     CHECK_EQ(crt_params_for_level(2, pal).scanline, 0.5f);
     CHECK_EQ(crt_params_for_level(0, pal).scanline, 0.0f);  // OFF 档位不受色板影响
     CHECK_EQ(int(crt_params_for_level(2, pal).tint.r), int(pal.tint.r));
+}
+
+TEST(crt_scanline_phase_hits_dark_window) {
+    // 像素中心约定：底行 0.5、顶行 H-0.5。整数坐标（旧 bug：少了半个像素）永远够不到
+    // 暗线区间 kScanlineDarkStart，扫描线在 CPU 这条路上会整条消失
+    float max_center = 0.0f;
+    float max_integer = 0.0f;
+    for (int row = 0; row < 12; ++row) {
+        max_center = std::max(max_center, crt_scanline_phase(static_cast<float>(row) + 0.5f));
+        max_integer = std::max(max_integer, crt_scanline_phase(static_cast<float>(row)));
+    }
+    CHECK(max_center > kScanlineDarkStart);   // 有行落进暗线 → 扫描线可见
+    CHECK(max_integer < kScanlineDarkStart);  // 整数相位够不到 → 这正是旧 bug
 }
 
 // ---------------------------------------------------------------- skin
