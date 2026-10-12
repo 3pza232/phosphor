@@ -17,6 +17,7 @@ namespace phos {
 
 class Audio;
 class CartFiles;
+class Net;
 struct CartInfo;
 
 /// 主机运行时上下文：API 层与 App 之间的共享状态。
@@ -27,6 +28,7 @@ struct HostContext {
     const Palette* palette = nullptr;   // 激活滤镜（phos.color 常量的来源）
     SaveStore* save = nullptr;          // 卡带存档（未声明 save 时为 nullptr）
     Audio* audio = nullptr;             // 音频子系统（可能为静音降级态）
+    Net* net = nullptr;                 // 局域网联机（未接时为 nullptr，phos.net 安全空壳）
     const CartFiles* cart_files = nullptr;  // 当前卡带包（读取包内音频等资源）
     const CartInfo* cart_info = nullptr;    // 当前卡带的身份（来自 manifest.lua；见 phos.cart）
     std::string save_dir = kSaveDir;    // 存档目录（--save-dir / 测试模式可改指向独立目录）

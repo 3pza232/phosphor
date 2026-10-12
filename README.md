@@ -13,9 +13,10 @@
 |---|---|
 | 形态 | 绿色免安装的单文件主机（`phosphor.exe`），双击即用 |
 | 画面 | `80x45` 字符网格 + 显像管后处理（扫描线、孔径格栅、辉光、滤镜色调） |
-| 卡带 | 一个文件夹或一个 `.phos` 单文件，丢进 `carts/` 就被扫到；Lua 沙箱，碰不到文件系统与网络 |
+| 卡带 | 一个文件夹或一个 `.phos` 单文件，丢进 `carts/` 就被扫到；Lua 沙箱，碰不到文件系统；网络只能走 `phos.net` |
 | 外观 | 机台外壳、配色滤镜、启动动画、系统音效、字体、界面语言全是**内容包**，都可替换或新增 |
 | 面向 agent | 画面即文本（无需截图与视觉模型）、带控制通道可注入输入与精确步进、卡带可自报玩法状态 |
+| 联机 | 局域网联机内建：卡带可开房 / 加入 / 收发消息 / 自动发现（`phos.net`，见 `docs/api-reference.md`） |
 
 ## 快速开始
 
@@ -67,12 +68,14 @@ cmake -G Ninja -DPHOSPHOR_SANITY=ON ../    # 自检构建：慢，只用于排�
 
 | 脚本 | 用途 | 跑法 |
 |---|---|---|
+| `run_checks.py` | **一键跑全部门禁并汇总**：默认无头门禁（control/draw/layer/cart/net），`--gui` 再加开窗门禁。测试逻辑仍在各自脚本里，它只管调度与汇总 | `python ../tools/run_checks.py [--gui]` |
 | `control_test.py` | 控制通道契约：握手 / 单步精确 / 读屏 / 注入 / 热重载 / 退出 | `python ../tools/control_test.py` |
-| `window_smoke.py` | 窗口路径冒烟：开窗跑一段时钟、菜单→开局、按键、`time.step` 精确性、退出码（需要图形环境） | `python ../tools/window_smoke.py [--seconds N] [--cart carts/x]` |
+| `window_smoke.py` | 窗口路径冒烟：菜单→开局→按键→单步 →**实时浸泡**→干净退出（确定性部分全走单步，只有最后几秒实时；需要图形环境） | `python ../tools/window_smoke.py [--seconds 3] [--cart carts/x]` |
 | `cart_smoke.py` | 卡带冒烟：出厂卡带各跑一段，断言跑得完 / 不出错 / 有画面 / **同种子跑两遍逐字节一致**；不比对像素——画面本来就该随内容变 | `python ../tools/cart_smoke.py [--frames 3000] [--cart worms]` |
 | `layer_smoke.py` | 图层契约：跑 devkit 的图层示例卡带，核对按 z 叠放、字形透出下层、浮窗盖住世界、整层显隐、按层读取；并核对没建层的卡带 `layers` 为空且 `merge_ms == 0` | `python ../tools/layer_smoke.py` |
 | `draw_smoke.py` | 叠加与半格契约：跑 devkit 的叠加示例卡带，读像素核对"同格两笔的墨都在""`back_rect` 铺到字形之外""`plot` 的墨落在指定子位"，并核对叠画上限（需要 Pillow） | `python ../tools/draw_smoke.py` |
 | `gl_smoke.py` | GL 渲染路像素门禁：开窗用 `frame.read` 读回真实帧，核对"不是全黑""同格两笔""半格""逐层叠画"——`screenshot` 走 CPU 光栅化，覆盖不到着色器与图层叠画（需要图形环境与 Pillow） | `python ../tools/gl_smoke.py` |
+| `net_smoke.py` | 联机契约：同机起两个 `phosphor` 进程，一个开房一个加入（走 `phos.net` 与局域网发现），核对连接、对端列表、消息互通、断开事件（headless 即可，无需图形环境） | `python ../tools/net_smoke.py` |
 | `agent_play.py` | 通用 agent 玩家：开真窗口、在卡带架上挑一张卡带、按卡带自报的 `debug_state()` 操控它玩（策略用 `--policy` 接自己的文件，流速用 `--speed` 设，默认实机流速） | `python ../tools/agent_play.py [--shelf-cart bricks] [--cart carts/x] [--steps 40] [--speed 1]` |
 | `agent_shell_demo.py` | 端到端操控系统界面：设置 / 插拔卡 / 暂停 / 磁带码 | `python ../tools/agent_shell_demo.py` |
 | `clean.py` | 清运行目录里的临时物（日志 / 截图 / 演示存档区），不碰设置与存档 | `python ../tools/clean.py` |

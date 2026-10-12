@@ -79,6 +79,7 @@ int App::run(const CliOptions& opts) {
     host_.palette = &active_filter_;
     host_.language = config_.language;
     host_.audio = &audio_;
+    host_.net = &net_;
     rng_seed_ = opts.seed.value_or(
         static_cast<unsigned>(std::chrono::system_clock::now().time_since_epoch().count()));
     host_.rng.seed(rng_seed_);

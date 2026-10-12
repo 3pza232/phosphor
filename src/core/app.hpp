@@ -13,6 +13,7 @@
 #include "core/palette.hpp"
 #include "core/screen.hpp"
 #include "core/skin.hpp"
+#include "net/net.hpp"
 #include "pack/pack.hpp"
 #include "shell/shell.hpp"
 
@@ -170,6 +171,7 @@ private:
     int sound_index_ = 0;
 
     Audio audio_;
+    Net net_;  // 局域网联机（随卡带生命周期，见 app_cart.cpp）
     std::map<std::string, int> sample_cache_;  // 音效包内音频文件的解码句柄缓存
 
     // 仪式感动效状态

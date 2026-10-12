@@ -18,6 +18,7 @@
 | 五分钟上手：照着模板填空就能开工 | [devkit.md](devkit.md) |
 | `manifest.lua` 有哪些字段、卡带的生命周期与沙箱 | [cart-format.md](cart-format.md) |
 | 每个 `phos.*` 调用（权威规格，带示例） | [api-reference.md](api-reference.md) |
+| 让卡带支持局域网联机 | [api-reference.md](api-reference.md) 的「phos.net」一节 |
 | 让 agent / 脚本帮你写、帮你自测 | [agent-interface.md](agent-interface.md) |
 
 ## 发行包里还有什么

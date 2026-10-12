@@ -6,6 +6,7 @@
 #include "api/audio_api.hpp"
 #include "api/layer_api.hpp"
 #include "api/lua_value.hpp"
+#include "api/net_api.hpp"
 #include "api/ui_api.hpp"
 #include "cart/cartridge.hpp"
 #include "core/log.hpp"
@@ -400,6 +401,8 @@ void register_host_api(sol::state& lua, HostContext& host) {
     register_assets_api(lua, host);
     // 图层（可选的新能力：不建层的卡带完全不受影响）
     register_layer_api(lua, host);
+    // 局域网联机（默认休眠：卡带不调 host/join 就完全不占端口、不起线程）
+    register_net_api(lua, host);
 }
 
 } // namespace phos

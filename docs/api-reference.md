@@ -25,6 +25,7 @@ phos.save     -- 存档（需 manifest 声明 save = true）
 phos.assets   -- 包内资源读取（文本 / 按行 / 存在性 / 大小 / 列表）
 phos.sys      -- 系统信息与工具
 phos.cart     -- 当前卡带的身份（id / 标题 / 版本 / 作者 / 简介）
+phos.net      -- 局域网联机：开房 / 加入 / 收发消息 / 发现（见下节）
 ```
 
 > `phos.color` 的 12 色常量取自当前激活的显像管滤镜（palette 内容包），
@@ -434,6 +435,61 @@ end
 合并结果（最前面那一笔赢），所以**文本里看不到"同格的两种内容"**，只有画面与 `screenshot`
 看得到。同格共存不必再挤到不同的层上：`phos.screen.blend` 直接叠一笔、`plot` 落半格
 （见 `phos.screen` 一节）。
+
+## phos.net
+
+局域网联机：**开房 / 加入 / 收发消息 / 发现**。引擎只做**传输**——连接、房间（对端列表）、
+消息投递、可观测；**同步模型**（锁步 / 行动中继 / 主机权威）由卡带自己在 `send` / `poll`
+上实现。未调用 `host` / `join` 时完全休眠（不占端口、不起线程）。
+
+- 传输是 **TCP 星型 + 主机中继**：客人只与主机相连，客人之间互发由主机转发。
+- 对端 id：主机恒为 `1`，客人依次 `2, 3, …`；`0` 是**广播地址**（`send(0, …)` = 发给除自己外所有人）。
+- 运行在后台线程，主线程只入队/取队（与外设、音频同一套"主线程不阻塞"的心智）。
+- 设计细节（拓扑、协议、线程、确定性注意）见 `design/networking.md`（开发文档）。
+
+```lua
+-- 开房 / 加入
+phos.net.host({ port = 7770, name = "P1" })        -- 成功返回 true
+phos.net.join("192.168.1.20", { port = 7770, name = "P2" })
+phos.net.stop()                                     -- 离开 / 关房
+
+-- 状态与房间
+phos.net.status()      -- "off" | "hosting" | "connecting" | "connected" | "error"
+phos.net.role()        -- "none" | "host" | "client"
+phos.net.error()       -- 最近一次错误串（无则 ""）
+phos.net.connected()   -- 主机=已开房；客人=已连上主机
+phos.net.self_id()     -- 自己的对端 id（未联机 0）
+phos.net.host_id()     -- 主机对端 id（未联机 0）
+phos.net.port()        -- 游戏 TCP 端口（未联机 0）
+phos.net.local_ip()    -- 本机局域网 IPv4（提示用）
+phos.net.peers()       -- { { id, name, address, rtt_ms }, ... }（不含自己）
+
+-- 消息：data 是可 JSON 化的表（可省）；kind 是卡带自定义的类型串
+phos.net.send(to_id, kind, data)         -- to_id = 0 表示广播给其他所有人
+phos.net.broadcast(kind, data)           -- 等价 send(0, kind, data)
+for _, m in ipairs(phos.net.poll()) do   -- 本帧收到的：{ from, kind, data }
+  if m.kind == "shot" then apply_shot(m.data) end
+end
+
+-- 连接变化事件（与消息分开，便于大厅 UI）
+for _, e in ipairs(phos.net.events()) do -- { type="connected"|"disconnected", peer, name }
+  print(e.type, e.peer)
+end
+
+-- 局域网发现：广播查询并收集应答（有界阻塞，默认 0.5 秒）
+for _, room in ipairs(phos.net.discover(0.5)) do
+  phos.ui.text(2, y, 40, room.name .. "  " .. room.address .. ":" .. room.port)  -- players 人数
+  y = y + 1
+end
+```
+
+> **谁负责同步**：引擎不做锁步/回滚。回合制卡带（如炮弹对战）用"行动中继"最省事——
+> 只在轮到某人动作时把该动作发给对方；要严格锁步就得**双方同种子**，并且卡带里
+> 一律用 `phos.sys.random`（`math.random` 不受主机种子控制）。同一份二进制在局域网内
+> 逐位一致最稳；跨平台浮点不保证一致。
+
+> 自测：`tools/net_smoke.py`（同机起两进程，验证连接、局域网发现、消息互通、断开事件）。
+> 它用 `tools/fixtures/net/` 的夹具卡带驱动——那是**开发目录里的测试夹具，不随发行包**。
 
 ## phos.input
 

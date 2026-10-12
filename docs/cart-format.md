@@ -58,7 +58,7 @@ return {
   desc     = { zh = "在终端里觅食的蛇。", en = "A snake hunting in the terminal." },
   sidebar  = { w = 16 },         -- 右侧栏面板宽度（0~32，缺省无侧栏）
   save     = true,               -- 是否需要存档空间（声明后 phos.save 可用）
-  phos_api = 1,                  -- 目标 API 版本（当前世代 1 / 2 / 3，见「九、版本兼容」）
+  phos_api = 1,                  -- 目标 API 版本（当前世代 1 / 2 / 3 / 4，见「九、版本兼容」）
 
   -- 像素图标（卡带架展示；'.' 与空格为透明）
   icon = {
@@ -122,7 +122,9 @@ end
 | **`os.exit` `os.remove` `io.*` `load` 等** | **不可用**（文件与系统访问被禁止） |
 | `require` | 可用，但被重定义为**包内模块加载**（只能读本包 `.lua`，见第五节） |
 
-卡带的一切对外表达只有两条路：`phos.*` API 与 `phos.save` 存档。
+卡带的一切对外表达只有三条路：`phos.*` API、`phos.save` 存档、`phos.net` 联机。
+**没有原始套接字**——网络只能经 `phos.net`（开房 / 加入 / 收发 / 发现，见 api-reference.md），
+沙箱拿不到任何底层网络能力。
 
 ## 五、多文件卡带（require）
 
@@ -231,9 +233,9 @@ end
 - 当前世代：**1 = 基础接口；2 = 可选图层（`phos.layer`）与 `phos.text.ink_box` /
   `phos.input.duration` / `phos.input.keys` / `phos.sys.frame`；3 = 墨迹叠加
   （`phos.screen.blend`）、半格绘制（`plot` / `quadrant` / `cell_of`）与独立底色
-  （`back` / `back_rect`，及各自的区域版）**。用到哪一代才有的接口就声明到那代：
-  否则旧主机照常加载它，到运行到那一行才失败；声明得更高会让它在卡带架上就被明确拒绝。
-  不用新接口的卡带请继续声明 `1`，兼容面更大
+  （`back` / `back_rect`，及各自的区域版）；4 = 局域网联机（`phos.net`）**。
+  用到哪一代才有的接口就声明到那代：否则旧主机照常加载它，到运行到那一行才失败；
+  声明得更高会让它在卡带架上就被明确拒绝。不用新接口的卡带请继续声明 `1`，兼容面更大
 
 ## 十、分层（可选能力）
 

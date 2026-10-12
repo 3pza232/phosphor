@@ -13,6 +13,7 @@ void App::load_cart_path(const std::string& path) {
     if (path.empty()) return;
 
     audio_.stop_music();  // 上一张卡带的音乐到此为止
+    net_.stop();          // 联机随卡带生命周期：换卡/重载都先收线，端口不跨卡带留
     cart_ = std::make_unique<Cartridge>();
     host_.time = 0.0;
     host_.layers.reset(host_.content_w, host_.content_h);  // 层随卡带：新卡带从零开始
@@ -46,6 +47,7 @@ void App::load_cart_path(const std::string& path) {
 
 
 void App::eject_cart() {
+    net_.stop();  // 拔卡即离线（端口/线程随卡带一起收）
     if (cart_) {
         eject_collapse_ = kEjectCollapseTime;  // 拔卡仪式：画面收缩熄灭
         audio_.set_paused(false);              // 保证拔卡音能听到

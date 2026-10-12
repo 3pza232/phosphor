@@ -1,21 +1,20 @@
 #!/usr/bin/env python3
-"""PHOSPHOR 窗口（GL）路径冒烟：真的开窗跑一段时钟，注入几个键，断言进程活着、通道还在应答、
-退出干净。
+"""PHOSPHOR 窗口路径冒烟：真的开窗跑一遍"菜单→开局→按键→单步→实时浸泡→干净退出"。
 
-无头回归覆盖的是文本导出与 CPU 光栅化；GL 渲染、窗口消息循环、帧率节流、`time.step`
-的推进只在开窗时才走。内存越界这类故障往往**只在这条路径上出现**，而且常在过一会儿之后
-才由分配器发现，所以这里做的是"最短但真的开窗"的检查：它**不核对画面对不对**，
-只补上那条没人走的路径；像素级的 GL 断言在 `tools/gl_smoke.py`（用 `frame.read` 读回真实帧）。
+它测的是**窗口那条路本身**，不是画面对不对：GL 渲染、窗口消息循环、帧率节流、`time.step`
+的推进只在开窗时才走，内存越界这类故障常**只在这条路径上出现**。像素级断言在
+`tools/gl_smoke.py`（用 `frame.read` 读回真实帧），两者分工明确。
 
-需要图形环境（会真的弹出一个窗口）。驱动一律用**显式按下/松开**（`down:true` / `down:false`）：
-它不依赖主机的按帧释放，实时与单步模式下行为一致；一次点按要跨过一个逻辑帧，
-否则主机的按键采样看不见它。
+**为什么快**：确定性的部分（菜单、按键、`time.step` 精度）一律走**单步**（`host.key` =
+注入 + `time.step`），不睡墙钟；只有最后那一段**实时浸泡**要真的过时间（默认 3 秒）——
+它是唯一需要实时的部分（验帧率节流与长时间不崩）。`--seconds` 调它。
+不再像以前那样"原速把 WORMS 玩十几秒"。
 
-用法（工作目录必须是含 phosphor.exe 的构建目录）::
+需要图形环境（会真的弹出一个窗口）。用法（工作目录必须是含 phosphor.exe 的构建目录）::
 
     cd build
-    python ../tools/window_smoke.py
-    python ../tools/window_smoke.py --seconds 30 --cart carts/worms
+    python ../tools/window_smoke.py                 # 默认浸泡 3 秒
+    python ../tools/window_smoke.py --seconds 10    # 想压久一点
 """
 
 from __future__ import annotations
@@ -28,26 +27,13 @@ from phos import Host, HostError, main_guard, reporter
 #: 开局后注入的按键：走路、跳跃、开合地图与键位表——都是要真正重绘的分支。
 DRIVE_KEYS = ("right", "right", "b", "m", "m", "k", "k")
 
-#: 一次"点按"里按住时长（秒）。实时模式下按键按下/松开之间要跨过一个逻辑帧，
-#: 否则主机的按键采样会看不见它
-TAP_SECONDS = 0.06
-
-
-def tap(host, key: str) -> None:
-    # 实时模式**不用 `frames`**：那是"按住 N 个逻辑帧后自动释放"，只在单步模式下才回包。
-    # 显式按下 + 松开在两种模式下都成立
-    host.send("input.inject", key=key, down=True)
-    time.sleep(TAP_SECONDS)
-    host.send("input.inject", key=key, down=False)
-
-
 #: 开始项的记号：光标停在那一行时，卡带会在行首画 ">"。**认记号，不认行号** ——
 #: 数按键次数是脆的：卡带的菜单一增减（WORMS 多了"地图宽窄"一行就这么回事），
 #: 写死的次数就会停在别的行上，对局永远不开，而门禁看不出来
 START_MARKERS = ("开始游戏", "开始")
 
 
-def start_focused(host) -> bool:
+def start_focused(host: Host) -> bool:
     """光标是否停在"开始"那一项上。
 
     判据是**同一行里既有光标记号 `>` 又有开始字样**：机身边框与侧栏也在同一行里，
@@ -59,16 +45,27 @@ def start_focused(host) -> bool:
     return False
 
 
-def enter_match(host, limit: int = 14) -> bool:
-    """把菜单光标走到"开始"上并按确认；返回是否真的走到了（本来就没菜单的卡带按"没有"算）。"""
+def enter_match(host: Host, limit: int = 14) -> bool:
+    """把菜单光标走到"开始"上并按确认；返回是否真的走到了（本来就没菜单的卡带按"没有"算）。
+
+    走单步：`host.key` = 注入 + `time.step`，比"实时点按 + 睡墙钟"快得多，且确定。
+    """
     reached = False
     for _ in range(limit):
         if start_focused(host):
             reached = True
             break
-        tap(host, "down")
-    tap(host, "a")
+        host.key("down")
+    host.key("a")
     return reached
+
+
+def soak(host: Host, seconds: float) -> None:
+    """实时浸泡：让主机自己按真实时钟跑一段，每秒问一次状态（通道断了会在这里抛）。"""
+    deadline = time.time() + seconds
+    while time.time() < deadline:
+        time.sleep(1.0)
+        host.state()
 
 
 def tail_of(path: str, lines: int = 12) -> str:
@@ -89,19 +86,13 @@ def run(seconds: float, cart: str) -> int:
 
         phase = "起步"
         try:
-            # 菜单 → 开局：**认画面上的光标记号**，不数按键次数（见 enter_match）
-            phase = "菜单按键"
+            # ① 确定性部分：全走单步（快且确定）
+            phase = "菜单 → 开局"
             enter_match(host)
-
-            phase = "真实时钟运行"
-            deadline = time.time() + seconds
-            while time.time() < deadline:
-                time.sleep(1.0)
-                host.state()  # 每秒问一次：通道断了会在这里抛
 
             phase = "对局按键"
             for key in DRIVE_KEYS:
-                tap(host, key)
+                host.key(key)
 
             phase = "单步同步"
             host.step(5)
@@ -109,17 +100,20 @@ def run(seconds: float, cart: str) -> int:
             second = host.step(7)
             report.check(second.get("frame", 0) - first == 7,
                          "time.step 在窗口模式下精确：请求 7 帧就推进 7 帧")
+
+            # ② 唯一需要实时的部分：让主机自己按真实时钟跑一段
+            phase = "实时浸泡"
             host.send("time.resume")
+            soak(host, seconds)
         except HostError as err:
             failure = err
 
         report.check(failure is None,
-                     f"窗口模式连续运行 {seconds:.0f} 秒未中断（走到：{phase}）")
+                     f"窗口路径全程未中断（菜单/按键/单步/实时 {seconds:.0f}s；走到：{phase}）")
 
     report.check(host.exited_cleanly, "quit 之后进程自己退出（未崩溃、未被强杀）")
     if failure is not None:
         print(f"     中断原因: {failure}")
-        print("     （若卡在注入按键：本文件 tap() 用的是显式按下/松开，别改成带 frames 的注入）")
     if failure is not None or not host.exited_cleanly:
         log = tail_of(host.log_path)
         if log:
@@ -131,7 +125,7 @@ def run(seconds: float, cart: str) -> int:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="PHOSPHOR 窗口路径冒烟")
-    parser.add_argument("--seconds", type=float, default=12.0, help="开窗持续秒数（默认 12）")
+    parser.add_argument("--seconds", type=float, default=3.0, help="实时浸泡秒数（默认 3）")
     parser.add_argument("--cart", default="carts/worms", help="用哪张卡带做冒烟")
     args = parser.parse_args()
     return run(args.seconds, args.cart)

@@ -680,3 +680,92 @@ phos.cart = {}
 ---每次调用都会建一张新表，取一次存起来即可；未插卡（主机脚本）时各项为空串
 ---@return phos.CartInfo
 function phos.cart.info() end
+
+-- ─────────────────────────────────────────────────────────────────────────
+-- phos.net —— 局域网联机（第四代接口）
+--
+-- 只做**传输**：开房 / 加入 / 收发消息 / 局域网发现。同步模型（锁步 / 行动中继 /
+-- 主机权威）由卡带自己在 send / poll 上实现。见 design/networking.md。
+-- 未调用 host / join 时完全休眠（不占端口、不起线程）。
+-- ─────────────────────────────────────────────────────────────────────────
+
+---@class phos.net
+phos.net = {}
+
+---开房（主机）。opts 可省，字段：port(默认 7770)、name、max_peers(默认 8)、
+---discovery_port(默认 45454)、discoverable(默认 true)。成功返回 true
+---@param opts? table
+---@return boolean
+function phos.net.host(opts) end
+
+---加入主机。address 是主机 IP；opts 字段：port(默认 7770)、name。成功返回 true
+---@param address string
+---@param opts? table
+---@return boolean
+function phos.net.join(address, opts) end
+
+---离开 / 关房（可重复调用）
+function phos.net.stop() end
+
+---状态："off" | "hosting" | "connecting" | "connected" | "error"
+---@return string
+function phos.net.status() end
+
+---最近一次错误串（无则 ""）
+---@return string
+function phos.net.error() end
+
+---角色："none" | "host" | "client"
+---@return string
+function phos.net.role() end
+
+---自己的对端 id（未联机 0）
+---@return integer
+function phos.net.self_id() end
+
+---主机对端 id（未联机 0）
+---@return integer
+function phos.net.host_id() end
+
+---游戏 TCP 端口（未联机 0）
+---@return integer
+function phos.net.port() end
+
+---本机在局域网里的 IPv4 地址（提示用）
+---@return string
+function phos.net.local_ip() end
+
+---是否已连上（主机 = 已开房；客人 = 已连上主机）
+---@return boolean
+function phos.net.connected() end
+
+---对端列表（不含自己）：{ { id, name, address, rtt_ms }, ... }
+---@return table
+function phos.net.peers() end
+
+---发给对端 to（0 = 广播给其他所有人）。data 是可 JSON 化的 Lua 表（可省）
+---@param to integer
+---@param kind string
+---@param data? table
+---@return boolean
+function phos.net.send(to, kind, data) end
+
+---等价 send(0, kind, data)：广播给其他所有人
+---@param kind string
+---@param data? table
+---@return boolean
+function phos.net.broadcast(kind, data) end
+
+---取本帧收到的消息：{ { from, kind, data }, ... }（每次调用清空）
+---@return table
+function phos.net.poll() end
+
+---取连接变化事件：{ { type = "connected"|"disconnected", peer, name }, ... }（每次调用清空）
+---@return table
+function phos.net.events() end
+
+---广播查询并收集应答（有界阻塞，默认 0.5 秒）：
+---{ { name, address, port, players }, ... }
+---@param seconds? number
+---@return table
+function phos.net.discover(seconds) end
