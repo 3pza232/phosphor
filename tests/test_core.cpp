@@ -18,6 +18,7 @@
 #include "shell/shelf_search.hpp"
 
 #include <filesystem>
+#include <fstream>
 #include <string>
 
 using namespace phos;
@@ -396,6 +397,71 @@ TEST(shelf_search_match_case_insensitive_subsequence) {
     s.begin_edit();
     s.apply_text("zzz");  // 拼不出子序列：空结果
     CHECK(s.match(carts).empty());
+}
+
+// ---------------------------------------------------------------- text 折行 / 补齐 / 居中
+
+TEST(text_wrap_by_display_width) {
+    const std::vector<std::string> latin = wrap("abcdef", 3);
+    CHECK_EQ(latin.size(), size_t(2));
+    CHECK_EQ(latin[0], std::string("abc"));
+    CHECK_EQ(latin[1], std::string("def"));
+
+    const std::vector<std::string> zh = wrap("中中中中", 4);  // 每行两个全角 = 4 列
+    CHECK_EQ(zh.size(), size_t(2));
+    CHECK_EQ(zh[0], std::string("中中"));
+
+    const std::vector<std::string> one = wrap("abcdef", 3, 1);  // 只留一行：截断补 "..."
+    CHECK_EQ(one.size(), size_t(1));
+    CHECK_EQ(one[0], std::string("..."));
+
+    CHECK(wrap("", 3).empty());
+}
+
+TEST(text_pad_right) {
+    CHECK_EQ(pad_right("ab", 4), std::string("ab  "));
+    CHECK_EQ(pad_right("abcdef", 3), std::string("abc"));  // 超宽先截断
+    CHECK_EQ(display_width(pad_right("中文", 5)), 5);
+}
+
+TEST(text_centered_x) {
+    CHECK_EQ(centered_x("ab", 0, 10), 4);
+    CHECK_EQ(centered_x("ab", 5, 6), 7);
+    CHECK_EQ(centered_x("aaaa", 0, 2), 0);  // 比可用宽还宽：夹到 base
+}
+
+// ---------------------------------------------------------------- json flag
+
+TEST(json_flag_variants) {
+    json::Object obj;
+    std::string err;
+    CHECK(obj.parse("{\"a\":true,\"b\":false,\"c\":\"yes\",\"d\":\"on\",\"e\":\"nope\"}", err));
+    CHECK(obj.flag("a"));
+    CHECK(!obj.flag("b"));
+    CHECK(obj.flag("c"));              // 字符串 "yes"
+    CHECK(obj.flag("d"));              // 字符串 "on"
+    CHECK(!obj.flag("e"));
+    CHECK(obj.flag("missing", true));  // 缺项取 fallback
+}
+
+// ---------------------------------------------------------------- config 校验
+
+TEST(config_clamps_and_validates) {
+    const std::filesystem::path path =
+        std::filesystem::temp_directory_path() / "phosphor_unit_config_clamp.json";
+    {
+        std::ofstream out(path.string());
+        out << R"({"crt_level":99,"music_volume":999,"sfx_volume":-5,"fps":90,)"
+               R"("shelf_style":"bogus","volume":55})";
+    }
+    const Config c = load_config(path.string());
+    CHECK_EQ(c.crt_level, kCrtLevelCount - 1);        // 越界钳到最高档
+    CHECK_EQ(c.music_volume, 100);                    // 越界钳到 0..100
+    CHECK_EQ(c.sfx_volume, 0);
+    CHECK_EQ(c.fps, 60);                              // 90 落到最近档（|60-90| 与 |120-90| 并列，取更小）
+    CHECK_EQ(c.shelf_style, std::string("window"));   // 未知样式忽略、保持默认
+    std::error_code ec;
+    std::filesystem::remove(path, ec);
 }
 
 } // namespace
