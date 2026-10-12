@@ -127,9 +127,12 @@ class Host:
             line = self._read_line()
             if line is None:
                 raise HostError("主机关闭了通道")
-            if '"event"' in line:
+            message = json.loads(line)
+            # 主动事件（hello / cart.*）没有回包 id：按**顶层键**判断，别用子串——
+            # 值的文本里恰好出现 "event"（如卡带 id 或某行文本）会被误当成事件丢弃
+            if "event" in message:
                 continue
-            return json.loads(line)
+            return message
 
     def state(self) -> dict:
         return self.send("state.query")

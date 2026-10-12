@@ -1,11 +1,14 @@
 #include "agent/control_channel.hpp"
 
+#include "core/log.hpp"
+
 #ifdef _WIN32
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #else
 #include <arpa/inet.h>
 #include <netinet/in.h>
+#include <sys/select.h>
 #include <sys/socket.h>
 #include <unistd.h>
 #endif
@@ -50,6 +53,9 @@ void close_socket(Socket s) {
     if (s != kInvalidSocket) ::close(s);
 }
 #endif
+
+/// 单条命令队列的上限：主线程每帧才排空一次，突发命令不能无限堆积
+constexpr size_t kMaxQueuedCommands = 1024;
 
 /// 逐行切分（NDJSON）；返回是否读到完整行
 bool read_line(Socket socket, std::string& buffer, std::string& line) {
@@ -100,6 +106,21 @@ struct ControlChannel::Impl {
         const std::string payload = line + "\n";
         size_t sent = 0;
         while (sent < payload.size()) {
+            // 发送前先看可写：对端只连不读时 TCP 发送缓冲会满、send 会一直阻塞——
+            // 而这条路径跑在**主线程**上，堵住就等于整个主循环停摆。宁可丢弃这段回包
+            fd_set writable;
+            FD_ZERO(&writable);
+            FD_SET(target, &writable);
+            timeval timeout{0, 200 * 1000};  // 200ms
+#ifdef _WIN32
+            const int ready = ::select(0, nullptr, &writable, nullptr, &timeout);
+#else
+            const int ready = ::select(target + 1, nullptr, &writable, nullptr, &timeout);
+#endif
+            if (ready <= 0) {
+                log::warn("control: reply dropped (peer not reading)");
+                return;
+            }
             const int written = ::send(target, payload.data() + sent,
                                        static_cast<int>(payload.size() - sent), 0);
             if (written <= 0) return;
@@ -125,6 +146,12 @@ struct ControlChannel::Impl {
             return;
         }
         std::lock_guard<std::mutex> lock(queue_mutex);
+        if (queue.size() >= kMaxQueuedCommands) {
+            // 队列满（命令突发而来、主线程还没排空）：明确回错，而不是无限堆积吃内存
+            send_line("{\"id\":" + std::to_string(command.id) +
+                      ",\"ok\":false,\"error\":\"command queue full\"}");
+            return;
+        }
         queue.push_back(std::move(command));
     }
 

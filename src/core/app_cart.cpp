@@ -67,6 +67,9 @@ void App::eject_cart() {
     host_.cart_files = nullptr;
     host_.cart_info = nullptr;
     host_.layers.reset(host_.content_w, host_.content_h);  // 层随卡带销毁
+    // 运行指标归零：否则拔卡后 state.query 还报着上一张卡带的 merge_ms / 逐帧耗时
+    cart_update_ms_ = cart_draw_ms_ = cart_merge_ms_ = 0.0f;
+    cart_update_peak_ms_ = cart_draw_peak_ms_ = 0.0f;
     shell_.set_lamps_solid(false);
     input_.release_all();
     pending_releases_.clear();

@@ -311,8 +311,6 @@ Shell::Intent Shell::update_settings(const Input& input) {
         default:
             break;
     }
-
-    if (input.pressed(Key::b)) mode_ = ShellMode::shelf;
     return intent;
 }
 

@@ -360,7 +360,18 @@ void App::apply_input_action(const InputAction& action, int hold_frames) {
     }
     if (action.key.empty()) return;
     input_.set_key(action.key, action.down);
-    if (action.down && hold_frames > 0) pending_releases_.emplace_back(action.key, hold_frames);
+    if (action.down && hold_frames > 0) {
+        // 同一个键的定时释放**以最后一次注入为准**（替换而非追加）：追加会让先前那条
+        // 计数先把键放开，实际按住时长就不是调用方要的
+        bool replaced = false;
+        for (auto& entry : pending_releases_) {
+            if (entry.first != action.key) continue;
+            entry.second = hold_frames;
+            replaced = true;
+            break;
+        }
+        if (!replaced) pending_releases_.emplace_back(action.key, hold_frames);
+    }
 }
 
 // ---------------------------------------------------------------- 运行

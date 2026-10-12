@@ -14,6 +14,9 @@ namespace phos {
 
 namespace {
 
+/// 一次 time.step 最多推进多少逻辑帧：防止一个超大帧数把主机卡住，或 pending_steps_ 累加溢出
+constexpr int kMaxStepFrames = 100000;
+
 /// 图层清单 → JSON 数组（空数组 = 该卡带没建层）。
 /// 次序与合成一致（z 升序），agent 据此知道谁压在谁上面
 std::string layers_json(const LayeredScreen& layers) {
@@ -104,7 +107,8 @@ std::string App::control_state_json() const {
     } else {
         out << ",\"cart\":null";
     }
-    if (!last_error_.empty()) out << ",\"last_error\":" << json::quote(last_error_);
+    // 恒定输出：无错误时给空串，agent 可以无条件读这个字段（缺键比空串更难处理）
+    out << ",\"last_error\":" << json::quote(last_error_);
 
     // 内容包：**显示名**（屏幕上画的就是它，当前取包文件夹名）与**id**（稳定标识，
     // 与显示名逐位对应）。脚本要比对状态里的当前值、或记住某一项时必须用 id——
@@ -390,8 +394,15 @@ void App::execute_control(const ControlCommand& command) {
     }
 
     if (name == "time.step") {
+        // 同一时刻只允许一条 time.step 在途：回包是"推进完毕"的同步点，两个请求共用
+        // 一个回包 id 会让先到的那个永远等不到回包
+        if (step_request_id_ >= 0) {
+            control_.reply_error(command.id, "a time.step is already pending");
+            return;
+        }
         int frames = args.integer("frames", 1);
         if (frames < 1) frames = 1;
+        if (frames > kMaxStepFrames) frames = kMaxStepFrames;
         control_stepping_ = true;
         pending_steps_ += frames;
         step_request_id_ = command.id;  // 全部推进完毕后再回包（确定性同步点）
