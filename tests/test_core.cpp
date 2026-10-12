@@ -8,6 +8,7 @@
 #include "core/config.hpp"
 #include "core/crt.hpp"
 #include "core/json_lite.hpp"
+#include "core/layered_screen.hpp"
 #include "core/palette.hpp"
 #include "core/skin.hpp"
 #include "core/surface.hpp"
@@ -296,6 +297,56 @@ TEST(surface_clips_to_bounds) {
     surface.fill(0, 0, 1000000, 1000000, U'.', Color::white, kKeepBg);  // 超大尺寸：与面求交
     CHECK_EQ(screen.at(2, 1).ch, U'.');
     CHECK_EQ(screen.at(3, 1).ch, U' ');  // 面外未被填
+}
+
+// ---------------------------------------------------------------- layered
+
+TEST(layered_find_create_and_limit) {
+    LayeredScreen ls;
+    ls.reset(8, 2);
+    CHECK(!ls.active());
+    Layer* a = ls.create("a", 0);
+    CHECK(a != nullptr);
+    CHECK(ls.active());
+    CHECK(ls.create("a", 5) == a);  // 重名幂等：返回同一个，不改 z
+    CHECK_EQ(a->z, 0);
+    for (int i = 1; i < LayeredScreen::kMaxLayers; ++i)
+        CHECK(ls.create("L" + std::to_string(i), i) != nullptr);
+    CHECK(ls.create("overflow", 0) == nullptr);  // 达上限返回 nullptr
+    CHECK(ls.remove("a"));
+    CHECK(!ls.remove("a"));
+}
+
+TEST(layered_merge_transparent_and_overlay) {
+    LayeredScreen ls;
+    ls.reset(4, 1);
+    Screen base(4, 1);
+    base.put(0, 0, U'B', Color::white, rgb_clamped(1, 2, 3));
+
+    Layer* top = ls.create("top", 0);
+    top->cells.put(1, 0, U'T', Color::white);  // 底色 keep → alpha 保持 0（透明底）
+
+    CHECK(ls.merge_over(base, 0, 0));
+    CHECK_EQ(base.at(0, 0).ch, U'B');      // 未写到的格透传
+    CHECK_EQ(base.at(1, 0).ch, U'T');      // 上层字形压上
+    CHECK_EQ(int(base.at(0, 0).bg.r), 1);  // 底层底色保留
+    CHECK_EQ(base.at(2, 0).ch, U' ');
+
+    LayeredScreen none;
+    none.reset(4, 1);
+    Screen target(4, 1);
+    CHECK(!none.merge_over(target, 0, 0));  // 无层：什么都不做
+}
+
+// ---------------------------------------------------------------- json 重复键
+
+TEST(json_duplicate_keys_last_wins) {
+    json::Object obj;
+    std::string err;
+    CHECK(obj.parse("{\"a\":1,\"a\":2}", err));
+    CHECK_EQ(obj.integer("a"), 2);  // 后者生效
+    CHECK_EQ(obj.duplicate_keys().size(), size_t(1));
+    CHECK_EQ(obj.duplicate_keys()[0], std::string("a"));
 }
 
 } // namespace
