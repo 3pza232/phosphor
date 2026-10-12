@@ -2,6 +2,7 @@
 
 #include "api/host_api.hpp"
 #include "cart/cart_files.hpp"
+#include "cart/cart_info.hpp"
 #include "cart/save_store.hpp"
 
 #include <sol/sol.hpp>
@@ -15,33 +16,6 @@ class HostContext;
 }
 
 namespace phos {
-
-/// 一段可本地化的文本（当前用于 manifest 的 desc）：
-/// `desc = "…"` 表示中英同文；`desc = { zh = "…", en = "…" }` 各语言一份。
-struct Localized {
-    std::string zh;
-    std::string en;
-    /// 按机器界面语言取；english=false → 中文（en 为空时回落中文，绝不给出空串）
-    const std::string& get(bool english) const { return english && !en.empty() ? en : zh; }
-};
-
-/// 卡带元信息（来自 manifest.lua）
-struct CartInfo {
-    std::string id;
-    std::string name;
-    std::string author;
-    std::string version;
-    Localized desc;
-    std::string path;      // 卡带路径（目录或 .phos 文件）
-    std::string error;     // 非空表示损坏卡带及原因
-    std::string entry;     // 入口脚本（缺省 main.lua）——解析一次，装配与打包共用
-    int sidebar_w = 0;     // 右侧栏面板宽度（0 = 无侧栏）
-    bool wants_save = false;
-
-    // 像素图标：逐行字符画 + 每字符颜色（'.' 与空格为透明）
-    std::vector<std::string> icon_rows;
-    std::map<char, Color> icon_colors;
-};
 
 /// 解析 manifest.lua 文本（沙箱执行，仅允许返回纯数据表）。
 /// 失败时填充 info.error。

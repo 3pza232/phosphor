@@ -1,6 +1,6 @@
 #pragma once
 
-#include "cart/cartridge.hpp"
+#include "cart/cart_info.hpp"
 #include "core/text_input.hpp"
 
 #include <string>

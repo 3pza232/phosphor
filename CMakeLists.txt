@@ -128,7 +128,8 @@ if(PHOSPHOR_BUILD_TESTS)
         src/core/screen.cpp
         src/core/surface.cpp
         src/core/layered_screen.cpp
-        src/pack/builtin.cpp)
+        src/pack/builtin.cpp
+        src/shell/shelf_search.cpp)
     target_include_directories(phosphor_tests PRIVATE ${CMAKE_SOURCE_DIR}/src)
     if(MINGW)
         target_link_options(phosphor_tests PRIVATE -static-libgcc -static-libstdc++)

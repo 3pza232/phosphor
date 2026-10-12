@@ -15,6 +15,7 @@
 #include "core/text.hpp"
 #include "core/text_input.hpp"
 #include "pack/builtin.hpp"
+#include "shell/shelf_search.hpp"
 
 #include <filesystem>
 #include <string>
@@ -347,6 +348,54 @@ TEST(json_duplicate_keys_last_wins) {
     CHECK_EQ(obj.integer("a"), 2);  // 后者生效
     CHECK_EQ(obj.duplicate_keys().size(), size_t(1));
     CHECK_EQ(obj.duplicate_keys()[0], std::string("a"));
+}
+
+// ---------------------------------------------------------------- shelf search
+
+TEST(shelf_search_states) {
+    ShelfSearch s;
+    CHECK(!s.visible());
+    CHECK(!s.editing());
+    s.begin_edit();
+    CHECK(s.visible());
+    CHECK(s.editing());
+    s.apply_text("wo");
+    CHECK_EQ(s.query(), std::string("wo"));
+    s.commit();  // Enter：保留查询、退出输入
+    CHECK(s.visible());
+    CHECK(!s.editing());
+    CHECK_EQ(s.query(), std::string("wo"));
+    s.cancel();  // Esc：清空并收起
+    CHECK(!s.visible());
+    CHECK(s.query().empty());
+}
+
+TEST(shelf_search_match_case_insensitive_subsequence) {
+    std::vector<CartInfo> carts(3);
+    carts[0].id = "snake";  carts[0].name = "SNAKE";
+    carts[1].id = "worms";  carts[1].name = "WORMS";
+    carts[2].id = "tetris"; carts[2].name = "TETRIS";
+
+    ShelfSearch s;
+    s.begin_edit();
+    CHECK_EQ(s.match(carts).size(), size_t(3));  // 空查询 = 全部
+
+    s.apply_text("WOR");  // 大小写不敏感
+    std::vector<int> hits = s.match(carts);
+    CHECK_EQ(hits.size(), size_t(1));
+    CHECK_EQ(hits[0], 1);  // worms
+
+    s.cancel();
+    s.begin_edit();
+    s.apply_text("wr");  // 子序列（不连续）也命中 worms
+    hits = s.match(carts);
+    CHECK_EQ(hits.size(), size_t(1));
+    CHECK_EQ(hits[0], 1);
+
+    s.cancel();
+    s.begin_edit();
+    s.apply_text("zzz");  // 拼不出子序列：空结果
+    CHECK(s.match(carts).empty());
 }
 
 } // namespace
