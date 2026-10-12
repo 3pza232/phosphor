@@ -31,8 +31,11 @@ DrawRegion::DrawRegion(HostContext& host, std::string anchor, std::string layer,
     const int limit_h = host_.content_h;
     const int left = std::max(x_, 0);
     const int top = std::max(y_, 0);
-    const int right = std::min(x_ + w_, limit_w);
-    const int bottom = std::min(y_ + h_, limit_h);
+    // 右/下边界用 64 位：脚本可能传接近 INT_MAX 的 w/h，int 相加会溢出（UB）
+    const int right =
+        static_cast<int>(std::min<long long>(static_cast<long long>(x_) + w_, limit_w));
+    const int bottom =
+        static_cast<int>(std::min<long long>(static_cast<long long>(y_) + h_, limit_h));
     x_ = left;
     y_ = top;
     w_ = std::max(0, right - left);

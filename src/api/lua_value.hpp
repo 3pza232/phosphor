@@ -25,6 +25,10 @@ Color read_color(const sol::object& object, Color fallback);
 /// 都该得到同一个结果，所以只实现一处。
 char32_t read_char(const sol::object& object, char32_t fallback);
 
+/// 单个颜色通道 → 0..255 的整数。非数字、NaN、无穷 → fallback（四舍五入取整）。
+/// `phos.color.rgb` 与 `read_color` 的通道都走它：坏值不会变成乱跳的通道
+int read_channel(const sol::object& object, int fallback = 0);
+
 /// `{ "第一行", "第二行" }` → 行列表。非字符串项跳过：
 /// 脚本里给错类型的一项不该让整块画面都画不出来。
 std::vector<std::string> read_rows(const sol::object& object);

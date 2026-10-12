@@ -7,6 +7,7 @@
 
 #include <sol/sol.hpp>
 
+#include <cmath>
 #include <cstdlib>
 #include <string>
 
@@ -227,9 +228,13 @@ Net::Options read_options(const sol::optional<sol::table>& opts) {
         if (value.is<double>() || value.is<int>()) return value.as<int>();
         return fallback;
     };
-    options.port = number("port", options.port);
-    options.max_peers = number("max_peers", options.max_peers);
-    options.discovery_port = number("discovery_port", options.discovery_port);
+    // 端口/对端数来自脚本：越界值丢弃、回退默认，免得把非法值塞进 socket 调用
+    auto port_of = [](int v, int fallback) { return (v < 0 || v > 65535) ? fallback : v; };
+    options.port = port_of(number("port", options.port), options.port);
+    options.discovery_port =
+        port_of(number("discovery_port", options.discovery_port), options.discovery_port);
+    const int peers = number("max_peers", options.max_peers);
+    options.max_peers = peers < 1 ? options.max_peers : (peers > 64 ? 64 : peers);
     sol::object name = table["name"];
     if (name.is<std::string>()) options.name = name.as<std::string>();
     sol::object discoverable = table["discoverable"];
@@ -345,7 +350,11 @@ void register_net_api(sol::state& lua, HostContext& host) {
     };
 
     net["discover"] = [engine, &lua](sol::optional<double> seconds) {
-        const int timeout_ms = static_cast<int>((seconds.value_or(0.5)) * 1000.0);
+        // 秒数来自脚本：NaN/负数/超大都会让 static_cast<int> 成 UB，先钳到 [0, 5]
+        double s = seconds.value_or(0.5);
+        if (!std::isfinite(s) || s < 0.0) s = 0.0;
+        if (s > 5.0) s = 5.0;
+        const int timeout_ms = static_cast<int>(s * 1000.0);
         sol::table out = lua.create_table();
         int index = 1;
         for (const Net::Discovered& room : engine->discover(timeout_ms)) {

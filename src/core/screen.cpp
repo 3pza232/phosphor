@@ -7,19 +7,6 @@
 
 namespace phos {
 
-const Color Color::black{0, 0, 0};
-const Color Color::white{230, 230, 230};
-const Color Color::gray{140, 140, 140};
-const Color Color::dark_gray{70, 70, 70};
-const Color Color::red{255, 80, 80};
-const Color Color::green{80, 255, 120};
-const Color Color::blue{90, 140, 255};
-const Color Color::yellow{255, 230, 90};
-const Color Color::cyan{90, 230, 230};
-const Color Color::magenta{230, 90, 230};
-const Color Color::orange{255, 160, 60};
-const Color Color::purple{160, 100, 255};
-
 Screen::Screen(int w, int h) : w_(w), h_(h), cells_(static_cast<size_t>(w) * h) {}
 
 void Screen::resize(int w, int h) {

@@ -33,11 +33,12 @@ void Surface::print(int x, int y, std::string_view text, Color fg, Color bg) {
 
 void Surface::fill(int x, int y, int w, int h, char32_t ch, Color fg, Color bg) {
     // 先把矩形与本面求交，再整块交给 Screen::fill：宽字符成对铺的规则在那一处，
-    // 逐格自己写会在右缘留下半个宽字的位置
+    // 逐格自己写会在右缘留下半个宽字的位置。右/下边界用 64 位算——
+    // 卡带可能传接近 INT_MAX 的 w/h，int 相加会溢出（UB）
     const int x0 = std::max(x, 0);
     const int y0 = std::max(y, 0);
-    const int x1 = std::min(x + w, w_);
-    const int y1 = std::min(y + h, h_);
+    const int x1 = static_cast<int>(std::min<long long>(static_cast<long long>(x) + w, w_));
+    const int y1 = static_cast<int>(std::min<long long>(static_cast<long long>(y) + h, h_));
     if (x1 <= x0 || y1 <= y0) return;
     screen_.fill(ox_ + x0, oy_ + y0, x1 - x0, y1 - y0, ch, fg, bg);
 }
@@ -64,8 +65,8 @@ void Surface::back(int x, int y, Color bg) {
 void Surface::back_rect(int x, int y, int w, int h, Color bg) {
     const int x0 = std::max(x, 0);
     const int y0 = std::max(y, 0);
-    const int x1 = std::min(x + w, w_);
-    const int y1 = std::min(y + h, h_);
+    const int x1 = static_cast<int>(std::min<long long>(static_cast<long long>(x) + w, w_));
+    const int y1 = static_cast<int>(std::min<long long>(static_cast<long long>(y) + h, h_));
     for (int row = y0; row < y1; ++row)
         for (int col = x0; col < x1; ++col) screen_.back(ox_ + col, oy_ + row, bg);
 }

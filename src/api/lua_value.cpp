@@ -3,22 +3,26 @@
 #include "api/host_api.hpp"
 #include "core/text.hpp"
 
+#include <cmath>
 #include <sol/sol.hpp>
 
 namespace phos::api {
+
+int read_channel(const sol::object& object, int fallback) {
+    if (!object.is<double>() && !object.is<int>()) return fallback;
+    const double value = object.as<double>();
+    if (!std::isfinite(value)) return fallback;  // NaN / ±inf：当没给
+    const int rounded = static_cast<int>(value < 0 ? value - 0.5 : value + 0.5);
+    return rounded < 0 ? 0 : (rounded > 255 ? 255 : rounded);
+}
 
 Color read_color(const sol::object& object, Color fallback) {
     if (object.is<Color>()) return object.as<Color>();
     if (!object.is<sol::table>()) return fallback;
     const sol::table table = object.as<sol::table>();
-    auto channel = [&table](int index, uint8_t fallback_channel) {
-        const sol::object value = table[index];
-        if (!value.is<double>() && !value.is<int>()) return fallback_channel;
-        const int number = value.as<int>();
-        const int clamped = number < 0 ? 0 : (number > 255 ? 255 : number);
-        return static_cast<uint8_t>(clamped);
-    };
-    return Color{channel(1, fallback.r), channel(2, fallback.g), channel(3, fallback.b)};
+    return Color{static_cast<uint8_t>(read_channel(table[1], fallback.r)),
+                 static_cast<uint8_t>(read_channel(table[2], fallback.g)),
+                 static_cast<uint8_t>(read_channel(table[3], fallback.b))};
 }
 
 char32_t read_char(const sol::object& object, char32_t fallback) {

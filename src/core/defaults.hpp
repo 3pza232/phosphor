@@ -7,6 +7,7 @@ namespace phos {
 inline constexpr int kContentW = 80;    // 卡带内容区宽（字符格）
 inline constexpr int kContentH = 45;    // 卡带内容区高
 inline constexpr int kPanelMaxW = 32;   // 侧栏面板最大宽度
+inline constexpr int kMaxPadCols = 4096;  // phos.text.pad/pad_left 的列数上限：坏值不该撑爆内存
 
 /// 面板宽度的唯一合法化点：负数按收起（0）算，超上限按上限算。
 /// 面板宽度是与主机共享的布局量（分隔线、面板局部坐标都跟着它走），

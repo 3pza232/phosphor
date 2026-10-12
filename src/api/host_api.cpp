@@ -112,11 +112,10 @@ void register_host_api(sol::state& lua, HostContext& host) {
 
     // --- phos.color（常量取自激活色板，热切换时由 apply_palette_to 更新） ---
     sol::table color = phos.create_named("color");
-    color["rgb"] = [](int r, int g, int b) {
-        auto clamp = [](int v) { return v < 0 ? 0 : (v > 255 ? 255 : v); };
-        return Color{static_cast<uint8_t>(clamp(r)),
-                     static_cast<uint8_t>(clamp(g)),
-                     static_cast<uint8_t>(clamp(b))};
+    // 参数走 sol::object：Lua 数字可能是浮点/NaN/超大，先按 double 校验再钳位
+    // （直接收 int，坏值会在 sol2 转换处就是 UB）。钳位统一在 core/color.hpp 的 rgb_clamped
+    color["rgb"] = [](sol::object r, sol::object g, sol::object b) {
+        return rgb_clamped(api::read_channel(r), api::read_channel(g), api::read_channel(b));
     };
     if (host.palette) apply_palette_to(lua, *host.palette);
 
@@ -194,10 +193,12 @@ void register_host_api(sol::state& lua, HostContext& host) {
     // 字节数补，"队友交给 AI" 这类中英混排会整列歪掉（汉字 3 字节、字母 1 字节）
     text_api["pad"] = [](const std::string& s, int cols) {
         const int w = text::display_width(s);
+        if (cols > kMaxPadCols) cols = kMaxPadCols;  // 坏值不该让我们分配几个 GB
         return w >= cols ? s : s + std::string(static_cast<size_t>(cols - w), ' ');
     };
     text_api["pad_left"] = [](const std::string& s, int cols) {
         const int w = text::display_width(s);
+        if (cols > kMaxPadCols) cols = kMaxPadCols;
         return w >= cols ? s : std::string(static_cast<size_t>(cols - w), ' ') + s;
     };
     // 字形在格内的墨迹框（xoff, width, approx）：比例字体的墨迹比一整格窄，

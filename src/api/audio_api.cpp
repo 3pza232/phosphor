@@ -6,6 +6,7 @@
 
 #include <sol/sol.hpp>
 
+#include <cmath>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -24,8 +25,9 @@ ToneSpec tone_from_table(const sol::object& obj, ToneSpec base) {
 
     auto number = [&t](const char* key, float fallback) {
         sol::object v = t[key];
-        if (v.is<double>() || v.is<int>()) return v.as<float>();
-        return fallback;
+        if (!v.is<double>() && !v.is<int>()) return fallback;
+        const double d = v.as<double>();
+        return std::isfinite(d) ? static_cast<float>(d) : fallback;  // NaN / ±inf 当没给
     };
     base.freq = number("freq", base.freq);
     base.freq_end = number("sweep", base.freq_end);
@@ -34,6 +36,16 @@ ToneSpec tone_from_table(const sol::object& obj, ToneSpec base) {
     base.attack = number("attack", base.attack);
     base.release = number("release", base.release);
     return base;
+}
+
+/// 频率 / 时长来自脚本：NaN、无穷、越界值先归一到合理区间，免得把坏值送进合成器
+float clamp_tone_freq(float v) {
+    if (!std::isfinite(v) || v < 0.0f) return 0.0f;
+    return v > 20000.0f ? 20000.0f : v;
+}
+float clamp_tone_dur(float v) {
+    if (!std::isfinite(v) || v < 0.0f) return 0.0f;
+    return v > 60.0f ? 60.0f : v;
 }
 
 /// 谱面：支持表（{"E4","-","G4"}）或空格分隔字符串（"E4 - G4 -"）
@@ -166,7 +178,10 @@ void register_audio_api(sol::state& lua, HostContext& host) {
         ToneSpec spec;
         spec.freq = freq;
         spec.dur = dur;
-        host.audio->play_tone(tone_from_table(opts, spec));
+        spec = tone_from_table(opts, spec);
+        spec.freq = clamp_tone_freq(spec.freq);  // opts 也可能覆盖，最后统一钳一次
+        spec.dur = clamp_tone_dur(spec.dur);
+        host.audio->play_tone(spec);
     };
 
     // 音符：note("C4" [, opts]) —— 音名写法见文档
@@ -174,7 +189,10 @@ void register_audio_api(sol::state& lua, HostContext& host) {
         if (!host.audio) return;
         ToneSpec spec;
         spec.dur = 0.25f;
-        host.audio->play_note(name, tone_from_table(opts, spec));
+        spec = tone_from_table(opts, spec);
+        spec.freq = clamp_tone_freq(spec.freq);
+        spec.dur = clamp_tone_dur(spec.dur);
+        host.audio->play_note(name, spec);
     };
 
     // 打击乐：perc("K" | "S" | "H")

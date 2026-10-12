@@ -25,4 +25,23 @@ struct Color {
 /// 不会让底层漏空
 inline const Color kKeepBg{255, 255, 255, true};
 
+/// 通道钳位到 0..255（脚本传进来的可能是任意整数或浮点）
+inline uint8_t clamp_channel(int v) { return static_cast<uint8_t>(v < 0 ? 0 : (v > 255 ? 255 : v)); }
+
+/// 三通道各自钳位后成色。Lua 的 phos.color.rgb 与读取 {r,g,b} 表共用它，
+/// 于是"越界值怎么处理"只有一份实现
+inline Color rgb_clamped(int r, int g, int b) {
+    return Color{clamp_channel(r), clamp_channel(g), clamp_channel(b)};
+}
+
+/// 整体缩放亮度（factor < 1 压暗、> 1 提亮），各通道钳位到 0..255。
+/// 指示灯呼吸、图标高亮共用它——各写一份"乘完直接 static_cast"在 >255 时会回绕
+inline Color scale_color(Color c, float factor) {
+    auto ch = [factor](uint8_t v) {
+        const float out = static_cast<float>(v) * factor;
+        return static_cast<uint8_t>(out > 255.0f ? 255.0f : (out < 0.0f ? 0.0f : out));
+    };
+    return Color{ch(c.r), ch(c.g), ch(c.b)};
+}
+
 } // namespace phos

@@ -1,5 +1,6 @@
 #include "shell/shell.hpp"
 
+#include "core/color.hpp"
 #include "core/defaults.hpp"
 #include "core/text.hpp"
 #include "core/version.hpp"
@@ -408,9 +409,7 @@ void Shell::draw_bezel(Screen& screen) const {
             const float phase = std::fmod(time_ / lamp.period, 1.0f);
             glow = 0.35f + 0.65f * (0.5f + 0.5f * std::sin(phase * 6.28318f));
         }
-        const Color color{static_cast<uint8_t>(lamp.color.r * glow),
-                          static_cast<uint8_t>(lamp.color.g * glow),
-                          static_cast<uint8_t>(lamp.color.b * glow)};
+        const Color color = scale_color(lamp.color, glow);
         if (lamp.x >= 0 && lamp.x < screen.width() && lamp.y >= 0 && lamp.y < screen.height())
             screen.put(lamp.x, lamp.y, U'*', color, style_.bg);
     }

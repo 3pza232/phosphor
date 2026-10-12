@@ -1,5 +1,6 @@
 #include "core/ui.hpp"
 
+#include "core/color.hpp"
 #include "core/palette.hpp"
 #include "core/skin.hpp"
 #include "core/text.hpp"
@@ -150,13 +151,8 @@ void icon(Screen& screen, const std::vector<std::string>& rows,
     int x0 = center_x - draw_w / 2;
     int y0 = center_y - draw_h / 2;
 
-    auto scale = [brightness](Color c) {
-        auto channel = [brightness](uint8_t v) {
-            float out = static_cast<float>(v) * brightness;
-            return static_cast<uint8_t>(out > 255.0f ? 255.0f : out);
-        };
-        return Color{channel(c.r), channel(c.g), channel(c.b)};
-    };
+    // 提亮/压暗：与指示灯呼吸、其它高亮共用 core/color.hpp 的 scale_color（钳位只有一份）
+    auto scale = [brightness](Color c) { return scale_color(c, brightness); };
 
     for (int dy = 0; dy < draw_h; ++dy) {
         int sy = dy * step;
