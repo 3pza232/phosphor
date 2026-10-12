@@ -1,6 +1,4 @@
 -- NEON HUSK：霓虹残壳
-local W = 84
-
 local function plate(text)
   local inner = 80
   if phos.text.width(text) > inner then text = phos.text.truncate(text, inner) end
@@ -8,7 +6,8 @@ local function plate(text)
 end
 
 return {
-  screen = { x = 2, y = 3, w = 80, h = 45 },
+  screen = { x = 2, y = 3 },
+  palette = "ice-blue",
   left  = "+-",
   right = "-+",
   top = {
@@ -27,6 +26,7 @@ return {
     ui_fg  = { 230, 235, 255 },
     ui_bg  = { 4, 2, 12 },
     ui_dim = { 120, 110, 180 },
+    panel  = { 14, 8, 26 },  -- 侧栏：比机身略亮的紫黑
   },
   lamps = {
     { x = 0,  y = 8,  color = { 255, 60,  180 }, period = 0.9 },

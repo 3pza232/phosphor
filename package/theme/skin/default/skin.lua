@@ -9,7 +9,8 @@ local function plate(text)
 end
 
 return {
-  screen = { x = 2, y = 3, w = 80, h = 45 },
+  screen = { x = 2, y = 3 },
+  palette = "default",
   left  = "||",
   right = "||",
   top = {
@@ -28,6 +29,7 @@ return {
     ui_fg  = { 225, 255, 225 },
     ui_bg  = { 0,   0,   0 },
     ui_dim = { 95,  120, 95 },
+    panel  = { 10,  20,  13 },  -- 右侧栏：比机身略亮，给一栏"凹槽"的层次
   },
   lamps = {
     { x = 0,  y = 6,  color = { 80,  255, 120 }, period = 2.4 },

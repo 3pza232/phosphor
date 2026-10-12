@@ -1,6 +1,4 @@
 -- RUST CABINET：废弃游戏厅的机台
-local W = 84
-
 -- 铭牌只用 ASCII：皮肤脚本跑在**内容包沙箱**里（只有 phos.text.width/truncate），
 -- 拿不到界面语言，所以正文一律不写中文——与其他两款皮肤保持一致
 local function plate(text)
@@ -10,7 +8,8 @@ local function plate(text)
 end
 
 return {
-  screen = { x = 2, y = 3, w = 80, h = 45 },
+  screen = { x = 2, y = 3 },
+  palette = "amber",
   left  = ":|",
   right = "|:",
   top = {
@@ -29,6 +28,7 @@ return {
     ui_fg  = { 235, 215, 190 },
     ui_bg  = { 8,  6,  4 },
     ui_dim = { 120, 100, 80 },
+    panel  = { 18,  14,  10 },  -- 侧栏：比机身略亮
   },
   lamps = {
     { x = 0,  y = 4,  color = { 255, 170, 60 }, period = 1.2 },

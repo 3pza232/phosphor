@@ -10,6 +10,11 @@
   static-rain   STATIC RAIN：雪花噪点如雨，LOGO 从干扰中浮现
   sweep         CART LOADER：进度条推进 + 校验灯逐块点亮
   waveform      WAVEFORM LOCK：抖动噪声波锁相成稳定方波
+  bootlog       BOOT LOG：逐行滚出的开机自检，全 OK 后打出产品名
+  spectrum      SPECTRUM：频谱条跳动后收平成一条线，再打出产品名
+  pulse         PULSE：同心环从中心扩散收束，产品名在核心处亮起
+  ember         EMBER：炉膛火焰跳动、火星升腾，产品名从火中浮出
+  stardust      STARDUST：星辰向心汇聚成星滴，坠落水面溅起涟漪，产品名自水面浮起
 
 动画是一段 Lua 脚本（main.lua），用 phos.screen / phos.color / phos.ui 逐帧作画，
 能力与游戏卡带完全相同 —— 想做多夸张都行。
