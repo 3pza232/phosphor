@@ -181,6 +181,24 @@ CPU 截图路径每次现读字体链（无需处理）；测试环境固定为 
       （续格报头格字符、控制字符不算内容、空格算内容；越界读回空）
 - [x] ~~字符范围常量在两处各定义~~ —— 复查后 `screen_image.cpp` 里没有这类常量，
       这条是旧审计的误报（`kFirstChar`/`kCharCount` 只有 `renderer.cpp` 一处）
+- [x] 颜色通道钳位 / 亮度缩放四处各写一遍（`lua_value` / `host_api` / `ui.cpp` / `shell.cpp`，
+      且 shell 那处 >255 会回绕）→ 收敛为 `core/color.hpp` 的 `clamp_channel` / `rgb_clamped`
+      / `scale_color`；`Color` 标准色常量也从 `screen.cpp` 挪到 `core/color.cpp`
+- [x] "读数值字段"的 lambda 三处各写一遍（音效包扫描 / 联机选项 / 音频参数）→ 收敛为
+      `api/lua_value` 的 `read_number`（含 `isfinite` 校验）
+- [x] `Localized` / `CartInfo` 从 `cartridge.hpp` 抽到纯数据的 `cart/cart_info.hpp`：
+      卡带列表 / 搜索不再因为"要用 CartInfo"就连整个 sol2 宿主一起编译
+      （`shelf_search.cpp` 因此成为纯逻辑、纳入单测）
+
+### [~] 17. App / HostContext 的收缩 —— 评审后**暂缓**
+
+- App 的**实现**早已按职责拆在 `app_settings` / `app_intent` / `app_control` / `app_observe`
+  / `app_cart` 里；头部成员多，是"主机把各子系统的所有权集中在一处"的**刻意**设计
+  （谁拥有卡带/音频/网络/控制通道，一目了然），并非"没拆"
+- `HostContext` 按设计就是 API 层与 App 的**共享上下文**（一组子系统指针 + 少量 POD +
+  一个内联换算函数）。收窄成访问器只增加一层间接、不减少真实耦合，且要改动全部 API 绑定
+- 结论：两者不构成缺陷；做大改**收益低、回归面大**。如将来确需，应走
+  pimpl / 子系统对象分阶段推进，**每步跑全门禁**，而不是一次性重写。本轮不做。
 
 ### [x] ~~16. 包含顺序统一~~ —— 复查后不成立
 
