@@ -52,6 +52,11 @@ private:
     /// 没有调用方需要 double，多开一个出口只会让"该用哪个"变得含糊
     double num(std::string_view key, double fallback = 0.0) const;
 
+    /// parse 的递归体（带嵌套深度上限）：不可信 JSON（控制通道行、网络包）可能上千层
+    /// 嵌套，直接递归会爆栈 —— 超过 kMaxJsonDepth 判错
+    bool parse_at(std::string_view text, std::string& err, int depth);
+    static constexpr int kMaxJsonDepth = 64;
+
     std::map<std::string, Entry> values_;
     std::vector<std::string> duplicates_;
 };

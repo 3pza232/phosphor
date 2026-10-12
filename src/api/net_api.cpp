@@ -24,6 +24,9 @@ struct JsonToLua {
     std::size_t pos = 0;
     bool ok = true;
     std::string error;
+    int depth = 0;
+    /// 嵌套深度上限：远端可发上千层 [ / { ，无上限递归会爆栈
+    static constexpr int kMaxDepth = 64;
 
     void skip_ws() {
         while (pos < text.size()) {
@@ -147,6 +150,12 @@ struct JsonToLua {
     }
 
     sol::object object() {
+        if (depth >= kMaxDepth) {
+            fail("json nested too deep");
+            return nil();
+        }
+        ++depth;
+        struct Pop { int& d; ~Pop() { --d; } } pop{depth};
         eat('{');
         sol::table table = lua.create_table();
         if (eat('}')) return sol::make_object(lua, table);
@@ -169,6 +178,12 @@ struct JsonToLua {
     }
 
     sol::object array() {
+        if (depth >= kMaxDepth) {
+            fail("json nested too deep");
+            return nil();
+        }
+        ++depth;
+        struct Pop { int& d; ~Pop() { --d; } } pop{depth};
         eat('[');
         sol::table table = lua.create_table();
         if (eat(']')) return sol::make_object(lua, table);

@@ -45,6 +45,16 @@ struct WatchdogScope {
     }
 };
 
+/// 卡带 id 的合法形状：小写字母/数字/连字符，1..64。
+/// id 会拼进存档路径（saves/<id>.sav）与 <id>.phos —— 放任 ".." / ":" / 绝对路径就能
+/// 越出存档目录、甚至覆盖其它卡带的存档。主机端**强制校验**，不依赖卡带自觉
+bool valid_cart_id(const std::string& id) {
+    if (id.empty() || id.size() > 64) return false;
+    for (char c : id)
+        if (!((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-')) return false;
+    return true;
+}
+
 } // namespace
 
 CartInfo parse_manifest(const std::string& manifest_text, const std::string& cart_path) {
@@ -53,6 +63,11 @@ CartInfo parse_manifest(const std::string& manifest_text, const std::string& car
 
     sol::state lua;
     lua.open_libraries(sol::lib::base, sol::lib::string, sol::lib::table);
+    // manifest 也是不可信输入（而且每次扫描卡带目录都会执行）：base 自带的文件/加载
+    // 函数一律摘掉，兑现 cart-format.md 的"无 IO 能力"
+    lua["dofile"] = sol::nil;
+    lua["loadfile"] = sol::nil;
+    lua["load"] = sol::nil;
 
     auto result = lua.safe_script(manifest_text, &sol::script_pass_on_error);
     if (!result.valid()) {
@@ -99,6 +114,8 @@ CartInfo parse_manifest(const std::string& manifest_text, const std::string& car
     info.entry = get_str("entry");
 
     if (info.id.empty()) info.error = "manifest missing required field: id";
+    else if (!valid_cart_id(info.id))
+        info.error = "manifest id must match [a-z0-9-]{1,64}: " + info.id;
     else if (info.entry.empty()) info.error = "manifest missing required field: entry";
     else info.error.clear();
 
@@ -202,7 +219,8 @@ bool Cartridge::assemble(const std::string& entry, HostContext& host) {
     // 文件与系统访问禁止（见 docs/cart-format.md 沙箱白名单）
     lua_["dofile"] = sol::nil;
     lua_["loadfile"] = sol::nil;
-    lua_["loadstring"] = sol::nil;
+    lua_["load"] = sol::nil;
+    lua_["loadstring"] = sol::nil;  // Lua 5.1 的名字；5.4 已无，留着写明"二进制块也禁"的意图
 
     // 卡带内模块加载：只允许读取本包内的 .lua，模块可拆分为多个文件
     lua_["require"] = [this](const std::string& name) { return load_module(name); };

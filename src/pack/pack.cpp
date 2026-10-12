@@ -31,6 +31,10 @@ std::string pack_script_path(const std::string& dir, const char* filename) {
 /// 表现为"主题从列表里消失、无法切换"。
 void open_pack_api(sol::state& lua) {
     lua.open_libraries(sol::lib::base, sol::lib::string, sol::lib::table, sol::lib::math);
+    // 内容包脚本同样不可信：base 自带的文件/加载函数一律摘掉
+    lua["dofile"] = sol::nil;
+    lua["loadfile"] = sol::nil;
+    lua["load"] = sol::nil;
     sol::table phos = lua.create_named_table("phos");
     sol::table text = phos.create_named("text");
     text["width"] = [](const std::string& s) { return text::display_width(s); };

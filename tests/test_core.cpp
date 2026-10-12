@@ -146,6 +146,21 @@ TEST(json_parse_rejects_garbage) {
     CHECK(!err.empty());
 }
 
+TEST(json_rejects_deep_nesting) {
+    // 200 层嵌套：必须判错（而不是递归爆栈）。控制通道 / 网络包是不可信输入
+    std::string deep;
+    for (int i = 0; i < 200; ++i) deep += "{\"a\":";
+    for (int i = 0; i < 200; ++i) deep += "}";
+    json::Object obj;
+    std::string err;
+    CHECK(!obj.parse(deep, err));
+    CHECK(!err.empty());
+
+    json::Object ok_obj;  // 正常深度仍可解析
+    std::string ok_err;
+    CHECK(ok_obj.parse("{\"a\":{\"b\":{\"c\":1}}}", ok_err));
+}
+
 // ---------------------------------------------------------------- palette / builtin
 
 TEST(palette_slot_names) {

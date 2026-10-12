@@ -115,7 +115,13 @@ std::string escape(std::string_view text) {
 
 std::string quote(std::string_view text) { return "\"" + escape(text) + "\""; }
 
-bool Object::parse(std::string_view text, std::string& err) {
+bool Object::parse(std::string_view text, std::string& err) { return parse_at(text, err, 0); }
+
+bool Object::parse_at(std::string_view text, std::string& err, int depth) {
+    if (depth > kMaxJsonDepth) {
+        err = "json nested too deep";
+        return false;
+    }
     values_.clear();
     duplicates_.clear();
     Scanner s{text};
@@ -167,7 +173,7 @@ bool Object::parse(std::string_view text, std::string& err) {
             }
             auto child = std::make_shared<Object>();
             std::string child_err;
-            if (!child->parse(s.text.substr(s.pos, nested.pos), child_err)) {
+            if (!child->parse_at(s.text.substr(s.pos, nested.pos), child_err, depth + 1)) {
                 err = child_err;
                 return false;
             }
