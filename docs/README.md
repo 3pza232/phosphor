@@ -29,7 +29,7 @@
 | `carts/` | 出厂卡带；也是可以直接读的范例 |
 | `devkit/template/` | `phosphor --new` 复制的就是它 |
 | `devkit/phos.lua` | 编辑器补全用的 API 定义（VSCode 挂上就有提示） |
-| `theme/` | 皮肤、滤镜、启动动画、字体 |
+| `theme/` | 皮肤、色板、启动动画、音效、字体 |
 | `mods/` | 覆盖层：不改原文件就能替换卡带与主题里的内容 |
 | `docs/` | 就是本目录 |
 

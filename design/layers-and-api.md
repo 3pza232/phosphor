@@ -64,7 +64,7 @@ Screen 的不同调用者**。无头模式下 `Screen::to_text()` 是唯一消�
   assets / cart / sys / lang`。
 - 版本门控真实存在：`core/version.hpp` 的 `kPhosApiVersion`；`manifest.lua` 声明 `phos_api`
   高于它即在 `cart/cartridge.cpp` 被拒绝加载，报错里写明两个具体版本号。
-  当前世代 **2**（1 = 基础接口；2 = 图层与新的观测面）。
+  当前世代 **5**（1 = 基础接口；2 = 图层与新的观测面；3 = 墨迹与半格；4 = 局域网；5 = 主题携带内容色板）。
 - 一致性门禁：`--check-api` 比对 DevKit 注解与实装；控制通道契约由
   `tools/control_test.py` 守；画面行为由 `tools/window_smoke.py` /
   `tools/cart_smoke.py` 守；**同格多笔与子位落笔**由 `tools/draw_smoke.py` 守

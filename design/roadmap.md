@@ -108,7 +108,7 @@ CPU 截图路径每次现读字体链（无需处理）；测试环境固定为 
 |------|------|------|
 | `core/app.cpp` | **≈425**（拆分前 795） | 生命周期、主循环、帧率、开机 |
 | `core/app_cart.cpp` | ≈57 | 卡带装载 / 拔卡 |
-| `core/app_settings.cpp` | ≈129 | 皮肤 / 滤镜 / 字体 / CRT / 启动 / 音效的落地 |
+| `core/app_settings.cpp` | ≈129 | 皮肤 / 色板 / 字体 / CRT / 启动 / 音效的落地 |
 | `core/app_intent.cpp` | ≈137 | Esc 语义与意图处理 |
 | `core/app_control.cpp` | ≈285 | 控制通道：命令分发与状态回报 |
 | `core/app_observe.cpp` | ≈96 | 模式名、调试信息、窗口标题、截图与终帧输出 |
@@ -128,7 +128,7 @@ CPU 截图路径每次现读字体链（无需处理）；测试环境固定为 
 
 以下清单是当时的拆分记录（均已落地）：
 
-- [x] 前置：`raw_filter()` / `silent_sound_pack()` / `merge_packs()` 的落点已定并搬走 ——
+- [x] 前置：`raw_palette()` / `silent_sound_pack()` / `merge_packs()` 的落点已定并搬走 ——
       `pack/builtin.{hpp,cpp}`。理由是概念而非将就：它们描述的是**内容**
       （内置包长什么样、出厂区与用户区谁优先），不是 App 的生命周期；
       而 `silent_sound_pack()` 返回 `pack/` 的 `SoundPack`，放 `core/` 会让下层反向依赖上层。
@@ -171,7 +171,7 @@ CPU 截图路径每次现读字体链（无需处理）；测试环境固定为 
 
 - [x] 四个 `scan_*`（skin/boot/sound/palette）共用同一遍历骨架却各写一遍
       → 收敛为 `scan_pack_dirs`（装载逻辑作参数传入）；顺带修掉一处真不一致：
-      `scan_palettes` 原本不排序，滤镜列表顺序会随文件系统漂移
+      `scan_palettes` 原本不排序，色板列表顺序会随文件系统漂移
 - [x] `Lua {r,g,b} → Color` 有三份实现 → 收敛为 `api/lua_value.hpp` 的 `read_color`
       （`cartridge.cpp` / `pack.cpp` 各删一份，`ui_api.cpp` 只留一个允许直传 `Color`
       usertype 的薄包装）。顺带把 `Color` 从 `screen.hpp` 挪到 `core/color.hpp`：

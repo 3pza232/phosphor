@@ -17,7 +17,7 @@
 |------|------|-----------|
 | `skin` | `theme/skin/<名称>/` | 机台外壳：边框字符画、屏幕区位置、灯珠与装饰锚点 |
 | `boot` | `theme/boot/<名称>/` | 启动动画（一段每帧作画的 Lua 脚本，能力等同卡带） |
-| `palette` | `theme/palette/<名称>/` | 显像管质感：配色表 + CRT 后处理参数（可含自定义 shader） |
+| `palette` | `theme/palette/<名称>/` | 内容色板：卡带与开机动画的 `phos.color.*`（由主题的 `palette` 字段引用，见下） |
 | `sound` | `theme/sound/<名称>/` | 系统音效：按键声、插卡声、电流声、环境底噪 |
 | `font` | `theme/font/<名称>/` | 字体文件（`.ttf` / `.otf` / `.ttc`），见下节"字体链" |
 
@@ -78,7 +78,6 @@ theme/skin/rust-cabinet/
 {
   "theme": {
     "skin": "rust-cabinet",
-    "filter": "amber",
     "boot": "static-rain",
     "sound": "relay",
     "font": "default",
@@ -86,14 +85,16 @@ theme/skin/rust-cabinet/
   },
   "shelf_style": "window",
   "crt_level": 1,
+  "fps": 60,
   "music_volume": 80,
   "sfx_volume": 90
 }
 ```
 
-- `filter`：显像管滤镜（`none` = 原色原样）
+- `skin`：游戏机主题（外壳 + 它使用的内容色板，见 `skin.lua` 的 `palette`）。色板不再是单独设置项
 - `crt_level`：显像管档位 0=OFF 1=WEAK 2=MEDIUM 3=STRONG
   （实现为逐行扫描线 + 孔径格栅 + 辉光，见 `core/crt.hpp`）
+- `fps`：画面刷新率档位（30 / 60 / 120 / 180）。只改刷新率与 CPU 占用，**不改游戏速度**
 - `music_volume` / `sfx_volume`：两路音量各 0~100（界面里分开调）
 - `shelf_style`：卡带架样式（`list` 列表 / `window` 视窗轮播）
 - `font`：字体方案（`theme/font/<方案>/` 的目录名；缺字由回退字体兜底）
@@ -121,10 +122,10 @@ return {
     string.rep("=", 84),
   },
   bottom = { ... },   -- 内容区下方的机身装饰行
-  colors = {          -- 主机界面配色（卡带配色不受其影响，见 palette）
+  colors = {          -- **机身界面**配色（卡带配色来自本主题声明的 palette，见下）
     frame  = { 70, 95, 70 },     accent = { 110, 255, 150 },
     ui_fg  = { 225, 255, 225 },  ui_bg  = { 0, 0, 0 },
-    ui_dim = { 95, 120, 95 },
+    ui_dim = { 95, 120, 95 },    panel  = { 10, 20, 13 },
   },
   lamps = {           -- 指示灯：随运行时间呼吸
     { x = 0, y = 6, color = { 80, 255, 120 }, period = 2.4 },
@@ -134,7 +135,22 @@ return {
 
 - 开机动画是**独立的内容包类型**（见下节），不在皮肤目录里
 - `skin.lua` 可用 Lua 表达式生成（如 `string.rep`），便于快速构图
+- `palette`：本主题使用的**内容色板**（`theme/palette/<名>/`，缺省 `default`；找不到回退 `NONE (RAW)`）。
+  卡带与开机动画的 `phos.color.*` 取自它——设置里没有单独的"色板"项，色板是主题的一部分
+- `panel`：右侧栏面板的底色（缺省 = `ui_bg`）。**刻意与机身区分**，给侧栏一层"凹槽"的层次；
+  分隔线由主机画在**所有卡带图层之上**（否则会被卡带画的世界盖住）
 - 内容区尺寸当前统一为 80x45（所有皮肤共享，切换时不重建窗口）
+
+随包主题（名字即文件夹名）：
+
+| 文件夹 | 风格 |
+|--------|------|
+| `default` | 出厂机身 P-1：极简工业风，双灯柱 + 铭牌 |
+| `rust-cabinet` | 废弃游戏厅的机台：锈橙、故障灯 |
+| `neon-husk` | 霓虹残壳：紫框 + 青/品红霓虹灯 |
+| `ivory-terminal` | 象牙白实验仪器：暖白机身 + 琥珀高亮 |
+| `crimson-arcade` | 红白街机机台：深红机身 + 金色高亮 |
+| `graphite` | 石墨灰工程终端：细线冷灰 |
 
 ### boot（启动动画）
 
@@ -160,6 +176,11 @@ return {
 | `sweep` | CART LOADER：进度条推进 + 闪烁读写头 + 逐块校验灯点亮（附启动扫频与完成音） |
 | `persistence` | PERSISTENCE：写头扫过让字样"显影"，笔画按余辉先亮后暗（两遍扫描 + 就绪报字） |
 | `waveform` | WAVEFORM LOCK：示波器栅格上的噪声波逐渐锁相成稳定波形（半格精度曲线 + 读数） |
+| `bootlog` | BOOT LOG：逐行滚出的 POST 自检（每行一声轻响）→ 全部 OK 后打出产品名 |
+| `spectrum` | SPECTRUM：46 根电平柱各自跳动 → 收平成一条基线 → 锁定音 + 产品名 |
+| `pulse` | PULSE：同心环从中心扩散 → 反向收束 → 产品名在核心处亮起 |
+| `ember` | EMBER：底部一排炉火跳动 + 火星升腾 → 产品名从火中浮出 |
+| `stardust` | STARDUST：星辰向心汇聚成星滴 → 坠落水面溅起涟漪 → 产品名自水面浮起 |
 
 > **文案约定**：出厂默认字体方案已带中文字体（`theme/font/default/font-cn.otf` 作回退），
 > 中文与 ASCII 都能显示。但如果你的包要在**任何**字体方案下都不缺字，那就只用 ASCII 写文案
@@ -172,15 +193,15 @@ return {
 > 一律写成 **ASCII 字符画**即可——生硬翻译反而破坏机器感。
 > 皮肤脚本也拿不到语言 API（内容包沙箱只有 `phos.text.width` / `truncate`）。
 
-### palette（显像管滤镜）
+### palette（内容色板）
 
-滤镜列表 = 主机内置项 `NONE (RAW)`（原色原样，不加扫描线与色调）+ `theme/palette/`
-下的每个文件夹。凡需要"卡带原本配色"的游戏，选择 `NONE` 游玩即可。
+色板 = 主机内置项 `NONE (RAW)`（原色原样：黑底白字，不加扫描线与色调）+ `theme/palette/` 下的每个文件夹。
+**它不再是一个单独设置项**：每个 `skin.lua` 用 `palette = "<名称>"` 声明自己用哪套色板
+（缺省 `default`；找不到就回落 `NONE (RAW)`）。于是"换主题"会连同卡带的配色一起变——想换卡带配色就换个主题。
 
-> `NONE` 与音效里的 `SILENT` 是**主机选项**（"关掉"），不是内容包，
-> 因此没有对应文件夹——它们表达的是"不加修饰"，无法用配色表表达。
-
-`palette.lua` 返回配色表与 CRT 参数，所有字段可缺省（回退默认）：
+`palette.lua` 返回配色表与 CRT 参数，所有字段可缺省（回退默认）。其中
+`black` 是卡带的**清屏底色**、`white` 是默认**前景/文字色**：浅色主题（如配 `paper` 色板）
+就是"浅底深字"：
 
 ```lua
 return {
@@ -292,6 +313,6 @@ mods/<目标id>/<与包内相同的相对路径>
 
 1. 想换机器外观 → 做 `skin` 包，放 `theme/skin/`
 2. 想改开机仪式感 → 做 `boot` 包，写 Lua 动画
-3. 想调显像管味道 → 做 `palette` 包，改参数或 shader
+3. 想换卡带配色 → 改主题的 `palette`（或新做一个 `palette` 包、让主题的 `palette` 字段指名它）
 4. 想改某张卡带 → 不动原卡带，在 `mods/` 里做覆盖层
 5. 包做坏了 → 删掉它，机器自动回退默认，永远能回家

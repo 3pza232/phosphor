@@ -28,9 +28,9 @@ phos.cart     -- 当前卡带的身份（id / 标题 / 版本 / 作者 / 简介�
 phos.net      -- 局域网联机：开房 / 加入 / 收发消息 / 发现（见下节）
 ```
 
-> `phos.color` 的 12 色常量取自当前激活的显像管滤镜（palette 内容包），
-> 用户在设置中切换滤镜时，卡带里的 `phos.color.green` 等会热更新为新的色值。
-> 选择滤镜 `NONE` 时使用出厂原色——需要保留卡带原本配色的游戏应选它。
+> `phos.color` 的 12 色常量取自**当前主题声明的色板**（`skin.lua` 的 `palette`，指向
+> `theme/palette/<名>/`）。设置里没有单独的"色板"项；换主题即换色板，卡带里的
+> `phos.color.green` 等随之热更新。主题未声明或找不到时回落内置色板 `NONE (RAW)`（原色原样）。
 
 > **坐标系**：`phos.screen` / `phos.panel` 使用**内容区局部坐标**，左上角为 `(0, 0)`；
 > 机身外壳（游戏机主题）由主机在外围绘制，卡带不需要关心内容区在窗口中的位置。
@@ -83,9 +83,12 @@ ch, fg, bg = phos.screen.get(x, y)
 
 | 调用 | 省略 `bg`（或传 `nil`） |
 |---|---|
-| `screen.put` / `screen.print`、`panel.put` / `panel.print` | **保留该格原有背景**（"透明底"）：字压在地形、天空、底图上都不留色块 |
-| `ui.region` 的 `put` / `print` / `fill` / `blit` | 同上，一律保留背景（覆盖层压在游戏画面上不会糊出一块块黑底） |
-| `screen.fill` / `screen.blit` / `screen.clear` / `screen.back` / `screen.back_rect`、`panel.fill` / `panel.blit` / `panel.clear` / `panel.back` / `panel.back_rect`、`ui.region.clear` | **总是写底色**（省略 = 黑）——这些调用常被用来"整块搬运/清一块地方"，默认透明会让底图从字缝里透出来，清屏则变成什么都不做 |
+| `screen.put` / `screen.print`、`panel.put` / `panel.print` | **保留该格原有背景**（"透明底"）：字/图标压在地形、天空、机身上都不留色块 |
+| `ui.region` 的 `put` / `print` / `fill` / `blit` / `clear` | 同上，一律保留背景（覆盖层压在游戏画面上不会糊出一块块黑底） |
+| `screen.fill` / `screen.clear` / `screen.blit` / `screen.back` / `screen.back_rect`、`panel.blit` / `panel.back` / `panel.back_rect` | **总是写底色**：省略 = **激活色板的 `black`**（随主题变，不写死黑）——这族是"整块搬运 / 清一块地方" |
+| `panel.fill` / `panel.clear` | 省略 = **主题面板色**（`skin.panel`）：右栏不属于游戏画面，底色随主题，不透出游戏、也不是写死的黑 |
+
+> **省略 `fg`（前景）时 = 激活色板的 `white`。** 于是"换主题（预设）"会连同卡带的清屏底与文字底色一起改变——这是多主题适配的根。
 
 所以"要让这块地方不透底"是**显式给色**，而不是指望默认值：
 `phos.screen.print(x, y, text, fg, bg)`。
@@ -122,7 +125,7 @@ ch, fg, bg = phos.screen.get(x, y)
 phos.color.black  .white  .gray   .dark_gray
 phos.color.red    .green  .blue   .yellow
 phos.color.cyan   .magenta .orange .purple
--- 共 12 色，实际色值由当前 palette 内容包决定（"绿色"在不同显像管上味道不同）
+-- 共 12 色，实际色值由当前主题声明的色板决定（"绿色"在不同主题上味道不同）
 
 local c = phos.color.rgb(255, 128, 0)   -- 自定义色（会被 palette 做辉光映射）
 ```
@@ -219,6 +222,7 @@ phos.audio.stop_all()     -- 停掉一切（换卡/拔卡时主机自动调用�
 > 同一处还会给出 `voices`（活跃声部数）与 `dropped`（请求队列丢弃数），
 > 后者非 0 说明卡带一帧内触发的声音多到超过了队列长度。
 
+```lua
 -- 采样：卡带包内的音频文件（wav / mp3 / flac，内存解码）
 local hit = phos.audio.sample("assets/hit.wav")   -- 句柄，0 = 失败
 phos.audio.play_sample(hit, { volume = 0.8, loop = false })
@@ -251,7 +255,7 @@ phos.audio.stop_sample(hit)
 
 主机组件层：边框、浮窗、菜单、进度条、正文、像素精灵、列表导航。
 与系统界面**共用同一套绘制原语**，因此卡带界面与主机界面风格天然一致；
-配色取自当前滤镜（与 `phos.color` 同源）。
+配色取自当前主题声明的色板（与 `phos.color` 同源）。
 
 **约定**：坐标为内容区局部坐标（0-based）；`phos.ui` 的**菜单索引同样 0-based**
 （与屏幕坐标一致，避免 C++/Lua 两端基准错位）。
@@ -318,9 +322,9 @@ end
 w, h = phos.panel.size()        -- w = 0 表示本卡带无面板
 phos.panel.put(x, y, ch, fg, bg)
 phos.panel.print(x, y, text, fg, bg)
-phos.panel.fill(x, y, w, h, ch, fg, bg)
-phos.panel.blit(x, y, rows, fg, bg)     -- 一次写多行（恒写底色，省略 = 黑）
-phos.panel.clear(fg, bg)        -- 只清面板区（恒写底色）
+phos.panel.fill(x, y, w, h, ch, fg, bg)  -- 省略 bg = 主题面板色 skin.panel
+phos.panel.blit(x, y, rows, fg, bg)     -- 一次写多行（恒写底色，省略 = 色板 black）
+phos.panel.clear(fg, bg)        -- 只清面板区（省略 bg = 主题面板色 skin.panel）
 phos.panel.blend(x, y, ch, fg)  -- 同格追加一笔（叠加）
 phos.panel.back(x, y, bg)       -- 只写底色：字形与已叠的笔迹都不动
 phos.panel.back_rect(x, y, w, h, bg)
@@ -354,9 +358,9 @@ win:print(2, 10, long_text)          -- 超出窗口的部分被裁掉，不会�
 - 可用的绘制方法：`clear` / `put` / `print` / `fill` / `blit`（多行）/ `blend`（同格叠加）/
   `back` / `back_rect`（只写底色）/ `plot`（子格落笔）/ `frame` /
   `divider` / `bar` / `menu`（`h` 可省略，缺省按条目数）/ `body`（折行正文，
-  `max_lines` 可省略）/ `sprite`（`step` 可省略）。其中 `put` / `print` / `fill` / `blit`
-  省略 `bg` 时**保留背景**，`clear` 省略 `bg` 时**写黑**（见 `phos.screen` 一节的 `bg` 规则）；
-  `blend` / `back` / `back_rect` / `plot` 与 `put` 同组，也**保留背景**
+  `max_lines` 可省略）/ `sprite`（`step` 可省略）。其中 `put` / `print` / `fill` / `blit` / `clear`
+  省略 `bg` 时一律**保留背景**（"透明底"）；`blend` / `back` / `back_rect` / `plot`
+  与 `put` 同组，也**保留背景**
 - **层级 = 调用顺序**：本机每帧清屏、卡带每帧重画，所以先画底图、再画窗口即可；
   窗口关闭时不再画它，底图自然就在（不需要"备份背景再还原"那类机制）
 - 上面这条说的是**底层**。要让"浮层"与"世界"各自独立、互不擦除，用 `phos.layer`——

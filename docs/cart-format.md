@@ -58,7 +58,7 @@ return {
   desc     = { zh = "在终端里觅食的蛇。", en = "A snake hunting in the terminal." },
   sidebar  = { w = 16 },         -- 右侧栏面板宽度（0~32，缺省无侧栏）
   save     = true,               -- 是否需要存档空间（声明后 phos.save 可用）
-  phos_api = 1,                  -- 目标 API 版本（当前世代 1 / 2 / 3 / 4，见「九、版本兼容」）
+  phos_api = 1,                  -- 目标 API 版本（当前世代 1 / 2 / 3 / 4 / 5，见「九、版本兼容」）
 
   -- 像素图标（卡带架展示；'.' 与空格为透明）
   icon = {
@@ -233,7 +233,8 @@ end
 - 当前世代：**1 = 基础接口；2 = 可选图层（`phos.layer`）与 `phos.text.ink_box` /
   `phos.input.duration` / `phos.input.keys` / `phos.sys.frame`；3 = 墨迹叠加
   （`phos.screen.blend`）、半格绘制（`plot` / `quadrant` / `cell_of`）与独立底色
-  （`back` / `back_rect`，及各自的区域版）；4 = 局域网联机（`phos.net`）**。
+  （`back` / `back_rect`，及各自的区域版）；4 = 局域网联机（`phos.net`）；
+  5 = 主题携带内容色板（`phos.color.*` 与默认前景/背景随主题变）**。
   用到哪一代才有的接口就声明到那代：否则旧主机照常加载它，到运行到那一行才失败；
   声明得更高会让它在卡带架上就被明确拒绝。不用新接口的卡带请继续声明 `1`，兼容面更大
 

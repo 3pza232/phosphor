@@ -116,7 +116,7 @@ phosphor --pack carts/snake --json
 | `ping` | — | 连通性探测 |
 | `state.query` | `path?` | 主机与卡带状态（字段见下方「state.query 字段表」）；带 `path` 时另返回卡带 Lua 全局值（点分路径），卡带定义 `debug_state()` 时另返回其内容（见下节） |
 | `screen.read` | `layer?` | 当前屏幕网格：`layer`（读的是哪一份）/`width`/`height`/`frame` + `lines`（逐行文本数组）。不带 `layer` 读**合并结果**（= 整屏，与以前一致）；`layer = "screen"` 读的也是合并后的整屏，只是把"我读的是整屏"明说出来；带层名读该层自己的内容（内容区局部坐标）。**底层没有"合并前"的单独读法**——层是就地合并进底层的；"只想看世界"请让卡带把层隐起来（`layers` 里能看到，或卡带自己给开关） |
-| `screenshot` | `path` | 当前画面写成 PNG（**CPU 光栅化**，无头可用；含滤镜/扫描线等后处理），返回像素尺寸 |
+| `screenshot` | `path` | 当前画面写成 PNG（**CPU 光栅化**，无头可用；含扫描线/色调等后处理），返回像素尺寸 |
 | `frame.read` | `path?` | 读回**当前帧缓冲的真实像素**（`glReadPixels`，含着色器与逐层叠画）——与 CPU 的 `screenshot` 互补，是 GL 渲染路唯一的像素出口。**仅窗口路径可用**（无头报错）。返回 `width`/`height`/`lit_ratio`（亮像素占比）/`mean_luma`；带 `path` 时另写一张 PNG（行序翻转成与 `screenshot` 同向，可直接对照）。`tools/gl_smoke.py` 用它核对"不是全黑""同格两笔""半格""逐层叠画" |
 | `carts.scan` | — | 扫描 `carts/` 目录，返回卡带列表（含 `error`） |
 | `input.inject` | `key`, `down`(bool)，可选 `frames` | 注入虚拟键（可用键名见 [api-reference.md](api-reference.md) 的「phos.input」一节）；`frames` 表示按住 N 个逻辑帧后自动释放。命令本身**立即回包**，实时与单步模式下都一样。`key` 也可为主机保留键 `escape`（见下节） |
@@ -145,8 +145,8 @@ phosphor --pack carts/snake --json
 | `grid_w` / `grid_h` | **整屏网格**尺寸（默认 84×51，随皮肤几何；`screen.read` 读的是它） |
 | `content_w` / `content_h` | **内容区**尺寸（恒 80×45，卡带只面对它） |
 | `panel_w` | 侧栏面板宽度（0 = 无面板） |
-| `skin` / `filter` / `boot` / `sound` / `font` | 生效的皮肤 / 滤镜 / 启动动画 / 音效包 / 字体方案（**名字**） |
-| `packs` | 各类型的可选清单：`skin` / `filter` / `boot` / `sound` 是**屏幕上画的名字**数组，`*_ids` 是逐位对应的**稳定 id**；字体是 `font` 名字数组。要比对状态值或记住某一项**用 id**，名字随界面语言变 |
+| `skin` / `palette` / `boot` / `sound` / `font` | 生效的皮肤 / 色板 / 启动动画 / 音效包 / 字体方案（**名字**）。`palette` 由主题（skin）声明派生，非用户可切换项 |
+| `packs` | 各类型的可选清单：`skin` / `palette` / `boot` / `sound` 是**屏幕上画的名字**数组，`*_ids` 是逐位对应的**稳定 id**；字体是 `font` 名字数组。要比对状态值或记住某一项**用 id**，名字随界面语言变 |
 | `language` | 界面语言（`zh` / `en`） |
 | `cursor` | 菜单光标行号（`-1` = 当前模式没有菜单） |
 | `shelf` | 卡带架顺序（卡带 id 数组，最近打开优先）；`cursor` 就是它的下标——"数到第几张再插卡"因此可编程 |
@@ -332,7 +332,7 @@ PHOSPHOR - agent :7731 [stepping]     agent 接管，单步推进（画面只在
 
 ```
 2026-10-09 05:15:12.930 [f253    ] INFO  control #2 input.inject
-2026-10-09 05:15:12.945 [f257    ] INFO  setting filter=ice-blue
+2026-10-09 05:15:12.945 [f257    ] INFO  setting skin=neon-husk
 2026-10-09 05:15:12.960 [f259    ] INFO  cart loaded: id=snake name=SNAKE ...
 ```
 

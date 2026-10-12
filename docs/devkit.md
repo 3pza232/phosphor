@@ -32,7 +32,7 @@ phosphor --new carts/mygame --id mygame --name "My Game" --author "你"
 
 **2. 起名与身份**——全在 `manifest.lua`：`id` / `name` / `desc`（双语）/ `version`、
 是否要右栏（`sidebar = { w = 18 }`）、是否要存档（`save = true`）、
-目标接口世代（`phos_api`：图层写 `2`，墨迹 / 半格 / 独立底色写 `3`，联机 `phos.net` 写 `4`；
+目标接口世代（`phos_api`：图层写 `2`，墨迹 / 半格 / 独立底色写 `3`，联机 `phos.net` 写 `4`，主题携带色板（`phos.color.*` 随主题）写 `5`；
 旧主机便会在卡带架上明确拒绝它，而不是运行到那一行才失败——见 [cart-format.md](cart-format.md) 的「版本兼容」）。
 字段逐个说明见 [cart-format.md](cart-format.md)。
 
@@ -71,7 +71,7 @@ phosphor --pack carts/mygame --json         # 机器可读结果
 
 | 文件 | 你要改什么 |
 |------|-----------|
-| `manifest.lua` | 身份：`id` / `name` / `desc`（双语）/ `version`；`sidebar = { w = 18 }` 决定右栏宽度（删掉这行 = 无右栏，也可运行时 `phos.panel.resize(w)`）；`save = true` 才有 `phos.save.*`；`entry` 指向入口；用了图层（`phos.layer`）写 `phos_api = 2`，墨迹 / 半格 / 独立底色（`blend` / `plot` / `back` 等）写 `3`，局域网联机（`phos.net`）写 `4` |
+| `manifest.lua` | 身份：`id` / `name` / `desc`（双语）/ `version`；`sidebar = { w = 18 }` 决定右栏宽度（删掉这行 = 无右栏，也可运行时 `phos.panel.resize(w)`）；`save = true` 才有 `phos.save.*`；`entry` 指向入口；用了图层（`phos.layer`）写 `phos_api = 2`，墨迹 / 半格 / 独立底色（`blend` / `plot` / `back` 等）写 `3`，局域网联机（`phos.net`）写 `4`，主题携带色板（`phos.color.*` 随主题）写 `5` |
 | `main.lua` | 入口三件事：装配模块、把输入翻成"意图"、把状态画出来。「填」集中在文案表 `Text`、`init`、`update`、`draw`、`debug_state` |
 | `game.lua` | 玩法规则。不读键盘、不画东西、不发声音；要出声就 `return` 一张事件表 |
 | `panel.lua` | 右栏内容。坐标是面板局部的；定宽文案一律过 `phos.text.fit(text, pw - 2)` |
@@ -129,9 +129,10 @@ phos.panel.print(1, y, phos.text.fit(text, pw - 2))
 这正是"字压在山体上不留色块"要的效果。反过来，若这块地方必须不透底（浮窗标题、
 血量读数这类），就得**显式给色**，否则脚下换成水、斜坡或天空时就会露出"空洞"。
 
-**另一组**是 `fill` / `blit` / `clear`（`screen` / `panel` 的，以及 `ui.region.clear`）：
-它们是"整块搬运或清一块地方"，省略底色按**黑**算——清屏若也按"保留背景"来，就变成什么都不做。
-`ui.region` 的 `put` / `print` / `fill` / `blit` 属于"保留背景"那一组，别把它的 `clear` 混进去。
+**另一组**是 `screen` 的 `fill` / `blit` / `clear`、`screen` 与 `panel` 的 `back` / `back_rect`、
+`panel.blit`：它们是"整块搬运或清一块地方"，省略底色按**激活色板的 `black`** 算（随主题变）。
+两个例外：`panel.fill` / `panel.clear` 省略 = **主题面板色**（`skin.panel`）；
+`ui.region` 的 `put` / `print` / `fill` / `blit` / `clear` **全部保留背景**（透明底）。
 两组规则各含哪些调用，以 API 参考里的表为准。
 
 **8. 巡逻类 AI 要防死角**
