@@ -2,12 +2,12 @@
 return {
   id      = "snake",
   name    = "SNAKE",
-  author  = "phosphor",
+  author  = "PZA",
   version = "1.1.0",
   -- 简介双语：卡带架按机器的界面语言取（只写字符串则中英同文）
   desc = {
-    zh = "在终端里猎食的蛇：方向键移动，回车重开，最高分自动存档。",
-    en = "A snake hunting in the terminal: arrows to move, Enter to restart, best score saved.",
+    zh = "贪吃蛇：控制蛇吃豆成长，别撞墙、别咬到自己；最高分自动存档。",
+    en = "Snake: eat and grow without hitting the wall or yourself; your best score is saved.",
   },
   entry   = "main.lua",
   sidebar = { w = 18 },   -- 右侧栏：历史分数记录

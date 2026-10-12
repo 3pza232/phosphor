@@ -4,10 +4,10 @@ return {
   id = "life",
   name = "LIFE",
   version = "1.0.0",
-  author = "phosphor",
+  author = "PZA",
   desc = {
-    zh = "康威生命游戏 —— 细胞自动机沙盒：画细胞、盖图案、看演化。",
-    en = "Conway's Game of Life: draw cells, stamp patterns, watch it evolve.",
+    zh = "生命游戏：细胞自动机沙盒，画出图案看它自行演化。",
+    en = "Game of Life: a cellular-automaton sandbox - draw a pattern and watch it evolve.",
   },
   entry = "main.lua",
   sidebar = { w = 18 },

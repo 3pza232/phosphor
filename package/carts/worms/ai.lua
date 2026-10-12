@@ -2,8 +2,8 @@
 --
 -- 一件武器由**三段数据**描述（都在 weapons.lua，改武器不必回这里）：
 --   plan   = 走哪个瞄准求解器（怎么试）：arc 抛物线角度×力度 / ray 直线只挑角度
---   effect = 命中之后世界怎么变：blast 爆炸 / heal 回血 / mound 长地形并埋人 /
---            strike 天降光柱 / beam 烧穿射线
+--   effect = 命中之后世界怎么变：blast 爆炸 / dig 只挖地形（不伤人）/ heal 回血 /
+--            mound 长地形并埋人 / strike 天降光柱 / beam 烧穿射线
 --   ai     = 电脑用不用它：throw 参战 / self 只对自己用（传送）/ false 明确不用
 -- 于是"加一件新武器"= 武器表加一行；只有当它带来**全新的瞄准维度**或**全新的世界变化**
 -- 时，才需要在下面的 PLANS / EFFECTS 里各加一个函数。规划器、评分、难度、发射逻辑、
@@ -44,6 +44,10 @@ AI.RAY_AIM_SCALE = 0.25
 -- 用"不超过"而不是"低于"：本作的伤害值（8/10/25/30/50）经常正好把血打到 50，
 -- 卡在严格小于上会让最需要治疗的那只恰好被跳过
 AI.WOUNDED_RATIO = 0.5
+-- 被地形**完全埋住**时，AI 会考虑"自炸逃生"（贴脸炸开脚下的土）。自伤最多允许占到**当前
+-- 血量**的这个比例：超了就不赌 —— 死了不如赖活着，卡在土里至少能耗敌人的弹药。无自伤的
+-- 挖掘（地消弹）不受此限（own_damage = 0 永远安全）。上层用它与 w.hp 比较，见 main.lua
+AI.BURIED_SELF_MAX = 0.5
 
 -- 权重表：**加武器不必改它**，调难度也只改这张表（外加手抖与扫描密度）。
 -- 每项后面写的是"这个数在买什么"，改之前先想清楚买的是什么
@@ -255,7 +259,30 @@ EFFECTS.heal = function(ctx, weapon, impact)
   for _, m in ipairs(ctx.mine) do
     if m.alive then
       local dx, dy = m.x - impact.x, m.y - impact.y
-      if dx * dx + dy * dy <= r * r then d.heal = d.heal + amount end
+      if dx * dx + dy * dy <= r * r then
+        -- 只按**血量缺口**计价：血满时这一发回 0，不该被算成 60 的价值
+        -- （否则 AI 会朝满血的队友 / 自己丢治疗，白扔一枚稀有道具）
+        d.heal = d.heal + math.min(amount, math.max(0, Worms.MAX_HP - m.hp))
+      end
+    end
+  end
+  return d
+end
+
+-- 地消弹：只挖地形、不伤人（与实弹一致：无伤害、无冲量）。预演不改世界，按落点圆内的
+-- 实心格数估"能挖掉多少"（与下面的 mound 同一套理想圆估法，只统计已有地形）
+EFFECTS.dig = function(ctx, weapon, impact)
+  local d = new_delta()
+  local r, cx, cy = weapon.radius or 0, math.floor(impact.x), math.floor(impact.y)
+  for y = math.floor(cy - r), math.ceil(cy + r) do
+    if y >= 1 and y <= ctx.terrain.H then
+      local dy = y - cy
+      local half = math.floor(math.sqrt(math.max(0, r * r - dy * dy)))
+      if half > 0 then
+        for x = math.max(1, cx - half), math.min(ctx.terrain.W, cx + half) do
+          if ctx.terrain:solid(x, y) then d.dig = d.dig + 1 end
+        end
+      end
     end
   end
   return d
@@ -484,7 +511,7 @@ function AI.plan_begin(shooter, all_worms, terrain, wind, difficulty, allowed)
 
   return setmetatable({
     shooter = shooter, ctx = ctx, wind = wind, cfg = cfg,
-    jobs = jobs, index = 1, phase = 1, best = nil, top = {}, done = false,
+    jobs = jobs, index = 1, phase = 1, best = nil, best_of = {}, top = {}, done = false,
   }, Planner)
 end
 
@@ -516,6 +543,11 @@ function Planner:advance(batch)
                    mate = (delta.mate_damage > 0 or delta.mate_drown > 0 or delta.mate_trap > 0),
                    mate_x = delta.mate_x }
     if not self.best or score > self.best.score then self.best = cand end
+    -- 每个 effect 各自的最优候选：被埋脱困要按"无损优先"分类取用（挖开 / 激光 / 自炸 / 治疗），
+    -- 只看单一最优候选做不到这个顺序（受伤时治疗评分最高，会盖过自炸）
+    local eff = weapon.effect or "blast"
+    local cur = self.best_of[eff]
+    if not cur or score > cur.score then self.best_of[eff] = cand end
     -- 留下前几名：观察口能看到"它都考虑过什么"，出问题时不必猜
     self.top[#self.top + 1] = cand
     if #self.top > 12 then table.remove(self.top, 1) end
@@ -571,6 +603,11 @@ function Planner:result()
     angle = b.aim.angle + phos.sys.random(-aj, aj) / 10,
     power = Physics.clamp_power(b.aim.power + phos.sys.random(-pj, pj) / 1000),
     near = b.near,
+    -- 完整的"世界变化量"（评分正是它的加权和）：上层用它读细节 —— 被埋自炸逃生时，
+    -- 靠 delta.own_damage 判断这一炮会不会把自己炸死（见 main.lua 的 update_ai）
+    delta = b.delta,
+    -- 按 effect 分类的最优候选（dig/blast/beam/heal/...）：被埋脱困按"无损优先"取用
+    best_of = self.best_of,
     -- blocked 必须一起交出去：上层靠它判"这一炮是不是白打（要不要先换个位置）"。
     -- 漏掉这个字段的话，上层读到的永远是 nil，那条判断就成了摆设
     blocked = b.blocked,

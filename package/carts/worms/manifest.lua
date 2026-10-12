@@ -12,12 +12,12 @@ return {
 	entry = "main.lua", -- 入口脚本；改了文件名就改这里
 
 	-- ─── 建议填写 ───────────────────────────────────────────
-	author = "phosphor",
+	author = "PZA",
 	version = "0.3.0", -- 你自己的版本号（与主机版本无关）
 	-- 简介：写表 = 各语言一份（缺 en 回落 zh）；写字符串 = 中英同文
 	desc = {
-		zh = "回合制炮击：开炮把对面的虫子轰进海里。",
-		en = "Turn-based artillery: blow the other team into the sea.",
+		zh = "炮兵对战：轮流开炮，把对面的虫子轰进海里；人机、同机或局域网都能打。",
+		en = "Artillery duel: take turns firing to knock the other team into the sea - vs CPU, hot-seat, or LAN.",
 	},
 
 	-- ─── 按需打开 ───────────────────────────────────────────

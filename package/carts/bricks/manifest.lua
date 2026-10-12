@@ -3,10 +3,10 @@ return {
   id = "bricks",
   name = "BRICKS",
   version = "1.0.0",
-  author = "phosphor",
+  author = "PZA",
   desc = {
-    zh = "打砖块 —— 清空砖墙，别让球落下。",
-    en = "Breakout: clear the wall, keep the ball up.",
+    zh = "打砖块：移动挡板反弹小球，清空砖墙，别让球掉下去。",
+    en = "Breakout: move the paddle to bounce the ball and clear the wall without dropping it.",
   },
   entry = "main.lua",
   sidebar = { w = 18 },

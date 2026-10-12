@@ -3,10 +3,10 @@ return {
   id = "tetris",
   name = "TETRIS",
   version = "1.0.0",
-  author = "phosphor",
+  author = "PZA",
   desc = {
-    zh = "俄罗斯方块 —— 七种方块落进井里，消满一行得分；用图层把井、方块、特效分开画。",
-    en = "Tetris: seven shapes fall into the well. Layers keep the well, the falling piece and the effects apart.",
+    zh = "俄罗斯方块：方块落进井里，消满一行得分，堆得越高速度越快。",
+    en = "Tetris: drop the shapes and clear full lines to score; it speeds up as the stack grows.",
   },
   entry = "main.lua",
   sidebar = { w = 18 },

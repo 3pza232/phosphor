@@ -194,7 +194,7 @@ end
 -- 底层：井框 + 已落定的方块 + 落点投影
 local function draw_world()
   local C = phos.color
-  phos.screen.clear(C.dark_gray, C.rgb(10, 12, 22))
+  phos.screen.clear(C.dark_gray, C.black)
   phos.ui.frame(WELL_X - 1, WELL_Y - 1, Game.W * BLOCK + 2, Game.H * BLOCK + 2, "TETRIS")
 
   for y = 1, Game.H do

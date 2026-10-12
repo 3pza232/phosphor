@@ -11,11 +11,11 @@ local Text = {
   -- 状态行只回答"轮到哪一方"
   zh = { angle = "角度", power = "力度", wind = "风", turn = "回合", sec = "秒",
         weapon = "武器", inf = "∞", fired = "本回合已开炮", terrain = "地形",
-        buried = "被埋住 炸开脱身",
+        buried = "被埋住 炸开脱身 / N 跳过",
         side = { "红队", "蓝队" }, ai = "AI" },
   en = { angle = "ANGLE", power = "POWER", wind = "WIND", turn = "TURN", sec = "s",
         weapon = "WEAPON", inf = "∞", fired = "FIRED THIS TURN", terrain = "TERRAIN",
-        buried = "BURIED - blast out",
+        buried = "BURIED - blast out / N pass",
         side = { "RED", "BLUE" }, ai = "AI" },
 }
 -- 取当前语言那一列：查表规则在引擎里（`phos.lang.dict`，缺 en 回落中文）

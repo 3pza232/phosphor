@@ -81,10 +81,9 @@ local function build_palette()
 		water = phos.color.rgb(26, 66, 130),
 		spark = phos.color.rgb(255, 232, 150),
 		smoke = phos.color.rgb(96, 96, 104),
-		-- 「浮层底板」：只有**两块浮窗**（M 地图、K 键位表）用它 —— 那两块要盖住世界、
-		-- 自成一块面板。除此之外一律**不写底色**：虫标、血条、力度读数、伤害浮字、
-		-- 云雪风都只是"压在世界上的一层字"，笔画之外透出地形（见 PhosUi/region 的说明）
-		plate = phos.color.rgb(12, 16, 28),
+		-- 「浮层底板」：M 地图 / K 键位表用它盖住世界、自成一块面板。
+		-- 取色板的 black（随主题）：浅色主题下底板变浅、字（white）变深墨，一起翻
+		plate = phos.color.black,
 	}
 	-- 天色、云、星与降水都归 weather.lua：它们由**游戏内时钟**推出来
 end
@@ -101,6 +100,7 @@ local strikes = {} -- 天基炮：等待中的落点与正在释放的光柱
 local active = {} -- active[team] = 当前操作的虫子
 local captains = {} -- 每队队长（human + ally_ai 时唯一还归人操作的那只），开局定死，见 worm_is_human
 local aim_power, charge_mode, switch_delay, ai_delay, winner
+local pass_turn -- 跳过本回合（不发射就换手）：人用 N，AI 在被埋且没有划算的一炮时也用（定义见回合流转段）
 local weapon_index, ai_plan
 local ai_decided, ai_walk_t, ai_walk_dir = false, 0, nil -- AI 是否已决定走位 / 还要走多久 / 往哪走（捡补给用）
 local ai_walk_from_x, ai_walk_total = 0, 0 -- 本次走位的起点 x 与总时长（判"是不是撞了死胡同"用）
@@ -160,7 +160,7 @@ local red_side = 1
 --   frame  = 已推进的逻辑帧号（两端一致；同一帧号 ⇒ 同一局面）
 --   active = 处于"观看远端操作"状态：本帧输入来自远端快照，而非本机键盘
 -- 未联机（PVE/PVP）时 active 恒 false，in_* 直接透传 phos.input —— 对局逻辑完全不变
-local NET_KEYS = { "left", "right", "up", "down", "a", "space", "b", "x", "z" }
+local NET_KEYS = { "left", "right", "up", "down", "a", "space", "b", "x", "z", "n" }
 -- 输入延迟（帧）：本帧采到的按键按 frame+延迟 广播；模拟第 frame 帧时用的正是"延迟之前发出、
 -- 现在早已到达"的那份。等包因此几乎从不落空，逻辑帧不会因等对端输入而丢拍。
 -- 代价是固定多几帧操作延迟（本作无手感影响）。
@@ -214,6 +214,7 @@ local Text = {
 			{ "↑↓", "调角度（可到 -60° 朝下）" },
 			{ "A", "进出蓄力状态（力度保留）" },
 			{ "空格", "按当前力度发射" },
+			{ "N", "跳过本回合（不开炮）" },
 			{ "X Z", "下一件 / 上一件武器" },
 			{ "B", "跳跃" },
 			{ ", .", "镜头左右平移" },
@@ -274,6 +275,7 @@ local Text = {
 			{ "↑↓", "aim angle (down to -60°)" },
 			{ "A", "enter / leave charging (power kept)" },
 			{ "SPACE", "fire with current power" },
+			{ "N", "skip your shot (pass the turn)" },
 			{ "X Z", "next / previous weapon" },
 			{ "B", "jump" },
 			{ ", .", "pan camera left / right" },
@@ -701,6 +703,12 @@ local function player_input(dt)
 		return
 	end
 
+	-- N：跳过本回合（不发射就换手）。被地形埋住又没角度 / 没治疗弹时，不必空耗整回合
+	if in_pressed("n") then
+		pass_turn()
+		return
+	end
+
 	-- 输入一律走 in_*：本机键盘 or 远端快照（联机观看时）。见文件顶部 netframe
 	-- A：进出蓄力状态。蓄力时不走路——左右键专门用来调力度条，
 	-- 这样"走到位再瞄"和"微调力度"是两个不会互相打架的动作
@@ -1071,6 +1079,10 @@ local function resolve(p)
 				end
 			end
 		end
+	elseif w.effect == "dig" then
+		-- 地消弹：只挖地形，**不伤人、不推人**（不带冲量，免得 0 伤害的爆炸仍把人推进水里）。
+		-- 传空目标表 = 只走 terrain:blast 那条挖地路径
+		Physics.blast(p.x, p.y, w.radius or 0, 0, {}, terrain)
 	elseif (w.radius or 0) > 0 then
 		local events = {}
 		-- p.direct 已在撞虫那一刻拿过全额伤害，这里把它排除在距离衰减之外
@@ -1162,6 +1174,13 @@ local function after_settle()
 	-- 于是换手时按着不放就继续快，松开自然回到慢速微调——比硬清零更合手感
 end
 
+-- 跳过本回合：不发射，直接把回合交给对面。走的是与"开炮结算"同一条路径（after_settle），
+-- 所以胜负判断、换手、AI 重置都一并在里面——不留第二条换手分支。
+-- 人用 N 键触发；AI 被地形完全埋住、且这一炮要么没用要么会把自己炸死时也调它（见 update_ai）。
+function pass_turn()
+	after_settle()
+end
+
 -- AI 这一炮能用的武器：有弹药，且武器表声明给电脑用（`spec.ai` 不是 false/self）。
 -- "这局势值不值得用这一件"不在这里判——那是评分的事（见 ai.lua 的 AI.WEIGHTS）
 local function ai_weapons(w)
@@ -1200,6 +1219,18 @@ end
 
 -- 开始一段走位：**所有走位的唯一入口**。集中在这里记录起点 x 与总时长（死胡同检测要用），
 -- 否则几个调用点各写一份、漏掉一处就会漏检。dir 传 nil 表示"按朝向决定"（逃跑 / 躲藏）
+-- 传送脱困（供被埋的 AI 用）：朝最近敌人方向、抬一点角度，让 fire_teleport 在**实地上**
+-- 找一个落点把虫挪出去（传送能穿过地形，正是"埋住还能跑"的手段）。找不到落点返回 false——
+-- fire 会冒"无法传送"且**不消耗弹药**，调用方据此继续走别的脱困分支
+local function try_teleport_escape(w)
+	local tp = Weapons.by_id("teleport")
+	if not tp or not Weapons.has_ammo(w, tp) then return false end
+	local foe = nearest_enemy(w)
+	if foe then w.facing = (foe.x >= w.x) and 1 or -1 end
+	w.angle, aim_power = 30, 0.5
+	return fire(w, tp)
+end
+
 local function begin_walk(w, dir, duration, reason, run_away)
 	ai_walk_from_x, ai_walk_total = w.x, duration
 	ai_walk_t, ai_walk_dir, ai_run_away = duration, dir, run_away or false
@@ -1243,7 +1274,10 @@ local function update_ai(dt)
 		-- 捡补给排在躲避之前：箱子是**够得着才去**（判据见 supply:reachable），
 		-- 够不着就照常开炮——为捡不到的东西绕路，比不捡更蠢。
 		-- 走位时长按距离算，走到为止：固定的 walk_time 走不到 20 格外的箱子
-		if supply and supply:reachable(w, terrain) then
+		-- 被埋住时一律不安排走位（走不动，供给 / 躲避都到不了），留给后面的"开炮还是跳过"
+		if w.buried then
+			-- 被埋：不安排走位
+		elseif supply and supply:reachable(w, terrain) then
 			local c = supply.crate
 			begin_walk(w, (c.x >= w.x) and 1 or -1,
 			           math.abs(c.x - w.x) / Worms.WALK_SPEED + 0.4, "supply", false)
@@ -1292,11 +1326,45 @@ local function update_ai(dt)
 	-- 误伤自省：这一炮会打到队友、时间还够、本回合还没为此挪过 —— 先挪一小段再重新瞄，
 	-- 尽量避开（**一次为限**：挪不出干净角度就照打，误伤不是硬禁止）。方向取"背离会被
 	-- 打到的那名队友"，挪完下一帧的重规划会重新挑角度 / 换武器 / 换目标
-	if plan and plan.mate and turn.left > AI.WALK_LEAVE and not ai_friendly_tried then
+	if plan and plan.mate and not w.buried and turn.left > AI.WALK_LEAVE and not ai_friendly_tried then
 		ai_friendly_tried = true
 		local dir = (plan.mate_x and plan.mate_x >= w.x) and -1 or 1
 		begin_walk(w, dir, AI.WALK_CHUNK, "friendly", false)
 		ai_last = "避队友 挪位"
+		return
+	end
+	-- 被地形**完全埋住**：走不动，走位逻辑无从谈起。此时按"损失优先"的**脱困优先序**挑一步
+	-- （这也是 AI 会用到地消弹 / 激光 / 传送的地方）：
+	--   ① 无损脱困：地消弹挖开 / 激光穿地命中（自伤 = 0）
+	--   ② 传送：无损换位（AI 平时不规划它，见 weapons.lua 的 ai=self）
+	--   ③ 自炸脱困：自伤 ≤ AI.BURIED_SELF_MAX × 当前血量（血够厚才赌）
+	--   ④ 治疗：血不够自炸时先回血，**下回合血够了再自炸脱困**；血满不回（不空扔）
+	--   ⑤ 都不行 → 跳过 —— 死了不如赖活着，卡在土里至少能耗敌人弹药
+	if w.buried then
+		local bo = (plan and plan.best_of) or {}
+		local dig, beam, blast, heal = bo.dig, bo.beam, bo.blast, bo.heal
+		local beam_hits = beam and (beam.delta.damage or 0) > 0
+		local blast_safe = blast and (blast.delta.own_damage or 0) <= w.hp * AI.BURIED_SELF_MAX
+		local function go(c)
+			-- best_of 里存的是规划器的**候选**（瞄法在 c.aim 下），不是 result() 的成品（那才有顶层 angle/power）
+			w.angle, aim_power = c.aim.angle, c.aim.power
+			ai_last = string.format("%s（被埋自救）", c.reason or c.weapon.id)
+			fire(w, c.weapon)
+		end
+		if dig then
+			go(dig)
+		elseif beam_hits then
+			go(beam)
+		elseif try_teleport_escape(w) then
+			ai_last = "被埋 传送脱困"
+		elseif blast_safe then
+			go(blast)
+		elseif heal and w.hp < Worms.MAX_HP then
+			go(heal)
+		else
+			ai_last = "被埋 跳过"
+			pass_turn()
+		end
 		return
 	end
 	-- 这一炮算不算"打得到"：被地形挡住，或者落点离目标差得远，都算够不着。
@@ -2152,9 +2220,10 @@ local function box(r, title, tone)
 	r:put(w - 1, 0, "+", tone)
 	r:put(0, h - 1, "+", tone)
 	r:put(w - 1, h - 1, "+", tone)
-	-- 标题是"需要强调"的字样之一：给它一块底色，压在边框上才清楚（同一块浮窗底板）
+	-- 标题压在边框上：**不写底色**（保留框线那格的底），与窗体保持一致——
+	-- 窗体铺了底板就沿用底板，窗体透明就跟着透明，不再单印一块异色方块
 	if title then
-		r:print(2, 0, " " .. title .. " ", tone, COL.plate)
+		r:print(2, 0, " " .. title .. " ", tone)
 	end
 end
 
@@ -2550,8 +2619,7 @@ function lan_update(dt)
 			end
 		end
 	elseif self.phase == "overview" then
-		-- 自动刷新（每隔一会重扫一次）+ R 键手动刷新。回车才是"加入选中的房间"，
-		-- 之前把刷新也绑在回车，和"加入"撞车，按回车就直接进房了
+		-- 回车=加入选中的房间，R=手动刷新；两者不能共用回车（会误触直接进房）
 		self.refresh_t = self.refresh_t - dt
 		if self.refresh_t <= 0 then
 			self.refresh_t = 1.5
@@ -2867,8 +2935,7 @@ function draw()
 		red_side = red_side,
 		human = human_turn(),
 		floats = floats,
-		-- 只在**弹药真的在空中**时提示。燃烧 3 秒、光柱 5 秒属于"特效阶段"，
-		-- 那时还写"弹药飞行中"，玩家会以为卡住了
+		-- 只在弹药真的在空中时提示；特效阶段（燃烧/光柱）显示"飞行中"会让玩家以为卡住
 		flight_note = (#projectiles > 0 or burst) and L().flying or nil,
 		-- 第 1 行右端：游戏内时钟（24 小时制）与天气。天气与时间都是**读出来的**，
 		-- 所以这里只递三个值，不在这里拼字符串

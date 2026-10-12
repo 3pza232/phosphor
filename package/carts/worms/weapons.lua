@@ -20,8 +20,8 @@
 --
 -- 另外三个字段是给 **AI** 看的（见 ai.lua：它按这三件事装配，不看 id）：
 --   plan   怎么瞄：arc 抛物线角度×力度 / ray 直线只挑角度
---   effect 命中后世界怎么变：blast 爆炸 / heal 回血 / mound 长地形并埋人 /
---          strike 唤来天上那束光柱 / beam 烧穿射线
+--   effect 命中后世界怎么变：blast 爆炸 / dig 只挖地形（不伤人）/ heal 回血 /
+--          mound 长地形并埋人 / strike 唤来天上那束光柱 / beam 烧穿射线
 --   ai     电脑用不用：throw 参战 / self 只对自己用（传送）/ false 明确不用
 -- 加一件新武器**不必动 AI**：这三项能从现有取值里组合出来就行；只有当它带来全新的
 -- 瞄准维度或全新的世界变化时，才去 ai.lua 的 PLANS / EFFECTS 里加一个函数
@@ -73,6 +73,12 @@ Weapons.LIST = {
     short = { zh = "地形", en = "MOUND" },
     kind = "ballistic", plan = "arc", effect = "mound", ai = "throw",
     raise = 10, damage = 0, radius = 0, wind = 1.0, ammo = 2 },
+  -- 地消弹：**只挖地形、不伤人**（effect=dig：无伤害、无冲量）。破坏半径与超级弹相当，
+  -- 用来清出通路、拆掩体，或在被地形埋住时把自己挖出来。掏空敌人脚下的土让它塌落 / 落水，
+  -- 那是地形与重力造成的后果，不是这一弹的"伤害"——所以它连 0 伤害的爆炸冲量都不带
+  { id = "digger", name = { zh = "地消弹", en = "DIRT BOMB" }, short = { zh = "地消", en = "DIRT" },
+    kind = "ballistic", plan = "arc", effect = "dig", ai = "throw",
+    damage = 0, radius = 9, wind = 0.4, ammo = 2 },
   -- 天基炮：落点先标记 2 秒，再从天而降一束粗光柱持续 3 秒，每 0.5 秒结算一次伤害。
   -- 它打的是**位置**而不是人——逼对面离开掩体、或者断掉一条必经之路
   { id = "orbital", name = { zh = "天基炮", en = "ORBITAL" }, short = { zh = "天基", en = "ORBIT" },
@@ -104,8 +110,8 @@ Weapons.LIST = {
   { id = "super", name = { zh = "超级弹药", en = "SUPER" }, short = { zh = "超级", en = "SUPER" },
     kind = "ballistic", plan = "arc", effect = "blast", ai = "throw",
     damage = 100, radius = 9, wind = 0.4, ammo = 1 },
-  -- 传送只对**自己**用（换个位置），AI 需要一整套"我在哪更好"的判断才用得上，
-  -- 所以先在数据里声明 self：它不会进攻击候选，但也没被谁按 id 排除
+  -- 传送只对**自己**用（换个位置），所以声明 self：它不进**攻击候选**（没有"往哪传更好"的评分）。
+  -- 但被地形**埋住**时 main.lua 会显式拿它脱困 —— 能穿过地形换到别处，是"埋住还能跑"的手段
   { id = "teleport", name = { zh = "传送", en = "TELEPORT" }, short = { zh = "传送", en = "WARP" },
     kind = "utility", ai = "self", damage = 0, radius = 0, ammo = 2 },
 }

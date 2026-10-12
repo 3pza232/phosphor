@@ -2,12 +2,12 @@
 return {
   id      = "runner",
   name    = "RUNNER",
-  author  = "phosphor",
+  author  = "PZA",
   version = "1.0.0",
   -- 简介双语：卡带架按机器的界面语言取（只写字符串则中英同文）
   desc = {
-    zh = "沙漠里一直跑：跳过仙人掌、低头躲翼龙，白天跑进黑夜，越跑越快。",
-    en = "Keep running through the desert: jump the cacti, duck the pterodactyls, and run from day into night.",
+    zh = "跑酷：跳过仙人掌、躲开翼龙，速度越来越快。",
+    en = "Endless runner: jump the cacti, duck the pterodactyls, and keep speeding up.",
   },
   entry   = "main.lua",
   sidebar = { w = 18 },   -- 右侧栏：分数 / 速度 / 里程碑
