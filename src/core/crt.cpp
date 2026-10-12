@@ -23,7 +23,7 @@ constexpr LevelSpec kLevels[kCrtLevelCount] = {
 
 } // namespace
 
-CrtParams crt_params_for_level(int level, const Palette& filter) {
+CrtParams crt_params_for_level(int level, const Palette& palette) {
     if (level < 0) level = 0;
     if (level >= kCrtLevelCount) level = kCrtLevelCount - 1;
     const LevelSpec& spec = kLevels[level];
@@ -33,11 +33,11 @@ CrtParams crt_params_for_level(int level, const Palette& filter) {
     p.mask = spec.mask;
     p.glow = spec.glow;
     p.compensate = level > 0;
-    p.tint = filter.tint;
+    p.tint = palette.tint;
 
-    // 滤镜可声明自己的扫描线强度（>0 时优先），保持内容包的表达力
-    if (filter.scan_strength > 0.01f && level > 0)
-        p.scanline = filter.scan_strength;
+    // 色板可声明自己的扫描线强度（>0 时优先），保持内容包的表达力
+    if (palette.scan_strength > 0.01f && level > 0)
+        p.scanline = palette.scan_strength;
 
     return p;
 }

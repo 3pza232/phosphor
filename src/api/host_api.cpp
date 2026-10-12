@@ -34,6 +34,66 @@ Surface panel_surface(HostContext& host) {
                    host.content_h);
 }
 
+// 默认取色 helper 在 lua_value 里（区域绑定也用同一份），这里只是引入名字
+using api::default_bg;
+using api::default_fg;
+
+/// 给 `phos.screen` / `phos.panel` 绑定**同一套**绘制方法（put/print/fill/clear/blit/blend/
+/// back/back_rect/plot）。两组只差两件事：画到哪块 `Surface`、写底色的默认值——
+/// 都由 `is_panel` 一处决定。抽到一处后，"省略底色的规则"只有一份实现。
+/// 绑定只捕获 `HostContext&` 与 `bool`：**不捕获 std::function/lambda**，否则 sol2
+/// 在关闭 Lua 时析构这些闭包会崩（闭包按值存非平凡对象时的 GC 析构问题）。
+void bind_surface_api(sol::table& t, HostContext& host, bool is_panel) {
+    t["put"] = [&host, is_panel](int x, int y, const sol::object& ch, sol::object fg,
+                                 sol::object bg) {
+        Surface s = is_panel ? panel_surface(host) : content_surface(host);
+        s.put(x, y, api::read_char(ch, U' '), api::read_color(fg, default_fg(host)),
+              api::read_background(bg));
+    };
+    t["print"] = [&host, is_panel](int x, int y, const std::string& text, sol::object fg,
+                                   sol::object bg) {
+        Surface s = is_panel ? panel_surface(host) : content_surface(host);
+        s.print(x, y, text, api::read_color(fg, default_fg(host)), api::read_background(bg));
+    };
+    // fill / clear：省略底色 = 本面的默认底色（screen=色板 black；panel=主题面板色）。
+    // 清屏若按"保留背景"来就变成什么都不做
+    t["fill"] = [&host, is_panel](int x, int y, int w, int h, const sol::object& ch, sol::object fg,
+                                  sol::object bg) {
+        Surface s = is_panel ? panel_surface(host) : content_surface(host);
+        s.fill(x, y, w, h, api::read_char(ch, U' '), api::read_color(fg, default_fg(host)),
+               api::read_color(bg, is_panel ? host.panel_bg : default_bg(host)));
+    };
+    t["clear"] = [&host, is_panel](sol::object fg, sol::object bg) {
+        (is_panel ? panel_surface(host) : content_surface(host))
+            .clear(api::read_color(fg, default_fg(host)),
+                   api::read_color(bg, is_panel ? host.panel_bg : default_bg(host)));
+    };
+    // blit / back / back_rect：省略底色 = 激活色板的 black（与 screen 同组，不随面板色）——
+    // 这族是"整块搬运 / 只改一块底色"，默认与内容区一致
+    t["blit"] = [&host, is_panel](int x, int y, sol::object rows, sol::object fg, sol::object bg) {
+        (is_panel ? panel_surface(host) : content_surface(host))
+            .blit(x, y, api::read_rows(rows), api::read_color(fg, default_fg(host)),
+                  api::read_color(bg, default_bg(host)));
+    };
+    // 叠一笔 / 只改底色 / 落半格：前两件与 put 同组（底色省略 = 保留），第三件没有底色参数
+    t["blend"] = [&host, is_panel](int x, int y, sol::object ch, sol::object fg) {
+        return (is_panel ? panel_surface(host) : content_surface(host))
+            .blend(x, y, api::read_char(ch, U' '), api::read_color(fg, default_fg(host)));
+    };
+    t["back"] = [&host, is_panel](int x, int y, sol::object bg) {
+        (is_panel ? panel_surface(host) : content_surface(host))
+            .back(x, y, api::read_color(bg, default_bg(host)));
+    };
+    t["back_rect"] = [&host, is_panel](int x, int y, int w, int h, sol::object bg) {
+        (is_panel ? panel_surface(host) : content_surface(host))
+            .back_rect(x, y, w, h, api::read_color(bg, default_bg(host)));
+    };
+    t["plot"] = [&host, is_panel](int x, int y, sol::object fg) {
+        (is_panel ? panel_surface(host) : content_surface(host))
+            .plot(x, y, api::read_color(fg, default_fg(host)));
+    };
+}
+
 } // namespace
 
 void apply_palette_to(sol::state& lua, const Palette& palette) {
@@ -50,7 +110,7 @@ void register_host_api(sol::state& lua, HostContext& host) {
 
     sol::table phos = lua.create_named_table("phos");
 
-    // --- phos.color（常量取自激活滤镜，热切换时由 apply_palette_to 更新） ---
+    // --- phos.color（常量取自激活色板，热切换时由 apply_palette_to 更新） ---
     sol::table color = phos.create_named("color");
     color["rgb"] = [](int r, int g, int b) {
         auto clamp = [](int v) { return v < 0 ? 0 : (v > 255 ? 255 : v); };
@@ -74,48 +134,8 @@ void register_host_api(sol::state& lua, HostContext& host) {
         const int w = host.content_w - host.panel_w;
         return std::make_tuple(0, 0, w < 0 ? 0 : w, host.content_h);
     };
-    screen["put"] = [&host](int x, int y, const sol::object& ch, sol::object fg,
-                            sol::object bg) {
-        content_surface(host).put(x, y, api::read_char(ch, U' '),
-                                  api::read_color(fg, Color::white), api::read_background(bg));
-    };
-    screen["print"] = [&host](int x, int y, const std::string& text, sol::object fg,
-                              sol::object bg) {
-        content_surface(host).print(x, y, text, api::read_color(fg, Color::white),
-                                    api::read_background(bg));
-    };
-    // fill / blit / clear 与 put / print 分两组：这族调用是"整块搬运或清一块地方"，
-    // 省略底色按黑算——否则一句清屏会因为"没给底色"而变成什么都不做
-    screen["fill"] = [&host](int x, int y, int w, int h, const sol::object& ch, sol::object fg,
-                             sol::object bg) {
-        content_surface(host).fill(x, y, w, h, api::read_char(ch, U' '),
-                                   api::read_color(fg, Color::white),
-                                   api::read_color(bg, Color::black));
-    };
-    screen["clear"] = [&host](sol::object fg, sol::object bg) {
-        content_surface(host).clear(api::read_color(fg, Color::white),
-                                    api::read_color(bg, Color::black));
-    };
-    // 一次写多行（每行一条字符串）：地图/画面搬运用，比逐格 put 少一堆调用
-    screen["blit"] = [&host](int x, int y, sol::object rows, sol::object fg, sol::object bg) {
-        content_surface(host).blit(x, y, api::read_rows(rows), api::read_color(fg, Color::white),
-                                   api::read_color(bg, Color::black));
-    };
-    // 三件"手排次序做不到"的事：叠一笔、只改底色、落半格。
-    // 前两件与 put 同组（底色省略 = 保留），第三件没有底色参数
-    screen["blend"] = [&host](int x, int y, sol::object ch, sol::object fg) {
-        return content_surface(host).blend(x, y, api::read_char(ch, U' '),
-                                           api::read_color(fg, Color::white));
-    };
-    screen["back"] = [&host](int x, int y, sol::object bg) {
-        content_surface(host).back(x, y, api::read_color(bg, Color::black));
-    };
-    screen["back_rect"] = [&host](int x, int y, int w, int h, sol::object bg) {
-        content_surface(host).back_rect(x, y, w, h, api::read_color(bg, Color::black));
-    };
-    screen["plot"] = [&host](int x, int y, sol::object fg) {
-        content_surface(host).plot(x, y, api::read_color(fg, Color::white));
-    };
+    // 绘制方法统一绑定（与 panel 同一套实现）：screen 的默认底色 = 激活色板的 black
+    bind_surface_api(screen, host, /*is_panel=*/false);
     // 位掩码 → 象限字形。"这一格的四个子位里哪几个有内容"由卡带自己算（那是它的数据），
     // 但**位序**与字形表归引擎 —— 副本一旦有两份，迟早有一份把左上和右上写反，
     // 画出来的东西与判定就对不上
@@ -145,52 +165,15 @@ void register_host_api(sol::state& lua, HostContext& host) {
     // 面板内容完全由卡带决定：分数记录、地图、图鉴……
     sol::table panel = phos.create_named("panel");
     panel["size"] = [&host]() { return std::make_tuple(host.panel_w, host.content_h); };
-    panel["put"] = [&host](int x, int y, const sol::object& ch, sol::object fg,
-                           sol::object bg) {
-        panel_surface(host).put(x, y, api::read_char(ch, U' '),
-                                api::read_color(fg, Color::white), api::read_background(bg));
-    };
-    panel["print"] = [&host](int x, int y, const std::string& text, sol::object fg,
-                             sol::object bg) {
-        panel_surface(host).print(x, y, text, api::read_color(fg, Color::white),
-                                  api::read_background(bg));
-    };
-    panel["fill"] = [&host](int x, int y, int w, int h, const sol::object& ch, sol::object fg,
-                            sol::object bg) {
-        panel_surface(host).fill(x, y, w, h, api::read_char(ch, U' '),
-                                 api::read_color(fg, Color::white),
-                                 api::read_color(bg, Color::black));
-    };
-    panel["clear"] = [&host](sol::object fg, sol::object bg) {
-        panel_surface(host).clear(api::read_color(fg, Color::white),
-                                  api::read_color(bg, Color::black));
-    };
     // 运行时改面板宽度（0 = 收起）：宽度是与主机共享的布局量，分隔线、面板局部坐标
     // 都跟着变，所以只留 host.panel_w 一个真源。返回钳制后的实际宽度
     panel["resize"] = [&host](int w) {
         host.panel_w = clamp_panel_w(w);
         return host.panel_w;
     };
-    // 一次写多行：面板里的地图/表格搬运用，避免逐格调用。与 fill / clear 同组：
-    // 恒写底色（省略 = 黑），不能靠省略背景色来透出底图
-    panel["blit"] = [&host](int x, int y, sol::object rows, sol::object fg, sol::object bg) {
-        panel_surface(host).blit(x, y, api::read_rows(rows), api::read_color(fg, Color::white),
-                                 api::read_color(bg, Color::black));
-    };
-    // 与 phos.screen 同一组：叠一笔 / 只改底色 / 落半格（面板里的图例、进度条都用得上）
-    panel["blend"] = [&host](int x, int y, sol::object ch, sol::object fg) {
-        return panel_surface(host).blend(x, y, api::read_char(ch, U' '),
-                                         api::read_color(fg, Color::white));
-    };
-    panel["back"] = [&host](int x, int y, sol::object bg) {
-        panel_surface(host).back(x, y, api::read_color(bg, Color::black));
-    };
-    panel["back_rect"] = [&host](int x, int y, int w, int h, sol::object bg) {
-        panel_surface(host).back_rect(x, y, w, h, api::read_color(bg, Color::black));
-    };
-    panel["plot"] = [&host](int x, int y, sol::object fg) {
-        panel_surface(host).plot(x, y, api::read_color(fg, Color::white));
-    };
+    // 绘制方法与 screen 同一套；panel 的默认底色 = 主题面板色（skin.panel，由 App 写入）：
+    // 右栏不属于游戏画面，底色随主题，而不是透出游戏、也不是砸一块写死的黑
+    bind_surface_api(panel, host, /*is_panel=*/true);
 
     // --- phos.text（文本度量） ---
     // 中文一个字占两格，卡带要自己排版（居中、对齐、定宽字段）就得先问宽度，

@@ -32,7 +32,7 @@ struct DebugInfo {
     int lua_mem_kb = 0;
 
     // 内容包与界面
-    std::string skin_name, filter_name, boot_name;
+    std::string skin_name, boot_name;
     std::string shelf_style, crt_level_name;
     int music_volume = kDefaultMusicVolume, sfx_volume = kDefaultSfxVolume;
 

@@ -1,16 +1,19 @@
 #pragma once
 
 #include "core/color.hpp"
+#include "core/palette.hpp"
 
 #include <map>
 #include <sol/sol.hpp>
+
+namespace phos { struct HostContext; }
 
 namespace phos::api {
 
 /// Lua 值 → 引擎类型的读取工具。
 ///
 /// 脚本宿主（`api/`、`cart/`、`pack/`、`devkit/`）都要把脚本里的表读成引擎类型，
-/// 而规则必须一致：同一个 `{r,g,b}` 无论在皮肤、滤镜还是卡带图标里，都该得到
+/// 而规则必须一致：同一个 `{r,g,b}` 无论在皮肤、色板还是卡带图标里，都该得到
 /// 同一个颜色——包括越界值怎么处理。所以只实现一处。
 
 /// `Color` 或 `{ r, g, b }` → Color。通道缺失时取 fallback 的对应通道，数值按 0..255 夹紧。
@@ -35,5 +38,12 @@ std::map<char, Color> read_char_color_map(const sol::object& object);
 /// 卡带 API 里"没给背景色"就是这个意思。谁把 keep 当默认值、谁把黑当默认值，
 /// 由各绑定按 docs/api-reference.md 的两组规则决定。
 Color read_background(const sol::object& object);
+
+/// 取激活色板的某个色；无激活色板（如无头模式）时回落 fallback
+Color slot_color(const HostContext& host, PaletteSlot slot, Color fallback);
+/// 卡带 API 省略**前景**时的默认色 = 激活色板的 white
+Color default_fg(const HostContext& host);
+/// 省略**背景**时的默认色 = 激活色板的 black（`panel.fill/clear` 另取主题面板色）
+Color default_bg(const HostContext& host);
 
 } // namespace phos::api

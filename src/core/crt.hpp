@@ -6,7 +6,7 @@ namespace phos {
 
 struct Palette;
 
-/// 显像管后处理参数。参照 RetroArch 系 CRT 滤镜的做法：
+/// 显像管后处理参数。参照 RetroArch 系 CRT 后处理的做法：
 /// 细扫描线（屏幕行的亮暗条纹）+ 孔径格栅（RGB 子像素条纹）+ 轻度辉光。
 struct CrtParams {
     float scanline = 0.0f;  // 扫描线深度 0..1（细线，非整片压暗）
@@ -32,8 +32,9 @@ inline constexpr float kMaskLossPerUnit = 0.55f;
 /// 机器扫描线档位：0=OFF 1=WEAK 2=MEDIUM 3=STRONG
 inline constexpr int kCrtLevelCount = 4;
 
-/// 档位换算为后处理参数；滤镜可覆盖 tint / glow（scanline 声明 >0 时以滤镜为准）
-CrtParams crt_params_for_level(int level, const Palette& filter);
+/// 档位换算为后处理参数；tint 恒取色板，scanline 在色板声明 >0 且档位非 OFF 时以色板为准，
+/// glow / mask 由档位决定
+CrtParams crt_params_for_level(int level, const Palette& palette);
 
 /// 档位显示名
 const char* crt_level_name(int level);

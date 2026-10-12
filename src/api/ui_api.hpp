@@ -6,7 +6,7 @@ namespace phos {
 
 struct HostContext;
 
-/// 卡带侧界面配色：取自激活滤镜（与 `phos.color` 同源，切主题时同步变化）。
+/// 卡带侧界面配色：取自当前主题声明的色板（与 `phos.color` 同源，换主题时同步变化）。
 /// 界面绘制与"绘制区域"共用这一条派生路径，避免配色在第二处重新推导。
 ui::Style cart_style(const HostContext& host);
 

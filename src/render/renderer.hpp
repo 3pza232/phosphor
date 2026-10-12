@@ -44,6 +44,10 @@ public:
     /// （文本视图仍是一格一个字形，见 LayeredScreen::merge_over）。
     void draw_layers(const LayeredScreen& layers, int origin_x, int origin_y);
 
+    /// 在**所有图层之上**再叠一块网格：主机 chrome（侧栏底色/分隔线等）。
+    /// 与 draw_layers 同一套像素级合成（透明处透出下层），只是不参与卡带的图层栈
+    void draw_overlay(const Screen& overlay, int origin_x, int origin_y);
+
     /// 一个字形在格内的墨迹框（像素，相对格左缘）。按需装入字形，与绘制同一份度量；
     /// 字体链里没有该字形时退回整格宽并置 approx
     GlyphBox ink_box(char32_t cp);
@@ -54,7 +58,7 @@ public:
     /// swap 之前调用——swap 之后后缓冲内容不再有定义。成功填 width/height 并返回 true。
     bool read_frame(std::vector<unsigned char>& rgba, int& width, int& height);
 
-    /// CRT 后处理参数（扫描线 / 孔径格栅 / 辉光 / 色调），由 App 综合档位与滤镜给出
+    /// CRT 后处理参数（扫描线 / 孔径格栅 / 辉光 / 色调），由 App 综合档位与色板给出
     void set_crt(const CrtParams& params) { crt_ = params; }
 
 private:

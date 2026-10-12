@@ -2,7 +2,7 @@
 
 namespace phos {
 
-Palette raw_filter() {
+Palette raw_palette() {
     Palette palette = builtin_palette();
     palette.id = "none";
     palette.name = "NONE (RAW)";

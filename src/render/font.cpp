@@ -224,7 +224,7 @@ std::vector<std::string> font_scheme_names(const std::string& root) {
         names.push_back(it->path().filename().string());
     }
     std::sort(names.begin(), names.end());
-    // default 排最前（与皮肤/滤镜等其它内容包的排序约定一致）
+    // default 排最前（与皮肤/色板等其它内容包的排序约定一致）
     std::stable_partition(names.begin(), names.end(),
                           [](const std::string& name) { return name == "default"; });
     return names;

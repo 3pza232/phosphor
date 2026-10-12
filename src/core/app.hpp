@@ -25,7 +25,7 @@
 namespace phos {
 
 /// 应用生命周期与主循环（固定逻辑帧 + 渲染帧）。
-/// 六类可替换内容：游戏机主题（skin）/ 显像管滤镜（filter）/ 启动动画（boot）/
+/// 五类内容包：游戏机主题（skin，内含内容色板 palette）/ 启动动画（boot）/
 /// 音效包（sound）/ 字体方案（font）/ 卡带（cart）。
 class App {
 public:
@@ -67,8 +67,7 @@ private:
     void load_font_chain(const std::string& wanted);
 
     // 内容包应用
-    void apply_skin(int index, class Window* window);
-    void apply_filter(int index, class Renderer* renderer);
+    void apply_skin(int index, class Window* window, class Renderer* renderer = nullptr);
     void apply_font_scheme(int index, class Renderer* renderer);
     void apply_boot(int index);
     void apply_sound(int index);
@@ -129,12 +128,12 @@ private:
 
     // 内容目录：用户区优先，出厂区兜底（查找顺序见 content-packs.md）
     static constexpr const char* kUserSkinDir = "theme/skin";
-    static constexpr const char* kUserFilterDir = "theme/palette";
+    static constexpr const char* kUserPaletteDir = "theme/palette";
     static constexpr const char* kUserBootDir = "theme/boot";
     static constexpr const char* kUserSoundDir = "theme/sound";
     // 出厂区：随主机发布的内容包的位置；用户区有同名项时用户区优先
     static constexpr const char* kFactorySkinDir = "system/skin";
-    static constexpr const char* kFactoryFilterDir = "system/palette";
+    static constexpr const char* kFactoryPaletteDir = "system/palette";
     static constexpr const char* kFactoryBootDir = "system/boot";
     static constexpr const char* kFactorySoundDir = "system/sound";
 
@@ -147,6 +146,9 @@ private:
     /// 各图层由渲染器按 z 逐层叠画，做到"一格能同时看见两层的笔画"。
     /// 屏幕文本与 agent 读的仍是合成结果 screen_（一格一个字形）
     Screen base_screen_;
+    /// 内容区大小的"主机 chrome"（侧栏底色/分隔线）：画在**所有卡带图层之上**。
+    /// 图层会盖住底层，所以侧栏分隔线必须走这里才能在窗口里看得见（见 Renderer::draw_overlay）
+    Screen chrome_;
     Input input_;
     HostContext host_;
     Shell shell_;
@@ -161,9 +163,9 @@ private:
     Config config_;
     std::vector<Skin> skins_;
     int skin_index_ = 0;
-    std::vector<Palette> filters_;
-    int filter_index_ = 0;
-    Palette active_filter_;
+    std::vector<Palette> palettes_;
+    int palette_index_ = 0;
+    Palette active_palette_;
     CrtParams active_crt_;
     std::vector<BootPack> boots_;
     int boot_index_ = 0;

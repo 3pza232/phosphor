@@ -12,8 +12,7 @@ namespace phos {
 
 /// 设置项的标识：顺序即为界面顺序（分区标题穿插其中，不参与选中）
 enum class SettingId {
-    theme,         // 游戏机主题
-    filter,        // 显像管滤镜
+    theme,         // 游戏机主题（连内容色板一起）
     font,          // 字体方案
     scanlines,     // 扫描线档位
     fps,           // 画面刷新率（逻辑帧率恒定，见 defaults.hpp 的 kFpsChoices）
@@ -29,8 +28,8 @@ enum class SettingId {
 
 /// 设置界面渲染所需的只读状态
 struct SettingsContext {
-    std::vector<std::string> skins, filters, fonts, boots, sounds;
-    int skin_index = 0, filter_index = 0, font_index = 0, boot_index = 0, sound_index = 0;
+    std::vector<std::string> skins, fonts, boots, sounds;
+    int skin_index = 0, font_index = 0, boot_index = 0, sound_index = 0;
     int crt_level = kDefaultCrtLevel;
     int fps = kDefaultFps;
     int music_volume = kDefaultMusicVolume, sfx_volume = kDefaultSfxVolume;

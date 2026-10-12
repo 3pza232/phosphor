@@ -33,12 +33,6 @@ void Shell::set_carts(std::vector<CartInfo> carts) {
     shelf_pos_ = static_cast<float>(shelf_cursor_);
 }
 
-void Shell::set_filters(std::vector<std::string> names, int active) {
-    filter_names_ = std::move(names);
-    if (active >= 0 && active < static_cast<int>(filter_names_.size()))
-        filter_index_ = active;
-}
-
 void Shell::set_fonts(std::vector<std::string> names, int active) {
     font_names_ = std::move(names);
     if (active >= 0 && active < static_cast<int>(font_names_.size()))
@@ -256,12 +250,6 @@ Shell::Intent Shell::update_settings(const Input& input) {
             if (pick_next(skin_names_, skin_index_)) {
                 intent.skin_changed = true;
                 intent.skin_index = skin_index_;
-            }
-            break;
-        case SettingId::filter:
-            if (pick_next(filter_names_, filter_index_)) {
-                intent.filter_changed = true;
-                intent.filter_index = filter_index_;
             }
             break;
         case SettingId::font:
@@ -501,12 +489,10 @@ void Shell::draw_settings(Screen& screen) const {
 
     SettingsContext ctx;
     ctx.skins = skin_names_;
-    ctx.filters = filter_names_;
     ctx.fonts = font_names_;
     ctx.boots = boot_names_;
     ctx.sounds = sound_names_;
     ctx.skin_index = skin_index_;
-    ctx.filter_index = filter_index_;
     ctx.font_index = font_index_;
     ctx.boot_index = boot_index_;
     ctx.sound_index = sound_index_;

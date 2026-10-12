@@ -12,8 +12,8 @@ namespace phos {
 /// 留在 `pack/` 是因为这里定义的是**内容**（内置包长什么样、出厂区与用户区谁优先）；
 /// 挪进 `core/` 会让下层反向依赖 `pack/` 的 `SoundPack`
 
-/// "NONE" 滤镜：不做色调处理，保留卡带原本配色（扫描线由机器档位单独控制）
-Palette raw_filter();
+/// "NONE" 色板：不做色调处理，保留卡带原本配色（扫描线由机器档位单独控制）
+Palette raw_palette();
 
 /// "SILENT" 音效包：内置空包，用于彻底关闭主机事件音
 SoundPack silent_sound_pack();

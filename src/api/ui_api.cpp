@@ -131,36 +131,36 @@ void register_ui_api(sol::state& lua, HostContext& host) {
         sol::property(&DrawRegion::y), "w", sol::property(&DrawRegion::w), "h",
         sol::property(&DrawRegion::h), "surface", sol::property(&DrawRegion::anchor),
         "clear",
-        [](DrawRegion& r, sol::object fg, sol::object bg) {
-            r.clear(api::read_color(fg, Color::white), api::read_color(bg, Color::black));
+        [&host](DrawRegion& r, sol::object fg, sol::object bg) {
+            r.clear(api::read_color(fg, api::default_fg(host)), api::read_background(bg));
         },
-        // 区域里的 put / print / fill / blit 都默认**保留背景**（省略 bg → keep）：
+        // 区域里的 put / print / fill / blit / clear 都默认**保留背景**（省略 bg → keep）：
         // 覆盖层压在游戏画面上时，字缝里透出的是底图而不是黑块
         "put",
-        [](DrawRegion& r, int x, int y, sol::object ch, sol::object fg, sol::object bg) {
-            r.put(x, y, api::read_char(ch, U' '), api::read_color(fg, Color::white),
+        [&host](DrawRegion& r, int x, int y, sol::object ch, sol::object fg, sol::object bg) {
+            r.put(x, y, api::read_char(ch, U' '), api::read_color(fg, api::default_fg(host)),
                   api::read_background(bg));
         },
         "print",
-        [](DrawRegion& r, int x, int y, const std::string& text, sol::object fg, sol::object bg) {
-            r.print(x, y, text, api::read_color(fg, Color::white), api::read_background(bg));
+        [&host](DrawRegion& r, int x, int y, const std::string& text, sol::object fg, sol::object bg) {
+            r.print(x, y, text, api::read_color(fg, api::default_fg(host)), api::read_background(bg));
         },
         "fill",
-        [](DrawRegion& r, int x, int y, int w, int h, sol::object ch, sol::object fg,
-           sol::object bg) {
-            r.fill(x, y, w, h, api::read_char(ch, U' '), api::read_color(fg, Color::white),
+        [&host](DrawRegion& r, int x, int y, int w, int h, sol::object ch, sol::object fg,
+                sol::object bg) {
+            r.fill(x, y, w, h, api::read_char(ch, U' '), api::read_color(fg, api::default_fg(host)),
                    api::read_background(bg));
         },
         "blit",
-        [](DrawRegion& r, int x, int y, sol::object rows, sol::object fg, sol::object bg) {
-            r.blit(x, y, api::read_rows(rows), api::read_color(fg, Color::white),
+        [&host](DrawRegion& r, int x, int y, sol::object rows, sol::object fg, sol::object bg) {
+            r.blit(x, y, api::read_rows(rows), api::read_color(fg, api::default_fg(host)),
                    api::read_background(bg));
         },
         // 区域里的 blend / back / back_rect / plot 与 put 同组（**保留底色**）：
         // 覆盖层压在游戏画面上时，字缝里透出的是底图而不是黑块
         "blend",
-        [](DrawRegion& r, int x, int y, sol::object ch, sol::object fg) {
-            return r.blend(x, y, api::read_char(ch, U' '), api::read_color(fg, Color::white));
+        [&host](DrawRegion& r, int x, int y, sol::object ch, sol::object fg) {
+            return r.blend(x, y, api::read_char(ch, U' '), api::read_color(fg, api::default_fg(host)));
         },
         "back",
         [](DrawRegion& r, int x, int y, sol::object bg) {
@@ -171,8 +171,8 @@ void register_ui_api(sol::state& lua, HostContext& host) {
             r.back_rect(x, y, w, h, api::read_background(bg));
         },
         "plot",
-        [](DrawRegion& r, int x, int y, sol::object fg) {
-            r.plot(x, y, api::read_color(fg, Color::white));
+        [&host](DrawRegion& r, int x, int y, sol::object fg) {
+            r.plot(x, y, api::read_color(fg, api::default_fg(host)));
         },
         "frame",
         [](DrawRegion& r, sol::object title) {

@@ -79,7 +79,7 @@ public:
     /// 不存在或不可序列化时返回空串
     std::string global_json(const std::string& path);
 
-    /// 滤镜热更新（切换主题时重写 phos.color 常量）
+    /// 色板热更新（切换主题时重写 phos.color 常量）
     void apply_palette(const Palette& palette);
 
 private:

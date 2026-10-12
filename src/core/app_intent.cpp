@@ -51,8 +51,7 @@ void App::handle_escape() {
             log::info("resume");
             break;
         case ShellMode::shelf:
-            // 搜索框正在输入时，Esc 只清空搜索并收起输入框。架面上的 Esc 原本是关机，
-            // 玩家正低头打字时被关掉机器是不可接受的——这个键位是刻意抢过来的
+        // 搜索框输入中，Esc 必须先交给搜索（清空并收起），不得直接关机——打字时被关机不可接受
             if (shell_.shelf_search().editing()) {
                 shell_.cancel_shelf_search();
                 break;
@@ -77,10 +76,6 @@ void App::handle_intent(const Shell::Intent& intent, Renderer* renderer, Window*
         save_config_now();
         log::info("setting fps=" + std::to_string(config_.fps));
     }
-    if (intent.filter_changed) {
-        apply_filter(intent.filter_index, renderer);
-        log::info("setting filter=" + active_filter_.id);
-    }
     if (intent.font_changed) apply_font_scheme(intent.font_index, renderer);
     if (intent.language_changed) {
         config_.language = lang_name(shell_.language());
@@ -89,7 +84,7 @@ void App::handle_intent(const Shell::Intent& intent, Renderer* renderer, Window*
         log::info(std::string("setting language=") + config_.language);
     }
     if (intent.skin_changed) {
-        apply_skin(intent.skin_index, window);
+        apply_skin(intent.skin_index, window, renderer);
         log::info("setting skin=" + skins_[skin_index_].id);
     }
     if (intent.boot_changed) {

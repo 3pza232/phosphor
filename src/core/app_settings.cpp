@@ -16,7 +16,7 @@ void App::save_config_now() {
 }
 
 
-void App::apply_skin(int index, Window* window) {
+void App::apply_skin(int index, Window* window, Renderer* renderer) {
     if (index < 0 || index >= static_cast<int>(skins_.size())) return;
     skin_index_ = index;
 
@@ -33,6 +33,17 @@ void App::apply_skin(int index, Window* window) {
 
     shell_.set_skin(skin);
     if (window) window->resize(skin.grid_w() * kCellPx, skin.grid_h() * kCellPx);
+
+    // 主题自带色板：按皮肤声明的 palette 名解析出激活色板——卡带配色与 CRT 参数随主题一起变。
+    // 色板随主题（skin.palette），设置里无独立项
+    int pal = 0;
+    for (size_t i = 0; i < palettes_.size(); ++i)
+        if (palettes_[i].id == skin.palette) { pal = static_cast<int>(i); break; }
+    palette_index_ = pal;
+    active_palette_ = palettes_[static_cast<size_t>(pal)];
+    host_.panel_bg = skin.panel;  // 侧栏默认底色随主题（卡带 init 里就会读到）
+    apply_crt(config_.crt_level, renderer);
+    if (cart_) cart_->apply_palette(active_palette_);
 
     config_.skin = skin.id;
     save_config_now();
@@ -74,19 +85,6 @@ void App::apply_font_scheme(int index, Renderer* renderer) {
 }
 
 
-void App::apply_filter(int index, Renderer* renderer) {
-    if (index < 0 || index >= static_cast<int>(filters_.size())) return;
-    filter_index_ = index;
-    active_filter_ = filters_[filter_index_];
-
-    apply_crt(config_.crt_level, renderer);
-    if (cart_) cart_->apply_palette(active_filter_);
-
-    config_.filter = active_filter_.id;
-    save_config_now();
-}
-
-
 void App::log_cart_error(const std::string& message) {
     log::error("cart error: " + message);
 }
@@ -106,7 +104,7 @@ void App::init_audio() {
 
 
 void App::apply_crt(int level, Renderer* renderer) {
-    active_crt_ = crt_params_for_level(level, active_filter_);
+    active_crt_ = crt_params_for_level(level, active_palette_);
     if (renderer) renderer->set_crt(active_crt_);
 }
 

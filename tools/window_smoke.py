@@ -32,6 +32,10 @@ DRIVE_KEYS = ("right", "right", "b", "m", "m", "k", "k")
 #: 写死的次数就会停在别的行上，对局永远不开，而门禁看不出来
 START_MARKERS = ("开始游戏", "开始")
 
+#: 确认键：WORMS 的菜单确认是 **回车**（虚拟键 "start"），不是 A——A 要留给昵称输入。
+#: 菜单型的卡带按它开局；本来就没有菜单的卡带按下去也无害
+CONFIRM_KEY = "start"
+
 
 def start_focused(host: Host) -> bool:
     """光标是否停在"开始"那一项上。
@@ -45,19 +49,16 @@ def start_focused(host: Host) -> bool:
     return False
 
 
-def enter_match(host: Host, limit: int = 14) -> bool:
-    """把菜单光标走到"开始"上并按确认；返回是否真的走到了（本来就没菜单的卡带按"没有"算）。
+def enter_match(host: Host) -> bool:
+    """进入对局：菜单光标默认停在**第一项**，按一次"上"会**循环到最下面那一项**——
+    WORMS 的设置界面里，最后一项就是"开始游戏"。不调任何参数（只是冒烟），
+    直接"上 + 确认"即可开局；本来就没有菜单的卡带按下去也无害。
 
     走单步：`host.key` = 注入 + `time.step`，比"实时点按 + 睡墙钟"快得多，且确定。
     """
-    reached = False
-    for _ in range(limit):
-        if start_focused(host):
-            reached = True
-            break
-        host.key("down")
-    host.key("a")
-    return reached
+    host.key("up")
+    host.key(CONFIRM_KEY)
+    return start_focused(host)
 
 
 def soak(host: Host, seconds: float) -> None:

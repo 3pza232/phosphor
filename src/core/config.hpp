@@ -9,8 +9,7 @@ namespace phos {
 
 /// 机台配置（程序目录 config.json）。字段固定且扁平，手写极简 JSON 读写。
 struct Config {
-    std::string skin = "default";        // 游戏机主题（skin 包 id）
-    std::string filter = "none";         // 显像管滤镜（"none" = 原色原样）
+    std::string skin = "default";        // 游戏机主题（连内容色板一起，见 skin.palette）
     std::string boot = "default";        // 启动动画包 id
     std::string sound = "default";       // 音效包 id
     std::string font = "default";        // 字体方案（theme/font/<名称>/）

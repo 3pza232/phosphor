@@ -15,6 +15,10 @@ struct Skin {
     std::string id = "default";
     std::string name = "PHOSPHOR P-1";
 
+    /// 本主题使用的**内容色板**名（`theme/palette/<名>/`）：卡带与开机动画的 `phos.color.*`
+    /// 取自它。于是"换主题"会连同卡带的配色一起变——色板不再是单独的设置项
+    std::string palette = "default";
+
     // 内容区（卡带与主机界面的作画区域）
     int screen_x = 2, screen_y = 3, screen_w = kContentW, screen_h = kContentH;
 
@@ -24,12 +28,15 @@ struct Skin {
     std::string left = "||";    // 左侧装饰字符（按行轮换使用）
     std::string right = "||";
 
-    // 主机界面配色（卡带不受其影响，卡带颜色来自滤镜/调色板）
+    // 机身界面配色（卡带配色来自本主题声明的 palette）
     Color frame{60, 80, 60};
     Color accent{80, 255, 120};
     Color ui_fg{230, 255, 230};
     Color ui_bg{0, 0, 0};
     Color ui_dim{90, 110, 90};
+    /// 右栏面板底色：与机身（ui_bg）**刻意区分**，给侧栏一层"凹槽"的层次感。
+    /// 缺省 = ui_bg（不区分）
+    Color panel{0, 0, 0};
 
     /// 指示灯：随运行时间呼吸
     struct Lamp {

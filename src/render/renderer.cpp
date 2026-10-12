@@ -446,6 +446,17 @@ void Renderer::draw(const Screen& screen) {
     if (!vertices_.empty()) submit(win_w_px_, win_h_px_, true, false);
 }
 
+void Renderer::draw_overlay(const Screen& overlay, int origin_x, int origin_y) {
+    // ① 只铺 overlay **真的给了底色**的格（alpha != 0）：其余格透出下层
+    vertices_.clear();
+    emit_backgrounds(overlay, origin_x, origin_y, true);
+    if (!vertices_.empty()) submit(win_w_px_, win_h_px_, false, false);
+    // ② 画 glyph（笔画为实、笔画之外透明）
+    vertices_.clear();
+    emit_glyphs(overlay, origin_x, origin_y, true);
+    if (!vertices_.empty()) submit(win_w_px_, win_h_px_, true, false);
+}
+
 void Renderer::draw_layers(const LayeredScreen& layers, int origin_x, int origin_y) {
     for (const Layer* layer : layers.ordered()) {
         if (!layer->visible) continue;

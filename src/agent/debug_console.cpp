@@ -83,7 +83,6 @@ void DebugConsole::render(const DebugInfo& info) {
 
     if (ImGui::CollapsingHeader("CONTENT & SHELL", ImGuiTreeNodeFlags_DefaultOpen)) {
         ImGui::Text("console theme  %s", info.skin_name.c_str());
-        ImGui::Text("tube filter    %s", info.filter_name.c_str());
         ImGui::Text("boot animation %s", info.boot_name.c_str());
         ImGui::Text("shelf view     %s", info.shelf_style.c_str());
         ImGui::Text("crt level      %s", info.crt_level_name.c_str());

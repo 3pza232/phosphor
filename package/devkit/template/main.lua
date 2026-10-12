@@ -13,11 +13,12 @@
 -- 十条约定：每条都对应一条真实约束（违反其中任何一条，都会以难查的显示问题收场）
 --
 -- 1. 底色分两组。put / print 不传背景 = **保留原来那格的背景**（透明底）；
---    fill / blit / clear 是"整块搬运或清一块地方"，**总是写底色**（省略即黑）。
+--    fill / blit / clear 是"整块搬运或清一块地方"，省略 = **激活色板的 black**（随主题）。
 --    需要强调的地方显式传底（画面内的读数、血条、浮窗）：
 --      S.print(x, y, text, C.white)                     -- 透明 ✓
 --      S.print(x, y, text, C.white, C.rgb(10,12,20))    -- 有底 ✓
---    phos.ui.region 的 put / print / fill / blit 也默认不动背景，只有它的 clear 写黑。
+--    phos.ui.region 的 put / print / fill / blit / clear 全都默认不动背景（透明底）；
+--    phos.panel.fill / clear 省略底色 = 主题面板色（skin.panel）。
 --
 -- 2. 画"铺满画面"的东西一律用 S.playfield()，不要用 screen.size()：
 --    后者含侧栏盖住的那几列，画过去会被挡掉一截（障碍物会"藏在侧栏后面走出来"）。

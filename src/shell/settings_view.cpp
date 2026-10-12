@@ -21,7 +21,6 @@ struct Row {
 constexpr Row kRows[] = {
     {true,  Msg::section_machine, SettingId::count},
     {false, Msg::count,           SettingId::theme},
-    {false, Msg::count,           SettingId::filter},
     {false, Msg::count,           SettingId::font},
     {false, Msg::count,           SettingId::scanlines},
     {false, Msg::count,           SettingId::fps},
@@ -67,9 +66,6 @@ std::string row_text(SettingId id, const SettingsContext& ctx) {
         case SettingId::theme:
             return label(lang, Msg::row_theme) + "< " +
                    pick(ctx.skins, ctx.skin_index, tr(lang, Msg::value_default)) + " >";
-        case SettingId::filter:
-            return label(lang, Msg::row_filter) + "< " +
-                   pick(ctx.filters, ctx.filter_index, tr(lang, Msg::value_none)) + " >";
         case SettingId::font:
             return label(lang, Msg::row_font) + "< " +
                    pick(ctx.fonts, ctx.font_index, tr(lang, Msg::value_default)) + " >";

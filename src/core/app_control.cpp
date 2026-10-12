@@ -66,7 +66,7 @@ std::string App::control_state_json() const {
         << ",\"panel_w\":" << host_.panel_w << ",\"seed\":" << rng_seed_
         << ",\"host_time\":" << host_.time
         << ",\"skin\":" << json::quote(skins_[skin_index_].id)
-        << ",\"filter\":" << json::quote(active_filter_.id)
+        << ",\"palette\":" << json::quote(active_palette_.id)
         << ",\"boot\":" << json::quote(boots_.empty() ? "" : boots_[boot_index_].id)
         << ",\"sound\":" << json::quote(sounds_.empty() ? "" : sounds_[sound_index_].id)
         << ",\"font\":" << json::quote(font_scheme_)
@@ -124,8 +124,8 @@ std::string App::control_state_json() const {
 
     out << ",\"packs\":{\"skin\":" << pack_json(skins_, by_name)
         << ",\"skin_ids\":" << pack_json(skins_, by_id)
-        << ",\"filter\":" << pack_json(filters_, by_name)
-        << ",\"filter_ids\":" << pack_json(filters_, by_id)
+        << ",\"palette\":" << pack_json(palettes_, by_name)
+        << ",\"palette_ids\":" << pack_json(palettes_, by_id)
         << ",\"boot\":" << pack_json(boots_, by_name)
         << ",\"boot_ids\":" << pack_json(boots_, by_id)
         << ",\"sound\":" << pack_json(sounds_, by_name)

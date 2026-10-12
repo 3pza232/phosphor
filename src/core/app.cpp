@@ -38,13 +38,12 @@ void sort_by_recent(std::vector<CartInfo>& carts, const std::vector<std::string>
 int App::run(const CliOptions& opts) {
     config_ = load_config(kConfigPath);
 
-    filters_.push_back(raw_filter());
-    merge_packs(filters_, scan_palettes(kUserFilterDir));
-    merge_packs(filters_, scan_palettes(kFactoryFilterDir));
-    filter_index_ = 0;
-    for (size_t i = 0; i < filters_.size(); ++i)
-        if (filters_[i].id == config_.filter) filter_index_ = static_cast<int>(i);
-    active_filter_ = filters_[filter_index_];
+    palettes_.push_back(raw_palette());
+    merge_packs(palettes_, scan_palettes(kUserPaletteDir));
+    merge_packs(palettes_, scan_palettes(kFactoryPaletteDir));
+    // 色板由主题 skin.palette 在 apply_skin 里解析；这里先装出厂兜底，供解析前使用
+    palette_index_ = 0;
+    active_palette_ = palettes_[palette_index_];
 
     skins_ = scan_skins(kUserSkinDir);
     merge_packs(skins_, scan_skins(kFactorySkinDir));
@@ -76,7 +75,7 @@ int App::run(const CliOptions& opts) {
 
     host_.screen = &screen_;
     host_.input = &input_;
-    host_.palette = &active_filter_;
+    host_.palette = &active_palette_;
     host_.language = config_.language;
     host_.audio = &audio_;
     host_.net = &net_;
@@ -90,9 +89,6 @@ int App::run(const CliOptions& opts) {
     std::vector<std::string> names;
     for (const auto& skin : skins_) names.push_back(skin.name);
     shell_.set_skins(names, skin_index_);
-    names.clear();
-    for (const auto& filter : filters_) names.push_back(filter.name);
-    shell_.set_filters(names, filter_index_);
     names.clear();
     for (const auto& boot : boots_) names.push_back(boot.name);
     shell_.set_boots(names, boot_index_);
@@ -133,9 +129,9 @@ int App::run(const CliOptions& opts) {
         }
     }
     log::info("session start: mode=" + std::string(opts.headless ? "headless" : "window") +
-              " skin=" + skins_[skin_index_].id + " filter=" + active_filter_.id +
+              " skin=" + skins_[skin_index_].id + " palette=" + active_palette_.id +
               " boot=" + boots_[boot_index_].id + " sound=" + sounds_[sound_index_].id +
-              " packs=" + std::to_string(skins_.size()) + "/" + std::to_string(filters_.size()) +
+              " packs=" + std::to_string(skins_.size()) + "/" + std::to_string(palettes_.size()) +
               "/" + std::to_string(boots_.size()) + "/" + std::to_string(sounds_.size()));
 
     const int code = opts.headless ? run_headless(opts) : run_windowed(opts);
@@ -158,9 +154,7 @@ void App::advance(float dt, Renderer* renderer, Window* window) {
         const float progress =
             1.0f - std::max(0.0f, eject_collapse_ / kEjectCollapseTime);
         shell_.draw_chassis(screen_);
-        effects::draw_eject_collapse(screen_, content_rect(), progress,
-                                     active_filter_.slots[static_cast<size_t>(PaletteSlot::white)],
-                                     active_filter_.slots[static_cast<size_t>(PaletteSlot::black)]);
+        effects::draw_eject_collapse(screen_, content_rect(), progress, shell_.skin().accent);
         input_.next_frame();
         return;
     }
@@ -190,6 +184,12 @@ void App::tick_playing(float dt) {
     shell_.draw_chassis(screen_);
     shell_.set_lamps_solid(true);
 
+    // 主机 chrome（侧栏分隔线）每帧重画：它由渲染器画在**所有图层之上**——
+    // 画在底层会被卡带的世界图层盖住（这正是"窗口里看不到分隔线"的原因）
+    chrome_.clear_transparent();
+    // 主题面板色交给卡带 API：`panel.clear()` 不带色时用它当底色 —— 右栏随主题，不透出游戏
+    host_.panel_bg = shell_.skin().panel;
+
     // 层与底层同一心智：每帧从透明开始。没建层的卡带这一步只是一次判断
     if (host_.layers.active()) host_.layers.clear_all();
 
@@ -207,10 +207,9 @@ void App::tick_playing(float dt) {
     // 而不是只出现在屏幕文本里
     if (insert_flash_ > 0.0f) {
         insert_flash_ -= dt;
-        effects::draw_insert_flash(screen_, content_rect(),
-                                   active_filter_.slots[static_cast<size_t>(PaletteSlot::white)],
-                                   active_filter_.slots[static_cast<size_t>(PaletteSlot::green)],
-                                   frame_count_);
+        // 插卡闪屏是主机外壳的瞬时效果，用主题色
+        effects::draw_insert_flash(screen_, content_rect(), shell_.skin().accent,
+                                   shell_.skin().frame, frame_count_);
     }
 
     // 图层：只在这一帧真的画过、且卡带建过层时发生。
@@ -248,13 +247,13 @@ void App::tick_playing(float dt) {
     // 宽度只认 host_.panel_w 这一个真源——卡带能在运行时改它（phos.panel.resize），
     // 这里若改读 manifest 的值，分隔线就会与面板实际宽度对不上
     if (host_.panel_w > 0) {
-        // 分隔线贴着面板左缘：面板左缘由 panel_origin_x() 给出（内容区与面板宽度的函数），
-        // 这里再抄一份"内容区宽 - 面板宽"就会与它脱节
-        const int divider_x = host_.panel_origin_x() - 1;
-        const Color divider_color =
-            active_filter_.slots[static_cast<size_t>(PaletteSlot::dark_gray)];
-        for (int y = host_.content_y; y < host_.content_y + host_.content_h; ++y)
-            screen_.put(divider_x, y, U'|', divider_color);
+        const int dx = host_.panel_origin_x() - 1;   // 分隔线贴着面板左缘
+        const Color divider = shell_.skin().frame;   // 分隔线取主题边框色（不随内容色板走）
+        const int lx = dx - host_.content_x;         // chrome_ 是内容区局部坐标
+        for (int y = host_.content_y; y < host_.content_y + host_.content_h; ++y) {
+            screen_.put(dx, y, U'|', divider);                    // 文本视图（agent 读 screen_）
+            chrome_.put(lx, y - host_.content_y, U'|', divider);  // 窗口：画在所有图层之上
+        }
     }
     input_.next_frame();
 }
@@ -521,6 +520,9 @@ int App::run_windowed(const CliOptions& opts) {
         const bool layered = playing_ && host_.layers.active();
         renderer.draw(layered ? base_screen_ : screen_);
         if (layered) renderer.draw_layers(host_.layers, host_.content_x, host_.content_y);
+        // 主机 chrome（侧栏分隔线）压在**所有图层之上**，否则会被卡带世界盖住
+        if (host_.panel_w > 0)
+            renderer.draw_overlay(chrome_, host_.content_x, host_.content_y);
         // frame.read 的读回点：本帧已画完、尚未 swap。放在调试台之前，
         // 读回的是卡带画面本身，不含仪表盘
         complete_frame_read(&renderer);

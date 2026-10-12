@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """系统操控演示：agent 只用控制通道把整台机器开一遍。
 
-流程：开机 → 卡带架 → 设置（切滤镜、切字体方案并还原）→ 插卡 → 暂停 →
+流程：开机 → 卡带架 → 设置（切主题、切字体方案并还原）→ 插卡 → 暂停 →
 拔卡 → 关机 → 核对"不留痕"。覆盖：主机保留键（Esc/F2）、菜单光标、
 单步确定性、屏幕读取、卡带生命周期、config.json 的字面还原。
 
@@ -30,7 +30,7 @@ TEXT = {
         "settings_title": "设置",
         "shelf_hint": "[F2] 设置",
         "scanlines": "扫描线",
-        "filter": "显像管滤镜",
+        "theme": "游戏机主题",
         "font": "字体方案",
         "resume": "继续游戏",
         "eject": "拔出卡带",
@@ -39,7 +39,7 @@ TEXT = {
         "settings_title": "SETTINGS",
         "shelf_hint": "[F2] SETTINGS",
         "scanlines": "SCANLINES",
-        "filter": "TUBE FILTER",
+        "theme": "CONSOLE THEME",
         "font": "FONT SCHEME",
         "resume": "RESUME",
         "eject": "EJECT CART",
@@ -132,26 +132,27 @@ def run() -> int:
             check(state.get("mode") == "SETTINGS", f"mode={state.get('mode')}")
             check(words["scanlines"] in host.screen_text(), "settings screen shows the CRT row")
 
-            section("navigate to the FILTER row and cycle it forward")
-            # 认 **id**：state.filter 是 id，packs.filter 是屏幕上给人看的名字，
-            # 同一个包这两个值不同名（内置项的名字还会随语言变）——拿名字比 id 会假失败
-            filter_ids = state["packs"]["filter_ids"]
-            filter_names = state["packs"]["filter"]
-            original = state["filter"]
-            target = cycle_next(filter_ids, original)
-            check(len(filter_ids) >= 2, f"{len(filter_ids)} filter(s) available (at least 2 needed)")
-            check(target != original, f"target filter differs from current: {original} -> {target}")
-            check(goto_row(host, words["filter"]), "cursor reached the FILTER row")
+            section("navigate to the THEME row and cycle it forward")
+            # 认 **id**：state.skin 是 id，packs.skin 是屏幕上给人看的名字，
+            # 同一个包这两个值不同名（名字还会随语言变）——拿名字比 id 会假失败
+            theme_ids = state["packs"]["skin_ids"]
+            theme_names = state["packs"]["skin"]
+            original_theme = state["skin"]
+            target_theme = cycle_next(theme_ids, original_theme)
+            check(len(theme_ids) >= 2, f"{len(theme_ids)} theme(s) available (at least 2 needed)")
+            check(target_theme != original_theme,
+                  f"target theme differs from current: {original_theme} -> {target_theme}")
+            check(goto_row(host, words["theme"]), "cursor reached the THEME row")
             host.key("right")
             state = host.state()
-            check(state.get("filter") == target, f"filter: {original} -> {state.get('filter')}")
-            check(filter_names[filter_ids.index(target)] in host.screen_text(),
-                  "screen shows the new filter name")
+            check(state.get("skin") == target_theme, f"theme: {original_theme} -> {state.get('skin')}")
+            check(theme_names[theme_ids.index(target_theme)] in host.screen_text(),
+                  "screen shows the new theme name")
 
-            section("restore the setting (cycle back)")
+            section("restore the theme (cycle back)")
             host.key("left")
             state = host.state()
-            check(state.get("filter") == original, f"filter restored to {state.get('filter')}")
+            check(state.get("skin") == original_theme, f"theme restored to {state.get('skin')}")
 
             section("navigate to the FONT SCHEME row and cycle it forward")
             schemes = state["packs"]["font"]

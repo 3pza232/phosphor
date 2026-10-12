@@ -8,7 +8,7 @@
 -- 本文件只描述类型，不参与运行；实现见 src/api/。
 -- 规范文档见 docs/api-reference.md。
 
----颜色：由激活的显像管滤镜决定，切换主题时热更新
+---颜色：由当前主题声明的色板（skin.palette）决定，切换主题时热更新
 ---@class phos.Color
 ---@field r integer
 ---@field g integer
@@ -215,7 +215,7 @@ function phos.panel.put(x, y, ch, fg, bg) end
 ---@param bg phos.Color|nil
 function phos.panel.print(x, y, text, fg, bg) end
 
----填充矩形（**总是写底色**，省略 = 黑）
+---填充矩形（省略 bg = 主题面板色 skin.panel）
 ---@param x integer
 ---@param y integer
 ---@param w integer
@@ -225,7 +225,7 @@ function phos.panel.print(x, y, text, fg, bg) end
 ---@param bg phos.Color|nil
 function phos.panel.fill(x, y, w, h, ch, fg, bg) end
 
----只清空面板区（**总是写底色**，省略 = 黑）
+---只清空面板区（省略 bg = 主题面板色 skin.panel）
 ---@param fg phos.Color|nil
 ---@param bg phos.Color|nil
 function phos.panel.clear(fg, bg) end
@@ -488,7 +488,7 @@ function phos.ui.region(x, y, w, h, opts) end
 ---@field w integer 实际宽度
 ---@field h integer 实际高度
 ---@field surface string 锚定面："screen"（内容区）/ "panel"（侧栏）/ 层名
----@field clear fun(self: phos.Region, fg: phos.Color|nil, bg: phos.Color|nil) 省略 bg = 黑（总是写底色）
+---@field clear fun(self: phos.Region, fg: phos.Color|nil, bg: phos.Color|nil) 省略 bg = 保留该格原有背景
 ---@field put fun(self: phos.Region, x: integer, y: integer, ch: any, fg: phos.Color|nil, bg: phos.Color|nil) 省略 bg = 保留该格原有背景
 ---@field print fun(self: phos.Region, x: integer, y: integer, text: string, fg: phos.Color|nil, bg: phos.Color|nil) 省略 bg = 保留该格原有背景
 ---@field fill fun(self: phos.Region, x: integer, y: integer, w: integer, h: integer, ch: any, fg: phos.Color|nil, bg: phos.Color|nil) 省略 bg = 保留该格原有背景

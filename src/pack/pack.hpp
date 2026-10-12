@@ -10,7 +10,7 @@
 
 namespace phos {
 
-/// 扫描 theme/palette/ 下全部显像管滤镜包。损坏包跳过
+/// 扫描 theme/palette/ 下全部显像管色板包。损坏包跳过
 /// （调用方保证列表非空，空列表时用 builtin_palette() 兜底）。
 std::vector<Palette> scan_palettes(const std::string& dir);
 

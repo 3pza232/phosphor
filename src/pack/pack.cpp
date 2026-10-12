@@ -140,6 +140,7 @@ bool load_skin(const std::string& dir, Skin& out, std::string& err) {
     if (!bottom.empty()) out.bottom = std::move(bottom);
     out.left = read_str("left", out.left);
     out.right = read_str("right", out.right);
+    out.palette = read_str("palette", out.palette);  // 主题使用的内容色板（theme/palette/<名>）
 
     sol::object colors = t["colors"];
     if (colors.is<sol::table>()) {
@@ -149,6 +150,8 @@ bool load_skin(const std::string& dir, Skin& out, std::string& err) {
         out.ui_fg = api::read_color(ct["ui_fg"], out.ui_fg);
         out.ui_bg = api::read_color(ct["ui_bg"], out.ui_bg);
         out.ui_dim = api::read_color(ct["ui_dim"], out.ui_dim);
+        // 面板底色缺省 = 机身色（不区分）；想给侧栏层次感就显式给一个略深/略浅的色
+        out.panel = api::read_color(ct["panel"], out.ui_bg);
     }
 
     sol::object lamps = t["lamps"];
@@ -219,7 +222,7 @@ std::vector<BootPack> scan_boots(const std::string& dir) {
         std::error_code ec;
         if (!fs::is_regular_file(path / "main.lua", ec)) {
             // 内容目录里出现"没有入口脚本的文件夹"通常是包写坏了：
-            // 与皮肤/滤镜一样留痕，否则用户只会看到"开机动画没了"
+            // 与皮肤/色板一样留痕，否则用户只会看到"开机动画没了"
             log::warn("boot pack skipped (no main.lua): " + path.string());
             return false;
         }
@@ -236,7 +239,7 @@ std::vector<SoundPack> scan_sounds(const std::string& dir) {
         std::error_code ec;
         const std::string sounds_path = pack_script_path(path.string(), "sounds.lua");
         if (!fs::is_regular_file(sounds_path, ec)) {
-            // 与皮肤/滤镜、开机动画一致：包写坏了要留痕，不能静默少一个音效包
+            // 与皮肤/色板、开机动画一致：包写坏了要留痕，不能静默少一个音效包
             log::warn("sound pack skipped (no sounds.lua): " + path.string());
             return false;
         }
@@ -290,7 +293,7 @@ std::vector<Palette> scan_palettes(const std::string& dir) {
     return scan_pack_dirs<Palette>(dir, [](const std::filesystem::path& path, Palette& out) {
         std::string err;
         if (load_palette(path.string(), out, err)) return true;
-        // 回退机制保证总有默认可用，但损坏原因必须留痕，否则用户只会看到"滤镜没了"
+        // 回退机制保证总有默认可用，但损坏原因必须留痕，否则用户只会看到"色板没了"
         log::warn("palette pack skipped: " + err);
         return false;
     });

@@ -37,8 +37,6 @@ public:
         int cart_index = -1;
         bool resume = false;
         bool eject = false;
-        bool filter_changed = false;
-        int filter_index = -1;
         bool font_changed = false;
         int font_index = -1;
         bool skin_changed = false;
@@ -65,8 +63,6 @@ public:
     /// 架子上的卡带（玩家眼里的顺序：最近打开优先）。控制通道据此暴露 `shelf`，
     /// agent 才能"数到第几张再插卡"——`cursor` 就是它的下标
     const std::vector<CartInfo>& carts() const { return carts_; }
-    /// 告知可选滤镜名与当前项（设置界面据此显示与翻页）
-    void set_filters(std::vector<std::string> names, int active);
     /// 告知可选字体方案名与当前项
     void set_fonts(std::vector<std::string> names, int active);
     /// 告知可选皮肤名与当前项
@@ -130,6 +126,8 @@ public:
 
     ShellMode mode() const { return mode_; }
     ShelfStyle shelf_style() const { return shelf_style_; }
+    /// 当前主题（外壳）：转场特效等系统绘制取它的配色
+    const Skin& skin() const { return skin_; }
     int crt_level() const { return crt_level_; }
     int music_volume() const { return music_volume_; }
     int sfx_volume() const { return sfx_volume_; }
@@ -195,8 +193,6 @@ private:
     int fps_ = kDefaultFps;
     int pause_cursor_ = 0;
 
-    std::vector<std::string> filter_names_;
-    int filter_index_ = 0;
     std::vector<std::string> skin_names_;
     int skin_index_ = 0;
     std::vector<std::string> boot_names_;

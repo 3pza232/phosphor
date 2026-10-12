@@ -32,7 +32,7 @@ int score_match(std::string_view query, std::string_view target) {
 }
 
 /// 一只卡带对查询串的分数：id 与显示名各算一次，取高的那个。
-/// 两个字段都要看：玩家记得住"WORMS"，也记得住目录名 "worms"
+/// 两个字段都要看：玩家可能记得住标题，也可能记得住目录名
 int cart_score(std::string_view query, const CartInfo& cart) {
     return std::max(score_match(query, cart.id), score_match(query, cart.name));
 }

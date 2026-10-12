@@ -1,5 +1,6 @@
 #include "api/lua_value.hpp"
 
+#include "api/host_api.hpp"
 #include "core/text.hpp"
 
 #include <sol/sol.hpp>
@@ -61,9 +62,15 @@ std::map<char, Color> read_char_color_map(const sol::object& object) {
 
 Color read_background(const sol::object& object) {
     if (object.is<Color>() || object.is<sol::table>()) return read_color(object, Color::black);
-    Color keep_bg;
-    keep_bg.keep = true;
-    return keep_bg;
+    return kKeepBg;  // 未给：保留该格原有背景（透明底哨兵只此一份，见 color.hpp）
 }
+
+Color slot_color(const HostContext& host, PaletteSlot slot, Color fallback) {
+    return host.palette ? host.palette->slots[static_cast<size_t>(slot)] : fallback;
+}
+
+Color default_fg(const HostContext& host) { return slot_color(host, PaletteSlot::white, Color::white); }
+
+Color default_bg(const HostContext& host) { return slot_color(host, PaletteSlot::black, Color::black); }
 
 } // namespace phos::api

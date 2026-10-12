@@ -19,4 +19,10 @@ struct Color {
     static const Color cyan, magenta, orange, purple;
 };
 
+/// put / print / fill 的**默认底色**：保留该格原有底色（即"透明"，不覆盖背景）。
+/// 这样"写字/画图标"默认不会在黑底上砸出方块；需要实底的地方显式传背景色即可。
+/// 底层网格的默认 `alpha` 是不透明的（见 Screen::Cell），所以默认透明只影响"是否覆盖背景色"，
+/// 不会让底层漏空
+inline const Color kKeepBg{255, 255, 255, true};
+
 } // namespace phos

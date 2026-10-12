@@ -51,7 +51,6 @@ void App::fill_debug_info(DebugInfo& info) {
     info.cart_error = last_error_;
 
     info.skin_name = skins_[skin_index_].name;
-    info.filter_name = active_filter_.name;
     info.boot_name = boots_.empty() ? "(built-in)" : boots_[boot_index_].name;
     info.shelf_style = shell_.shelf_style() == ShelfStyle::list ? "list" : "window";
     info.crt_level_name = crt_level_name(config_.crt_level);

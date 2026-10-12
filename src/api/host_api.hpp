@@ -25,7 +25,7 @@ struct CartInfo;
 struct HostContext {
     Screen* screen = nullptr;
     Input* input = nullptr;
-    const Palette* palette = nullptr;   // 激活滤镜（phos.color 常量的来源）
+    const Palette* palette = nullptr;   // 当前主题声明的色板（phos.color 常量的来源）
     SaveStore* save = nullptr;          // 卡带存档（未声明 save 时为 nullptr）
     Audio* audio = nullptr;             // 音频子系统（可能为静音降级态）
     Net* net = nullptr;                 // 局域网联机（未接时为 nullptr，phos.net 安全空壳）
@@ -49,6 +49,9 @@ struct HostContext {
 
     // 侧栏面板：宽度 0 表示无面板（在其宿主坐标系内位于内容区右侧）
     int panel_w = 0;
+    /// 侧栏面板的**默认底色**（取自当前主题的 skin.panel）：卡带 `panel.clear()` 不带色时
+    /// 用它，于是右栏底色随主题、而不是透出游戏画面。由 App 每帧从主题写入
+    Color panel_bg{0, 0, 0};
 
     // 可选图层缓冲（`phos.layer`）。卡带不建层时它是空的，主循环里连一次合并都不发生；
     // 每次插卡由 App 重置，于是层随卡带生命周期
@@ -61,7 +64,7 @@ struct HostContext {
 /// 这是全工程唯一允许接触 Lua 的模块。
 void register_host_api(sol::state& lua, HostContext& host);
 
-/// 将滤镜色板写入已注册的 phos.color 表（切换主题时热更新）
+/// 将色板写入已注册的 phos.color 表（切换主题时热更新）
 void apply_palette_to(sol::state& lua, const Palette& palette);
 
 } // namespace phos

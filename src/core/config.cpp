@@ -63,7 +63,6 @@ Config load_config(const std::string& path) {
             log::warn("config: duplicate key '" + key + "' in theme of " + path +
                       " (the last one is used)");
     cfg.skin = pick(theme, "skin", cfg.skin);
-    cfg.filter = pick(theme, "filter", cfg.filter);
     cfg.boot = pick(theme, "boot", cfg.boot);
     cfg.sound = pick(theme, "sound", cfg.sound);
     cfg.font = pick(theme, "font", cfg.font);
@@ -105,7 +104,6 @@ void save_config(const std::string& path, const Config& cfg) {
     out << "{\n"
         << "  \"theme\": {\n"
         << "    \"skin\": \"" << cfg.skin << "\",\n"
-        << "    \"filter\": \"" << cfg.filter << "\",\n"
         << "    \"boot\": \"" << cfg.boot << "\",\n"
         << "    \"sound\": \"" << cfg.sound << "\",\n"
         << "    \"font\": \"" << cfg.font << "\",\n"

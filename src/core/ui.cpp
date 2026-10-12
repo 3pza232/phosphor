@@ -170,7 +170,8 @@ void icon(Screen& screen, const std::vector<std::string>& rows,
             if (ch == U'.' || ch == U' ') continue;
             auto it = colors.find(static_cast<char>(ch));
             Color c = it != colors.end() ? it->second : fallback;
-            screen.put(x0 + dx, y0 + dy, ch, scale(c), Color::black);
+            // 保留底色：图标压在卡带架/机身上，不该砸出一块黑底
+            screen.put(x0 + dx, y0 + dy, ch, scale(c), phos::kKeepBg);
         }
     }
 }

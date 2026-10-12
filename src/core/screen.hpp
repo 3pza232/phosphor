@@ -22,11 +22,12 @@ struct Cell {
     /// 列宽：1 = 半角；2 = 全角头格；0 = 续格（右半，由左邻格决定外观）
     uint8_t cols = 1;
     /// 底色是否存在：0 = 透明（层合成时跳过底色），非 0 = 存在。
-    /// 只有**图层缓冲**会用到 0——底层网格的每一次写入都是不透明的（见 Layer / LayeredScreen）
+    /// 底层网格的默认 `alpha` 是 255（不透明）；层缓冲的清屏把它置 0。
+    /// 注意：`put` 的默认底色是 `kKeepBg`（保留原底色），所以"不动背景"是默认行为
     uint8_t alpha = 255;
 
     /// 抹掉这一格的字形，**保留底色与存在性**。宽字被截断、层用空格抹掉下层字形时用；
-    /// 是全工程"清一格字形"的唯一写法（先前 Screen 与 LayeredScreen 各写了一份）
+    /// 是全工程"清一格字形"的唯一写法——新调用点必须走它，不要内联改 ch/cols
     void clear_glyph() {
         ch = U' ';
         cols = 1;
@@ -63,14 +64,14 @@ public:
 
     // 越界写入静默裁剪——卡带/调用方不必做边缘防御
     /// 写一个字符（全角字符额外占用右邻格作为续格）。
-    /// `bg.keep` = 保留该格原有底色，**在这里落地**：print / fill 与各层包装最终都走 put，
-    /// "透明底"因此只有一个解析点。
-    void put(int x, int y, char32_t ch, Color fg = Color::white, Color bg = Color::black);
-    /// 写一行文本（UTF-8 解码后按显示宽度推进；控制字符跳过）
-    void print(int x, int y, std::string_view text, Color fg = Color::white, Color bg = Color::black);
-    /// 填充矩形
+    /// 默认底色 `kKeepBg` = **保留该格原有底色**（透明），"透明底"因此只有一个解析点。
+    /// 要铺一块实底（机身、面板）就显式传背景色
+    void put(int x, int y, char32_t ch, Color fg = Color::white, Color bg = kKeepBg);
+    /// 写一行文本（UTF-8 解码后按显示宽度推进；控制字符跳过）。底色默认保留
+    void print(int x, int y, std::string_view text, Color fg = Color::white, Color bg = kKeepBg);
+    /// 填充矩形。底色默认保留；要实底就显式传背景色
     void fill(int x, int y, int w, int h, char32_t ch,
-              Color fg = Color::white, Color bg = Color::black);
+              Color fg = Color::white, Color bg = kKeepBg);
 
     /// 读某格；越界返回空白格（不抛异常，便于渲染循环直接遍历）
     const Cell& at(int x, int y) const;
