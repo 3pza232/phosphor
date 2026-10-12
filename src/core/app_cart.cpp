@@ -21,6 +21,8 @@ void App::load_cart_path(const std::string& path) {
     chrome_.clear_transparent();
     input_.release_all();
     pending_releases_.clear();
+    capture_escape_ = false;    // Esc 接管随上一张卡带一起收（phos.sys.capture_escape）
+    host_.rng.seed(rng_seed_);  // RNG 每张卡带从同一起始态开始：卡带间不串随机序列
 
     if (!cart_->load(path, host_)) {
         last_error_ = cart_->error();

@@ -4,6 +4,7 @@
 #include "core/screen.hpp"
 #include "core/text_input.hpp"
 #include "core/ui.hpp"
+#include "cart/save_store.hpp"
 #include "shell/messages.hpp"
 
 #include <cstddef>
@@ -46,8 +47,11 @@ private:
     std::string cart_;
     std::string code_;
     /// 输入缓冲：过滤（只收十六进制）、按码点退格、限长都在缓冲层完成，
-    /// 界面自己不做字符判断——中文等非十六进制字符在门口就被挡掉
-    static constexpr std::size_t kMaxChars = 8192;
+    /// 界面自己不做字符判断——中文等非十六进制字符在门口就被挡掉。
+    /// 上限必须容得下**最大的合法导出码**，否则粘贴一个大会话的码会被静默截断成半份：
+    /// 存档上限 kMaxEntries × (键长 + 值长 + 2 个分隔) 字节，再按十六进制 ×2
+    static constexpr std::size_t kMaxChars =
+        SaveStore::kMaxEntries * (SaveStore::kMaxKeyLength + SaveStore::kMaxValueLength + 2) * 2;
     text::TextInput input_{text::TextInput::accept_hex, kMaxChars};
     Result result_ = Result::none;
     bool available_ = false;
