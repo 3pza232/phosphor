@@ -176,6 +176,10 @@ void Screen::prepend_ink(int x, int y, char32_t ch, Color fg) {
 
 void Screen::back(int x, int y, Color bg) {
     if (x < 0 || y < 0 || x >= w_ || y >= h_) return;
+    // 底色省略（kKeepBg）= 保留该格原有底色：什么都不做。
+    // 浮层（ui.region）的 back / back_rect 正是靠这条默认值实现"只改字形、不动底"；
+    // 若把 keep 当普通颜色写下去，会在画面上糊出一块白底（kKeepBg 的 rgb 是白）
+    if (bg.keep) return;
     Cell& cell = cells_[static_cast<size_t>(index_of(x, y))];
     cell.bg = bg;
     cell.alpha = 255;  // "写了底色"就是"这一格的底存在"，与 put 给底色同义

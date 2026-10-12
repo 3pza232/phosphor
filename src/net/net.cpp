@@ -216,6 +216,14 @@ struct Net::Impl {
         if (type == "hello" && role == Role::hosting) {
             auto it = conns.find(peer_id);
             if (it == conns.end()) return;
+            // 对端在收到 welcome 前会反复发 hello（丢包兜底）。这里只补发 welcome，
+            // 不再广播 peer_add、不再重报 connected——否则每重发一次就多一条重复事件
+            if (it->second.hello) {
+                std::ostringstream again;
+                again << "{\"t\":\"welcome\",\"id\":" << peer_id << "}";
+                queue_to(it->second, make_payload(again.str(), ""));
+                return;
+            }
             it->second.name = env.str("name", "player");
             it->second.hello = true;
             // 告知对方它的 id
@@ -513,7 +521,9 @@ struct Net::Impl {
                 if (it != conns.end()) read_peer(it->second);
             }
 
-            // 写对端
+            // 写对端。send 出错即 drop_peer，而 drop_peer 会改 conns —— 与读对端同理，
+            // 先把候选 id 收进列表再逐个查表处理；直接在范围 for 里 erase 会让迭代器失效
+            std::vector<int> writable_ids;
             for (const auto& [id, peer] : conns) {
                 if (!peer.sock.valid()) continue;  // 已知对端（无连接）不在这里发
                 if (peer.outbuf.empty()) continue;
@@ -521,6 +531,9 @@ struct Net::Impl {
                     ready.writable.end()) {
                     continue;
                 }
+                writable_ids.push_back(id);
+            }
+            for (int id : writable_ids) {
                 auto it = conns.find(id);
                 if (it == conns.end()) continue;
                 const int n = net::send_some(it->second.sock, it->second.outbuf.data(),

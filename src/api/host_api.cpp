@@ -128,10 +128,11 @@ void register_host_api(sol::state& lua, HostContext& host) {
     screen["height"] = host.content_h;
     // 可玩区：内容区扣掉侧栏以后的那一块（x, y, w, h）。画"游戏画面"应该用它——
     // 用 size() 会把侧栏覆盖的部分一起算进来，从 0 画到 w 就有几列藏在侧栏后面，
-    // 玩家只会看到"东西突然冒出来"。面板宽度可在运行时改（phos.panel.resize），
-    // 所以这里是**函数**而非字段：每次调用都按当前面板宽度算。
+    // 玩家只会看到"东西突然冒出来"。扣的还有面板左侧那 1 列主机分隔线
+    // （见 app.cpp：分隔线画在 panel_origin_x()-1），它不属于卡带可画范围。
+    // 面板宽度可在运行时改（phos.panel.resize），所以这里是**函数**而非字段：每次按当前宽度算
     screen["playfield"] = [&host]() {
-        const int w = host.content_w - host.panel_w;
+        const int w = host.content_w - host.panel_w - (host.panel_w > 0 ? 1 : 0);
         return std::make_tuple(0, 0, w < 0 ? 0 : w, host.content_h);
     };
     // 绘制方法统一绑定（与 panel 同一套实现）：screen 的默认底色 = 激活色板的 black

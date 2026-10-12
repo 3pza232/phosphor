@@ -61,6 +61,7 @@ void App::eject_cart() {
     cart_.reset();
     cart_path_.clear();
     playing_ = false;
+    capture_escape_ = false;  // Esc 接管随卡带一起收：否则拔卡后系统界面再也收不到 Esc
     host_.panel_w = 0;
     host_.save = nullptr;
     host_.cart_files = nullptr;

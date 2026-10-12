@@ -520,8 +520,9 @@ int App::run_windowed(const CliOptions& opts) {
         const bool layered = playing_ && host_.layers.active();
         renderer.draw(layered ? base_screen_ : screen_);
         if (layered) renderer.draw_layers(host_.layers, host_.content_x, host_.content_y);
-        // 主机 chrome（侧栏分隔线）压在**所有图层之上**，否则会被卡带世界盖住
-        if (host_.panel_w > 0)
+        // 主机 chrome（侧栏分隔线）压在**所有图层之上**，否则会被卡带世界盖住。
+        // 只在"正在玩"时叠：暂停/磁带/卡带架没有卡带侧栏，留着会画出一条孤零零的竖线
+        if (playing_ && host_.panel_w > 0)
             renderer.draw_overlay(chrome_, host_.content_x, host_.content_y);
         // frame.read 的读回点：本帧已画完、尚未 swap。放在调试台之前，
         // 读回的是卡带画面本身，不含仪表盘

@@ -127,8 +127,13 @@ bool load_skin(const std::string& dir, Skin& out, std::string& err) {
             if (v.is<double>() || v.is<int>()) return v.as<int>();
             return fallback;
         };
-        out.screen_x = num("x", out.screen_x);
-        out.screen_y = num("y", out.screen_y);
+        // 内容区偏移是"机身留白"，负数没有意义：它会让 grid_w/grid_h 变成非正数，
+        // Screen::resize 再拿它去分配（负 width 转 size_t 是天量）——坏主题包不该
+        // 把主机撑爆，钳到 >= 0
+        const int sx = num("x", out.screen_x);
+        const int sy = num("y", out.screen_y);
+        out.screen_x = sx < 0 ? 0 : sx;
+        out.screen_y = sy < 0 ? 0 : sy;
         // 内容区尺寸由主机规定（当前世代所有皮肤共享同一内容区），
         // 所以 w/h 不是可覆盖项，读它只会误导维护者
         out.screen_w = kContentW;
