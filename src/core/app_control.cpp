@@ -362,10 +362,11 @@ void App::execute_control(const ControlCommand& command) {
             return;
         }
 
-        // 主机保留键可能是"关机"：先回包再执行，避免回包与进程退出竞争
+        // 主机保留键可能是"关机"：先回包再执行，避免回包与进程退出竞争。
+        // frames 照传：卡带接管 Esc 时它已按普通键处理（要能按帧释放），其余主机键忽略它
         if (!action->host_key.empty()) {
             control_.reply(command.id, "\"host_key\":" + json::quote(action->host_key));
-            apply_input_action(*action);
+            apply_input_action(*action, args.integer("frames", 0));
             return;
         }
 

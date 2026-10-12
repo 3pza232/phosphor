@@ -16,12 +16,14 @@
 local Panel = {}
 
 local Text = {
-  -- 阵营只说"己方 / 敌方"，与状态行同一套词；"谁在操作"由记号（* A E）负责
-  zh = { title = "WORMS", team = "队伍", dead = "阵亡", arms = "武器 (X 下 / Z 上)",
-        you = "玩家1", cpu = "敌方", p2 = "玩家2", side = "己方",
+  -- 只说队伍（红/蓝），"谁在操作"由记号（* = 人, A = 电脑）负责
+  zh = { title = "WORMS", team = "队伍", dead = "阵亡", left = "已退出",
+        arms = "武器 (X 下 / Z 上)",
+        side = { "红队", "蓝队" }, cpu = "AI",
         map = "M 地图总览", help = "K 键位提示" },
-  en = { title = "WORMS", team = "TEAM", dead = "KIA", arms = "ARMS (X / Z)",
-        you = "P1", cpu = "ENEMY", p2 = "P2", side = "OURS",
+  en = { title = "WORMS", team = "TEAM", dead = "KIA", left = "LEFT",
+        arms = "ARMS (X / Z)",
+        side = { "RED", "BLUE" }, cpu = "AI",
         map = "M MAP", help = "K HELP" },
 }
 -- 取当前语言那一列：查表规则在引擎里（`phos.lang.dict`，缺 en 回落中文）
@@ -29,14 +31,14 @@ local function L() return phos.lang.dict(Text) end
 
 local HP_CELLS = 8
 
--- 血量档位配色：**色相**说是哪一队，三档说还剩多少 —— 己方走暖色（黄→橙→品红），
--- 敌方走冷色（红→紫→青），两队一眼分得开；濒死一档用最扎眼的颜色来报警。
+-- 血量档位配色：**色相**说是哪一队，三档说还剩多少 —— 红队走红系（红→橙→品红），
+-- 蓝队走蓝系（蓝→青→白），两队一眼分得开；濒死一档用最扎眼的颜色来报警。
 --
 -- 表里存的是**颜色名**而不是颜色值：本模块是在卡带加载时就被 require 的，
 -- 那时 phos 还没装配完，顶层碰 phos.color 会当场崩（见 main.lua 的调色板注释）
 local HP_RAMPS = {
-  [1] = { "yellow", "orange", "magenta" },
-  [2] = { "red", "purple", "cyan" },
+  [1] = { "red", "orange", "magenta" },
+  [2] = { "blue", "cyan", "white" },
 }
 -- 这一档叫什么颜色。取色与自测都走它：观察口读得到"哪只虫在哪一档"，
 -- 就不用靠肉眼比色去猜（见 main.lua 的 debug_state）
@@ -51,13 +53,10 @@ local function hp_tone(C, team, frac)
   return C[Panel.hp_tone_name(team, frac)]
 end
 
--- 每只虫在面板上的角色记号：一眼看出"哪只是我在操作、哪只归电脑"
---   * 玩家亲自操作   A 队友交给 AI   E 敌方（PVE 时是电脑）
-local function role_mark(w, ctx, is_ally_ai)
-  if ctx.pvp then return "*" end
-  if w.team == 2 then return "E" end
-  if not is_ally_ai then return "*" end
-  return (w == ctx.leader) and "*" or "A"
+-- 每只虫在面板上的角色记号：一眼看出"哪只归人操作、哪只归电脑"。
+-- 归谁操作由 main 的 worm_is_human 一处判定（ctx.human_of），侧栏只负责画
+local function role_mark(w, ctx)
+  return (ctx.human_of and ctx.human_of(w)) and "*" or "A"
 end
 
 function Panel.draw(ctx)
@@ -71,14 +70,15 @@ function Panel.draw(ctx)
   P.print(1, 1, t.title, C.yellow)
   P.print(1, 2, string.rep("-", pw - 2), C.dark_gray)
 
-  -- 两队血量（标出这一队是谁在操作：PVP 时右边也是玩家）
+  -- 两队血量（队伍名：红/蓝按 red_side 映射；整队 AI 时标一下）
   local y = 4
-  local is_ally_ai = ctx.ally_ai and not ctx.pvp
+  local rs = ctx.red_side or 1
   for team = 1, 2 do
-    local col = (team == 1) and C.yellow or C.red
-    -- "谁在操作"这件事由每只虫身上的记号说（见 role_mark），这里只报阵营
-    local who = ctx.pvp and ((team == 1) and t.you or t.p2)
-                or ((team == 1) and t.side or t.cpu)
+    local is_red = (team == rs)
+    local col = is_red and C.red or C.blue
+    -- "谁在操作"这件事由每只虫身上的记号说（见 role_mark），这里只报队伍
+    local who = t.side[is_red and 1 or 2]
+    if ctx.teams and not ctx.teams[team].human then who = who .. " " .. t.cpu end
     local total = 0
     for _, m in ipairs(worms.list) do if m.team == team then total = total + 1 end end
     P.print(1, y, phos.text.fit(string.format("%s %d  %d/%d %s", t.team, team,
@@ -92,17 +92,22 @@ function Panel.draw(ctx)
           -- 拿绝对值算的话，800 血的一局里条子与配色全都会失真
           local frac = w.hp / (ctx.hp_max or 100)
           local n = math.max(0, math.ceil(frac * HP_CELLS))
-          local role = role_mark(w, ctx, is_ally_ai)
-          local tone = hp_tone(C, team, frac)
-          local bar = string.format("[%s%s] %3d", string.rep("=", n),
-                                    string.rep("-", HP_CELLS - n), math.floor(w.hp + 0.5))
+          local role = role_mark(w, ctx)
+          local tone = hp_tone(C, is_red and 1 or 2, frac)
+          -- 数字后面跟名字：知道"这条血是谁的"（联机是玩家昵称，单机是 P1/P2/AI）
+          local bar = string.format("[%s%s] %3d %s", string.rep("=", n),
+                                    string.rep("-", HP_CELLS - n), math.floor(w.hp + 0.5),
+                                    w.name or "")
           -- 记号与血量**分开上色**：记号说"谁在操作"（归电脑管的暗一档），
           -- 条子与数字一律用血量色 —— 整行涂灰会把 AI 队友的血量一起盖掉
-          local mark_tone = (is_ally_ai and role == "A") and C.gray or tone
+          local mark_tone = (role == "A") and C.gray or tone
           P.print(1, y, mark .. role, mark_tone)
           P.print(3, y, phos.text.fit(bar, pw - 4), tone)
         else
-          P.print(1, y, phos.text.fit(mark .. " " .. t.dead, pw - 2), C.dark_gray)
+          -- 阵亡还是"退出"分开写：联机里掉线/主动退出的虫标"已退出"，一眼看出是走人不是被打死
+          local who = w.name and (w.name .. " ") or ""
+          local label = w.left and (who .. t.left) or t.dead
+          P.print(1, y, phos.text.fit(mark .. " " .. label, pw - 2), C.dark_gray)
         end
         y = y + 1
       end

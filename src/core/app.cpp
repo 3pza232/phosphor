@@ -80,6 +80,7 @@ int App::run(const CliOptions& opts) {
     host_.language = config_.language;
     host_.audio = &audio_;
     host_.net = &net_;
+    host_.capture_escape = &capture_escape_;
     rng_seed_ = opts.seed.value_or(
         static_cast<unsigned>(std::chrono::system_clock::now().time_since_epoch().count()));
     host_.rng.seed(rng_seed_);
@@ -344,7 +345,14 @@ void App::start_boot_animation() {
 
 void App::apply_input_action(const InputAction& action, int hold_frames) {
     if (!action.host_key.empty()) {
-        if (!action.down) return;  // 主机键只在按下沿生效
+        // 卡带接管 Esc 时，Esc 是普通键：按下沿与松开沿都注入（agent 与物理键一致），
+        // 并按普通键处理按帧自动释放（frames）
+        if (action.host_key == kHostKeyEscape && capture_escape_) {
+            input_.set_key("escape", action.down);
+            if (action.down && hold_frames > 0) pending_releases_.emplace_back("escape", hold_frames);
+            return;
+        }
+        if (!action.down) return;  // 其余主机键只在按下沿生效
         if (action.host_key == kHostKeyEscape)
             handle_escape();
         else if (action.host_key == kHostKeySettings)
@@ -409,8 +417,8 @@ int App::run_headless(const CliOptions& opts) {
 int App::run_windowed(const CliOptions& opts) {
     std::string error;
     const Skin& skin = skins_[skin_index_];
-    const WindowHandlers handlers{&input_, &escape_flag_,  &settings_flag_,
-                                  &console_flag_, &input_blocked_};
+    const WindowHandlers handlers{&input_,      &escape_flag_, &settings_flag_,
+                                  &console_flag_, &input_blocked_, &capture_escape_};
     Window window = Window::create(skin.grid_w() * kCellPx, skin.grid_h() * kCellPx,
                                    kProductName, handlers, error);
     if (!window.valid()) {

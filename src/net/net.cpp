@@ -85,10 +85,19 @@ struct Net::Impl {
     std::atomic<Role> role{Role::off};
     std::atomic<int> self_id{0};
     int local_port = 0;
+    // 房间对外广播的信息（发现应答用）：可被主机在开局时改（open=false）
+    mutable std::mutex room_mtx;
+    std::string room_name;
+    bool room_open = true;
 
     // worker 独占：连接与缓冲
     net::Socket listener;
     net::Socket udp;
+    // 唤醒套接字：主线程 send 入队后往它写一个字节，把卡在 select 里的 worker 立刻叫醒。
+    // 没有它，入队的包最多要等一个 kSelectTimeoutMs 才上路；对"每帧都要往对端发一次"
+    // 这类延迟敏感用法，这点延迟可能超过一个逻辑帧，表现为周期性掉帧。超时此时退化为空闲兜底。
+    net::Socket wake;
+    int wake_port = 0;
     std::map<int, Peer> conns;     // 主机：各客人；客人：{1: 主机}
     int next_id = 2;
 
@@ -155,6 +164,14 @@ struct Net::Impl {
         for (auto& [id, peer] : conns) {
             if (id == except_id || !peer.hello) continue;
             queue_to(peer, payload);
+        }
+    }
+
+    // 主线程入队后叫醒 worker（见 wake 成员注释）。非阻塞、幂等：多叫一次只是多读一个字节
+    void wake_worker() {
+        if (wake.valid() && wake_port > 0) {
+            const char one = 1;
+            net::udp_send_to(wake, "127.0.0.1", wake_port, &one, 1);
         }
     }
 
@@ -306,6 +323,7 @@ struct Net::Impl {
             drop_peer(peer.id, role != Role::connecting);
             return;
         }
+        if (n == -2) return;  // 假就绪（select 说可读却无数据）：跳过，别当掉线
         if (n < 0) {
             drop_peer(peer.id, role != Role::connecting);
             return;
@@ -358,6 +376,10 @@ struct Net::Impl {
     void tick_pings() {
         const auto now = std::chrono::steady_clock::now();
         for (auto& [id, peer] : conns) {
+            // 只对**真正建立连接**的对端做心跳/判超时。星型拓扑里客人也会从 peer_add 得知
+            // 其他客人，那些"已知对端"没有自己的 socket（消息经主机转发）；对它们发心跳
+            // 永远收不到 pong，只会被误判掉线。读写循环同理，都按有没有 socket 区分。
+            if (!peer.sock.valid()) continue;
             if (!peer.hello) continue;
             if (peer.ping_pending) {
                 if (now - peer.ping_sent > std::chrono::milliseconds(kPeerTimeoutMs)) {
@@ -392,9 +414,17 @@ struct Net::Impl {
         int players = 1;
         for (const auto& [id, peer] : conns)
             if (peer.hello) players += 1;
+        std::string room_name;
+        bool room_open = true;
+        {
+            std::lock_guard<std::mutex> lock(room_mtx);
+            room_name = this->room_name;
+            room_open = this->room_open;
+        }
         std::ostringstream beacon;
-        beacon << "{\"magic\":" << json::quote(kMagic) << ",\"name\":" << json::quote(opts.name)
-               << ",\"port\":" << opts.port << ",\"players\":" << players << "}";
+        beacon << "{\"magic\":" << json::quote(kMagic) << ",\"name\":" << json::quote(room_name)
+               << ",\"port\":" << opts.port << ",\"players\":" << players
+               << ",\"open\":" << (room_open ? "true" : "false") << "}";
         const std::string payload = beacon.str();
         net::udp_send_to(udp, from_ip, from_port, payload.data(),
                          static_cast<int>(payload.size()));
@@ -409,6 +439,7 @@ struct Net::Impl {
             std::vector<net::socket_t> writes;
             if (role == Role::hosting && listener.valid()) reads.push_back(listener.native());
             if (role == Role::hosting && udp.valid()) reads.push_back(udp.native());
+            if (wake.valid()) reads.push_back(wake.native());
             for (auto& [id, peer] : conns) {
                 if (!peer.sock.valid()) continue;
                 reads.push_back(peer.sock.native());
@@ -416,6 +447,16 @@ struct Net::Impl {
             }
 
             const net::SelectResult ready = net::select_wait(reads, writes, kSelectTimeoutMs);
+
+            // 唤醒字节：只为把这次循环立刻拉起来 drain outgoing，读掉即可
+            if (wake.valid() &&
+                std::find(ready.readable.begin(), ready.readable.end(), wake.native()) !=
+                    ready.readable.end()) {
+                char drain[64];
+                std::string from_ip;
+                int from_port = 0;
+                while (net::udp_recv_from(wake, from_ip, from_port, drain, sizeof(drain)) > 0) {}
+            }
 
             // 客人：连上后第一件事是发 hello
             if (role == Role::connecting) {
@@ -474,6 +515,7 @@ struct Net::Impl {
 
             // 写对端
             for (const auto& [id, peer] : conns) {
+                if (!peer.sock.valid()) continue;  // 已知对端（无连接）不在这里发
                 if (peer.outbuf.empty()) continue;
                 if (std::find(ready.writable.begin(), ready.writable.end(), peer.sock.native()) ==
                     ready.writable.end()) {
@@ -501,6 +543,11 @@ struct Net::Impl {
     }
 
     void start_worker() {
+        if (!wake.valid()) {
+            std::string wake_err;
+            wake = net::udp_open(0, false, wake_err);
+            wake_port = wake.valid() ? net::udp_local_port(wake) : 0;
+        }
         running.store(true);
         worker = std::thread([this] { worker_loop(); });
     }
@@ -515,6 +562,8 @@ struct Net::Impl {
         if (worker.joinable()) worker.join();
         listener.close();
         udp.close();
+        wake.close();
+        wake_port = 0;
         for (auto& [id, peer] : conns) peer.sock.close();
         conns.clear();
         {
@@ -563,6 +612,11 @@ bool Net::host(const Options& opts, std::string& err) {
     impl_->role = Impl::Role::hosting;
     impl_->self_id = kHostId;
     impl_->local_port = opts.port;
+    {
+        std::lock_guard<std::mutex> lock(impl_->room_mtx);
+        impl_->room_name = opts.name;
+        impl_->room_open = true; // 新开的房默认可加入；开局时由卡带置 false
+    }
     impl_->start_worker();
     log::info("net: hosting on port " + std::to_string(opts.port) + " as " + opts.name);
     return true;
@@ -644,6 +698,7 @@ bool Net::send(int to, const std::string& kind, const std::string& data_json) {
         std::lock_guard<std::mutex> lock(impl_->out_mtx);
         impl_->outgoing.push_back(Impl::Out{to, kind, data_json});
     }
+    impl_->wake_worker();  // 立刻叫醒 worker 去发，别等 select 超时（见 wake 成员注释）
     return true;
 }
 
@@ -706,12 +761,28 @@ std::vector<Net::Discovered> Net::discover(int timeout_ms) {
         entry.address = from_ip;
         entry.port = beacon.integer("port", 0);
         entry.players = beacon.integer("players", 0);
+        entry.open = beacon.flag("open", true); // 旧版主机没有这一项：按"可加入"算
+        // 去重按 **name + port**（房间身份），不按来源 IP：同一台主机会同时收到
+        // 广播查询与回环查询，各答一次——两次的来源 IP 不同（局域网 IP vs 127.0.0.1），
+        // 但房间名与端口一样。按 (address, port) 去重会把同一个房间显示成两个。
         const bool dup = std::any_of(found.begin(), found.end(), [&](const Discovered& d) {
-            return d.address == entry.address && d.port == entry.port;
+            return d.port == entry.port && d.name == entry.name;
         });
         if (!dup) found.push_back(std::move(entry));
     }
     return found;
+}
+
+void Net::set_room_name(const std::string& name) {
+    if (!impl_) return;
+    std::lock_guard<std::mutex> lock(impl_->room_mtx);
+    impl_->room_name = name;
+}
+
+void Net::set_room_open(bool open) {
+    if (!impl_) return;
+    std::lock_guard<std::mutex> lock(impl_->room_mtx);
+    impl_->room_open = open;
 }
 
 } // namespace phos

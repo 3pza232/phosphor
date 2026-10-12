@@ -190,6 +190,7 @@ private:
 
     DebugConsole console_;
     bool escape_flag_ = false;
+    bool capture_escape_ = false;  // 卡带是否接管 Esc（phos.sys.capture_escape）
     bool settings_flag_ = false;
     bool console_flag_ = false;
     bool input_blocked_ = false;

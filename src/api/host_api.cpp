@@ -350,6 +350,13 @@ void register_host_api(sol::state& lua, HostContext& host) {
     };
     sys["version"] = []() { return kVersion; };
     sys["product"] = []() { return kProductName; };
+    // 卡带接管 Esc：true 时主机不再把 Esc 当暂停/返回，而是作为普通键交给卡带
+    // （phos.input.pressed("escape")）。默认 false（Esc 仍是主机保留键）。
+    // 用途：卡带需要在某些状态下自定义 Esc 行为（例如打开自己的菜单），而非触发主机暂停
+    sys["capture_escape"] = [&host](bool on) {
+        if (host.capture_escape) *host.capture_escape = on;
+        return on;
+    };
 
     // --- phos.lang（多语言取值） ---
     // 文案属于卡带内容：主机不替卡带翻译，只把"取当前语言那一条"收成机制 ——

@@ -99,7 +99,7 @@ local last_round = 0 -- 上一帧的回合数：天气与补给的推进钩子
 local burst = nil -- 点射队列（机枪）：每 burst 秒出一发，全打完才算这一炮结束
 local strikes = {} -- 天基炮：等待中的落点与正在释放的光柱
 local active = {} -- active[team] = 当前操作的虫子
-local captain = nil -- 己方队长：开局定死的那只，见 worm_is_human
+local captains = {} -- 每队队长（human + ally_ai 时唯一还归人操作的那只），开局定死，见 worm_is_human
 local aim_power, charge_mode, switch_delay, ai_delay, winner
 local weapon_index, ai_plan
 local ai_decided, ai_walk_t, ai_walk_dir = false, 0, nil -- AI 是否已决定走位 / 还要走多久 / 往哪走（捡补给用）
@@ -140,8 +140,50 @@ local flash = 0 -- 闪烁计时（当前虫子的标记用它，不用主机时�
 local screen = "menu" -- menu / play
 local help_open = false
 local map_open = false -- M：地图总览（不暂停）
-local pvp = false
-local ally_ai = false -- PVE：我方队友交给 AI
+-- 模式与队伍模型。红队 = [1]、蓝队 = [2]，颜色、UI、判定全按队来。
+-- `mode` 只决定"菜单怎么往这张表里填"：PVE=红队人+蓝队AI；PVP=两队都人。
+--   human   —— 这队是否有人操作（PVE 的蓝队 = false）
+--   ally_ai —— 队友（非队长）是否交给 AI（沿用原有"队友交给 AI"，现在每队各有）
+local mode = "pve" -- pve / pvp（lan 见后续阶段）
+local teams = {
+	[1] = { count = 4, human = true, ally_ai = false },  -- 红队
+	[2] = { count = 4, human = false, ally_ai = false }, -- 蓝队
+}
+local LINEUP = { [1] = "red", [2] = "blue" } -- 队伍名的本地化 key（红/蓝）
+local lan = nil -- 局域网大厅状态（定义见文件后部；这里先声明，init/菜单/主循环都要用）
+local lan_pause = false -- 联机对局中的"菜单"浮层：非暂停（游戏照常走），只是遮住输入
+local lan_pause_sel = 1
+-- 红队是哪一边（1 左 / 2 右）：PVE/PVP 恒 1；联机开局随机左右
+local red_side = 1
+
+-- 联机对局（P3）：输入中继锁步。见 DESIGN.md §13.5。
+--   frame  = 已推进的逻辑帧号（两端一致；同一帧号 ⇒ 同一局面）
+--   active = 处于"观看远端操作"状态：本帧输入来自远端快照，而非本机键盘
+-- 未联机（PVE/PVP）时 active 恒 false，in_* 直接透传 phos.input —— 对局逻辑完全不变
+local NET_KEYS = { "left", "right", "up", "down", "a", "space", "b", "x", "z" }
+-- 输入延迟（帧）：本帧采到的按键按 frame+延迟 广播；模拟第 frame 帧时用的正是"延迟之前发出、
+-- 现在早已到达"的那份。等包因此几乎从不落空，逻辑帧不会因等对端输入而丢拍。
+-- 代价是固定多几帧操作延迟（本作无手感影响）。
+local NET_DELAY = 4
+local netframe = { active = false, down = {}, prev = {}, dur = {} }
+local mnet = nil -- 联机对局状态：{ frame, remote = { [frame] = downset } }
+
+local function in_down(k)
+	if netframe.active then return netframe.down[k] == true end
+	return phos.input.down(k)
+end
+local function in_pressed(k)
+	if netframe.active then return netframe.down[k] == true and netframe.prev[k] ~= true end
+	return phos.input.pressed(k)
+end
+local function in_released(k)
+	if netframe.active then return netframe.down[k] ~= true and netframe.prev[k] == true end
+	return phos.input.released(k)
+end
+local function in_duration(k)
+	if netframe.active then return (netframe.dur[k] or 0) / 60 end
+	return phos.input.duration(k)
+end
 -- 难度档位：顺序即菜单里左右键的顺序，diff 存的是下标
 local DIFFS = { "easy", "normal", "hard" }
 -- 地图宽窄：宽度相对标准的倍率，顺序同样是菜单里左右键的顺序；
@@ -156,19 +198,12 @@ local Text = {
 	zh = {
 		subtitle = "回合制炮击 · 用有限弹药把对面轰进海里",
 		menu_title = "选择模式",
-		mode = { pve = "PVE 人机对战", pvp = "PVP 同机对战" },
-		label = { mode = "模式", mine = "我方人数", theirs = "敌方人数", hp = "生命值",
-		          ally = "队友交给 AI", diff = "难度", map = "地图宽窄" },
+		mode = { pve = "PVE 人机对战", pvp = "PVP 同机对战", lan = "局域网联机" },
+		label = { mode = "模式", red = "红队人数", blue = "蓝队人数",
+		          red_ai = "红队队友 AI", blue_ai = "蓝队队友 AI",
+		          hp = "生命值", diff = "难度", map = "地图宽窄" },
 		start = "开始游戏",
-		menu_hint = "↑↓ 选择   ←→ 调整（按住加速）   A / ENTER 确定",
-		note = {
-			pve = "己方归你，敌方全归电脑",
-			pvp = "两人轮流操作同一台机器",
-			hp = "每人上限 %d~%d，每次 %d；一局多长就看它",
-			ally_on = "你只操作队长，其余队友由电脑指挥",
-			ally_off = "所有队友都由你自己操作",
-			diff = "越难：敌人与队友越会走位，也打得越准",
-		},
+		menu_hint = "↑↓ 选择   ←→ 调整   回车 确定",
 		yes = "是", no = "否",
 		diff = { easy = "简单", normal = "普通", hard = "困难" },
 		map = { small = "小", normal = "中", large = "大" },
@@ -189,9 +224,9 @@ local Text = {
 		},
 		map_title = "地图总览",
 		map_info = "回合 %d    风 %s    轮到 %s    空中 %d",
-		side = { "己方", "敌方" },
+		side = { "红队", "蓝队" },
 		flying = "弹药飞行中",
-		win = { "己方胜利", "敌方胜利" },
+		win = { "红队胜利", "蓝队胜利" },
 		win_hint = "按 ENTER 回菜单",
 		no_ammo = "没弹药了",
 		no_tp = "无法传送",
@@ -201,23 +236,34 @@ local Text = {
 		burning = "燃烧",
 		death = "阵亡爆炸",
 		got = "%s x%d",
+		-- 局域网大厅（见 DESIGN.md §13）
+		lan = {
+			nick = "昵称", create = "创建房间", search = "搜索房间", overview = "房间总览",
+			nick_empty = "先取个名字才能联机",
+			create_title = "创建房间", red_cap = "红队上限", blue_cap = "蓝队上限",
+			search_title = "搜索房间", code_prompt = "房间码",
+			overview_title = "房间总览", no_room = "没有找到房间", searching = "搜索中…",
+			room_title = "房间", red = "红队", blue = "蓝队", you = "（你）",
+			start = "开始游戏", start_hint = "",
+			disband = "退格 解散", leave = "退格 退出房间", leave_team = "退格 退出队伍",
+			join_hint = "← → 选队   回车 加入", waiting = "等待房主开始…",
+			joined = "已加入 %s 队",
+			enter = "回车 搜索", refresh = "R 刷新", players = "人",
+			host_tag = "房主", in_game = "房间游戏中，无法加入", wait_teams = "等待所有玩家入队",
+			busy = "游戏中",
+			paused_title = "菜单", resume = "继续游戏", leave_room = "退出房间",
+			paused_hint = "↑↓ 选择   回车 确定",
+		},
 	},
 	en = {
 		subtitle = "Turn-based artillery: shell the other team into the sea",
 		menu_title = "MATCH SETUP",
-		mode = { pve = "PVE vs CPU", pvp = "PVP hot-seat" },
-		label = { mode = "MODE", mine = "OUR SQUAD", theirs = "ENEMY", hp = "HP",
-		          ally = "ALLY AI", diff = "DIFFICULTY", map = "MAP WIDTH" },
+		mode = { pve = "PVE vs CPU", pvp = "PVP hot-seat", lan = "LAN play" },
+		label = { mode = "MODE", red = "RED SQUAD", blue = "BLUE SQUAD",
+		          red_ai = "RED ALLY AI", blue_ai = "BLUE ALLY AI",
+		          hp = "HP", diff = "DIFFICULTY", map = "MAP WIDTH" },
 		start = "START MATCH",
-		menu_hint = "↑↓ SELECT   ←→ CHANGE (hold)   A / ENTER OK",
-		note = {
-			pve = "You take our side, the CPU takes the enemy side",
-			pvp = "Two players share one machine",
-			hp = "HP per worm %d~%d, step %d (match length)",
-			ally_on = "You take the captain, CPU takes the rest",
-			ally_off = "You take every worm on your team",
-			diff = "Harder: both sides dodge and aim better",
-		},
+		menu_hint = "↑↓ SELECT   ←→ CHANGE   ENTER OK",
 		yes = "YES", no = "NO",
 		diff = { easy = "EASY", normal = "NORMAL", hard = "HARD" },
 		map = { small = "SMALL", normal = "NORMAL", large = "LARGE" },
@@ -238,9 +284,9 @@ local Text = {
 		},
 		map_title = "MAP OVERVIEW",
 		map_info = "TURN %d    WIND %s    %s    AIRBORNE %d",
-		side = { "OURS", "ENEMY" },
+		side = { "RED", "BLUE" },
 		flying = "SHELL IN FLIGHT",
-		win = { "OURS WIN", "ENEMY WINS" },
+		win = { "RED WINS", "BLUE WINS" },
 		win_hint = "PRESS ENTER FOR MENU",
 		no_ammo = "NO AMMO",
 		no_tp = "CANNOT TELEPORT",
@@ -250,6 +296,23 @@ local Text = {
 		burning = "BURNING",
 		death = "KIA BLAST",
 		got = "%s x%d",
+		lan = {
+			nick = "NAME", create = "CREATE ROOM", search = "FIND ROOM", overview = "ROOMS",
+			nick_empty = "Pick a name first",
+			create_title = "CREATE ROOM", red_cap = "RED CAP", blue_cap = "BLUE CAP",
+			search_title = "FIND ROOM", code_prompt = "ROOM CODE",
+			overview_title = "ROOMS", no_room = "No rooms found", searching = "searching…",
+			room_title = "ROOM", red = "RED", blue = "BLUE", you = "(you)",
+			start = "START", start_hint = "",
+			disband = "BACKSPACE disband", leave = "BACKSPACE leave", leave_team = "BACKSPACE leave team",
+			join_hint = "← → pick team   ENTER join", waiting = "Waiting for host…",
+			joined = "JOINED %s",
+			enter = "ENTER search", refresh = "R refresh", players = "p",
+			host_tag = "host", in_game = "Room in progress, cannot join", wait_teams = "waiting for all players",
+			busy = "in game",
+			paused_title = "MENU", resume = "RESUME", leave_room = "LEAVE ROOM",
+			paused_hint = "↑↓ select   ENTER ok",
+		},
 	},
 }
 -- 取当前语言那一列：查表规则在引擎里（`phos.lang.dict`，缺 en 回落中文）
@@ -260,8 +323,12 @@ local function L() return phos.lang.dict(Text) end
 local HP_MIN, HP_MAX, HP_STEP = 10, 800, 10
 local HP_RATE, HP_RATE_MAX = 30, 240
 
-local menu = { row = 1, mode = "pve", mine = 4, theirs = 4, map = 2,
-               ally_ai = false, diff = 2, hp = 100 }
+-- 菜单只是"往队伍模型里填值"的一张草稿：t1=红队、t2=蓝队，各带人数与"队友交给 AI"。
+-- 真正生效的模型是 teams（start_match 时把这里的选择拷进去）
+local menu = { row = 1, mode = "pve",
+               t1 = { count = 4, ally_ai = false },
+               t2 = { count = 4, ally_ai = false },
+               map = 2, diff = 2, hp = 100 }
 local menu_flash = 0
 local hp_frac = 0 -- 菜单里按住 ←→ 时"不足一步的余量"（按住多久由 phos.input.duration 给）
 
@@ -284,28 +351,38 @@ local function selected_weapon()
 	return Weapons.LIST[weapon_index]
 end
 
--- 谁在操作这只虫：PVP 两边都是人；PVE 敌方归 AI、己方默认全是人，
--- 打开"队友交给 AI"之后只有队长（第一个活着的）还归你
+-- 谁在操作这只虫：看它所属队伍的 human / ally_ai（唯一真源，见 teams）。
+-- 队长**开局就定死**，不是"当前第一个活着的"：队长阵亡后全队归 AI，
+-- 若拿"第一个活着的"当队长，玩家会在阵亡后接管下一只队友
 local function worm_is_human(w)
 	if not w or not worms then
 		return false
 	end
-	if pvp then
-		return true
+	-- 联机：只认"这只虫属于本机玩家"（owner 由开局名册分配）
+	if mode == "lan" then
+		return w.owner ~= nil and w.owner == phos.net.self_id()
 	end
-	if w.team == 2 then
+	local team = teams[w.team]
+	if not team or not team.human then
 		return false
 	end
-	if not ally_ai then
+	if not team.ally_ai then
 		return true
 	end
-	-- 队长**开局就定死**，不是"当前第一个活着的"：队长阵亡后全队归 AI，
-	-- 若拿"第一个活着的"当队长，玩家会在阵亡后接管下一只队友
-	return w == captain
+	return w == captains[w.team]
 end
 
 local function human_turn()
 	return worm_is_human(current_worm())
+end
+
+-- 队伍配色（红队 = 红系、蓝队 = 蓝系）。**当前行动队亮、其余暗**，一眼分出轮到谁。
+-- HUD、侧栏、虫标、地图各画各的，但取色都从这里来，改一处全局一致
+local function team_color(C, team, active)
+	if team == red_side then
+		return active and C.red or C.orange
+	end
+	return active and C.blue or C.purple
 end
 
 -- ---------- 特效 ----------
@@ -400,23 +477,30 @@ function init()
 	-- 菜单是一个"让人读说明、选人数"的地方，有鼓点反而吵
 	screen, menu_flash, help_open = "menu", 0, false
 	menu.row = 1
+	-- 昵称输入框（局域网用）：过滤、按码点退格、限长都在主机的文本缓冲里做。
+	-- 缓冲跨多次编辑保留，所以"改一下名字"不必从头敲
+	menu.field = phos.input.field({ filter = "printable", max = 8 })
+	menu.nick_edit, menu.nick_err = false, false
+	lan = nil
 	phos.panel.resize(0) -- 菜单不需要侧栏：留着那条竖线会压住浮窗
 end
 
-local function start_match()
-	pvp = (menu.mode == "pvp")
-	ally_ai = menu.ally_ai
+-- 真正起一局：队伍模型与 hp/map 都已定好，这里只负责建世界。PVE / PVP / LAN 共用
+local function begin_game(hp, map)
 	phos.panel.resize(PANEL_W)
 	refresh_view()
 	phos.audio.music(Music) -- 正式开局才起 BGM（换卡时主机会自动停）
-	-- 血量上限由菜单决定，必须在造虫子**之前**设好：每只虫的初始血量取自它
-	Worms.MAX_HP = menu.hp
-	terrain = Terrain.new(MAPS[menu.map]) -- 宽度按菜单选的三档；高度与海平面不变
+	-- 血量上限必须在造虫子**之前**设好：每只虫的初始血量取自它
+	Worms.MAX_HP = hp
+	terrain = Terrain.new(MAPS[map]) -- 宽度按菜单选的三档；高度与海平面不变
 	camera = Camera.new(terrain.W, terrain.H, VIEW_CW * 2, VIEW_CH * 2)
-	worms = Worms.new(terrain, { menu.mine, menu.theirs })
-	-- 队长在**这里**定死（开局第一只）：它决定"队友交给 AI"时谁还归玩家操作。
+	worms = Worms.new(terrain, { teams[1].count, teams[2].count })
+	-- 每队队长在**这里**定死（该队第一只）：只有"人操作 + 队友交给 AI"时才用到。
 	-- 不能每次现算，否则队长一死玩家就换人（见 worm_is_human）
-	captain = worms:of_team(1)[1]
+	captains = {}
+	for i = 1, 2 do
+		captains[i] = teams[i].human and worms:of_team(i)[1] or nil
+	end
 	turn = Turn.new()
 	projectiles, floats, fx, fires = {}, {}, {}, {}
 	aim_power, charge_mode, weapon_index, ai_plan = DEFAULT_POWER, false, 1, nil
@@ -447,13 +531,49 @@ local function start_match()
 	screen = "play"
 end
 
--- 菜单：模式 / 我方人数 / 敌方人数 / 地图宽窄 / 生命值 / 队友 AI / 难度 / 开始
-local function menu_input(dt)
-	-- 上下键走过的行，**每一行都得在这里**：漏一行就永远选不到它（连同排在它后面的"开始"）
-	local rows = { 1, 2, 3, 4, 5, 6, 7, 8 }
-	if menu.mode == "pvp" then
-		rows = { 1, 4, 5, 8 }
+-- PVE / PVP：把菜单选择填进队伍模型，再起局
+local function start_match()
+	mode = menu.mode
+	red_side = 1      -- 单机左右固定：红队恒在左
+	mnet = nil        -- 非联机
+	-- PVE 的蓝队永远是 AI（human=false）
+	teams[1] = { count = menu.t1.count, human = true, ally_ai = menu.t1.ally_ai }
+	teams[2] = {
+		count = menu.t2.count,
+		human = (mode == "pvp"),
+		ally_ai = menu.t2.ally_ai,
+	}
+	begin_game(menu.hp, menu.map)
+	-- 单机也把名字挂在虫身上：侧栏与顶栏一律读 w.name，联机用名册里的真名，这里用
+	-- P1 / P2 / AI —— 显示层只认一个字段，不必到处判"是不是联机"
+	for _, w in ipairs(worms.list) do
+		if not w.name then
+			w.name = (not worm_is_human(w)) and "AI" or (w.team == 1 and "P1" or "P2")
+		end
 	end
+end
+
+-- 局域网大厅的函数定义在文件后部（要用到 box 等）；这里先声明，供模式菜单与主循环引用
+local lan_enter, menu_lan_input, lan_update, lan_draw, lan_match_over
+
+local function clamp_count(n)
+	return math.max(1, math.min(8, n))
+end
+
+-- 菜单（红/蓝队模型）。**每一行都得登记在 rows 里**，漏一行就永远选不到它（连同它后面的"开始"）。
+-- 行序随模式变，第 3~5 行的含义不同：
+--   PVE：1 模式  2 红队人数  3 蓝队人数  4 红队队友AI  5 难度  6 地图  7 血量  8 开始
+--   PVP：1 模式  2 红队人数  3 红队队友AI  4 蓝队人数  5 蓝队队友AI  6 地图  7 血量  8 开始
+local HP_ROW = 7
+local function menu_input(dt)
+	if menu.mode == "lan" then
+		menu_lan_input(dt)
+		return
+	end
+	local pvp = (menu.mode == "pvp")
+	-- 上下移动的**视觉顺序**：PvE 面板里"红队队友 AI"（row 4）画在"蓝队人数"（row 3）之前，
+	-- 所以导航顺序得是 1,2,4,3,…，照逻辑行号 1,2,3,4 走会在屏幕上跳来跳去
+	local rows = pvp and { 1, 2, 3, 4, 5, 6, 7, 8 } or { 1, 2, 4, 3, 6, 7, 5, 8 }
 	local function move(dir)
 		local at = 1
 		for i, r in ipairs(rows) do
@@ -481,27 +601,44 @@ local function menu_input(dt)
 	end
 	if step ~= 0 then
 		if menu.row == 1 then
-			menu.mode = (menu.mode == "pve") and "pvp" or "pve"
+			-- 模式三选循环：左右各自"上一个 / 下一个"（左不再是又一个"下一个"）
+			local order = { "pve", "pvp", "lan" }
+			local at = 1
+			for i, m in ipairs(order) do if m == menu.mode then at = i end end
+			menu.mode = order[((at - 1 + step) % #order) + 1]
 			menu.row = 1
 		elseif menu.row == 2 then
-			menu.mine = math.max(1, math.min(8, menu.mine + step))
+			menu.t1.count = clamp_count(menu.t1.count + step)
 		elseif menu.row == 3 then
-			menu.theirs = math.max(1, math.min(8, menu.theirs + step))
+			if pvp then
+				menu.t1.ally_ai = not menu.t1.ally_ai
+			else
+				menu.t2.count = clamp_count(menu.t2.count + step)
+			end
 		elseif menu.row == 4 then
-			menu.map = ((menu.map - 1 + step) % #MAPS) + 1
+			if pvp then
+				menu.t2.count = clamp_count(menu.t2.count + step)
+			else
+				menu.t1.ally_ai = not menu.t1.ally_ai
+			end
 		elseif menu.row == 5 then
-			set_menu_hp(menu.hp + step * HP_STEP)
+			if pvp then
+				menu.t2.ally_ai = not menu.t2.ally_ai
+			else
+				menu.diff = ((menu.diff - 1 + step) % #DIFFS) + 1
+			end
 		elseif menu.row == 6 then
-			menu.ally_ai = not menu.ally_ai
+			menu.map = ((menu.map - 1 + step) % #MAPS) + 1
 		elseif menu.row == 7 then
-			menu.diff = ((menu.diff - 1 + step) % #DIFFS) + 1
+			-- 点一下 ±一步（单发点按）；长按加速见下
+			set_menu_hp(menu.hp + step * HP_STEP)
 		end
 		phos.audio.beep(520, 0.04, { wave = "square", volume = 0.14 })
 	end
 
 	-- 生命值那一行：点一下 10 点，**按住**则越快越快（与炮弹蓄力同一套加速曲线）。
 	-- 累成整步再加，所以无论按多快，血量永远是 10 的倍数
-	if menu.row == 5 then
+	if menu.row == HP_ROW then
 		local dir = phos.input.down("left") and -1 or (phos.input.down("right") and 1 or 0)
 		if dir ~= 0 and not phos.input.pressed("left") and not phos.input.pressed("right") then
 			-- "按住多久"直接问主机（phos.input.duration）：不必自己攒计时，
@@ -518,13 +655,15 @@ local function menu_input(dt)
 		hp_frac = 0
 	end
 
-	-- A / ENTER：在"开始游戏"上开局，"队友交给 AI"上开关。
-	-- 人数、生命值、难度行不给 A 绑定动作：那几行要的是"选到再调"，多一个会误触的快捷键更麻烦
-	if phos.input.pressed("a") or phos.input.pressed("start") then
+	-- 回车（虚拟键 "start"）：在"开始游戏"上开局；在"队友交给 AI"行上开关。
+	-- 确认键用回车而不是 A：A 是字母键，昵称输入框里它要用来打字，不该兼作确定
+	if phos.input.pressed("start") then
 		if menu.row == 8 then
 			start_match()
-		elseif menu.row == 6 then
-			menu.ally_ai = not menu.ally_ai
+		elseif (menu.row == 3 and pvp) or (menu.row == 4 and not pvp) then
+			menu.t1.ally_ai = not menu.t1.ally_ai
+		elseif menu.row == 5 and pvp then
+			menu.t2.ally_ai = not menu.t2.ally_ai
 		end
 	end
 end
@@ -562,22 +701,23 @@ local function player_input(dt)
 		return
 	end
 
+	-- 输入一律走 in_*：本机键盘 or 远端快照（联机观看时）。见文件顶部 netframe
 	-- A：进出蓄力状态。蓄力时不走路——左右键专门用来调力度条，
 	-- 这样"走到位再瞄"和"微调力度"是两个不会互相打架的动作
-	if phos.input.pressed("a") then
+	if in_pressed("a") then
 		charge_mode = not charge_mode
 		phos.audio.beep(charge_mode and 660 or 440, 0.05, { wave = "square", volume = 0.16 })
 	end
 
 	-- 左右：蓄力态调力度（点按 1%、长按加速），非蓄力态走路
-	local left, right = phos.input.down("left"), phos.input.down("right")
+	local left, right = in_down("left"), in_down("right")
 	if charge_mode then
 		-- 按住的那一个键已经按了多久，加速曲线就用多久（松手即 0，不必自己清零）
-		local held = left and phos.input.duration("left") or phos.input.duration("right")
+		local held = left and in_duration("left") or in_duration("right")
 		local rate = accel(held, POWER_RATE, POWER_RATE_MAX)
-		if phos.input.pressed("left") then
+		if in_pressed("left") then
 			aim_power = Physics.clamp_power(aim_power - TAP_POWER)
-		elseif phos.input.pressed("right") then
+		elseif in_pressed("right") then
 			aim_power = Physics.clamp_power(aim_power + TAP_POWER)
 		elseif left then
 			aim_power = Physics.clamp_power(aim_power - rate * dt)
@@ -594,12 +734,12 @@ local function player_input(dt)
 	end
 
 	-- 上下：点按 1°、长按越走越快。下限 -60° 表示"朝下打"
-	local up, down = phos.input.down("up"), phos.input.down("down")
-	local held = up and phos.input.duration("up") or phos.input.duration("down")
+	local up, down = in_down("up"), in_down("down")
+	local held = up and in_duration("up") or in_duration("down")
 	local ad = 0
-	if phos.input.pressed("up") then
+	if in_pressed("up") then
 		ad = TAP_ANGLE
-	elseif phos.input.pressed("down") then
+	elseif in_pressed("down") then
 		ad = -TAP_ANGLE
 	elseif up then
 		ad = accel(held, ANGLE_RATE, ANGLE_RATE_MAX) * dt
@@ -610,18 +750,18 @@ local function player_input(dt)
 		w.angle = math.max(ANGLE_MIN, math.min(ANGLE_MAX, w.angle + ad))
 	end
 
-	if phos.input.pressed("b") then
+	if in_pressed("b") then
 		worms:jump(w)
 	end
-	if phos.input.pressed("x") then
+	if in_pressed("x") then
 		cycle_weapon(1, w)
 	end
-	if phos.input.pressed("z") then
+	if in_pressed("z") then
 		cycle_weapon(-1, w)
 	end
 
 	-- 空格：按当前力度发射
-	if phos.input.pressed("space") then
+	if in_pressed("space") then
 		if fire(w, ensure_weapon(w)) then
 			charge_mode = false
 		end
@@ -1307,8 +1447,151 @@ local function update_camera(dt)
 	camera:center(cam.x + cam.pan, cam.y + cam.pan_y)
 end
 
+-- ---- 联机对局同步（P3，见 DESIGN.md §13.5）：输入中继锁步 ----
+-- 两端同 seed 跑同一份模拟；只有"当前行动者"的机器广播它的输入，其余端缓冲重放。
+-- AI 回合不交换输入（两端各自确定性运行）。
+
+-- 联机中某个对端退出（掉线或被断开）：它的虫**直接判负**（不再交给 AI），标记"已退出"，
+-- 侧栏照常显示一行。若因此把整队打光就当场分胜负；若恰好轮到它，就把回合交给对面。
+-- 只做"安静地死"：不触发阵亡爆炸，免得退出还牵连炸伤旁边的人。
+local function retire_owned(peer)
+	if not worms or winner then return end
+	for _, wm in ipairs(worms.list) do
+		if wm.owner == peer and wm.alive then
+			wm.alive, wm.hp, wm.left = false, 0, true
+		end
+	end
+	if not turn then return end
+	if worms:team_wiped(1) then turn:finish(2); winner = 2; return end
+	if worms:team_wiped(2) then turn:finish(1); winner = 1; return end
+	if turn.phase == "aim" then
+		local cur = current_worm()
+		if not cur or not cur.alive then after_settle() end
+	end
+end
+
+local function mnet_abort()
+	phos.net.stop()
+	phos.sys.capture_escape(false)
+	mnet = nil
+	netframe.active = false
+	lan = nil
+	lan_pause = false
+	help_open = false
+	winner = nil
+	screen = "menu"
+	menu.row = 1
+	phos.panel.resize(0)
+	phos.audio.stop_music()
+end
+
+local function mnet_poll()
+	for _, e in ipairs(phos.net.events()) do
+		if e.type == "disconnected" then
+			if phos.net.role() ~= "host" and e.peer == phos.net.host_id() then
+				mnet_abort() -- 房主掉线：整局作废，回菜单
+				return
+			end
+			mnet.peers[e.peer] = nil -- 不再等它的帧包（否则两边都卡死）
+			retire_owned(e.peer)     -- 掉线者的虫视为死亡，并标记"已退出"
+			if phos.net.role() == "host" then
+				phos.net.broadcast("wns.gone", { peer = e.peer }) -- 让其他客人也一致地看它退出
+			end
+		end
+	end
+	for _, m in ipairs(phos.net.poll()) do
+		if m.kind == "wns.in" and m.data and m.data.f then
+			local map = mnet.remote[m.from]
+			if not map then map = {}; mnet.remote[m.from] = map end
+			map[m.data.f] = m.data.k or {}
+		elseif m.kind == "wns.gone" and m.data and m.data.peer then
+			retire_owned(m.data.peer)
+		end
+	end
+end
+
+-- 输入中继锁步的**帧门**：每个对端每帧都发一个包（行动者发真实按键，其余发空包），
+-- 双方都**等齐所有对端第 frame 帧的包**才推进 —— 谁都不许抢跑。
+--
+-- 关键：**本机操作时也走 netframe（不再直接读 phos.input 的边沿）**。原因是引擎的按键
+-- 边沿检测按逻辑帧走，而停留（等包）时逻辑帧仍在走 —— 若直接读引擎边沿，行动方可能会
+-- 在一次停留里"漏掉"一次按下，而观看方从 down 序列里看得出来，两端就此分叉。
+-- 所以两端都用"每帧 down 集合"推导 pressed/released/duration，口径必然一致。
+local function mnet_begin_frame()
+	local w = current_worm()
+	local me = phos.net.self_id()
+	local owner = (w and w.alive) and w.owner or nil
+	local own = (owner == me)
+	local remote_human = owner and owner ~= 0 and owner ~= me
+
+	-- ① 采集本机按键，记在 frame+延迟 上广播（本机操作发真实按键；其余发空包对齐节奏）。
+	-- **发出哪份、推进第 frame 帧时就用哪份** —— 存进 mnet.sent[frame+延迟]，
+	-- 轮到模拟那一帧时取同一份；否则"发早、用晚"会让两端输入对不上
+	local send_f = mnet.frame + NET_DELAY
+	if not mnet.sent[send_f] then
+		local d = {}
+		if own and not lan_pause then -- 菜单浮层打开时本机不发按键（游戏照常，只是我不操作）
+			for _, k in ipairs(NET_KEYS) do d[k] = phos.input.down(k) end
+		end
+		phos.net.broadcast("wns.in", { f = send_f, k = d })
+		mnet.sent[send_f] = d
+	end
+	-- ② 等齐所有对端**本帧**的包（它们在延迟帧之前就发出了，正常早已到位，几乎不必等）
+	for peer in pairs(mnet.peers) do
+		local map = mnet.remote[peer]
+		if not (map and map[mnet.frame]) then return false end
+	end
+	-- ③ 定本帧 down 集合：本机操作 = 发出去的那份；远端人 = 它的快照；AI = 全松
+	local nd = {}
+	if own then
+		local d = mnet.sent[mnet.frame] or {}
+		for _, k in ipairs(NET_KEYS) do nd[k] = d[k] == true end
+	elseif remote_human then
+		local snap = (mnet.remote[owner] and mnet.remote[owner][mnet.frame]) or {}
+		for _, k in ipairs(NET_KEYS) do nd[k] = snap[k] == true end
+	end
+	local dur = {}
+	for _, k in ipairs(NET_KEYS) do dur[k] = nd[k] and ((netframe.dur[k] or 0) + 1) or 0 end
+	netframe.prev, netframe.down, netframe.dur = netframe.down, nd, dur
+	-- 只有在"人操作"时才打开 netframe（AI 回合要留给 update_ai，不能走 replay）
+	netframe.active = own or remote_human
+	return true
+end
+
 function update(dt)
 	flash = flash + dt
+	if screen == "lobby" then
+		lan_update(dt) -- 局域网大厅：面板自己驱动，不进对局循环
+		return
+	end
+	-- 联机对局中的 Esc：**非暂停**浮层（继续游戏 / 退出房间）。Esc 由卡带接管
+	-- （phos.sys.capture_escape），所以这里能收到；浮层打开时本机不发按键，游戏照常走
+	if mnet then
+		if phos.input.pressed("escape") then
+			lan_pause = not lan_pause
+			lan_pause_sel = 1
+			phos.audio.beep(lan_pause and 540 or 380, 0.04, { wave = "square", volume = 0.14 })
+		end
+		if lan_pause then
+			if phos.input.pressed("up") then lan_pause_sel = 1 end
+			if phos.input.pressed("down") then lan_pause_sel = 2 end
+			if phos.input.pressed("start") then
+				if lan_pause_sel == 1 then
+					lan_pause = false
+				else
+					mnet_abort() -- 退出房间：停网、回菜单（房主即解散）
+					return
+				end
+			end
+		end
+	end
+	-- 联机帧门：必须在**任何**模拟推进之前（点射 / 天基炮 / 天气 / 物理都在它后面）——
+	-- 否则"本帧不推进"时，前面那几样仍会各走一步，两端就分叉了
+	if mnet then
+		mnet_poll()
+		if mnet == nil then return end          -- mnet_abort 已回菜单
+		if not mnet_begin_frame() then return end -- 等对端本帧包：整帧不推进
+	end
 	update_burst(dt) -- 点射（机枪）：先把该出膛的那一发补上
 	update_strikes(dt) -- 天基炮：等待/释放/结算
 	-- M：地图总览浮窗。**不暂停**——它只是"看一眼地图"，
@@ -1319,9 +1602,13 @@ function update(dt)
 	end
 	if phos.input.pressed("k") then
 		help_open = not help_open
-		phos.audio.paused(help_open) -- 看键位表时连音乐一起停
-		phos.panel.resize(help_open and 0 or PANEL_W)
-		refresh_regions() -- 可玩区宽度变了：前景与读数的区域要跟着重建
+		-- 联机时**不**改面板/暂停/重建区域：那会消耗一次随机数或改可玩区，
+		-- 只在一端发生就会让两端的模拟分叉（键位表在联机里只作浮层）
+		if not mnet then
+			phos.audio.paused(help_open) -- 看键位表时连音乐一起停
+			phos.panel.resize(help_open and 0 or PANEL_W)
+			refresh_regions() -- 可玩区宽度变了：前景与读数的区域要跟着重建
+		end
 	end
 	if screen == "menu" then
 		menu_flash = menu_flash + dt
@@ -1344,19 +1631,25 @@ function update(dt)
 	if winner then
 		-- 分出胜负就停乐：回到菜单后应当安静（重开一局时 start_match 会再起）
 		phos.audio.stop_music()
-		if phos.input.pressed("start") or phos.input.pressed("a") then
+		if mnet then
+			lan_match_over() -- 联机：分出胜负后留在房间里，房间重新开放
+			return
+		end
+		if phos.input.pressed("start") then
 			screen = "menu"
 			menu_flash = 0
 			phos.panel.resize(0)
 		end
 		return
 	end
-	if help_open then
+	if help_open and not mnet then
 		return
-	end -- 键位表打开时整局暂停
+	end -- 键位表打开时整局暂停（联机里不暂停，见上）
 
 	if human_turn() then
 		player_input(dt)
+	elseif netframe.active then
+		player_input(dt) -- 观看远端人操作：把快照当输入重放
 	else
 		update_ai(dt)
 	end
@@ -1538,6 +1831,14 @@ function update(dt)
 	end
 
 	update_camera(dt)
+	-- 本帧已推进：清掉已用/过期的包，帧号 +1（两端一致）
+	if mnet then
+		mnet.sent[mnet.frame] = nil
+		for _, map in pairs(mnet.remote) do
+			for f in pairs(map) do if f <= mnet.frame then map[f] = nil end end
+		end
+		mnet.frame = mnet.frame + 1
+	end
 end
 
 -- ---------- 绘制 ----------
@@ -1782,12 +2083,7 @@ local function draw_actors(S, C)
 	local ox, oy = camera:origin()
 	for _, w in ipairs(worms.list) do
 		if w.alive then
-			local col
-			if w.team == 1 then
-				col = (pvp or turn.team == 1) and C.yellow or C.orange
-			else
-				col = (pvp or turn.team == 2) and C.red or C.purple
-			end
+			local col = team_color(C, w.team, turn.team == w.team)
 			-- 角色是**半格小人**：宽 1 子格、高 2 子格（与身体判定同一个尺寸）。
 			-- 画法：把身体真正占的**两个子位**按所属的格分组，每格用 quadrant 合成字形。
 			-- 只画它占的那两个子位 —— 用"整格高"的半块去画"只占半格"的身体，
@@ -1907,7 +2203,7 @@ local function draw_map_overlay(C)
 		if w.alive then
 			local i = math.max(0, math.min(mw - 3, math.floor(w.x / sx)))
 			local j = math.max(0, math.min(mh - 1, math.floor(w.y / sy)))
-			local col = (w.team == 1) and C.yellow or C.red
+			local col = team_color(C, w.team, true)
 			r:put(1 + i, 1 + j, (w == current_worm()) and "O" or "@", col, COL.plate)
 		end
 	end
@@ -1957,6 +2253,501 @@ local function draw_help(C)
 	end
 end
 
+-- ================= 局域网大厅（phos.net，见 DESIGN.md §13） =================
+-- menu.mode=="lan" 时模式菜单显示 昵称 / 创建 / 搜索 / 总览；选中后 screen=="lobby"，
+-- 由 lan 表驱动面板。房主与加入者共用同一套房间面板（权限不同）。
+-- **只做传输编排**：房间码 = 主机端口，房主广播名册，加入者按名册选队。
+local LAN_CODE_MIN, LAN_CODE_MAX = 20000, 60000
+
+local function nick()
+	return (menu.field and menu.field.value) or ""
+end
+
+local function lan_blank(phase)
+	return {
+		phase = phase, host = false, code = 0, my_team = nil, pick_team = 1,
+		caps = { 5, 5 }, hp = menu.hp, map = menu.map,
+		create_row = 1, search = "", rooms = {}, room_sel = 1, refresh_t = 0,
+		roster = {}, remote = {}, rstate = nil, err = "", start_req = nil, leave = false,
+		pending = {}, -- 开局前收到的帧包（大厅阶段），开局时交给 mnet
+	}
+end
+
+-- 名册：房主在自身前面补红队（房主默认红队），其余按 remote 里已入队的人
+local function lan_build_roster(self)
+	local list = { { peer = phos.net.self_id(), name = nick(), team = 1 } }
+	for peer, info in pairs(self.remote) do
+		if info.team then
+			list[#list + 1] = { peer = peer, name = info.name, team = info.team }
+		end
+	end
+	return list
+end
+
+local function lan_caps(self)
+	return self.host and self.caps or ((self.rstate and self.rstate.caps) or { 5, 5 })
+end
+local function lan_hp(self)
+	return self.host and self.hp or ((self.rstate and self.rstate.hp) or 100)
+end
+local function lan_map(self)
+	return self.host and self.map or ((self.rstate and self.rstate.map) or 2)
+end
+local function lan_count(self, team)
+	local n = 0
+	for _, e in ipairs(self.roster) do if e.team == team then n = n + 1 end end
+	return n
+end
+local function lan_full(self, team)
+	return lan_count(self, team) >= lan_caps(self)[team]
+end
+
+-- 能否开局：两队各 ≥1 人，且**所有已连接的对端都已入队** —— 否则那个没选队的人会被落下。
+-- 房主据此灰掉"开始游戏"，并给出原因（等待所有人入队）
+local function lan_can_start(self)
+	if not self.host then return false end
+	local connected = #phos.net.peers()
+	local teamed = lan_count(self, 1) + lan_count(self, 2) - 1 -- 名册里的对端数（减去房主自己）
+	return connected <= teamed and lan_count(self, 1) >= 1 and lan_count(self, 2) >= 1
+end
+
+local function lan_host_state(self)
+	local caps = self.caps
+	phos.net.broadcast("wns.state",
+	                   { caps = { caps[1], caps[2] }, hp = self.hp, map = self.map, code = self.code })
+end
+local function lan_host_roster(self)
+	phos.net.broadcast("wns.roster", { list = self.roster })
+end
+
+-- 收包与连接事件：房主维护名册并广播；加入者按名册推断自己的队伍
+local function lan_recv(self)
+	for _, e in ipairs(phos.net.events()) do
+		if self.host then
+			if e.type == "connected" then
+				self.remote[e.peer] = { name = "?", team = nil }
+				lan_host_state(self)
+				lan_host_roster(self)
+			elseif e.type == "disconnected" then
+				self.remote[e.peer] = nil
+				self.roster = lan_build_roster(self)
+				lan_host_roster(self)
+			end
+		elseif e.type == "disconnected" then
+			self.leave = true -- 房主掉线 / 被断开：回家
+		end
+	end
+	for _, m in ipairs(phos.net.poll()) do
+		local d = m.data or {}
+		if m.kind == "wns.state" then
+			self.rstate = { caps = d.caps, hp = d.hp, map = d.map, code = d.code }
+			if d.code then self.code = d.code end
+		elseif m.kind == "wns.roster" then
+			self.roster = d.list or {}
+		elseif m.kind == "wns.join" and self.host then
+			if not self.remote[m.from] then self.remote[m.from] = { name = "?" } end
+			self.remote[m.from].name = d.name or "?"
+			self.remote[m.from].team = (d.team and not lan_full(self, d.team)) and d.team or nil
+			self.roster = lan_build_roster(self)
+			lan_host_roster(self)
+		elseif m.kind == "wns.leave" and self.host then
+			-- 队员主动退出队伍（回到选队）：把他从名册里摘出那队，再广播
+			if self.remote[m.from] then self.remote[m.from].team = nil end
+			self.roster = lan_build_roster(self)
+			lan_host_roster(self)
+		elseif m.kind == "wns.start" then
+			self.start_req = d
+		elseif m.kind == "wns.in" and d.f then
+			-- 开局前（大厅阶段）先到的帧包先存着：否则接收端会"错过第 0 帧"而卡死
+			local pm = self.pending[m.from]
+			if not pm then pm = {}; self.pending[m.from] = pm end
+			pm[d.f] = d.k or {}
+		end
+	end
+	-- 加入者：以名册为准认自己的队伍（房主可能把我放进别队 / 拒绝）
+	if not self.host and self.phase == "room" then
+		local me = phos.net.self_id()
+		self.my_team = nil
+		for _, e in ipairs(self.roster) do
+			if e.peer == me then self.my_team = e.team end
+		end
+	end
+end
+
+local function lan_try_host(self)
+	for _ = 1, 8 do
+		local code = phos.sys.random(LAN_CODE_MIN, LAN_CODE_MAX)
+		if phos.net.host({ port = code, name = nick() }) then
+			self.host, self.code, self.my_team, self.remote = true, code, 1, {}
+			self.roster = lan_build_roster(self)
+			self.phase = "room"
+			return true
+		end
+	end
+	self.err = "no free port"
+	return false
+end
+
+local function lan_try_join(self, room)
+	if not phos.net.join(room.address, { port = room.port, name = nick() }) then
+		self.err = "join failed"
+		return false
+	end
+	self.host, self.code, self.my_team, self.pick_team = false, room.port, nil, 1
+	self.phase = "room"
+	return true
+end
+
+-- 名册 → 队伍 → 起局（联机）。**先播种、再随机**：两端用同一 seed，于是随机左右、
+-- 地形、天气、补给、AI 决策逐位一致 —— 这是锁步的前提。
+local function start_lan_match(p)
+	mode = "lan"
+	phos.sys.capture_escape(true) -- 对局中 Esc 归卡带：弹非暂停的菜单而非主机暂停
+	if p.seed then phos.sys.seed(p.seed) end
+	red_side = phos.sys.random(1, 2) -- 红蓝随机左右（两端同 seed 必得同值）
+	-- 名册按颜色分组（roster 的 team：1=红 2=蓝）
+	local by_color = { {}, {} }
+	for _, e in ipairs(p.roster or {}) do
+		local col = (e.team == 2) and 2 or 1
+		by_color[col][#by_color[col] + 1] = e
+	end
+	-- 颜色 → 内部边号：红队落在 red_side，蓝队落在另一边
+	local side_of_color = { red_side, (red_side == 1) and 2 or 1 }
+	local players_of_side = { {}, {} }
+	players_of_side[side_of_color[1]] = by_color[1]
+	players_of_side[side_of_color[2]] = by_color[2]
+	teams[1] = { count = math.max(1, #players_of_side[1]), human = true, ally_ai = false }
+	teams[2] = { count = math.max(1, #players_of_side[2]), human = true, ally_ai = false }
+	begin_game(p.hp or 100, p.map or 2)
+	-- 分配 owner：Worms.new 已把队内出场顺序洗牌；该边的玩家按名册顺序逐个认领。
+	-- 于是"每个人控制自己那只虫"，且站位 / 出场顺序都是随机的
+	for side = 1, 2 do
+		local ws = worms:of_team(side)
+		local players = players_of_side[side]
+		for i, wm in ipairs(ws) do
+			wm.owner = players[i] and players[i].peer or nil
+			wm.name = players[i] and players[i].name or nil -- 侧栏与顶栏显示用
+		end
+	end
+	-- 联机对局状态：frame 帧号 + 每个对端每帧的输入包 + 需要等待的对端集合
+	mnet = { frame = 0, sent = {}, remote = {}, peers = {} }
+	for _, pr in ipairs(phos.net.peers()) do mnet.peers[pr.id] = true end
+	-- 接收端若在"开局消息之前"就收到过行动方的帧包（大厅阶段），搬进来，避免错过第 0 帧
+	for from, map in pairs(p.pending or {}) do mnet.remote[from] = map end
+	-- 预置头 NET_DELAY 帧：延迟机制里没人会主动发这几帧（本机要到 frame=0 才发 frame+延迟），
+	-- 这里补空包，否则开局头几帧等不到包、直接卡住。两端都补，于是所有人都有 0..延迟-1
+	for f = 0, NET_DELAY - 1 do
+		if not mnet.sent[f] then
+			mnet.sent[f] = {}
+			phos.net.broadcast("wns.in", { f = f, k = {} })
+		end
+	end
+end
+
+-- 模式菜单里的 LAN 分行（昵称在文件顶部、由 menu_lan_input 处理）
+function menu_lan_input(dt)
+	local C = phos.color
+	if menu.nick_edit then
+		menu.field:feed()
+		if phos.input.pressed("start") then menu.nick_edit = false end
+		return
+	end
+	local rows = { 1, 2, 3, 4, 5 }
+	local function move(dir)
+		local at = 1
+		for i, rr in ipairs(rows) do if rr == menu.row then at = i end end
+		menu.row = rows[((at - 1 + dir) % #rows) + 1]
+		phos.audio.beep(420, 0.04, { wave = "square", volume = 0.14 })
+	end
+	if phos.input.pressed("up") then move(-1) end
+	if phos.input.pressed("down") then move(1) end
+	if menu.row == 1 and (phos.input.pressed("left") or phos.input.pressed("right")) then
+		menu.mode = "pve"
+		menu.row = 1
+		phos.audio.beep(520, 0.04, { wave = "square", volume = 0.14 })
+	end
+	if phos.input.pressed("start") then
+		if menu.row == 2 then menu.nick_edit = true
+		elseif menu.row == 3 then lan_enter("create")
+		elseif menu.row == 4 then lan_enter("search")
+		elseif menu.row == 5 then lan_enter("overview") end
+	end
+end
+
+function lan_enter(phase)
+	-- 昵称是联机的"门牌"：空着不许进大厅（明确提示，不静默失败）
+	if nick() == "" then
+		menu.nick_err = true
+		phos.audio.beep(160, 0.08, { wave = "square", volume = 0.18 })
+		return
+	end
+	menu.nick_err = false
+	lan = lan_blank(phase)
+	screen = "lobby"
+	phos.panel.resize(0)
+	if phase == "overview" then
+		lan.rooms = phos.net.discover(0.4)
+	end
+end
+
+function lan_update(dt)
+	local self = lan
+	if not self then screen = "menu"; return end
+	lan_recv(self)
+	if self.leave then
+		phos.net.stop(); lan = nil; screen = "menu"; return
+	end
+	if self.start_req then
+		local p = self.start_req
+		p.pending = self.pending -- 大厅阶段先到的帧包一并带进对局
+		self.start_req = nil
+		self.in_match, self.phase = true, "room" -- 保留大厅对象：赛后回到这个房间
+		start_lan_match(p)
+		return
+	end
+
+	local back = phos.input.text():find("\b") ~= nil
+	local a = phos.input.pressed("start") -- 回车确认（A 是字母键，留给昵称输入）
+	local l, r = phos.input.pressed("left"), phos.input.pressed("right")
+	local u, d = phos.input.pressed("up"), phos.input.pressed("down")
+	local function leave()
+		phos.net.stop(); lan = nil; screen = "menu"
+	end
+
+	if self.phase == "create" then
+		if d then self.create_row = math.min(5, self.create_row + 1) end
+		if u then self.create_row = math.max(1, self.create_row - 1) end
+		local step = (r and 1 or 0) - (l and 1 or 0)
+		if step ~= 0 then
+			if self.create_row == 1 then self.caps[1] = clamp_count(self.caps[1] + step)
+			elseif self.create_row == 2 then self.caps[2] = clamp_count(self.caps[2] + step)
+			elseif self.create_row == 3 then
+				self.hp = math.max(HP_MIN, math.min(HP_MAX, self.hp + step * HP_STEP))
+			elseif self.create_row == 4 then self.map = ((self.map - 1 + step) % #MAPS) + 1 end
+		end
+		if back then leave() return end
+		if a and self.create_row == 5 then lan_try_host(self) end
+	elseif self.phase == "search" then
+		for digit in string.gmatch(phos.input.text(), "[0-9]") do
+			if #self.search < 5 then self.search = self.search .. digit end
+		end
+		if back then
+			if #self.search > 0 then self.search = self.search:sub(1, -2) else leave() return end
+		end
+		if a then
+			self.err = ""
+			local code = tonumber(self.search)
+			local found
+			for _, room in ipairs(phos.net.discover(0.4)) do
+				if room.port == code then found = room break end
+			end
+			if found and not found.open then
+				self.err = L().lan.in_game
+			elseif found then
+				lan_try_join(self, found)
+			else
+				self.err = L().lan.no_room
+			end
+		end
+	elseif self.phase == "overview" then
+		-- 自动刷新（每隔一会重扫一次）+ R 键手动刷新。回车才是"加入选中的房间"，
+		-- 之前把刷新也绑在回车，和"加入"撞车，按回车就直接进房了
+		self.refresh_t = self.refresh_t - dt
+		if self.refresh_t <= 0 then
+			self.refresh_t = 1.5
+			self.rooms = phos.net.discover(0.12)
+			if self.room_sel > #self.rooms then self.room_sel = math.max(1, #self.rooms) end
+		end
+		if phos.input.pressed("r") then
+			self.refresh_t = 1.5
+			self.rooms = phos.net.discover(0.3)
+			phos.audio.beep(480, 0.03, { wave = "square", volume = 0.12 })
+		end
+		if d and #self.rooms > 0 then self.room_sel = math.min(#self.rooms, self.room_sel + 1) end
+		if u then self.room_sel = math.max(1, self.room_sel - 1) end
+		if back then leave() return end
+		if a then
+			local room = self.rooms[self.room_sel]
+			if room and not room.open then
+				self.err = L().lan.in_game
+			elseif room then
+				lan_try_join(self, room)
+			end
+		end
+	elseif self.phase == "room" then
+		if self.host then
+			if back then leave() return end
+			if a and lan_can_start(self) then
+				phos.net.set_room({ open = false }) -- 开局后不再接受加入（搜索方会看到"游戏中"）
+				local p = { hp = self.hp, map = self.map, caps = { self.caps[1], self.caps[2] },
+				            roster = self.roster, seed = phos.sys.random(1, 999999999) }
+				phos.net.broadcast("wns.start", p)
+				self.start_req = p
+			end
+		elseif self.my_team then
+			-- 已入队：退格**先退出队伍**（回到选队），再按一次才离开房间
+			if back then
+				phos.net.send(1, "wns.leave", {})
+				self.pick_team, self.my_team = self.my_team, nil
+				phos.audio.beep(360, 0.04, { wave = "square", volume = 0.14 })
+			end
+		else
+			if back then leave() return end
+			if l or r then self.pick_team = (self.pick_team == 1) and 2 or 1 end
+			if a and not lan_full(self, self.pick_team) then
+				phos.net.send(1, "wns.join", { team = self.pick_team, name = nick() })
+			end
+		end
+	end
+end
+
+function lan_draw()
+	local C = phos.color
+	local lanT = L().lan
+	local self = lan
+	if not self then return end
+	local px, py, pw, ph_ = phos.screen.playfield()
+	local function panel(title, h)
+		local w = math.min(58, pw - 4)
+		local x = px + math.floor((pw - w) / 2)
+		local y = py + math.floor((ph_ - h) / 2)
+		local r = phos.ui.region(x, y, w, h)
+		r:clear(C.white, COL.plate)
+		box(r, title, C.white)
+		return r, w
+	end
+
+	if self.phase == "create" then
+		local r = panel(lanT.create_title, 14)
+		local function opt(id, line, label, value)
+			local sel = (self.create_row == id)
+			r:print(2, line, string.format("%s %s < %s >", sel and ">" or " ",
+				phos.text.pad(label, 10), value), sel and C.yellow or C.gray)
+		end
+		opt(1, 2, lanT.red_cap, self.caps[1])
+		opt(2, 4, lanT.blue_cap, self.caps[2])
+		opt(3, 6, L().label.hp, self.hp)
+		opt(4, 8, L().label.map, L().map[MAP_KEYS[self.map]])
+		r:print(2, 11, (self.create_row == 5 and "> " or "  ") .. lanT.start,
+		        (self.create_row == 5) and C.yellow or C.gray)
+		r:print(2, 13, lanT.disband, C.dark_gray)
+		if self.err ~= "" then r:print(2, 12, self.err, C.red) end
+	elseif self.phase == "search" then
+		local r = panel(lanT.search_title, 9)
+		r:print(2, 3, lanT.code_prompt .. ": " .. self.search .. "_", C.white)
+		r:print(2, 5, self.err ~= "" and self.err or lanT.enter, self.err ~= "" and C.red or C.gray)
+		r:print(2, 8, lanT.disband, C.dark_gray)
+	elseif self.phase == "overview" then
+		local r = panel(lanT.overview_title, 16)
+		if #self.rooms == 0 then
+			r:print(2, 3, lanT.no_room, C.gray)
+		else
+			for i, room in ipairs(self.rooms) do
+				if i <= 11 then
+					local sel = (i == self.room_sel)
+					-- 开局后的房间标"游戏中"（暗一档、一眼可分）：看得到，但加入会被拒
+					local open = room.open
+					local tag = open and (tostring(room.players) .. lanT.players) or lanT.busy
+					local col = sel and C.yellow or (open and C.white or C.dark_gray)
+					r:print(2, 2 + i, string.format("%s %s  #%d  %s", sel and ">" or " ",
+						room.name, room.port, tag), col)
+				end
+			end
+		end
+		r:print(2, 14, lanT.refresh, C.dark_gray)
+		r:print(2, 15, lanT.disband, C.dark_gray)
+	elseif self.phase == "room" then
+		local r, w = panel(lanT.room_title .. " #" .. self.code, 18)
+		local me = phos.net.self_id()
+		local colw = math.floor((w - 3) / 2)
+		local caps = lan_caps(self)
+		r:print(2, 2, string.format("%s (%d/%d)", lanT.red, lan_count(self, 1), caps[1]), C.red)
+		r:print(2 + colw, 2, string.format("%s (%d/%d)", lanT.blue, lan_count(self, 2), caps[2]), C.blue)
+		local y1, y2 = 3, 3
+		for _, e in ipairs(self.roster) do
+			local line = e.name .. ((e.peer == me) and lanT.you or "")
+			if e.peer == 1 then line = line .. " [" .. lanT.host_tag .. "]" end
+			if e.team == 1 then r:print(2, y1, phos.text.fit(line, colw), C.white) y1 = y1 + 1
+			else r:print(2 + colw, y2, phos.text.fit(line, colw), C.white) y2 = y2 + 1 end
+		end
+		if self.host then
+			local connected = #phos.net.peers()
+			local teamed = lan_count(self, 1) + lan_count(self, 2) - 1
+			local ok = lan_can_start(self)
+			r:print(2, 15, (ok and "> " or "  ") .. lanT.start, ok and C.yellow or C.gray)
+			if not ok and connected > teamed then r:print(2, 16, lanT.wait_teams, C.dark_gray) end
+			r:print(2, 17, lanT.disband, C.dark_gray)
+		elseif not self.my_team then
+			r:print(2, 15, lanT.join_hint, C.white)
+			-- 左右选队要有**看得见的反馈**：当前选的那队用 ">" + 高亮，满员的暗一档
+			local function team_opt(x, team)
+				local sel = (self.pick_team == team)
+				local full = lan_full(self, team)
+				local name = (team == 1) and lanT.red or lanT.blue
+				local col = (team == 1) and C.red or C.blue
+				local label = (sel and ">" or " ") .. " " .. name .. (full and " (full)" or "  ")
+				r:print(x, 16, label, full and C.dark_gray or (sel and C.yellow or col))
+			end
+			team_opt(2, 1)
+			team_opt(2 + colw, 2)
+			r:print(2, 17, lanT.leave, C.dark_gray)
+		else
+			local my = (self.my_team == 1) and lanT.red or lanT.blue
+			r:print(2, 15, string.format(lanT.joined, my), C.white)
+			r:print(2, 16, lanT.waiting, C.gray)
+			r:print(2, 17, lanT.leave_team .. " / " .. lanT.leave, C.dark_gray)
+		end
+	end
+end
+
+-- 对局结束（分胜负）：留在房间里，房间重新开放给别人加入。连接不动，只收掉对局状态
+function lan_match_over()
+	mnet = nil
+	netframe.active = false
+	lan_pause = false
+	phos.sys.capture_escape(false) -- 回到房间面板：Esc 交还主机
+	winner = nil
+	help_open = false
+	map_open = false
+	phos.audio.stop_music()
+	phos.panel.resize(0)
+	if not lan then
+		phos.net.stop()
+		screen = "menu"
+		return
+	end
+	lan.in_match = false
+	lan.phase, lan.err = "room", ""
+	if lan.host then
+		-- 剔除中途掉线的人，再刷新名册并重新开放房间
+		for peer in pairs(lan.remote) do
+			local alive = false
+			for _, pr in ipairs(phos.net.peers()) do if pr.id == peer then alive = true end end
+			if not alive then lan.remote[peer] = nil end
+		end
+		lan.roster = lan_build_roster(lan)
+		lan_host_roster(lan)
+		phos.net.set_room({ open = true })
+	end
+	screen = "lobby"
+end
+
+-- 联机对局的"菜单"浮层（**非暂停**）：继续游戏 / 退出房间
+local function draw_lan_pause(C)
+	local T = L().lan
+	local px, py, pw, ph_ = phos.screen.playfield()
+	local w, h = 30, 7
+	local x = px + math.floor((pw - w) / 2)
+	local y = py + math.floor((ph_ - h) / 2)
+	local r = phos.ui.region(x, y, w, h, { layer = "overlay" })
+	r:clear(C.white, COL.plate)
+	box(r, T.paused_title, C.white)
+	local mk = function(i) return (lan_pause_sel == i) and ">" or " " end
+	r:print(3, 2, mk(1) .. " " .. T.resume, (lan_pause_sel == 1) and C.yellow or C.gray)
+	r:print(3, 4, mk(2) .. " " .. T.leave_room, (lan_pause_sel == 2) and C.yellow or C.gray)
+	r:print(3, 6, T.paused_hint, C.dark_gray)
+end
+
 local function draw_menu()
 	local C, S = phos.color, r_base
 	local t = L()
@@ -1979,37 +2770,58 @@ local function draw_menu()
 		return (menu.row == row) and C.white or C.gray
 	end
 	-- 一行的样子固定为 `> 标签 < 值 >`：标签按**显示宽度**补到同一列，
-	-- 所以"我方人数"（8 列）与"OUR SQUAD"（9 列）排出来都是齐的
+	-- 所以"红队人数"（8 列）与"RED SQUAD"（9 列）排出来都是齐的。
+	-- row(id, line, ...)：id 是逻辑行号（供 marker/高亮），line 是面板内的行——两者解耦，
+	-- 于是 PVE / PVP 两种行序都能排成同一块稳定面板
 	local LABEL_W = 12
-	local function row(i, label, value)
-		return string.format("%s %s < %s >", mark(i), phos.text.pad(label, LABEL_W), value)
+	local function row(id, line, label, value)
+		r:print(1, line,
+		        string.format("%s %s < %s >", mark(id), phos.text.pad(label, LABEL_W), value),
+		        hi(id))
 	end
+	local yn = function(b) return b and t.yes or t.no end
 
-	if menu.mode == "pve" then
-		r:print(1, 1, row(1, t.label.mode, t.mode.pve), hi(1))
-		r:print(1, 2, "   " .. t.note.pve, C.dark_gray)
-		r:print(1, 3, row(2, t.label.mine, menu.mine), hi(2))
-		r:print(1, 4, row(3, t.label.theirs, menu.theirs), hi(3))
+	if menu.mode == "lan" then
+		-- 局域网：模式 / 昵称 / 创建 / 搜索 / 总览（开局与队设置都在大厅里）
+		row(1, 1, t.label.mode, t.mode.lan)
+		local nv = (nick() == "") and "—" or nick()
+		row(2, 3, t.lan.nick, nv .. (menu.nick_edit and "|" or ""))
+		r:print(1, 5, mark(3) .. " " .. t.lan.create, hi(3))
+		r:print(1, 6, mark(4) .. " " .. t.lan.search, hi(4))
+		r:print(1, 7, mark(5) .. " " .. t.lan.overview, hi(5))
+		if menu.nick_err then
+			r:print(1, 9, t.lan.nick_empty, C.red)
+		end
 	else
-		r:print(1, 1, row(1, t.label.mode, t.mode.pvp), hi(1))
-		r:print(1, 2, "   " .. t.note.pvp, C.dark_gray)
+		-- 面板自上而下就是"上→下"的选择顺序：不再往选项之间塞解释文字，
+		-- 一行一选项，视线顺着走即可（PvE 与 PvP 的行序各自连续）
+		row(1, 1, t.label.mode, menu.mode == "pve" and t.mode.pve or t.mode.pvp)
+		row(2, 3, t.label.red, menu.t1.count)
+		if menu.mode == "pve" then
+			row(4, 4, t.label.red_ai, yn(menu.t1.ally_ai))
+			row(3, 5, t.label.blue, menu.t2.count)
+			row(6, 6, t.label.map, t.map[MAP_KEYS[menu.map]])
+			row(7, 7, t.label.hp, menu.hp)
+			row(5, 8, t.label.diff, t.diff[DIFFS[menu.diff]] or DIFFS[menu.diff])
+		else
+			row(3, 4, t.label.red_ai, yn(menu.t1.ally_ai))
+			row(4, 5, t.label.blue, menu.t2.count)
+			row(5, 6, t.label.blue_ai, yn(menu.t2.ally_ai))
+			row(6, 7, t.label.map, t.map[MAP_KEYS[menu.map]])
+			row(7, 8, t.label.hp, menu.hp)
+		end
+		r:print(1, 10, string.format("%s %s", mark(8), t.start),
+		        (menu.row == 8) and C.yellow or C.gray)
 	end
-	r:print(1, 5, row(4, t.label.map, t.map[MAP_KEYS[menu.map]]), hi(4))
-	r:print(1, 6, row(5, t.label.hp, menu.hp), hi(5))
-	r:print(1, 7, "   " .. string.format(t.note.hp, HP_MIN, HP_MAX, HP_STEP), C.dark_gray)
-	if menu.mode == "pve" then
-		r:print(1, 8, row(6, t.label.ally, menu.ally_ai and t.yes or t.no), hi(6))
-		r:print(1, 9, "   " .. (menu.ally_ai and t.note.ally_on or t.note.ally_off), C.dark_gray)
-		r:print(1, 10, row(7, t.label.diff, t.diff[DIFFS[menu.diff]] or DIFFS[menu.diff]), hi(7))
-		r:print(1, 11, "   " .. t.note.diff, C.dark_gray)
-	end
-	r:print(1, 13, string.format("%s %s", mark(8), t.start),
-	        (menu.row == 8) and C.yellow or C.gray)
 	r:print(3, 15, phos.text.fit(t.menu_hint, w - 4), C.dark_gray)
 end
 
 function draw()
 	local C, S = phos.color, phos.screen
+	if screen == "lobby" then
+		lan_draw()
+		return
+	end
 	if screen == "menu" then
 		draw_menu()
 		return
@@ -2051,9 +2863,8 @@ function draw()
 		plate = nil, -- 浮层底板一律不用（见 draw_actors 与读数处的说明）
 		ammo = left,
 		charge = charge_mode,
-		pvp = pvp,
 		turn_team = turn.team,
-		ally_ai = ally_ai,
+		red_side = red_side,
 		human = human_turn(),
 		floats = floats,
 		-- 只在**弹药真的在空中**时提示。燃烧 3 秒、光柱 5 秒属于"特效阶段"，
@@ -2080,21 +2891,25 @@ function draw()
 		camera = camera,
 		worms = worms,
 		turn = turn,
+		teams = teams,
+		red_side = red_side,
 		weapons = Weapons.LIST,
 		current = weapon,
-		pvp = pvp,
 		active = w,
 		human = human_turn(),
-		ally_ai = ally_ai,
+		-- 每只虫归谁操作由这里一处判定（与对局逻辑同源）；侧栏据此画 * / A 记号
+		human_of = worm_is_human,
 		hp_max = Worms.MAX_HP,
-		-- 队长：队友交给 AI 时，唯一还归玩家操作的那只（开局定死，阵亡后不再换人）
-		leader = captain,
 	})
 	if map_open then
 		draw_map_overlay(C)
 	end
 	if help_open then
 		draw_help(C)
+	end
+	-- 联机对局的 Esc 菜单（非暂停）：压在最上面
+	if mnet and lan_pause then
+		draw_lan_pause(C)
 	end
 end
 
@@ -2124,7 +2939,7 @@ function debug_state()
 		local max_hp = (Worms.MAX_HP > 0) and Worms.MAX_HP or 100
 		for _, m in ipairs(list) do
 			if m.team == team and m.alive then
-				parts[#parts + 1] = Panel.hp_tone_name(team, m.hp / max_hp)
+				parts[#parts + 1] = Panel.hp_tone_name((team == red_side) and 1 or 2, m.hp / max_hp)
 			end
 		end
 		return table.concat(parts, ",")
@@ -2143,13 +2958,25 @@ function debug_state()
 	end
 	local out = {
 		screen = screen,
-		pvp = pvp,
-		ally_ai = ally_ai,
+		mode = mode,
 		help = help_open,
-		mine = menu.mine,
-		theirs = menu.theirs,
+		red_count = teams[1].count,
+		blue_count = teams[2].count,
+		red_human = teams[1].human and 1 or 0,
+		blue_human = teams[2].human and 1 or 0,
+		red_ally_ai = teams[1].ally_ai and 1 or 0,
+		blue_ally_ai = teams[2].ally_ai and 1 or 0,
+		-- 局域网大厅实况（agent/自测用）：阶段 / 是否房主 / 房间码 / 我的队伍 / 名册人数
+		lan_phase = lan and lan.phase or "-",
+		lan_host = (lan and lan.host) and 1 or 0,
+		lan_code = lan and lan.code or 0,
+		lan_team = lan and (lan.my_team or 0) or 0,
+		lan_players = lan and #lan.roster or 0,
+		net_frame = mnet and mnet.frame or -1, -- 联机：已推进的逻辑帧号（两端应一致）
+		lan_paused = lan_pause and 1 or 0,     -- 联机对局的 Esc 菜单是否打开
 		map = MAP_KEYS[menu.map] or "-",   -- 本局地图宽窄档位（世界宽度见 world_w）
 		menu_row = menu.row,
+		menu_mode = menu.mode,
 		hp_max = menu.hp,
 		diff = DIFFS[menu.diff] or "normal",
 		ai_reason = ai_reason or "-",
@@ -2270,7 +3097,7 @@ function debug_state()
 			power = math.floor((m.power or 0) * 100),  -- AI 的虫可能还没存过力度
 			human = worm_is_human(m) and 1 or 0,       -- 归谁操作：1 = 玩的人，0 = 电脑
 			buried = m.buried and 1 or 0,              -- 身体在土里（被埋住）：走不动跳不动，只能炸开
-			leader = (m == captain) and 1 or 0,        -- 队长：队友交给 AI 时唯一还归玩家的
+			leader = (captains[m.team] == m) and 1 or 0, -- 队长：本队"队友交给 AI"时唯一还归玩家的
 		}
 	end
 	-- 地表剖面：每 GROUND_STEP 个子格取一次高度。**这是让 agent 能自己瞄准的那一项** ——

@@ -263,6 +263,7 @@ void register_net_api(sol::state& lua, HostContext& host) {
         net["poll"] = [&lua]() { return lua.create_table(); };
         net["events"] = [&lua]() { return lua.create_table(); };
         net["discover"] = [&lua](sol::optional<double>) { return lua.create_table(); };
+        net["set_room"] = [](sol::optional<sol::table>) {};
         return;
     }
 
@@ -353,9 +354,19 @@ void register_net_api(sol::state& lua, HostContext& host) {
             entry["address"] = room.address;
             entry["port"] = room.port;
             entry["players"] = room.players;
+            entry["open"] = room.open;
             out[index++] = entry;
         }
         return out;
+    };
+
+    // 更新房间对外广播（发现应答）：主机开局后 set_room({ open = false })，搜索方看到"游戏中"
+    net["set_room"] = [engine](sol::optional<sol::table> opts) {
+        if (!opts) return;
+        sol::object name = (*opts)["name"];
+        if (name.is<std::string>()) engine->set_room_name(name.as<std::string>());
+        sol::object open = (*opts)["open"];
+        if (open.is<bool>()) engine->set_room_open(open.as<bool>());
     };
 }
 

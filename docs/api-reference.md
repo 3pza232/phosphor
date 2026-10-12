@@ -445,6 +445,8 @@ end
 - 传输是 **TCP 星型 + 主机中继**：客人只与主机相连，客人之间互发由主机转发。
 - 对端 id：主机恒为 `1`，客人依次 `2, 3, …`；`0` 是**广播地址**（`send(0, …)` = 发给除自己外所有人）。
 - 运行在后台线程，主线程只入队/取队（与外设、音频同一套"主线程不阻塞"的心智）。
+- **房间可广播"是否还接受加入"**：主机开局前 `open = true`，开局后 `phos.net.set_room({ open = false })`；
+  搜索方在 `discover()` 结果里读到 `open`，据此提示"游戏中、无法加入"。
 - 设计细节（拓扑、协议、线程、确定性注意）见 `design/networking.md`（开发文档）。
 
 ```lua
@@ -478,9 +480,14 @@ end
 
 -- 局域网发现：广播查询并收集应答（有界阻塞，默认 0.5 秒）
 for _, room in ipairs(phos.net.discover(0.5)) do
-  phos.ui.text(2, y, 40, room.name .. "  " .. room.address .. ":" .. room.port)  -- players 人数
+  -- 字段：name / address / port / players（人数）/ open（房主是否还接受加入）
+  local tag = room.open and ("x" .. room.players) or "IN GAME"   -- 开局后的房间标"游戏中"，别去连
+  phos.ui.text(2, y, 40, room.name .. "  " .. room.address .. ":" .. room.port .. "  " .. tag)
   y = y + 1
 end
+
+-- 更新房间对外广播（发现应答用）：主机开局后调一次，搜索方就会看到"游戏中"并拒绝加入
+phos.net.set_room({ open = false })
 ```
 
 > **谁负责同步**：引擎不做锁步/回滚。回合制卡带（如炮弹对战）用"行动中继"最省事——
@@ -658,6 +665,8 @@ phos.sys.log("debug info")          -- 写主机日志（开发期利器）
 phos.sys.version()                  -- 主机版本（唯一权威来源：core/version.hpp）
 phos.sys.product()                  -- 产品名 "PHOSPHOR"
 phos.sys.language()                 -- 界面语言 "zh" / "en"（见下）
+phos.sys.capture_escape(true)       -- 接管 Esc：此后 Esc 是普通键（phos.input "escape"），
+                                    -- 主机不再拿它做暂停/返回。联机对局用它弹"非暂停"菜单
 ```
 
 ### 卡带文案的多语言

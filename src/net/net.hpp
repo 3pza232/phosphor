@@ -42,12 +42,13 @@ public:
         int peer = 0;
         std::string name;
     };
-    /// 发现到的一个房间。
+    /// 发现到的一个房间。`open` = 房主是否还接受加入（开局后置 false）。
     struct Discovered {
         std::string name;
         std::string address;
         int port = 0;
         int players = 0;
+        bool open = true;
     };
 
     Net();
@@ -83,6 +84,11 @@ public:
 
     /// 广播查询并收集应答（有界阻塞，单位毫秒）。
     std::vector<Discovered> discover(int timeout_ms);
+
+    /// 更新房间对外广播的信息（供"局域网发现"的应答用）。主机开局后调 `set_room_open(false)`，
+    /// 搜索方就能在列表里看到"游戏中"并据此拒绝加入。只对主机的发现应答有意义。
+    void set_room_name(const std::string& name);
+    void set_room_open(bool open);
 
 private:
     struct Impl;

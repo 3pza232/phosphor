@@ -664,6 +664,13 @@ function phos.sys.product() end
 ---@return string
 function phos.sys.language() end
 
+---卡带接管 Esc：true 时主机不再把 Esc 当"暂停/返回"，而是把它当**普通键**交给卡带
+---（用 phos.input.pressed("escape") 读）。默认 false（Esc 仍是主机保留键）。
+---典型用途：联机对局**不能暂停**，卡带要自己用 Esc 弹一个"非暂停"的浮层
+---@param on boolean
+---@return boolean 生效后的值
+function phos.sys.capture_escape(on) end
+
 ---卡带自己的身份（取自 manifest.lua）
 ---@class phos.CartInfo
 ---@field id string 卡带 id
@@ -765,7 +772,12 @@ function phos.net.poll() end
 function phos.net.events() end
 
 ---广播查询并收集应答（有界阻塞，默认 0.5 秒）：
----{ { name, address, port, players }, ... }
+---{ { name, address, port, players, open }, ... }（open = 房主是否还接受加入）
 ---@param seconds? number
 ---@return table
 function phos.net.discover(seconds) end
+
+---更新房间对外广播的信息（供局域网发现应答）：主机开局后 set_room({ open = false })，
+---搜索方就会在列表里看到"游戏中"并据此拒绝加入
+---@param opts table { name? = string, open? = boolean }
+function phos.net.set_room(opts) end

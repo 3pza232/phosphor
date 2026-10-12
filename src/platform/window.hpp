@@ -15,6 +15,7 @@ struct WindowHandlers {
     bool* settings_flag;   // F2 按下置位（主机保留键：打开设置）
     bool* console_flag;    // ` 键按下置位（调试台开关）
     bool* input_block;     // true 时物理输入不注入游戏（调试台打开期间）
+    bool* capture_escape;  // true 时卡带接管 Esc：Esc 作为普通键注入，不再触发主机暂停
 };
 
 /// GLFW 窗口封装（RAII）。OS 窗口与物理输入的唯一聚集地。

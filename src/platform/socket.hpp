@@ -64,11 +64,14 @@ void set_nodelay(const Socket& s);
 void set_reuse_addr(const Socket& s);
 /// 发出去多少算多少（非阻塞）：返回写入字节数；-1 = 出错，0 = 写缓冲满（稍后重试）。
 int send_some(const Socket& s, const void* data, int len);
-/// 收多少算多少（非阻塞）：>0 字节数；0 = 对端正常关闭；-1 = 出错或暂无数据。
+/// 收多少算多少（非阻塞）。返回：>0 = 字节数；0 = 对端正常关闭；-1 = 出错；-2 = 暂无数据
+/// （would-block）。调用方应把 -2 当作"这次没读到"而非断开——`select` 偶有假就绪。
 int recv_some(const Socket& s, void* buffer, int len);
 
 /// 打开 UDP 套接字并绑定到 bind_port（0 = 任意端口）；enable_broadcast 打开 SO_BROADCAST。
 Socket udp_open(int bind_port, bool enable_broadcast, std::string& err);
+/// 该 UDP 套接字实际绑定的端口（bind_port 传 0 时用它可以拿到内核分配的端口）。
+int udp_local_port(const Socket& s);
 /// 发送 UDP 数据报到 ip:port；返回字节数或 -1。
 int udp_send_to(const Socket& s, const std::string& ip, int port, const void* data, int len);
 /// 接收一个 UDP 数据报（不阻塞）；返回字节数或 -1，并填来源地址。

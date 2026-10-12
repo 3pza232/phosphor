@@ -6,7 +6,7 @@ namespace phos {
 /// 进位规矩（1.0 之前不承诺兼容性，只求"看一眼版本号就知道这批改动的分量"）：
 ///   y：同世代内的修错与小补（新增一张卡带、修一条文档、补一个门禁）
 ///   x：**能力世代**更替——新增子系统，或卡带 API 世代 `kPhosApiVersion` 变了
-inline constexpr const char* kVersion = "0.5.0";
+inline constexpr const char* kVersion = "0.5.1";
 /// 产品名
 inline constexpr const char* kProductName = "PHOSPHOR";
 /// 卡带 API 世代：manifest 声明 `phos_api` 高于它就拒绝加载，

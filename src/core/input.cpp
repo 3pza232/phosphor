@@ -58,12 +58,17 @@ int Input::slot(std::string_view name) {
     cur_.push_back(false);
     prev_.push_back(false);
     down_at_.push_back(-1.0f);
+    down_edge_.push_back(false);
+    up_edge_.push_back(false);
     return static_cast<int>(names_.size() - 1);
 }
 
 void Input::set_key(std::string_view name, bool down) {
     if (name.empty()) return;
     const size_t index = static_cast<size_t>(slot(name));
+    // 边沿锁存：无论这一帧内又松开多快，"按过 / 松过"都记下，帧末由 next_frame 清
+    if (down && !cur_[index]) down_edge_[index] = true;
+    if (!down && cur_[index]) up_edge_[index] = true;
     cur_[index] = down;
     down_at_[index] = down ? clock_ : -1.0f;
 }
@@ -80,13 +85,15 @@ void Input::push_text(std::string text) {
 
 std::string Input::any_pressed() const {
     for (size_t i = 0; i < names_.size(); ++i)
-        if (cur_[i] && !prev_[i]) return names_[i];
+        if ((cur_[i] && !prev_[i]) || down_edge_[i]) return names_[i];
     return {};
 }
 
 void Input::release_all() {
     std::fill(cur_.begin(), cur_.end(), false);
     std::fill(down_at_.begin(), down_at_.end(), -1.0f);
+    std::fill(down_edge_.begin(), down_edge_.end(), false);
+    std::fill(up_edge_.begin(), up_edge_.end(), false);
 }
 
 } // namespace phos

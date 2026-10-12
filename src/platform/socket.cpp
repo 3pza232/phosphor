@@ -220,7 +220,7 @@ int recv_some(const Socket& s, void* buffer, int len) {
 #else
     const ssize_t n = ::recv(s.native(), buffer, static_cast<size_t>(len), 0);
 #endif
-    if (n < 0 && would_block()) return -1;
+    if (n < 0 && would_block()) return -2;  // 暂无数据（非错误）
     if (n < 0) return -1;
     return static_cast<int>(n);
 }
@@ -248,6 +248,17 @@ Socket udp_open(int bind_port, bool enable_broadcast, std::string& err) {
     }
     if (!set_nonblocking(s, err)) return {};
     return s;
+}
+
+int udp_local_port(const Socket& s) {
+    sockaddr_in address{};
+#ifdef _WIN32
+    int len = sizeof(address);
+#else
+    socklen_t len = sizeof(address);
+#endif
+    if (::getsockname(s.native(), reinterpret_cast<sockaddr*>(&address), &len) != 0) return 0;
+    return ntohs(address.sin_port);
 }
 
 int udp_send_to(const Socket& s, const std::string& ip, int port, const void* data, int len) {

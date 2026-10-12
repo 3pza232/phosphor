@@ -58,8 +58,15 @@ std::string key_name_from_glfw(int glfw_key) {
 }
 
 void key_callback(GLFWwindow*, int key, int, int action, int) {
-    if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS) {
-        *g_handlers.escape_flag = true;
+    if (key == GLFW_KEY_ESCAPE) {
+        // 卡带声明"接管 Esc"（phos.sys.capture_escape）时，Esc 作为普通键交给卡带，
+        // 主机不再拿它做暂停/返回；否则维持主机保留键语义
+        if ((action == GLFW_PRESS || action == GLFW_RELEASE) && g_handlers.capture_escape &&
+            *g_handlers.capture_escape) {
+            g_handlers.input->set_key("escape", action == GLFW_PRESS);
+            return;
+        }
+        if (action == GLFW_PRESS) *g_handlers.escape_flag = true;
         return;
     }
     if (key == GLFW_KEY_GRAVE_ACCENT && action == GLFW_PRESS) {

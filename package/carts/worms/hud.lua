@@ -12,11 +12,11 @@ local Text = {
   zh = { angle = "角度", power = "力度", wind = "风", turn = "回合", sec = "秒",
         weapon = "武器", inf = "∞", fired = "本回合已开炮", terrain = "地形",
         buried = "被埋住 炸开脱身",
-        own = "己方", foe = "敌方", p1 = "玩家1", p2 = "玩家2", ally = "队友AI" },
+        side = { "红队", "蓝队" }, ai = "AI" },
   en = { angle = "ANGLE", power = "POWER", wind = "WIND", turn = "TURN", sec = "s",
         weapon = "WEAPON", inf = "∞", fired = "FIRED THIS TURN", terrain = "TERRAIN",
         buried = "BURIED - blast out",
-        own = "OURS", foe = "ENEMY", p1 = "P1", p2 = "P2", ally = "ALLY AI" },
+        side = { "RED", "BLUE" }, ai = "AI" },
 }
 -- 取当前语言那一列：查表规则在引擎里（`phos.lang.dict`，缺 en 回落中文）
 local function L() return phos.lang.dict(Text) end
@@ -57,15 +57,17 @@ function Hud.draw(S, C, ctx)
     cx = seg(S, cx + 2, 0, ((ctx.clock and (ctx.clock .. " ")) or "") .. ctx.weather,
              ctx.weather_tone or C.gray)
   end
-  -- 轮到哪一方：只说阵营，不重复"谁在操作"（那由侧栏的记号负责）
-  local whose = (ctx.turn_team == 1) and t.own or t.foe
-  if ctx.pvp then
-    whose = (ctx.turn_team == 1) and t.p1 or t.p2
+  -- 轮到哪一方：只说队伍（红/蓝），不重复"谁在操作"（那由侧栏的记号负责）
+  local is_red = (ctx.turn_team == (ctx.red_side or 1))
+  local whose = t.side[is_red and 1 or 2]
+  cx = seg(S, cx + 2, 0, whose, is_red and C.red or C.blue)
+  -- 队伍后面跟**当前发射者**的名字：联机是昵称，单机是 P1/P2/AI
+  if w and w.name then
+    cx = seg(S, cx + 2, 0, w.name, is_red and C.red or C.blue)
   end
-  cx = seg(S, cx + 2, 0, whose, (ctx.turn_team == 1) and C.yellow or C.red)
-  -- 队友交给 AI 时要说清楚"现在不是你在操作"，否则玩家会以为卡住了
-  if ctx.ally_ai and ctx.turn_team == 1 and not ctx.human then
-    cx = seg(S, cx + 2, 0, t.ally, C.dark_gray)
+  -- 当前这只虫归 AI 时要说清楚"现在不是你在操作"，否则玩家会以为卡住了
+  if not ctx.human then
+    cx = seg(S, cx + 2, 0, t.ai, C.dark_gray)
   end
 
   -- "弹药飞行中 / 本回合已开炮"这一类的**发射状态**放第 2 行右端，不跟第 0 行：

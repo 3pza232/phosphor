@@ -38,6 +38,9 @@ struct HostContext {
     /// 字形墨迹框查询（`phos.text.ink_box`）。窗口渲染器就绪时由 App 装配；
     /// 无头或字体未就绪时为空，调用方退回整格宽（见 core/text.hpp 的 GlyphBox）
     std::function<GlyphBox(char32_t)> glyph_metrics;
+    /// 卡带是否接管 Esc（`phos.sys.capture_escape`）：true 时 Esc 作为普通键注入卡带。
+    /// 由 App 指向其成员；未接（无头）时为 nullptr，capture_escape 调用安全无效
+    bool* capture_escape = nullptr;
     std::string language = "zh";        // 界面语言（"zh"/"en"）：卡带据此选自己的文案
     std::mt19937 rng;                   // 确定性模式下由种子驱动
 
