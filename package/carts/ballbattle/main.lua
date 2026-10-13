@@ -67,18 +67,18 @@ function update(dt)
   end
 end
 
-local function draw_blob(S, px, py, cam_x, cam_y, pw, ph, b, col)
-  local x0, y0 = b.x - cam_x, b.y - cam_y
-  local rr = b.r + 0.35
-  for cy = math.floor(y0 - rr), math.ceil(y0 + rr) do
-    if cy >= 0 and cy < ph then
-      for cx = math.floor(x0 - rr), math.ceil(x0 + rr) do
-        if cx >= 0 and cx < pw then
-          local dx, dy = cx - x0, cy - y0
-          if dx * dx + dy * dy <= rr * rr then
-            S.put(px + cx, py + cy, "\u{2588}", col)   -- 全块
-          end
-        end
+local function draw_blob(S, px, py, cam_x, cam_y, scale, pw, ph, b, col)
+  local sx0 = math.max(0, math.floor((b.x - b.r - cam_x) / scale))
+  local sx1 = math.min(pw - 1, math.ceil((b.x + b.r - cam_x) / scale))
+  local sy0 = math.max(0, math.floor((b.y - b.r - cam_y) / scale))
+  local sy1 = math.min(ph - 1, math.ceil((b.y + b.r - cam_y) / scale))
+  for sy = sy0, sy1 do
+    local wy = cam_y + (sy + 0.5) * scale
+    for sx = sx0, sx1 do
+      local wx = cam_x + (sx + 0.5) * scale
+      local dx, dy = wx - b.x, wy - b.y
+      if dx * dx + dy * dy <= b.r * b.r then
+        S.put(px + sx, py + sy, "\u{2588}", col)   -- 全块
       end
     end
   end
@@ -90,45 +90,50 @@ function draw()
   local px, py, pw, ph = S.playfield()
   local p = game.player
 
-  -- 摄像机：以玩家为中心，夹在世界内（世界比屏幕大，所以总是"跟得住"）
-  local cam_x = math.max(0, math.min(p.x - pw / 2, Game.WORLD_W - pw))
-  local cam_y = math.max(0, math.min(p.y - ph / 2, Game.WORLD_H - ph))
+  -- 缩放：体型越大看得越远（否则大球糊满整屏）。1 屏幕格 = scale 个世界单位
+  local scale = 1
+  if p.r > 5 then scale = 2 end
+  if p.r > 12 then scale = 3 end
+
+  local vw, vh = pw * scale, ph * scale
+  local cam_x = math.max(0, math.min(p.x - vw / 2, Game.WORLD_W - vw))
+  local cam_y = math.max(0, math.min(p.y - vh / 2, Game.WORLD_H - vh))
+  local function to_sx(wx) return math.floor((wx - cam_x) / scale) end
+  local function to_sy(wy) return math.floor((wy - cam_y) / scale) end
 
   S.clear()   -- 空格 + 色板默认底（随主题）
 
-  -- 底纹：随世界走的稀疏点阵，衬出移动感
-  for wy = math.floor(cam_y), math.ceil(cam_y + ph), 1 do
-    for wx = math.floor(cam_x), math.ceil(cam_x + pw), 1 do
-      if wx % 5 == 0 and wy % 5 == 0 then
-        local sx, sy = wx - cam_x, wy - cam_y
-        if sx >= 0 and sx < pw and sy >= 0 and sy < ph then
-          S.put(px + math.floor(sx), py + math.floor(sy), "\u{00B7}", C.dark_gray)
-        end
+  -- 底纹：随世界走的稀疏点阵（世界坐标 5 的倍数），衬出移动感
+  for wy = math.floor(cam_y / 5) * 5, cam_y + vh, 5 do
+    local sy = to_sy(wy)
+    if sy >= 0 and sy < ph then
+      for wx = math.floor(cam_x / 5) * 5, cam_x + vw, 5 do
+        local sx = to_sx(wx)
+        if sx >= 0 and sx < pw then S.put(px + sx, py + sy, "\u{00B7}", C.dark_gray) end
       end
     end
   end
 
   for _, f in ipairs(game.food) do
-    local sx, sy = math.floor(f.x - cam_x), math.floor(f.y - cam_y)
+    local sx, sy = to_sx(f.x), to_sy(f.y)
     if sx >= 0 and sx < pw and sy >= 0 and sy < ph then S.put(px + sx, py + sy, "o", C.green) end
   end
 
   for _, b in ipairs(game:ranked()) do
     local col = (b.role == "player") and C.cyan or ai_colors[(b.hue - 1) % #ai_colors + 1]
-    draw_blob(S, px, py, cam_x, cam_y, pw, ph, b, col)
+    draw_blob(S, px, py, cam_x, cam_y, scale, pw, ph, b, col)
   end
 
   -- 玩家标记：球上方一个字，免得在一堆球里认不出自己
-  local sy = math.floor(p.y - cam_y) - math.ceil(p.r) - 1
-  S.print(px + math.floor(p.x - cam_x) - 1, py + sy, t.me, C.white)
+  S.print(px + to_sx(p.x) - 1, py + to_sy(p.y - p.r) - 1, t.me, C.white)
 
-  -- 顶部读数：体格 / 存活 / 名次 / 坐标
+  -- 顶部读数：体格 / 存活 / 名次 / 坐标 / 视距
   local st = game:status()
   local rank = 1
   for i, b in ipairs(game:ranked()) do if b == p then rank = i break end end
-  S.print(px + 1, py, string.format("%s %d   %s %.1fs   #%d/%d   (%d,%d)",
+  S.print(px + 1, py, string.format("%s %d   %s %.1fs   #%d/%d   (%d,%d)   x%d",
           t.score, st.score, t.time, st.time, rank, st.blobs,
-          math.floor(p.x), math.floor(p.y)), C.white)
+          math.floor(p.x), math.floor(p.y), scale), C.white)
 
   if not game.alive then
     local box = phos.ui.modal(22, 5, "")

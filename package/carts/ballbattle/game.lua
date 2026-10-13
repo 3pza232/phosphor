@@ -4,18 +4,18 @@
 local Game = {}
 Game.__index = Game
 
-Game.WORLD_W, Game.WORLD_H = 280, 170   -- 世界尺寸（远大于屏幕，靠摄像机跟随）
+Game.WORLD_W, Game.WORLD_H = 360, 220   -- 世界尺寸（远大于屏幕，靠摄像机跟随）
 
 local FOOD_R = 0.5
-local FOOD_COUNT = 190        -- 世界里的食物目标数（铺满整个大图）
-local MAX_AI = 14             -- 电脑球上限
-local AI_SPAWN_EVERY = 2.2    -- 秒：每隔这么久补一支（低于上限时）
-local START_AI = 8            -- 开局先放几支
+local FOOD_COUNT = 220        -- 世界里的食物目标数（铺满整个大图）
+local MAX_AI = 26             -- 电脑球上限
+local AI_SPAWN_EVERY = 1.1    -- 秒：每隔这么久补一支（低于上限时）
+local START_AI = 14           -- 开局先放几支
 local EAT_RATIO = 1.15        -- 半径比超过它才能吞
 local START_R = 1.8
 
 local function hypot(x, y) return math.sqrt(x * x + y * y) end
-local function speed_of(r) return 17.0 / (1 + 0.40 * r) end  -- 越大越慢
+local function speed_of(r) return 26.0 / (1 + 0.30 * r) end  -- 越大越慢（但整体更快）
 
 function Game.new(rand)
   local self = setmetatable({}, Game)
