@@ -493,8 +493,8 @@ function phos.ui.region(x, y, w, h, opts) end
 ---@field h integer 实际高度
 ---@field surface string 锚定面："screen"（内容区）/ "panel"（侧栏）/ 层名
 ---@field clear fun(self: phos.Region, fg: phos.Color|nil, bg: phos.Color|nil) 省略 bg = 保留该格原有背景
----@field put fun(self: phos.Region, x: integer, y: integer, ch: any, fg: phos.Color|nil, bg: phos.Color|nil) 省略 bg = 保留该格原有背景
----@field print fun(self: phos.Region, x: integer, y: integer, text: string, fg: phos.Color|nil, bg: phos.Color|nil) 省略 bg = 保留该格原有背景
+---@field put fun(self: phos.Region, x: integer, y: integer, ch: any, fg: phos.Color|nil, bg: phos.Color|nil, scale: integer|nil) 省略 bg = 保留该格原有背景；scale>=2 = 大字号
+---@field print fun(self: phos.Region, x: integer, y: integer, text: string, fg: phos.Color|nil, bg: phos.Color|nil, scale: integer|nil) 省略 bg = 保留该格原有背景；scale>=2 = 大字号
 ---@field fill fun(self: phos.Region, x: integer, y: integer, w: integer, h: integer, ch: any, fg: phos.Color|nil, bg: phos.Color|nil) 省略 bg = 保留该格原有背景
 ---@field blit fun(self: phos.Region, x: integer, y: integer, rows: string[], fg: phos.Color|nil, bg: phos.Color|nil) 一次写多行；省略 bg = 保留该格原有背景
 ---@field blend fun(self: phos.Region, x: integer, y: integer, ch: any, fg: phos.Color|nil) 同一格追加一笔（叠加）；返回是否画上

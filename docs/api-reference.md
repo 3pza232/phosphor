@@ -331,6 +331,8 @@ end
 w, h = phos.panel.size()        -- w = 0 表示本卡带无面板
 phos.panel.put(x, y, ch, fg, bg)
 phos.panel.print(x, y, text, fg, bg)
+phos.panel.put(x, y, ch, fg, bg, scale)     -- 同 screen：scale>=2 = 大字号（占 scale 列 x scale 行）
+phos.panel.print(x, y, text, fg, bg, scale)
 phos.panel.fill(x, y, w, h, ch, fg, bg)  -- 省略 bg = 主题面板色 skin.panel
 phos.panel.blit(x, y, rows, fg, bg)     -- 一次写多行（恒写底色，省略 = 色板 black）
 phos.panel.clear(fg, bg)        -- 只清面板区（省略 bg = 主题面板色 skin.panel）

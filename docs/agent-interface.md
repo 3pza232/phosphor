@@ -27,7 +27,7 @@ phosphor [选项]
 运行：
   --cart <path>          启动后直接加载卡带（目录或 .phos 单文件）
   --headless             不创建窗口、不打开音频设备，纯逻辑运行
-  --frames <N>           运行 N 个逻辑帧后退出（无控制通道且未指定时默认 60 帧）
+  --frames <N>           运行 N 个逻辑帧后退出（无头模式且未指定时默认 60；窗口模式不加则一直运行）
   --dump-screen          退出时把屏幕网格以文本打印到 stdout
   --dump-every <N>       每 N 帧打印一次屏幕（流式观察）
   --screenshot <path>    退出时把画面写成 PNG（CPU 光栅化，无头同样可用）

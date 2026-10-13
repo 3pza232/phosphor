@@ -30,9 +30,9 @@ phosphor --new carts/mygame --id mygame --name "My Game" --author "你"
 换成你给的值（标题缺省与 id 相同，作者缺省是 `you`）。替换值按 Lua 字符串转义，
 所以标题里带引号也写不出坏 manifest；目标目录已存在时拒绝覆盖。
 
-**2. 起名与身份**——全在 `manifest.lua`：`id` / `name` / `desc`（双语）/ `version`、
+**2. 起名与身份**——全在 `manifest.lua`：`id` / `name` / `desc`（后两者均可双语）/ `version`、
 是否要右栏（`sidebar = { w = 18 }`）、是否要存档（`save = true`）、
-目标接口世代（`phos_api`：图层写 `2`，墨迹 / 半格 / 独立底色写 `3`，联机 `phos.net` 写 `4`，主题携带色板（`phos.color.*` 随主题）写 `5`；
+目标接口世代（`phos_api`：图层写 `2`，墨迹 / 半格 / 独立底色写 `3`，联机 `phos.net` 写 `4`，主题携带色板（`phos.color.*` 随主题）写 `5`，同屏多字号（`put`/`print` 的 `scale`）写 `6`；
 旧主机便会在卡带架上明确拒绝它，而不是运行到那一行才失败——见 [cart-format.md](cart-format.md) 的「版本兼容」）。
 字段逐个说明见 [cart-format.md](cart-format.md)。
 
@@ -71,7 +71,7 @@ phosphor --pack carts/mygame --json         # 机器可读结果
 
 | 文件 | 你要改什么 |
 |------|-----------|
-| `manifest.lua` | 身份：`id` / `name` / `desc`（双语）/ `version`；`sidebar = { w = 18 }` 决定右栏宽度（删掉这行 = 无右栏，也可运行时 `phos.panel.resize(w)`）；`save = true` 才有 `phos.save.*`；`entry` 指向入口；用了图层（`phos.layer`）写 `phos_api = 2`，墨迹 / 半格 / 独立底色（`blend` / `plot` / `back` 等）写 `3`，局域网联机（`phos.net`）写 `4`，主题携带色板（`phos.color.*` 随主题）写 `5` |
+| `manifest.lua` | 身份：`id` / `name` / `desc`（均可双语）/ `version`；`sidebar = { w = 18 }` 决定右栏宽度（删掉这行 = 无右栏，也可运行时 `phos.panel.resize(w)`）；`save = true` 才有 `phos.save.*`；`entry` 指向入口；用了图层（`phos.layer`）写 `phos_api = 2`，墨迹 / 半格 / 独立底色（`blend` / `plot` / `back` 等）写 `3`，局域网联机（`phos.net`）写 `4`，主题携带色板（`phos.color.*` 随主题）写 `5`，同屏多字号（`put`/`print` 的 `scale`）写 `6` |
 | `main.lua` | 入口三件事：装配模块、把输入翻成"意图"、把状态画出来。「填」集中在文案表 `Text`、`init`、`update`、`draw`、`debug_state` |
 | `game.lua` | 玩法规则。不读键盘、不画东西、不发声音；要出声就 `return` 一张事件表 |
 | `panel.lua` | 右栏内容。坐标是面板局部的；定宽文案一律过 `phos.text.fit(text, pw - 2)` |
@@ -243,7 +243,7 @@ phosphor --cart carts/mygame --headless --frames 300 --seed 42 --dump-screen
 
 ```bash
 phosphor --cart carts/mygame --headless --frames 120 --screenshot shots/f120.png
-# 1344x816 = 84x51 格 x 16px；尺寸随主题（skin）几何变化
+# 尺寸 = 网格(84x51) x 字号(默认 16px)；随主题（skin）几何与字号设置变化
 ```
 
 能用文字就用文字：`screen.read` / `--dump-screen` 是零误差的文本画面，

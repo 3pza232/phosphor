@@ -42,7 +42,7 @@ theme/skin/rust-cabinet/
 ```
 
 各类型的主脚本文件名固定：`skin.lua`（skin）、`main.lua`（boot）、
-`palette.lua`（palette）、`sounds.lua`（sound）。
+`palette.lua`（palette）、`sounds.lua`（sound）、`font.lua`（font，可选声明）。
 
 **没有 manifest，也没有第二套身份**：
 
@@ -81,6 +81,7 @@ theme/skin/rust-cabinet/
     "boot": "static-rain",
     "sound": "relay",
     "font": "default",
+    "font_size": 0,
     "language": "zh"
   },
   "shelf_style": "window",
@@ -98,6 +99,8 @@ theme/skin/rust-cabinet/
 - `music_volume` / `sfx_volume`：两路音量各 0~100（界面里分开调）
 - `shelf_style`：卡带架样式（`list` 列表 / `window` 视窗轮播）
 - `font`：字体方案（`theme/font/<方案>/` 的目录名；缺字由回退字体兜底）
+- `font_size`：字号 = 单元格像素边长（`12`~`24`；`0` = 跟随字体方案声明的 `size`，缺省即 16）。
+  整机字符与行距随之缩放（窗口也随格尺寸变大变小）
 - `language`：界面语言（`zh` / `en`）—— 主机界面、卡带架简介与启动动画文案都随它切换
 - 主机设置界面中可视化切换，等价于改写此文件。**全部即时生效并持久化**
 - 版本约定：主机版本号是唯一权威（`phos.sys.version()`，定义于 `core/version.hpp`）；
