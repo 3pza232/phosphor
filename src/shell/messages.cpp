@@ -97,6 +97,7 @@ constexpr std::array<Entry, static_cast<size_t>(Msg::count)> kTable{{
     {"字号", "FONT SIZE"},
     {"自动", "AUTO"},
     {"字形预览", "GLYPH PREVIEW"},
+    {"汉字样本：你好，世界！（全角标点）", "CJK sample: 你好，世界！ (full-width)"},
 }};
 
 static_assert(kTable.size() == static_cast<size_t>(Msg::count),

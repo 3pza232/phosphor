@@ -89,10 +89,11 @@ enum class Msg {
     boot_tube,
     boot_waiting,
 
-    // 字体字号（设置行 / 值 / 预览框标题）
+    // 字体字号（设置行 / 值 / 预览框标题与样本）
     row_font_size,
     value_font_auto,
     font_preview,
+    font_preview_cjk,
 
     count
 };

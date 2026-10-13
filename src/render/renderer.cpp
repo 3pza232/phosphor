@@ -311,6 +311,9 @@ void Renderer::update_scale() {
 void Renderer::set_font_px(int px) {
     font_px_ = px > 0 ? px : 0;
     update_scale();
+    // 图集还没建（init 之前）：先把字号记下，等 build_font_atlas 时按它算缩放即可。
+    // 此时 pen_x0_/pen_y0_ 还是 0（静态 ASCII 区起点），拨回会把 ASCII 区当动态区覆盖
+    if (font_tex_ == 0) return;
     // 动态区里全角字形的"两格居中"量按 pack_scale_ 烘焙过，缩放变了必须整片重装；
     // 把装箱指针拨回动态区起点即可复用同一片图集空间（静态 ASCII 区不动）
     extra_glyphs_.clear();

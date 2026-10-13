@@ -340,13 +340,23 @@ std::vector<FontScheme> scan_font_schemes(const std::string& dir) {
                     for (const auto& entry : ot) {
                         if (!entry.second.is<std::string>()) continue;
                         const std::string want = entry.second.as<std::string>();
-                        for (auto fit = remaining.begin(); fit != remaining.end(); ++fit) {
-                            const fs::path p(*fit);
-                            if (p.stem().string() == want || p.filename().string() == want) {
-                                files.push_back(*fit);
-                                remaining.erase(fit);
+                        // 先按**文件名**精确匹配，再退回按 stem：同一 stem 出现多个扩展名时
+                        // （font.ttf + font.otf），精确文件名不受"排序最前"影响
+                        auto fit = remaining.end();
+                        for (auto it2 = remaining.begin(); it2 != remaining.end(); ++it2)
+                            if (fs::path(*it2).filename().string() == want) {
+                                fit = it2;
                                 break;
                             }
+                        if (fit == remaining.end())
+                            for (auto it2 = remaining.begin(); it2 != remaining.end(); ++it2)
+                                if (fs::path(*it2).stem().string() == want) {
+                                    fit = it2;
+                                    break;
+                                }
+                        if (fit != remaining.end()) {
+                            files.push_back(*fit);
+                            remaining.erase(fit);
                         }
                     }
                     // 声明里漏掉的字体附在其后：绝不静默丢字

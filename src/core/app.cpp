@@ -2,7 +2,6 @@
 
 #include "cart/cart_scanner.hpp"
 #include "cart/cart_info.hpp"
-#include "render/font.hpp"
 #include "core/effects.hpp"
 #include "core/log.hpp"
 #include "core/version.hpp"

@@ -2,7 +2,6 @@
 
 #include "core/log.hpp"
 #include "platform/window.hpp"
-#include "render/font.hpp"
 #include "render/renderer.hpp"
 
 #include <algorithm>

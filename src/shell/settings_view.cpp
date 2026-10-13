@@ -144,7 +144,7 @@ void draw_settings(Screen& screen, const ui::Rect& content, const SettingsContex
     ui::frame(screen, box, tr(ctx.lang, Msg::font_preview), style);
     ui::print(screen, box.x + 2, box.y + 1, "ABCDEFG abcdefg 0123456789  !?@#&%",
               style.fg, style.bg);
-    ui::print(screen, box.x + 2, box.y + 3, "汉字样本：你好，世界！（全角标点）",
+    ui::print(screen, box.x + 2, box.y + 3, tr(ctx.lang, Msg::font_preview_cjk),
               style.fg, style.bg);
 }
 

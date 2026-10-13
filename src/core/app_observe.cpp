@@ -2,7 +2,6 @@
 
 #include "core/log.hpp"
 #include "core/version.hpp"
-#include "render/font.hpp"
 #include "render/screen_image.hpp"
 
 #include <cstdio>
