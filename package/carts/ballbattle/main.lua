@@ -124,8 +124,11 @@ function draw()
     draw_blob(S, px, py, cam_x, cam_y, scale, pw, ph, b, col)
   end
 
-  -- 玩家标记：球上方一个字，免得在一堆球里认不出自己
-  S.print(px + to_sx(p.x) - 1, py + to_sy(p.y - p.r) - 1, t.me, C.white)
+  -- 玩家标记：球上方一个字，免得在一堆球里认不出自己。
+  -- 阵亡后玩家球已从 blobs 移除，这个字也必须立刻消失，别在残影上留个"你"
+  if game.alive then
+    S.print(px + to_sx(p.x) - 1, py + to_sy(p.y - p.r) - 1, t.me, C.white)
+  end
 
   -- 顶部读数：体格 / 存活 / 名次 / 坐标 / 视距
   local st = game:status()
@@ -136,9 +139,16 @@ function draw()
           math.floor(p.x), math.floor(p.y), scale), C.white)
 
   if not game.alive then
-    local box = phos.ui.modal(22, 5, "")
-    phos.ui.center_text(box.y + 1, st.won and t.won or t.over)
-    phos.ui.center_text(box.y + 3, string.format(t.again, phos.input.key_name("a")))
+    -- 阵亡浮窗：整块铺**实底**（取主题色板里的灰，随主题），连边框那圈一起盖住——
+    -- 只填内框的话边框上还压着球，浮窗就成了半透明的，读不清
+    local bw, bh = 22, 5
+    local sw, sh = S.size()
+    local bx, by = math.floor((sw - bw) / 2), math.floor((sh - bh) / 2)
+    local r = phos.ui.region(bx, by, bw, bh)
+    r:clear(C.white, C.dark_gray)
+    r:frame("")
+    phos.ui.center_text(by + 1, st.won and t.won or t.over)
+    phos.ui.center_text(by + 3, string.format(t.again, phos.input.key_name("a")))
   elseif paused then
     phos.ui.center_text(py + math.floor(ph / 2), t.pause)
   end
