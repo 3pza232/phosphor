@@ -36,6 +36,8 @@ def run() -> int:
         report.check(state.get("mode") == "PLAYING", "snake is running (mode=PLAYING)")
         report.check(state.get("video") == "headless", "headless run reports video=headless")
         report.check(state.get("cart", {}).get("id") == "snake", "cart metadata identifies snake")
+        report.check(state.get("ime") is False,
+                     "no IME field active while playing snake (it declares no ime fields)")
         print(f"state   : frame={state.get('frame')} grid={state.get('grid_w')}x{state.get('grid_h')}")
 
         # 调试篮子（phos.debug.number）：snake 注册了可调参数，agent 可读可写。
@@ -84,6 +86,19 @@ def run() -> int:
         errors = host.stderr_text().strip()
         if errors:
             print("stderr  : " + " | ".join(errors.splitlines()))
+
+    # 输入法"举手"：卡带架搜索在输入时应请求中文输入法（state.query.ime=true），收起后回到
+    # false。搜索是**主机界面**功能，用无卡带的一次运行验证（此时在卡带架而非游戏里）
+    with Host() as host:
+        host.step(320)  # 跳过自检，回到卡带架
+        report.check(host.state().get("mode") == "SHELF", "second run reaches the shelf")
+        host.key("f")  # 打开搜索框（进入输入态）
+        host.step(2)
+        report.check(host.state().get("ime") is True, "shelf search editing asks for the IME")
+        host.key("escape")  # 搜索框内 Esc：收起并清空（不是关机）
+        host.step(2)
+        report.check(host.state().get("ime") is False, "IME released after the search closes")
+        host.close()
 
     return report.finish()
 
