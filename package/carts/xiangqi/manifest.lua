@@ -8,7 +8,7 @@ return {
     en = "Chinese Chess (Xiangqi): full rules and check detection, play against the machine.",
   },
   entry = "main.lua",
-  sidebar = { w = 22 },   -- 右栏：棋谱与吃子
+  sidebar = { w = 26 },   -- 右栏：棋谱、吃子与键位提示
   save = false,           -- 无存档（不声明 save 就不用它）
   phos_api = 3,           -- 用到 phos.screen.back（独立底色，世代 3）
 

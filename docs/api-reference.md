@@ -553,6 +553,7 @@ local s = phos.input.text()      -- UTF-8 字符串；无输入时为空串
 | x / y | **X / Y** | 卡带专用（主机保留键是 Esc / F2） |
 | start / select | Enter / Shift | `start` 是卡带自己的开始 / 暂停 |
 | space / comma / period / backspace | **空格 / , / . / 退格** | 键盘专属：留给"用了就舒服"的功能（发射、镜头平移、悔棋这类）；手柄上没有对应位置 |
+| 其余任意键 | F1–F25、Tab、Home/End/Insert/Delete、PageUp/PageDown、小键盘、Ctrl/Alt/Super、其余符号… | **全部按键都有稳定名字**，卡带直接用 `phos.input.pressed("home")` / `"f5"` / `"tab"` 即可，**主机不为某个键改代码**；键名表见 `phos.input.keys()`。Esc / F2 除外（主机保留） |
 | 系统菜单 | Esc | 主机保留，卡带收不到 |
 
 键位分两层，别混用：

@@ -28,8 +28,10 @@ WindowHandlers g_handlers{};  // NOTE: 单窗口假设，多窗口时需重构�
 /// 不模仿"手柄上的 A 对应键盘某个键"）；例外是方向键（"left"/"right"/"up"/"down"）、
 /// 回车与 Shift（"start"/"select"）、方括号（"lbrace"/"rbrace"）。
 /// 方向键只用方向键：A/S/D/W 与面键语义冲突（按 A 是"向左"还是 A 键，不能两全）；
-/// 一个功能一个键，不为同一按钮准备替代键；左右 Shift 与小键盘回车是同一键的两个物理位置。
-/// 不认识的键返回空串。
+/// 物理键 → 虚拟键名。这是**唯一权威映射**：卡带提示里的键名（`phos.input.key_name`）用的就是这里。
+/// **覆盖全部按键**（字母/数字/F1-F25/方向/符号/功能区/小键盘/修饰键），卡带想用哪个键都可以，
+/// 主机不必为某个键改代码。左右两个物理位置的同一键（左右 Shift、主/小键盘回车）算同一个名字。
+/// 只返回空串给真正不认识的键（未来的新键）。
 std::string key_name_from_glfw(int glfw_key) {
     if (glfw_key >= GLFW_KEY_A && glfw_key <= GLFW_KEY_Z) {
         return std::string(1, static_cast<char>('a' + (glfw_key - GLFW_KEY_A)));
@@ -37,16 +39,21 @@ std::string key_name_from_glfw(int glfw_key) {
     if (glfw_key >= GLFW_KEY_0 && glfw_key <= GLFW_KEY_9) {
         return std::string(1, static_cast<char>('0' + (glfw_key - GLFW_KEY_0)));
     }
-    if (glfw_key >= GLFW_KEY_F1 && glfw_key <= GLFW_KEY_F12) {
+    if (glfw_key >= GLFW_KEY_F1 && glfw_key <= GLFW_KEY_F25) {
         return "f" + std::to_string(glfw_key - GLFW_KEY_F1 + 1);
     }
+    if (glfw_key >= GLFW_KEY_KP_0 && glfw_key <= GLFW_KEY_KP_9) {
+        return "kp" + std::string(1, static_cast<char>('0' + (glfw_key - GLFW_KEY_KP_0)));
+    }
     switch (glfw_key) {
+        // 方向 / 手柄面键（主机没有手柄，面键就是键盘上的 A/B/X/Y）
         case GLFW_KEY_LEFT: return "left";
         case GLFW_KEY_RIGHT: return "right";
         case GLFW_KEY_UP: return "up";
         case GLFW_KEY_DOWN: return "down";
         case GLFW_KEY_ENTER: case GLFW_KEY_KP_ENTER: return "start";
         case GLFW_KEY_LEFT_SHIFT: case GLFW_KEY_RIGHT_SHIFT: return "select";
+        // 主键盘符号（键盘专属的功能位）
         case GLFW_KEY_SPACE: return "space";
         case GLFW_KEY_COMMA: return "comma";
         case GLFW_KEY_PERIOD: return "period";
@@ -58,8 +65,33 @@ std::string key_name_from_glfw(int glfw_key) {
         case GLFW_KEY_LEFT_BRACKET: return "lbrace";
         case GLFW_KEY_RIGHT_BRACKET: return "rbrace";
         case GLFW_KEY_BACKSLASH: return "backslash";
-        case GLFW_KEY_BACKSPACE: return "backspace";
+        case GLFW_KEY_GRAVE_ACCENT: return "grave";
+        // 功能区
         case GLFW_KEY_TAB: return "tab";
+        case GLFW_KEY_BACKSPACE: return "backspace";
+        case GLFW_KEY_INSERT: return "insert";
+        case GLFW_KEY_DELETE: return "delete";
+        case GLFW_KEY_HOME: return "home";
+        case GLFW_KEY_END: return "end";
+        case GLFW_KEY_PAGE_UP: return "pageup";
+        case GLFW_KEY_PAGE_DOWN: return "pagedown";
+        case GLFW_KEY_CAPS_LOCK: return "capslock";
+        case GLFW_KEY_SCROLL_LOCK: return "scrolllock";
+        case GLFW_KEY_NUM_LOCK: return "numlock";
+        case GLFW_KEY_PRINT_SCREEN: return "printscreen";
+        case GLFW_KEY_PAUSE: return "pause";
+        case GLFW_KEY_MENU: return "menu";
+        // 小键盘
+        case GLFW_KEY_KP_DECIMAL: return "kpdecimal";
+        case GLFW_KEY_KP_DIVIDE: return "kpdivide";
+        case GLFW_KEY_KP_MULTIPLY: return "kpmultiply";
+        case GLFW_KEY_KP_SUBTRACT: return "kpsubtract";
+        case GLFW_KEY_KP_ADD: return "kpadd";
+        case GLFW_KEY_KP_EQUAL: return "kpequal";
+        // 修饰键（Ctrl / Alt / Super）
+        case GLFW_KEY_LEFT_CONTROL: case GLFW_KEY_RIGHT_CONTROL: return "control";
+        case GLFW_KEY_LEFT_ALT: case GLFW_KEY_RIGHT_ALT: return "alt";
+        case GLFW_KEY_LEFT_SUPER: case GLFW_KEY_RIGHT_SUPER: return "super";
         default: return {};
     }
 }

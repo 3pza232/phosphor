@@ -10,7 +10,6 @@ local Text = {
     menu_hint = "↑↓ 选择   ←→ 调整   %s 开始",
     your = "你的回合", theirs = "对方回合", check = "将军！",
     win = "你赢了！", lose = "你输了", drawn = "终局", again = "按 %s 再来一局",
-    hint = "[方向] 移动  [%s] 选/落  [%s] 取消  [%s] 悔棋  [%s] 重开",
   },
   en = {
     title = "CHINESE CHESS", menu_title = "MATCH SETUP", side = "SIDE", level = "COMPUTER",
@@ -18,7 +17,6 @@ local Text = {
     menu_hint = "↑↓ SELECT   ←→ CHANGE   %s START",
     your = "YOUR TURN", theirs = "OPPONENT", check = "CHECK!",
     win = "YOU WIN", lose = "YOU LOSE", drawn = "GAME OVER", again = "press %s for a new game",
-    hint = "[ARROWS] move  [%s] pick/drop  [%s] cancel  [%s] undo  [%s] new",
   },
 }
 
@@ -90,8 +88,9 @@ local function draw_menu()
     S.put(box.x + 3, y, menu.row == i and ">" or " ", C.yellow)
     S.print(box.x + 5, y, phos.text.pad(row[1], 8) .. "< " .. phos.text.pad(row[2], 10) .. " >", row[3])
   end
-  S.print(box.x + 3, box.y + 5, string.format(t.menu_hint, phos.input.key_name("start")),
-          C.dark_gray)
+  -- 提示放在框**外**下方并居中：英文文案较长，塞进框里会顶穿右边界
+  phos.ui.center_text(box.y + box.h + 1, string.format(t.menu_hint, phos.input.key_name("start")),
+                      C.dark_gray)
 end
 
 -- ── 对局 ─────────────────────────────────────────────────
@@ -230,7 +229,7 @@ local function draw_play()
   local sy = py + ROW(9) + 3
   local st = game:status()
   if game.over then
-    local res = (st.winner == game.player_side) and t.win or (st.winner and t.lose or t.drawn)
+    local res = (st.winner == st.player_side) and t.win or (st.winner and t.lose or t.drawn)
     S.print(px + 2, sy, res, C.yellow)
     S.print(px + 2, sy + 1, string.format(t.again, phos.input.key_name("a")), C.white)
   else
@@ -238,9 +237,7 @@ local function draw_play()
             (st.turn == st.player_side) and C.cyan or C.gray)
     if st.in_check then S.print(px + 2, sy + 1, t.check, C.red) end
   end
-  S.print(px + 2, sy + 2, string.format(t.hint, phos.input.key_name("a"),
-          phos.input.key_name("b"), phos.input.key_name("backspace"),
-          phos.input.key_name("start")), C.dark_gray)
+  -- 键位提示放侧栏最下面（见 panel.lua），棋盘下只留状态
 
   Panel.draw(game, cart)
 end

@@ -13,7 +13,13 @@ constexpr std::pair<const char*, const char*> kDisplayAliases[] = {
     {"comma", ","},     {"period", "."},     {"slash", "/"},
     {"semicolon", ";"}, {"apostrophe", "'"}, {"minus", "-"},
     {"equal", "="},     {"lbrace", "["},     {"rbrace", "]"},
-    {"backslash", "\\"}, {"tab", "TAB"},
+    {"backslash", "\\"}, {"grave", "`"},     {"tab", "TAB"},
+    {"insert", "INS"},  {"delete", "DEL"},   {"pageup", "PGUP"},
+    {"pagedown", "PGDN"}, {"capslock", "CAPS"}, {"scrolllock", "SCRLK"},
+    {"numlock", "NUMLK"}, {"printscreen", "PRTSC"},
+    {"kpdecimal", "KP."}, {"kpdivide", "KP/"}, {"kpmultiply", "KP*"},
+    {"kpsubtract", "KP-"}, {"kpadd", "KP+"},  {"kpequal", "KP="},
+    {"control", "CTRL"}, {"alt", "ALT"}, {"super", "SUPER"},
 };
 
 } // namespace
