@@ -114,6 +114,7 @@ void Renderer::destroy() {
     fonts_.reset();
     extra_glyphs_.clear();
     pen_x_ = pen_y_ = pen_row_h_ = 0;
+    pen_x0_ = pen_y0_ = 0;
     atlas_full_ = false;
 }
 
@@ -274,11 +275,13 @@ bool Renderer::build_font_atlas(std::unique_ptr<FontChain> fonts, std::string& e
     pen_x_ = 0;
     pen_y_ = ascii_bottom + 1;
     pen_row_h_ = 0;
+    pen_x0_ = pen_x_;          // 记住动态区起点：换字号时把装箱指针拨回这里复用空间
+    pen_y0_ = pen_y_;
 
-    // 度量：字形等比缩放进目标单元格（比例由 pack_scale_ 保证）
+    // 度量：主字体基线与 em（均为 kFontPixels 尺度）；绘制缩放由 update_scale 按字号算
     font_ascent_ = fonts_->ascent(kFontPixels);
-    const float em = fonts_->em_height(kFontPixels);
-    pack_scale_ = em > 0.0f ? static_cast<float>(cell_h_) / em : 1.0f;
+    em32_ = fonts_->em_height(kFontPixels);
+    update_scale();
 
     glGenTextures(1, &font_tex_);
     if (font_tex_ == 0) {
@@ -295,6 +298,26 @@ bool Renderer::build_font_atlas(std::unique_ptr<FontChain> fonts, std::string& e
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     return true;
+}
+
+void Renderer::update_scale() {
+    // 字号：显式给了就用它，否则填满单元格（cell_h_）。缩放把 kFontPixels 尺度的字形
+    // 映射到"绘制像素"，字号=格高时与"填满单元格"完全一致
+    const float px = font_px_ > 0 ? static_cast<float>(font_px_) : static_cast<float>(cell_h_);
+    pack_scale_ = em32_ > 0.0f ? px / em32_ : 1.0f;
+    voff_ = (static_cast<float>(cell_h_) - px) * 0.5f;  // 单元格内垂直居中（字号=格高时为 0）
+}
+
+void Renderer::set_font_px(int px) {
+    font_px_ = px > 0 ? px : 0;
+    update_scale();
+    // 动态区里全角字形的"两格居中"量按 pack_scale_ 烘焙过，缩放变了必须整片重装；
+    // 把装箱指针拨回动态区起点即可复用同一片图集空间（静态 ASCII 区不动）
+    extra_glyphs_.clear();
+    pen_x_ = pen_x0_;
+    pen_y_ = pen_y0_;
+    pen_row_h_ = 0;
+    atlas_full_ = false;
 }
 
 void Renderer::emit_backgrounds(const Screen& screen, int ox, int oy, bool given_bg_only) {
@@ -350,7 +373,7 @@ void Renderer::emit_glyphs(const Screen& screen, int ox, int oy, bool layer, Gly
         const Glyph& g = *glyph;
         const float s = pack_scale_;
         const float gx = (ox + x) * cw + g.xoff * s;
-        const float gy = (oy + y) * chh + (font_ascent_ + g.yoff) * s;
+        const float gy = (oy + y) * chh + voff_ + (font_ascent_ + g.yoff) * s;
         const float gw = g.w * s;
         const float gh = g.h * s;
 

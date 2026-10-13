@@ -252,6 +252,7 @@ TEST(config_roundtrip) {
     c.skin = "neon-husk";
     c.boot = "spectrum";
     c.language = "en";
+    c.font_size = 20;
     c.crt_level = 3;
     c.fps = 120;
     c.music_volume = 42;
@@ -262,6 +263,7 @@ TEST(config_roundtrip) {
     CHECK_EQ(r.skin, std::string("neon-husk"));
     CHECK_EQ(r.boot, std::string("spectrum"));
     CHECK_EQ(r.language, std::string("en"));
+    CHECK_EQ(r.font_size, 20);
     CHECK_EQ(r.crt_level, 3);
     CHECK_EQ(r.fps, 120);
     CHECK_EQ(r.music_volume, 42);
@@ -501,6 +503,28 @@ TEST(config_clamps_and_validates) {
     CHECK_EQ(c.sfx_volume, 0);
     CHECK_EQ(c.fps, 60);                              // 90 落到最近档（|60-90| 与 |120-90| 并列，取更小）
     CHECK_EQ(c.shelf_style, std::string("window"));   // 未知样式忽略、保持默认
+    std::error_code ec;
+    std::filesystem::remove(path, ec);
+}
+
+TEST(config_font_size_scope_and_clamp) {
+    const std::filesystem::path path =
+        std::filesystem::temp_directory_path() / "phosphor_unit_font_size.json";
+    const auto load_json = [&path](const char* text) {
+        std::ofstream out(path.string());
+        out << text;
+        out.close();
+        return load_config(path.string());
+    };
+
+    // 字号住在 theme 作用域里（与 font 同级）
+    CHECK_EQ(load_json(R"({"theme":{"font_size":99}})").font_size, kMaxFontPx);  // 越界钳到上限
+    CHECK_EQ(load_json(R"({"theme":{"font_size":3}})").font_size, kMinFontPx);   // 越界钳到下限
+    CHECK_EQ(load_json(R"({"theme":{"font_size":-1}})").font_size, 0);           // 负数 = 跟随方案
+    CHECK_EQ(load_json(R"({"theme":{"font":"x"}})").font_size, 0);               // 缺省 = 跟随方案
+    // 写错作用域（顶层）不生效：字号是主题的一部分，不该被顶层同名键抢走
+    CHECK_EQ(load_json(R"({"font_size":20})").font_size, 0);
+
     std::error_code ec;
     std::filesystem::remove(path, ec);
 }

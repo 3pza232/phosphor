@@ -81,6 +81,7 @@ std::string App::control_state_json() const {
                            ? ""
                            : packs_.sounds[static_cast<size_t>(packs_.sound_index)].id)
         << ",\"font\":" << json::quote(font_scheme_)
+        << ",\"font_size\":" << font_px_  // 当前生效字号（像素高）
         << ",\"language\":" << json::quote(lang_name(shell_.language()))
         << ",\"cursor\":" << (playing_ ? -1 : shell_.cursor())
         << ",\"shelf\":" << shelf_json()

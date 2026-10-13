@@ -40,6 +40,11 @@ void Shell::set_fonts(std::vector<std::string> names, int active) {
         font_index_ = active;
 }
 
+void Shell::set_font_size(int px, bool auto_follow) {
+    font_px_ = px;
+    font_auto_ = auto_follow;
+}
+
 void Shell::set_skins(std::vector<std::string> names, int active) {
     skin_names_ = std::move(names);
     if (active >= 0 && active < static_cast<int>(skin_names_.size()))
@@ -259,6 +264,20 @@ Shell::Intent Shell::update_settings(const Input& input) {
                 intent.font_index = font_index_;
             }
             break;
+        case SettingId::font_size: {
+            if (!adjust) break;
+            // 候选：自动(0，跟随方案) + [kMinFontPx, kMaxFontPx] 逐像素
+            const int count = 1 + (kMaxFontPx - kMinFontPx + 1);
+            int at = 0;
+            if (!font_auto_ && font_px_ >= kMinFontPx && font_px_ <= kMaxFontPx)
+                at = 1 + (font_px_ - kMinFontPx);
+            at = (at + (right ? 1 : count - 1)) % count;
+            font_auto_ = (at == 0);
+            font_px_ = font_auto_ ? font_px_ : (kMinFontPx + at - 1);
+            intent.font_size_changed = true;
+            intent.font_size = font_auto_ ? 0 : font_px_;
+            break;
+        }
         case SettingId::scanlines:
             intent.crt_changed = pick_level(crt_level_, kCrtLevelCount);
             break;
@@ -498,6 +517,8 @@ void Shell::draw_settings(Screen& screen) const {
     ctx.music_volume = music_volume_;
     ctx.sfx_volume = sfx_volume_;
     ctx.window_style = shelf_style_ == ShelfStyle::window;
+    ctx.font_px = font_px_;
+    ctx.font_auto = font_auto_;
     ctx.lang = lang_;
     ctx.lang_index = lang_ == Lang::en ? 1 : 0;
 

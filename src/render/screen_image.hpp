@@ -16,6 +16,7 @@ namespace phos {
 struct ScreenImageOptions {
     int cell_w = 16;
     int cell_h = 16;
+    int font_px = 0;  // 字形绘制像素高（= 字号）；0 = 填满单元格（等于 cell_h）
     CrtParams crt{};  // 后处理参数（色调 / 扫描线 / 孔径格栅 / 辉光 / 亮度补偿）
 };
 

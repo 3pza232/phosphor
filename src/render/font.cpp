@@ -213,21 +213,4 @@ std::vector<std::string> collect_font_files(const std::string& scheme_dir) {
     return files;
 }
 
-std::vector<std::string> font_scheme_names(const std::string& root) {
-    std::vector<std::string> names;
-    std::error_code ec;
-    if (!fs::is_directory(root, ec)) return names;
-    for (fs::directory_iterator it(root, ec), end; it != end && !ec; it.increment(ec)) {
-        if (!it->is_directory(ec)) continue;
-        // 只把真正含字体的目录当方案：空目录或只放说明的目录不该出现在设置里
-        if (font_files_in(it->path().generic_string()).empty()) continue;
-        names.push_back(it->path().filename().string());
-    }
-    std::sort(names.begin(), names.end());
-    // default 排最前（与皮肤/色板等其它内容包的排序约定一致）
-    std::stable_partition(names.begin(), names.end(),
-                          [](const std::string& name) { return name == "default"; });
-    return names;
-}
-
 } // namespace phos

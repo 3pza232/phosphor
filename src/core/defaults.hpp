@@ -26,6 +26,12 @@ inline int clamp_panel_w(int w) { return w < 0 ? 0 : (w > kPanelMaxW ? kPanelMax
 inline constexpr int kCellPx = 16;      // 单元格像素边长
 inline constexpr int kLogicFps = 60;    // 逻辑帧率（游戏速度由它定，不随"帧率"设置变）
 
+/// 字号（字形绘制像素高）。格高是 kCellPx(=16)：字号=16 时字形填满单元格（出厂观感）。
+/// 范围与默认放这里，"配置校验""设置界面""字体方案默认"三处读同一份
+inline constexpr int kMinFontPx = 6;      // 最小字号（再小就糊成一团）
+inline constexpr int kMaxFontPx = 24;     // 最大字号（再大就明显溢出格、糊邻格）
+inline constexpr int kDefaultFontPx = kCellPx;  // 出厂字号 = 填满单元格
+
 /// "帧率"设置的可选档位：每秒最多刷新多少次**画面**。逻辑帧率恒为 kLogicFps，
 /// 所以这个档位只改刷新率与 CPU 占用，**不改游戏速度**：30 更省电、更有老机器的顿感，
 /// 120/180 让 CRT 后处理与镜头平移更顺（高刷屏上才看得出来）。

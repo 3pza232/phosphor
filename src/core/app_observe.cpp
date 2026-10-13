@@ -129,6 +129,7 @@ bool App::write_screenshot(const std::string& path, int& width, int& height,
     ScreenImageOptions options;
     options.cell_w = kCellPx;
     options.cell_h = kCellPx;
+    options.font_px = font_px_;  // 截图字号与窗口一致（同一份有效字号）
     options.crt = active_crt_;
     // 截图必须与窗口所见一致：底 + 逐层叠画（像素级合成），
     // 而不是合成后的文本网格 —— 那条路一格只有一个字形，会把下层"顶掉"

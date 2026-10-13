@@ -45,4 +45,18 @@ std::vector<SoundPack> scan_sounds(const std::string& dir);
 /// 解析单个 skin 包目录（只需 skin.lua）。
 bool load_skin(const std::string& dir, Skin& out, std::string& err);
 
+/// 一套字体方案（`theme/font/<名称>/`）。文件夹名即方案名（与其它内容包同一约定）
+struct FontScheme {
+    std::string name;                // 方案名 = 文件夹名
+    std::vector<std::string> files;  // 回退顺序（首个为主字体）
+    int size = 0;                    // 方案声明的字号（像素）；0 = 未声明（用全局默认）
+};
+
+/// 扫描 `theme/font/` 下全部字体方案（含字体文件的子目录），`default` 排最前。
+/// 方案里的 `font.lua`（可选）显式声明：
+///   return { size = 16, order = { "font", "font-cn" } }
+/// `order` 按 stem 或文件名给出回退顺序，未列出的文件按默认规则（主字体在前、其余按名排序）
+/// 附在其后。没有 `font.lua` 时整套回退到文件名规则。坏脚本留痕并按文件名规则继续
+std::vector<FontScheme> scan_font_schemes(const std::string& dir);
+
 } // namespace phos

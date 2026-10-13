@@ -78,10 +78,8 @@ inline constexpr const char* kFontPrimaryStem = "font";
 
 /// 一个字体方案目录里的文件顺序：主字体在最前，其余按名称排序。
 /// 方案目录不存在或没有可用字体时返回空列表（调用方决定如何回退）。
+/// 方案可用 `theme/font/<方案>/font.lua` 显式声明回退顺序，那是 `pack/pack.hpp` 的
+/// `scan_font_schemes`：它用本函数得到默认顺序，再按声明重排
 std::vector<std::string> collect_font_files(const std::string& scheme_dir);
-
-/// 列出可用的字体方案：`root` 下**含字体文件**的子目录名，`default` 排最前。
-/// 用于设置界面与状态查询（文件夹名即方案名，与其它内容包同一约定）。
-std::vector<std::string> font_scheme_names(const std::string& root);
 
 } // namespace phos

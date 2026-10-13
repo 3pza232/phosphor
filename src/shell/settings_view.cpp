@@ -22,6 +22,7 @@ constexpr Row kRows[] = {
     {true,  Msg::section_machine, SettingId::count},
     {false, Msg::count,           SettingId::theme},
     {false, Msg::count,           SettingId::font},
+    {false, Msg::count,           SettingId::font_size},
     {false, Msg::count,           SettingId::scanlines},
     {false, Msg::count,           SettingId::fps},
     {true,  Msg::section_audio,   SettingId::count},
@@ -69,6 +70,14 @@ std::string row_text(SettingId id, const SettingsContext& ctx) {
         case SettingId::font:
             return label(lang, Msg::row_font) + "< " +
                    pick(ctx.fonts, ctx.font_index, tr(lang, Msg::value_default)) + " >";
+        case SettingId::font_size: {
+            // "自动"时把方案/出厂给出的实际字号一并写出来，否则用户不知道自动是多少
+            const std::string value =
+                ctx.font_auto ? std::string(tr(lang, Msg::value_font_auto)) + " (" +
+                                    std::to_string(ctx.font_px) + ")"
+                              : std::to_string(ctx.font_px);
+            return label(lang, Msg::row_font_size) + "< " + value + " >";
+        }
         case SettingId::scanlines:
             return label(lang, Msg::row_scanlines) + "[ " +
                    crt_level_label(lang, ctx.crt_level) + " ]";
@@ -128,6 +137,15 @@ void draw_settings(Screen& screen, const ui::Rect& content, const SettingsContex
                   selected ? style.accent : style.fg, style.bg);
         ++item_index;
     }
+
+    // 字形预览：一排"各类字形"样本，用**当前方案与字号**画（整屏本就同一套字体，
+    // 这里给的是排版样本：大小写/数字/标点/中文与全角标点）。切方案或字号时一眼看效果
+    const ui::Rect box{content.x + 6, content.y + content.h - 8, content.w - 12, 6};
+    ui::frame(screen, box, tr(ctx.lang, Msg::font_preview), style);
+    ui::print(screen, box.x + 2, box.y + 1, "ABCDEFG abcdefg 0123456789  !?@#&%",
+              style.fg, style.bg);
+    ui::print(screen, box.x + 2, box.y + 3, "汉字样本：你好，世界！（全角标点）",
+              style.fg, style.bg);
 }
 
 } // namespace phos

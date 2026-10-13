@@ -16,6 +16,7 @@
 #include "core/skin.hpp"
 #include "net/net.hpp"
 #include "pack/content_library.hpp"
+#include "pack/pack.hpp"
 #include "shell/shell.hpp"
 
 #include <map>
@@ -69,6 +70,13 @@ private:
 
     /// 装载字体链：wanted 为方案名，方案不可用时退回 default 并告警
     void load_font_chain(const std::string& wanted);
+
+    /// 当前生效字号（像素高）：用户显式选了就用它，否则方案声明的字号，再否则出厂默认
+    int effective_font_px() const;
+    /// 按 effective_font_px() 把字号推给渲染器（截图路径每帧现读 font_px_，无需处理）
+    void apply_font_px(class Renderer* renderer);
+    /// 设置字号：px<=0 表示"跟随字体方案"（0）；正数钳进 [kMinFontPx, kMaxFontPx] 后生效并落盘
+    void apply_font_size(int px, class Renderer* renderer);
 
     // 内容包应用
     void apply_skin(int index, class Window* window, class Renderer* renderer = nullptr);
@@ -196,8 +204,11 @@ private:
     // 字体：当前方案的字体链（主字体在前，回退在后）与全部可用方案名。
     // 窗口渲染与截图/基线共用同一份路径表，所以两边字体必然一致
     std::vector<std::string> font_files_;
-    std::vector<std::string> font_schemes_;  // 全部可用方案（default 排最前）
-    std::string font_scheme_;                // 实际生效的方案（配置指定不可用时退回 default）
+    std::vector<FontScheme> font_scheme_list_;  // 全部方案（含各自声明的字号与回退顺序）
+    std::vector<std::string> font_schemes_;     // 全部可用方案名（default 排最前，供设置界面）
+    std::string font_scheme_;                   // 实际生效的方案（配置指定不可用时退回 default）
+    int font_scheme_size_ = 0;                  // 当前方案声明的字号（0 = 未声明）
+    int font_px_ = kDefaultFontPx;              // 当前生效字号（字形绘制像素高）
 
     // 运行形态（供状态查询与窗口标题使用）
     bool headless_ = false;          // true = 无窗口（agent/CI）

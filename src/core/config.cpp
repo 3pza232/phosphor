@@ -67,6 +67,12 @@ Config load_config(const std::string& path) {
     cfg.sound = pick(theme, "sound", cfg.sound);
     cfg.font = pick(theme, "font", cfg.font);
     cfg.language = pick(theme, "language", cfg.language);
+    // 字号：<=0 视作"跟随字体方案"（0）；正数钳进 [kMinFontPx, kMaxFontPx]
+    const int font_size = pick_int(theme, "font_size", 0);
+    cfg.font_size = font_size <= 0 ? 0
+                                   : (font_size < kMinFontPx ? kMinFontPx
+                                                             : (font_size > kMaxFontPx ? kMaxFontPx
+                                                                                       : font_size));
 
     const std::string shelf_style = pick(&root, "shelf_style", cfg.shelf_style);
     if (shelf_style == "list" || shelf_style == "window") cfg.shelf_style = shelf_style;
@@ -107,6 +113,7 @@ void save_config(const std::string& path, const Config& cfg) {
         << "    \"boot\": \"" << cfg.boot << "\",\n"
         << "    \"sound\": \"" << cfg.sound << "\",\n"
         << "    \"font\": \"" << cfg.font << "\",\n"
+        << "    \"font_size\": " << cfg.font_size << ",\n"
         << "    \"language\": \"" << cfg.language << "\"\n"
         << "  },\n"
         << "  \"shelf_style\": \"" << cfg.shelf_style << "\",\n"

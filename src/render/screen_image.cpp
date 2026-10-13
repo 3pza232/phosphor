@@ -133,8 +133,11 @@ std::optional<ScreenImage> render_screen_image(const Screen& screen,
 
     const int cell_w = std::max(1, options.cell_w);
     const int cell_h = std::max(1, options.cell_h);
-    // 字形按 cell_h 光栅化；基线取主字体的 ascent（全角字形已按主字体基线对齐）
-    const float baseline = fonts.ascent(static_cast<float>(cell_h));
+    // 字号：字形按它光栅化；0 = 填满单元格。基线取主字体的 ascent，字号<格高时垂直居中
+    const float font_px = options.font_px > 0 ? static_cast<float>(options.font_px)
+                                              : static_cast<float>(cell_h);
+    const float voff = (static_cast<float>(cell_h) - font_px) * 0.5f;
+    const float baseline = fonts.ascent(font_px);
 
     ScreenImage image;
     image.width = screen.width() * cell_w;
@@ -158,10 +161,10 @@ std::optional<ScreenImage> render_screen_image(const Screen& screen,
         const auto one = [&](char32_t ch, const Color& fg) {
             if (ch == U' ') return;
             // 全角字符的位图天然比半角宽一倍，贴在同一基线上就自然跨两格
-            GlyphBitmap bitmap = fonts.rasterize(ch, static_cast<float>(cell_h));
+            GlyphBitmap bitmap = fonts.rasterize(ch, font_px);
             if (bitmap.width <= 0 || bitmap.height <= 0) {
                 if (ch == U'?') return;
-                bitmap = fonts.rasterize(U'?', static_cast<float>(cell_h));  // 无字形：占位
+                bitmap = fonts.rasterize(U'?', font_px);  // 无字形：占位
                 if (bitmap.width <= 0 || bitmap.height <= 0) return;
             }
             // 全角字形把"字身框"在两格槽里居中：字体的推进宽度只有一格（16px），
@@ -169,7 +172,8 @@ std::optional<ScreenImage> render_screen_image(const Screen& screen,
             int glyph_x = x0 + bitmap.xoff;
             if (cell.cols == 2) glyph_x += (cell_w * 2 - bitmap.advance) / 2;
             blend_glyph(canvas, bitmap.pixels, bitmap.width, bitmap.height, glyph_x,
-                        y0 + static_cast<int>(baseline) + bitmap.yoff, fg, options.crt.glow);
+                        y0 + static_cast<int>(voff) + static_cast<int>(baseline) + bitmap.yoff, fg,
+                        options.crt.glow);
         };
         for (const Screen::Ink& ink : grid.inks(cx, cy)) one(ink.ch, ink.fg);
         one(cell.ch, cell.fg);

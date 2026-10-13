@@ -4,6 +4,7 @@
 #include "core/defaults.hpp"
 #include "core/log.hpp"
 #include "core/text.hpp"
+#include "render/font.hpp"
 
 #include <sol/sol.hpp>
 
@@ -301,6 +302,70 @@ std::vector<Palette> scan_palettes(const std::string& dir) {
         log::warn("palette pack skipped: " + err);
         return false;
     });
+}
+
+std::vector<FontScheme> scan_font_schemes(const std::string& dir) {
+    namespace fs = std::filesystem;
+    std::vector<FontScheme> schemes;
+    std::error_code ec;
+    if (!fs::is_directory(dir, ec)) return schemes;
+
+    for (fs::directory_iterator it(dir, ec), end; it != end && !ec; it.increment(ec)) {
+        if (!it->is_directory(ec)) continue;
+        const std::string scheme_dir = it->path().generic_string();
+        // 默认回退顺序（主字体在前、其余按名排序）；没有任何字体文件的目录不算方案
+        std::vector<std::string> remaining = collect_font_files(scheme_dir);
+        if (remaining.empty()) continue;
+
+        FontScheme scheme;
+        scheme.name = it->path().filename().string();
+
+        // font.lua 可选：显式声明字号与回退顺序（缺省按文件名规则）
+        const std::string script = pack_script_path(scheme_dir, "font.lua");
+        if (fs::is_regular_file(script, ec)) {
+            sol::state lua;
+            open_pack_api(lua);
+            auto r = lua.safe_script_file(script, &sol::script_pass_on_error);
+            if (r.valid() && r.get<sol::object>().is<sol::table>()) {
+                sol::table t = r.get<sol::object>().as<sol::table>();
+                sol::object size = t["size"];
+                if (size.is<double>() || size.is<int>()) {
+                    const int px = size.as<int>();
+                    scheme.size = px < kMinFontPx ? kMinFontPx : (px > kMaxFontPx ? kMaxFontPx : px);
+                }
+                sol::object order = t["order"];
+                if (order.is<sol::table>()) {
+                    std::vector<std::string> files;
+                    sol::table ot = order.as<sol::table>();
+                    for (const auto& entry : ot) {
+                        if (!entry.second.is<std::string>()) continue;
+                        const std::string want = entry.second.as<std::string>();
+                        for (auto fit = remaining.begin(); fit != remaining.end(); ++fit) {
+                            const fs::path p(*fit);
+                            if (p.stem().string() == want || p.filename().string() == want) {
+                                files.push_back(*fit);
+                                remaining.erase(fit);
+                                break;
+                            }
+                        }
+                    }
+                    // 声明里漏掉的字体附在其后：绝不静默丢字
+                    for (const std::string& f : remaining) files.push_back(f);
+                    remaining = std::move(files);
+                }
+            } else {
+                log::warn("font.lua 不可用，按文件名顺序加载字体: " + scheme_dir);
+            }
+        }
+        scheme.files = std::move(remaining);
+        schemes.push_back(std::move(scheme));
+    }
+
+    std::sort(schemes.begin(), schemes.end(),
+              [](const FontScheme& a, const FontScheme& b) { return a.name < b.name; });
+    std::stable_partition(schemes.begin(), schemes.end(),
+                          [](const FontScheme& s) { return s.name == "default"; });
+    return schemes;
 }
 
 } // namespace phos

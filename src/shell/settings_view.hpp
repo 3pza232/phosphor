@@ -14,6 +14,7 @@ namespace phos {
 enum class SettingId {
     theme,         // 游戏机主题（连内容色板一起）
     font,          // 字体方案
+    font_size,     // 字号（字形绘制像素高）
     scanlines,     // 扫描线档位
     fps,           // 画面刷新率（逻辑帧率恒定，见 defaults.hpp 的 kFpsChoices）
     sound_pack,    // 音效包
@@ -34,6 +35,8 @@ struct SettingsContext {
     int fps = kDefaultFps;
     int music_volume = kDefaultMusicVolume, sfx_volume = kDefaultSfxVolume;
     bool window_style = true;
+    int font_px = kDefaultFontPx;  // 当前生效字号（像素高）
+    bool font_auto = true;         // 字号是否"跟随字体方案"
     Lang lang = Lang::zh;  // 界面语言：设置界面自己的文案也要跟着切
     int lang_index = 0;    // 语言在可选列表里的下标（0 = 中文，1 = 英文）
 };

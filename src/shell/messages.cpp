@@ -92,6 +92,11 @@ constexpr std::array<Entry, static_cast<size_t>(Msg::count)> kTable{{
     {"外壳层 ............. 通过", "SHELL LAYER ............. OK"},
     {"显像管预热 .......... 通过", "TUBE WARMUP ............. OK"},
     {"等待插入卡带 _", "AWAITING CARTRIDGE _"},
+
+    // 字体字号
+    {"字号", "FONT SIZE"},
+    {"自动", "AUTO"},
+    {"字形预览", "GLYPH PREVIEW"},
 }};
 
 static_assert(kTable.size() == static_cast<size_t>(Msg::count),

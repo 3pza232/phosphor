@@ -49,18 +49,53 @@ void App::apply_skin(int index, Window* window, Renderer* renderer) {
 
 
 void App::load_font_chain(const std::string& wanted) {
-    const std::string font_dir = std::string(kFontDir) + "/";
-    font_scheme_ = wanted;
-    font_files_ = collect_font_files(font_dir + font_scheme_);
+    // 方案表里已含声明的回退顺序与字号；不查目录文件系统，避免"表里/盘上"两套排序
+    const auto find = [this](const std::string& name) -> const FontScheme* {
+        for (const FontScheme& s : font_scheme_list_)
+            if (s.name == name) return &s;
+        return nullptr;
+    };
+    const auto use = [this, &find](const std::string& name) {
+        font_scheme_ = name;
+        font_scheme_size_ = 0;
+        if (const FontScheme* s = find(name)) {
+            font_files_ = s->files;
+            font_scheme_size_ = s->size;
+        } else {
+            // 方案不在表里（目录被删 / 名字写错）：现取一次，取不到再由下面兜底
+            font_files_ = collect_font_files(std::string(kFontDir) + "/" + name);
+        }
+    };
 
-    // 方案不可用（目录被删、名字写错、里面没有字体）：退回出厂默认并告警。
-    // 内容坏了不该让机器没字可用
+    use(wanted);
+    // 方案不可用（目录被删、名字写错、里面没有字体）：退回出厂默认并告警。内容坏了不该没字可用
     if (font_files_.empty() && font_scheme_ != kDefaultFontScheme) {
         log::warn("font scheme unusable, falling back to default: " + font_scheme_);
-        font_scheme_ = kDefaultFontScheme;
-        font_files_ = collect_font_files(font_dir + font_scheme_);
+        use(kDefaultFontScheme);
     }
-    if (font_files_.empty()) log::warn("no font file in " + font_dir + font_scheme_);
+    if (font_files_.empty()) log::warn("no font file in " + std::string(kFontDir) + "/" + font_scheme_);
+}
+
+
+int App::effective_font_px() const {
+    if (config_.font_size > 0) return config_.font_size;                // 用户显式选择优先
+    return font_scheme_size_ > 0 ? font_scheme_size_ : kDefaultFontPx;  // 否则方案声明，再否则出厂默认
+}
+
+
+void App::apply_font_px(Renderer* renderer) {
+    font_px_ = effective_font_px();
+    if (renderer) renderer->set_font_px(font_px_);
+    shell_.set_font_size(font_px_, config_.font_size == 0);  // 设置行显示与实际生效保持同步
+}
+
+
+void App::apply_font_size(int px, Renderer* renderer) {
+    // 0 = 跟随字体方案；正数钳进合法区间（越界不静默保留）
+    config_.font_size = px <= 0 ? 0
+                                : (px < kMinFontPx ? kMinFontPx : (px > kMaxFontPx ? kMaxFontPx : px));
+    apply_font_px(renderer);
+    save_config_now();
 }
 
 
@@ -76,6 +111,8 @@ void App::apply_font_scheme(int index, Renderer* renderer) {
         // 墨迹度量随字体链走：换字体后回调依旧取当前字形的框
         host_.glyph_metrics = [renderer](char32_t cp) { return renderer->ink_box(cp); };
     }
+    // 换方案可能改变"方案声明的字号"（配置为 0=跟随时），字号与字体链一起落地
+    apply_font_px(renderer);
 
     config_.font = font_scheme_;
     save_config_now();
