@@ -27,7 +27,7 @@ void App::load_cart_path(const std::string& path) {
     if (!cart_->load(path, host_)) {
         last_error_ = cart_->error();
         cart_.reset();
-        cart_path_.clear();
+        // 保留 cart_path_：一次失败的 reload 不该让后续 cart.reload 变成"没有卡带可重载"
         shell_.show_error(last_error_);
         play_event("error");
         log_cart_error("load failed: " + last_error_);
