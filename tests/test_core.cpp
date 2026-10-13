@@ -14,6 +14,7 @@
 #include "core/surface.hpp"
 #include "core/text.hpp"
 #include "core/text_input.hpp"
+#include "core/ui.hpp"
 #include "pack/builtin.hpp"
 #include "shell/shelf_search.hpp"
 
@@ -491,6 +492,44 @@ TEST(config_clamps_and_validates) {
     CHECK_EQ(c.shelf_style, std::string("window"));   // 未知样式忽略、保持默认
     std::error_code ec;
     std::filesystem::remove(path, ec);
+}
+
+// ---------------------------------------------------------------- ui 组件
+
+TEST(ui_rect_centered) {
+    const ui::Rect area{0, 0, 100, 40};
+    const ui::Rect r = ui::Rect::centered(area, 20, 10);
+    CHECK_EQ(r.w, 20);
+    CHECK_EQ(r.h, 10);
+    CHECK_EQ(r.x, 40);  // (100-20)/2
+    CHECK_EQ(r.y, 15);  // (40-10)/2
+}
+
+TEST(ui_navigate_wrap_and_actions) {
+    Input input;
+    ui::NavAction action = ui::NavAction::none;
+
+    CHECK_EQ(ui::navigate(input, 3, 1, action), 1);  // 无输入：原样返回
+    CHECK(action == ui::NavAction::none);
+
+    input.set_key(Key::up, true);  // 上：循环到末尾
+    CHECK_EQ(ui::navigate(input, 3, 0, action), 2);
+    input.next_frame();
+
+    input.set_key(Key::down, true);  // 下：循环到开头
+    CHECK_EQ(ui::navigate(input, 3, 2, action), 0);
+    input.next_frame();
+
+    input.set_key(Key::a, true);  // 确认
+    ui::navigate(input, 3, 0, action);
+    CHECK(action == ui::NavAction::confirm);
+    input.next_frame();
+
+    input.set_key(Key::b, true);  // 取消
+    ui::navigate(input, 3, 0, action);
+    CHECK(action == ui::NavAction::cancel);
+
+    CHECK_EQ(ui::navigate(input, 0, 5, action), 0);  // 空列表
 }
 
 } // namespace
