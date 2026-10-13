@@ -419,7 +419,7 @@ int App::run_windowed(const CliOptions& opts) {
     // 无头模式不装它，调用方退回整格宽
     host_.glyph_metrics = [&renderer](char32_t cp) { return renderer.ink_box(cp); };
 
-    if (!console_.init(window.handle(), error))
+    if (!console_.init(window.handle(), font_files_, error))
         std::fprintf(stderr, "WARN: %s (debug panel unavailable)\n", error.c_str());
 
     // 标题栏写明"谁在操作"：人看着窗口就知道是 agent 接管，还是自己在玩

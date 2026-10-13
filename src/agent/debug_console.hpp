@@ -60,7 +60,9 @@ struct DebugInfo {
 class DebugConsole {
 public:
     /// 初始化 ImGui 上下文与后端。须已有当前 GL 上下文。
-    bool init(GLFWwindow* window, std::string& err);
+    /// font_files 是引擎字体链（主字体在前、CJK 回退在后）：用于给面板一份**带 CJK 字形**的字体
+    /// （否则卡带注册的中文参数名会显示成 `????`）。为空则用 ImGui 默认字体。
+    bool init(GLFWwindow* window, const std::vector<std::string>& font_files, std::string& err);
     void shutdown();
 
     bool open = false;

@@ -6,7 +6,8 @@
 
 namespace phos {
 
-bool DebugConsole::init(GLFWwindow* window, std::string& err) {
+bool DebugConsole::init(GLFWwindow* window, const std::vector<std::string>& font_files,
+                        std::string& err) {
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGui::StyleColorsDark();
@@ -14,7 +15,26 @@ bool DebugConsole::init(GLFWwindow* window, std::string& err) {
     // 仪表盘布局不需要跨会话记忆，关掉 ImGui 的 imgui.ini：
     // 程序包目录只应出现主机自己的文件（config.json / saves/），
     // 不该因为"开了一次调试面板"就多出一个 ini
-    ImGui::GetIO().IniFilename = nullptr;
+    ImGuiIO& io = ImGui::GetIO();
+    io.IniFilename = nullptr;
+
+    // 面板会显示卡带注册的**中文**参数名，而 ImGui 默认字体没有 CJK 字形（会显示成 ????）。
+    // 用引擎字体链合并出一份面板字体：主字体给 ASCII 观感，回退字体（font-cn）补齐 CJK 码位。
+    // MergeMode 只补缺、不覆盖主字体已有的字形。加载失败就退回默认字体（中文仍会显示成 ?）
+    if (!font_files.empty()) {
+        ImFontConfig base_cfg;
+        base_cfg.OversampleH = base_cfg.OversampleV = 1;
+        if (io.Fonts->AddFontFromFileTTF(font_files[0].c_str(), 16.0f, &base_cfg,
+                                         io.Fonts->GetGlyphRangesDefault())) {
+            for (size_t i = 1; i < font_files.size(); ++i) {
+                ImFontConfig merge_cfg;
+                merge_cfg.MergeMode = true;
+                merge_cfg.OversampleH = merge_cfg.OversampleV = 1;
+                io.Fonts->AddFontFromFileTTF(font_files[i].c_str(), 16.0f, &merge_cfg,
+                                             io.Fonts->GetGlyphRangesChineseSimplifiedCommon());
+            }
+        }
+    }
 
     // install_callbacks=true 时，ImGui 回调链在主机已注册的键盘回调之后
     if (!ImGui_ImplGlfw_InitForOpenGL(window, true)) {
@@ -90,7 +110,7 @@ void DebugConsole::render(const DebugInfo& info) {
                     ImGui::TextDisabled("%s  (unreadable)", p.name.c_str());
                     continue;
                 }
-                if (ImGui::DragFloat(p.name.c_str(), &p.value, p.step, p.min, p.max, "%.3f"))
+                if (ImGui::SliderFloat(p.name.c_str(), &p.value, p.min, p.max, "%.3f"))
                     p.changed = true;
             }
             ImGui::TextDisabled("edits apply next frame");

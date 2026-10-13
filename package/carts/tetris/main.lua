@@ -60,6 +60,10 @@ end
 function init()
   Scores.load()
   game = Game.new()
+  -- 把本卡带的可调常数交给 `~` 调试台（见 phos.debug.number）
+  for _, t in ipairs(Game.tunables()) do
+    phos.debug.number(t.name, t.get, t.set, { min = t.min, max = t.max, step = t.step })
+  end
   paused, reported = false, false
   floats, trail, repeat_timer = {}, nil, 0
 

@@ -461,6 +461,20 @@ end
 
 function init()
 	build_palette()
+	-- 可调参数交给 `~` 调试台（phos.debug.number）：把常挂心的数挂上，边打边调。
+	-- 武器**按 id 定位**（不认下标）：LIST 顺序一变，按下标取就取错那把了
+	local function weapon_by_id(id)
+		for _, w in ipairs(Weapons.LIST) do if w.id == id then return w end end
+	end
+	phos.debug.number("爬虫速度", function() return Worms.WALK_SPEED end,
+	                  function(v) Worms.WALK_SPEED = v end, { min = 2, max = 30, step = 0.5 })
+	local rocket = weapon_by_id("bazooka")
+	if rocket then
+		phos.debug.number("火箭筒伤害", function() return rocket.damage end,
+		                  function(v) rocket.damage = v end, { min = 0, max = 200, step = 1 })
+		phos.debug.number("火箭筒半径", function() return rocket.radius end,
+		                  function(v) rocket.radius = v end, { min = 1, max = 12, step = 0.5 })
+	end
 	-- 分层：天空与地形照旧画**底层**（phos.screen），前景（特效/瞄准/角色/雨雪）一层、
 	-- 读数与浮字一层、浮窗一层，按 z 叠上去。
 	-- 层的空白格是透明的，而"保留底色"在**同一层内**照样成立（层内先铺底板再画边框，

@@ -9,6 +9,7 @@ Game.W, Game.H = 10, 20
 
 -- 消行闪光的时长（秒）。它同时是"行还在但已判定消掉"的那一小段
 local CLEAR_TIME = 0.22
+local GRAVITY_SCALE = 1.0  -- 下落速度的可调旋钮：>1 更快、<1 更慢（`~` 调试台）
 
 -- 七种方块。每种给四个格子在 **4×4 方框**里的偏移，旋转就是整体转 90°
 -- （(x,y) → (5-y, x)）：比每种朝向各写一张表省事，也不会写漏。
@@ -128,7 +129,7 @@ function Game:ghost_y()
 end
 
 function Game:drop_interval()
-  return math.max(0.05, 0.75 - (self.level - 1) * 0.06)
+  return math.max(0.05, (0.75 - (self.level - 1) * 0.06) / GRAVITY_SCALE)
 end
 
 -- 落定：写进棋盘、判定满行。返回消掉的行数
@@ -215,6 +216,14 @@ function Game:update(dt)
     end
   end
   return ev
+end
+
+-- 可调参数（`~` 调试台，见 phos.debug.number）
+function Game.tunables()
+  return {
+    { name = "重力倍率", get = function() return GRAVITY_SCALE end,
+      set = function(v) GRAVITY_SCALE = v end, min = 0.25, max = 4.0, step = 0.05 },
+  }
 end
 
 return Game

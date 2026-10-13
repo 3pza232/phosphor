@@ -250,4 +250,14 @@ Game.PADDLE_W, Game.PADDLE_ROW = PADDLE_W, PADDLE_ROW
 Game.BRICK_W, Game.BRICK_STRIDE = BRICK_W, BRICK_STRIDE
 Game.BRICK_COLS, Game.BRICK_ROWS = BRICK_COLS, BRICK_ROWS
 
+-- 可调参数（`~` 调试台，见 phos.debug.number）
+function Game.tunables()
+  return {
+    { name = "挡板速度", get = function() return PADDLE_SPEED end,
+      set = function(v) PADDLE_SPEED = v end, min = 10, max = 120, step = 1 },
+    { name = "球速基数", get = function() return BASE_BALL_SPEED end,
+      set = function(v) BASE_BALL_SPEED = v end, min = 8, max = 50, step = 0.5 },
+  }
+end
+
 return Game
