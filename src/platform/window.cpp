@@ -4,12 +4,12 @@
 #include "core/text.hpp"
 
 #include <glad/glad.h>
-#define GLFW_EXPOSE_NATIVE_WIN32
 #include <GLFW/glfw3.h>
-#include <GLFW/glfw3native.h>
 #include <stb_image.h>
 
 #ifdef _WIN32
+#define GLFW_EXPOSE_NATIVE_WIN32  // 取 HWND，供输入法开关使用
+#include <GLFW/glfw3native.h>
 #include <imm.h>  // 输入法上下文（ImmAssociateContext）：按输入框声明开关系统输入法
 #endif
 
@@ -173,15 +173,18 @@ Window::~Window() {
     }
 }
 
-Window::Window(Window&& other) noexcept : window_(other.window_) {
+Window::Window(Window&& other) noexcept : window_(other.window_), ime_context_(other.ime_context_) {
     other.window_ = nullptr;
+    other.ime_context_ = nullptr;
 }
 
 Window& Window::operator=(Window&& other) noexcept {
     if (this != &other) {
         if (window_) glfwDestroyWindow(window_);
         window_ = other.window_;
+        ime_context_ = other.ime_context_;
         other.window_ = nullptr;
+        other.ime_context_ = nullptr;
     }
     return *this;
 }
@@ -213,9 +216,10 @@ void Window::set_ime_enabled(bool enabled) {
     if (!hwnd) return;
     if (enabled) {
         if (ime_context_) ImmAssociateContext(hwnd, static_cast<HIMC>(ime_context_));
-    } else if (ime_context_ == nullptr) {
-        // 第一次关之前先把系统给的默认上下文记下来，之后才能原样开回来。此后重复调用是空操作
-        ime_context_ = ImmGetContext(hwnd);
+    } else {
+        // 首次关之前先把系统给的默认上下文记下来，之后才能原样开回来；**每次关都要重新
+        // 解除关联**——否则开过一次之后再关就变成空操作，输入法会一直挂着
+        if (ime_context_ == nullptr) ime_context_ = ImmGetContext(hwnd);
         ImmAssociateContext(hwnd, nullptr);
     }
 #else
