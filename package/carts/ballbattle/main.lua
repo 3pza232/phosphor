@@ -17,6 +17,7 @@ local cart = {}
 local paused = false
 local rng          -- 主机种子驱动
 local ai_colors    -- 电脑球配色（从色板取，不含玩家色）
+local view_scale = 1   -- 当前视距倍率（1 屏幕格 = 这么多世界单位），由 draw 更新
 
 local function new_game()
   game = Game.new(rng)
@@ -91,9 +92,9 @@ function draw()
   local p = game.player
 
   -- 缩放：体型越大看得越远（否则大球糊满整屏）。1 屏幕格 = scale 个世界单位
-  local scale = 1
-  if p.r > 5 then scale = 2 end
-  if p.r > 12 then scale = 3 end
+  -- 缩放：体型越大看得越远（否则大球糊满整屏）。1 屏幕格 = scale 个世界单位
+  local scale = math.min(4, 1 + math.floor(p.r / 8))
+  view_scale = scale
 
   local vw, vh = pw * scale, ph * scale
   local cam_x = math.max(0, math.min(p.x - vw / 2, Game.WORLD_W - vw))
@@ -152,5 +153,6 @@ end
 function debug_state()
   local st = game:status()
   st.paused = paused
+  st.view_scale = view_scale
   return st
 end
