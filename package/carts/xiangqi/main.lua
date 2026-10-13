@@ -17,10 +17,11 @@ local game
 local cart = {}
 local cf, cr = 4, 9       -- 光标（默认停在红帅上）
 
--- 棋盘布局：文件间距 4（棋子两格宽 + 左右各留白），行距 2，河界两行
-local FILE = function(f) return 3 + 4 * f end
-local ROW = function(r) return 2 + 2 * r + (r >= 5 and 2 or 0) end
-local X0, X1 = 2, 37          -- 棋盘左右边框（贴齐最外列棋子）
+-- 棋盘布局：文件间距 5（棋子两格宽、左右各留出格线），行距 3，河界再加一行。
+-- 棋子摆在**两条格线的交点**上（线穿过棋子），不是格子里。
+local FILE = function(f) return 2 + 5 * f end
+local ROW = function(r) return 2 + 3 * r + (r >= 5 and 1 or 0) end
+local XR = function() return FILE(8) + 1 end          -- 棋盘最右（最右列棋子右半）
 local Y0 = 1                  -- 上边框
 
 local function rng(a, b)
@@ -72,51 +73,68 @@ local function tint(px, py, f, r, col)
   for dx = 0, 1 do phos.screen.back(px + FILE(f) + dx, py + ROW(r), col) end
 end
 
+-- 沿一条斜线撒下对角字符（九宫的两条斜线用 ╲/╱ 近似）
+local function slash(S, px, py, x0, y0, x1, y1, ch, col)
+  local steps = math.abs(y1 - y0)
+  for i = 0, steps do
+    local y = y0 + (y1 > y0 and i or -i)
+    local x = math.floor(x0 + (x1 - x0) * i / steps + 0.5)
+    S.put(px + x, py + y, ch, col)
+  end
+end
+
 local function draw_board(px, py)
   local C, S = phos.color, phos.screen
-  local y0, y1 = py + Y0, py + ROW(9) + 1
-  local rlo, rhi = ROW(4) + 1, ROW(5) - 1     -- 河界两行：竖线断开，留给"楚河汉界"
+  local rlo, rhi = ROW(4) + 1, ROW(5) - 1        -- 河界那几行：竖线只在最外两条
 
-  -- 外框
-  for x = px + X0 + 1, px + X1 - 1 do
-    S.put(x, y0, "\u{2500}", C.gray)
-    S.put(x, y1, "\u{2500}", C.gray)
-  end
-  for y = y0 + 1, y1 - 1 do
-    S.put(px + X0, y, "\u{2502}", C.gray)
-    S.put(px + X1, y, "\u{2502}", C.gray)
-  end
-  S.put(px + X0, y0, "\u{250C}", C.gray); S.put(px + X1, y0, "\u{2510}", C.gray)
-  S.put(px + X0, y1, "\u{2514}", C.gray); S.put(px + X1, y1, "\u{2518}", C.gray)
-
-  -- 竖线：每条文件线（河界处断开）
-  for f = 0, 8 do
-    for ry = ROW(0), ROW(9) do
-      if ry < rlo or ry > rhi then S.put(px + FILE(f), py + ry, "\u{2502}", C.dark_gray) end
+  -- 横线 + 交点（每个排名行）：交点上画 ┼，其余画 ─。棋子稍后会盖住交点
+  for r = 0, 9 do
+    for x = FILE(0), XR() do
+      local cross = ((x - FILE(0)) % 5 == 0)
+      S.put(px + x, py + ROW(r), cross and "\u{253C}" or "\u{2500}", C.dark_gray)
     end
   end
-  -- 横线：每两行之间一条（河界上下边界照画，中间不画）
-  for ry = ROW(0) + 1, ROW(9) - 1, 2 do
-    for x = px + FILE(0), px + FILE(8) + 1 do
-      S.put(x, py + ry, "\u{2500}", C.dark_gray)
-    end
-  end
-  -- 交点
-  for f = 0, 8 do
-    for ry = ROW(0) + 1, ROW(9) - 1, 2 do
-      if ry < rlo or ry > rhi then S.put(px + FILE(f), py + ry, "\u{253C}", C.dark_gray) end
+  -- 竖线（两排行之间；河界那几行只留最外两条）——按相邻两排之间逐行铺，与行距无关
+  for r = 0, 8 do
+    for ry = ROW(r) + 1, ROW(r + 1) - 1 do
+      if ry >= rlo and ry <= rhi then
+        S.put(px + FILE(0), py + ry, "\u{2502}", C.dark_gray)
+        S.put(px + FILE(8), py + ry, "\u{2502}", C.dark_gray)
+      else
+        for f = 0, 8 do S.put(px + FILE(f), py + ry, "\u{2502}", C.dark_gray) end
+      end
     end
   end
 
-  -- 九宫斜线（两宫中心一个 ╳）+ 楚河汉界
-  S.put(px + FILE(4), py + ROW(1), "\u{2573}", C.gray)
-  S.put(px + FILE(4), py + ROW(8), "\u{2573}", C.gray)
-  local ry = py + math.floor((rlo + rhi) / 2)   -- 河界中间那一行（上下边界是格线，文字在中间）
+  -- 九宫：两宫各画士的两条斜线 + 中心 ╳
+  for _, base in ipairs({ 0, 7 }) do
+    slash(S, px, py, FILE(3), ROW(base), FILE(5), ROW(base + 2), "\u{2572}", C.gray)
+    slash(S, px, py, FILE(5), ROW(base), FILE(3), ROW(base + 2), "\u{2571}", C.gray)
+    S.put(px + FILE(4), py + ROW(base + 1), "\u{2573}", C.gray)
+  end
+
+  -- 兵/卒 与 炮/砲 的起始点标记（传统"炮位/兵位"小叉）：空交点处画 ╬
+  local marks = {}
+  for _, r in ipairs({ 3, 6 }) do
+    for f = 0, 8, 2 do marks[#marks + 1] = { f, r } end
+  end
+  for _, r in ipairs({ 2, 7 }) do
+    marks[#marks + 1] = { 1, r }
+    marks[#marks + 1] = { 7, r }
+  end
+  for _, m in ipairs(marks) do
+    if not game:piece(m[1], m[2]) then
+      S.put(px + FILE(m[1]), py + ROW(m[2]), "\u{256C}", C.gray)
+    end
+  end
+
+  -- 楚河汉界
+  local ry = py + math.floor((rlo + rhi) / 2)
   S.print(px + FILE(1) + 1, ry, phos.lang.pick({ zh = "楚 河", en = "CHU RIVER" }), C.dark_gray)
-  S.print(px + FILE(6), ry, phos.lang.pick({ zh = "汉 界", en = "HAN BORDER" }), C.dark_gray)
+  S.print(px + FILE(6) - 1, ry, phos.lang.pick({ zh = "汉 界", en = "HAN BORDER" }), C.dark_gray)
 
   -- 行列号
-  for f = 0, 8 do S.put(px + FILE(f), y1 + 1, tostring(f + 1), C.dark_gray) end
+  for f = 0, 8 do S.put(px + FILE(f), py + ROW(9) + 2, tostring(f + 1), C.dark_gray) end
   for r = 0, 9 do S.print(px, py + ROW(r), string.format("%2d", r + 1), C.dark_gray) end
 
   -- 提示底色（先铺，再画棋子）：选中 = 青、可落子 = 绿、光标 = 暗灰
@@ -126,7 +144,7 @@ local function draw_board(px, py)
   end
   tint(px, py, cf, cr, C.dark_gray)
 
-  -- 棋子
+  -- 棋子（摆在交点上：占交点格与其右一格）
   for r = 0, 9 do
     for f = 0, 8 do
       local p = game:piece(f, r)
