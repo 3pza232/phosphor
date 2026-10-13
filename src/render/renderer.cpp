@@ -434,7 +434,11 @@ void Renderer::submit(float win_w, float win_h, bool layer, bool clear_first) {
     shader_.use();
     shader_.set_vec2("u_resolution", win_w, win_h);
     shader_.set_int("u_font", 0);
-    shader_.set_vec2("u_texel", 1.0f / kAtlasSize, 1.0f / kAtlasSize);
+    // 辉光邻域取 **±1 屏幕像素**（与 CPU 光栅化一路一致）。字形按 pack_scale_ 缩放绘制，
+    // 图集里 1 纹素在屏幕上占 pack_scale_ 个像素，故 UV 步长要乘 1/pack_scale_
+    const float halo_step =
+        pack_scale_ > 0.0f ? (1.0f / kAtlasSize) / pack_scale_ : 1.0f / kAtlasSize;
+    shader_.set_vec2("u_texel", halo_step, halo_step);
 
     auto set_float = [this](const char* name, float value) {
         glUniform1f(glGetUniformLocation(shader_.id(), name), value);
@@ -527,7 +531,10 @@ bool Renderer::read_frame(std::vector<unsigned char>& rgba, int& width, int& hei
     glPixelStorei(GL_PACK_ALIGNMENT, 1);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     glReadBuffer(GL_BACK);  // 双缓冲下读回的才是刚画好的那一帧（默认 framebuffer 的后缓冲）
+    // 先清掉可能残留的错误位，才能确定下面读到的错误来自本次 glReadPixels
+    while (glGetError() != GL_NO_ERROR) {}
     glReadPixels(0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, rgba.data());
+    if (glGetError() != GL_NO_ERROR) return false;  // 读回失败：别把未初始化的缓冲当画面交出去
     width = w;
     height = h;
     return true;
