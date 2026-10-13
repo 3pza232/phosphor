@@ -30,7 +30,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from phos import Host, HostError, main_guard, reporter  # noqa: E402
 
-CART = "../tools/fixtures/net"  # 相对构建目录（工作目录），dev-only 夹具
+# 夹具卡带是 dev-only（不随发行包同步进 build/），用**相对本脚本的绝对路径**定位：
+# 早先写成相对构建目录（"../tools/fixtures/net"），一旦构建目录不在仓库根下（out-of-tree
+# 构建）就解析不到 → 主机"启动即退出"。改成绝对路径后，构建目录放哪都稳
+CART = str(Path(__file__).resolve().parent / "fixtures" / "net")
 
 
 def debug(host: Host) -> dict:
