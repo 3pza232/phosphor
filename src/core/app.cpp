@@ -109,7 +109,9 @@ int App::run(const CliOptions& opts) {
 
 void App::advance(float dt, Renderer* renderer, Window* window) {
     log::set_frame(frame_count_);  // 日志挂到帧时间线上
-    host_.frame = frame_count_;    // 卡带侧 phos.sys.frame() 的取值来源
+    // 调试台"打开即暂停"时，卡带看到的时间与**帧号**都冻结（画面仍重绘）——只冻结时间的话，
+    // 按帧驱动的绘制还会动
+    if (!(console_.open && pause_when_open_)) host_.frame = frame_count_;
 
     // 帧缓冲尺寸（物理像素）每帧交给渲染器：高 DPI 下它不等于逻辑网格尺寸，
     // 视口/读回要用它，画面才铺满窗口（见 Renderer::set_framebuffer_size）
@@ -152,7 +154,7 @@ void App::end_boot() {
 void App::tick_playing(float dt) {
     // 调试台"打开即暂停"：**整机**冻结——卡带不推进、主机时间不走、声音也停（画面仍重绘、参数照调）
     const bool frozen = console_.open && pause_when_open_;
-    audio_.set_paused(frozen);
+    audio_.set_host_paused(frozen);  // 主机级暂停（与卡带自己的 paused 各记一个，不互相盖）
     if (!frozen) host_.time += dt;
     shell_.draw_chassis(display_.screen);
     shell_.set_lamps_solid(true);

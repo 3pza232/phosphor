@@ -565,7 +565,7 @@ void Audio::mix(float* out, uint32_t frames) {
     std::memset(out, 0, sizeof(float) * frames * 2);
 
     // 暂停：输出静音但不推进任何状态，恢复后原地续播
-    if (paused_.load()) return;
+    if (paused_.load() || host_paused_.load()) return;
 
     // 音频线程是声部表唯一的写入者：先落地主线程排队的触发，再推进音序器
     drain_requests();

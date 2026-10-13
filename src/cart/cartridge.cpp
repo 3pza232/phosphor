@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 
 namespace phos {
 
@@ -367,7 +368,10 @@ Cartridge::DebugParamView Cartridge::debug_param(size_t index) {
     const sol::protected_function_result r = reg.get();
     if (!r.valid()) return out;  // 读失败：ok=false，控制台按"取不到"处理
     const sol::object v = r;
-    if (v.is<double>() || v.is<int>()) {
+    if (v.is<bool>()) {  // 布尔参数：get 直接返回 true/false
+        out.value = v.as<bool>() ? 1.0f : 0.0f;
+        out.ok = true;
+    } else if (v.is<double>() || v.is<int>()) {
         out.value = v.as<float>();
         out.ok = true;
     }
@@ -379,7 +383,17 @@ bool Cartridge::debug_param_write(size_t index, float value) {
     DebugRegistration& reg = debug_regs_[index];
     if (!reg.set.valid()) return false;
     WatchdogScope guard;
-    const sol::protected_function_result r = reg.set(value);
+    // 按类型给**合适的 Lua 值**：布尔给 true/false（Lua 里 0 为真，给 0 会"关不掉"）、
+    // 整数给整数（给浮点会让 HUD 显示 "5.0"）、浮点给浮点。于是卡带的 setter 直接 `x = v`
+    // 就是对类型，不必自己兜
+    sol::object arg;
+    if (reg.kind == DebugKind::boolean)
+        arg = sol::make_object(lua_, value != 0.0f);
+    else if (reg.kind == DebugKind::integer)
+        arg = sol::make_object(lua_, static_cast<long long>(std::llround(value)));
+    else
+        arg = sol::make_object(lua_, value);
+    const sol::protected_function_result r = reg.set(arg);
     return r.valid();
 }
 

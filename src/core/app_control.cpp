@@ -103,8 +103,12 @@ std::string App::control_state_json() const {
                 if (!group.empty()) group += "/";
                 group += seg.get(english);
             }
+            const char* kind = view.kind == DebugKind::integer ? "integer"
+                               : view.kind == DebugKind::boolean ? "boolean"
+                                                                 : "number";
             out << (i ? "," : "") << "{\"name\":" << json::quote(view.name.get(english))
-                << ",\"group\":" << json::quote(group) << ",\"value\":" << view.value << "}";
+                << ",\"group\":" << json::quote(group) << ",\"kind\":" << json::quote(kind)
+                << ",\"value\":" << view.value << "}";
         }
     }
     out << "]";

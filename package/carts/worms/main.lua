@@ -483,12 +483,13 @@ function init()
 		{ "burst",     "连发间隔", "Burst gap",     0.02, 0.5,  0.01, false },
 		{ "supply",    "补给量",   "Supply",        1,    5,    1,    true  },
 		{ "heal",      "治疗量",   "Heal",          0,    200,  5,    false },
-		{ "raise",     "造地高度", "Mound height",  1,    20,   1,    true  },
+		{ "raise",     "造地半径", "Mound radius",  1,    20,   1,    true  },
 		{ "burn",      "燃烧时长", "Burn time",     0,    10,   0.5,  false },
 		{ "speed",     "飞行速度", "Speed",         100,  2000, 10,   true  },
 		{ "width",     "粗度",     "Width",         1,    12,   0.5,  false },
-		{ "turn_rate", "转向速率", "Turn rate",     10,   180,  5,    true  },
+		{ "turn_rate", "转向速率", "Turn rate",     10,   180,  1,    false },
 		{ "splits",    "分裂数",   "Split count",   1,    12,   1,    true  },
+		{ "ai_mult",   "AI 评分倍数", "AI score mult", 1,  5,    1,    true  },
 	}
 	local register_field = function(owner, path, f)
 		if owner[f[1]] == nil then return end  -- 这件武器没这个字段：不登记

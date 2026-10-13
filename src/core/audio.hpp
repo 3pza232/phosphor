@@ -87,6 +87,10 @@ public:
     void set_paused(bool paused);
     bool paused() const { return paused_.load(); }
 
+    /// 主机级暂停（调试台"打开即暂停"）：与卡带自己的 paused **各记一个**、任一为真即静音——
+    /// 否则主机每帧 `set_paused` 会把卡带自己设的暂停盖掉，音乐就一直在放
+    void set_host_paused(bool paused) { host_paused_.store(paused); }
+
     /// 音效音量（beep / note / perc / 采样）
     void set_sfx_volume(float volume);
     float sfx_volume() const { return sfx_volume_.load(); }
@@ -202,6 +206,7 @@ private:
     std::atomic<float> music_volume_{kDefaultMusicVolume / 100.0f};
     std::atomic<float> sfx_volume_{kDefaultSfxVolume / 100.0f};
     std::atomic<bool> paused_{false};
+    std::atomic<bool> host_paused_{false};  // 主机级暂停（调试台），与 paused_ 取或
     Tune tune_;  // 音频线程侧使用
     // 以下音乐状态被音频线程写入、主线程读取（状态查询），故用原子
     std::atomic<bool> music_on_{false};

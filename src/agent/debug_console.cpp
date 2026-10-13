@@ -4,6 +4,8 @@
 #include <backends/imgui_impl_glfw.h>
 #include <backends/imgui_impl_opengl3.h>
 
+#include <cmath>
+
 namespace phos {
 
 namespace {
@@ -25,7 +27,7 @@ void draw_params(DebugGroup& group, const std::string& path) {
                 p.changed = true;
             }
         } else if (p.kind == DebugKind::integer) {
-            int v = static_cast<int>(p.value + (p.value < 0 ? -0.5f : 0.5f));
+            int v = std::isfinite(p.value) ? static_cast<int>(std::lround(p.value)) : 0;
             if (ImGui::SliderInt(id.c_str(), &v, static_cast<int>(p.min), static_cast<int>(p.max))) {
                 p.value = static_cast<float>(v);
                 p.changed = true;
