@@ -174,7 +174,9 @@ std::optional<ScreenImage> render_screen_image(const Screen& screen,
                         y0 + static_cast<int>(base) + bitmap.yoff, fg, options.crt.glow);
         };
         for (const Screen::Ink& ink : grid.inks(cx, cy)) one(ink.ch, ink.fg);
-        one(cell.ch, cell.fg);
+        // 被缩放块覆盖的格自身没有字形（大字已由头格画完）——即使 blend 往它上面写过一笔，
+        // 这里也只画笔迹，不画它的字形（与 GL 那条路一致）
+        if (cell.scale != 0) one(cell.ch, cell.fg);
     };
 
     for (int cy = 0; cy < screen.height(); ++cy) {

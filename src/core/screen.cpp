@@ -41,13 +41,16 @@ void Screen::put(int x, int y, char32_t ch, Color fg, Color bg, uint8_t scale) {
     // 缩放规范化：只有 2..kMaxCellScale 才算"大字号块"，其余按常规
     const uint8_t block = (scale >= 2 && scale <= kMaxCellScale) ? scale : 1;
 
-    // 写到块内任意一格，先清掉它所在的旧缩放块（否则会留下残缺的块）
-    clear_scaled_block_at(x, y, fg, bg, keeps_bg);
-    // 新写的是缩放块：把新块覆盖范围内的旧缩放块一并清掉
-    if (block >= 2 && x >= 0 && x < w_) {
-        for (int dy = 0; dy < block; ++dy)
-            for (int dx = 0; dx < width * block; ++dx)
-                clear_scaled_block_at(x + dx, y + dy, fg, bg, keeps_bg);
+    // 写到块内任意一格，先清掉它所在的旧缩放块（否则会留下残缺的块）。零宽字符不写东西，
+    // 也就不该顺手动别人
+    if (width != 0) {
+        clear_scaled_block_at(x, y, fg, bg, keeps_bg);
+        // 新写的是缩放块：把新块覆盖范围内的旧缩放块一并清掉
+        if (block >= 2 && x >= 0 && x < w_) {
+            for (int dy = 0; dy < block; ++dy)
+                for (int dx = 0; dx < width * block; ++dx)
+                    clear_scaled_block_at(x + dx, y + dy, fg, bg, keeps_bg);
+        }
     }
 
     // 先清理被覆盖的旧内容：写到续格上要连带清掉它的头格，
@@ -69,6 +72,8 @@ void Screen::put(int x, int y, char32_t ch, Color fg, Color bg, uint8_t scale) {
             if (!keeps_bg) tail.alpha = alpha;
             drop_inks_at(x + 1, y);
         }
+        // 宽字的续格落在 (x+1,y)：那一格上的旧缩放块也要清掉（宽字左邻紧挨大字头时会出现）
+        if (width == 2 && x + 1 < w_) clear_scaled_block_at(x + 1, y, fg, bg, keeps_bg);
     }
     if (x < 0 || x >= w_ || width == 0) return;
 
@@ -316,9 +321,9 @@ void Screen::print(int x, int y, std::string_view text, Color fg, Color bg, uint
     for (char32_t ch : text::decode(text)) {
         const int width = text::char_width(ch);
         if (width == 0) continue;
+        if (x + width * block > w_) return;  // 块放不下就停（与 Surface 同一规则，不留半个块）
         put(x, y, ch, fg, bg, block);
         x += width * block;  // 缩放块的宽度是 width*scale，按此推进才不互相覆盖
-        if (x >= w_) return;  // 右侧已越界：后面的字符不会再显示
     }
 }
 

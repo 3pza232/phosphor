@@ -6,10 +6,10 @@ namespace phos {
 
 namespace {
 
-/// 这一格是否被该层用到：给过底色、写过字形、或作为宽字续格占位。
+/// 这一格是否被该层用到：给过底色、写过字形、或作为宽字续格 / 缩放块覆盖格占位。
 /// 三者皆无 = 空白透传，合成时整格跳过
 bool uses_cell(const Cell& cell) {
-    return cell.alpha != 0 || cell.ch != U' ' || cell.cols == 0;
+    return cell.alpha != 0 || cell.ch != U' ' || cell.cols == 0 || cell.scale == 0;
 }
 
 /// 合成后的宽字符归一。一格只有一个字形槽，而宽字占两格：
@@ -138,6 +138,7 @@ bool LayeredScreen::merge_over(Screen& target, int origin_x, int origin_y) {
                 merged.ch = cell.ch;
                 merged.fg = cell.fg;
                 merged.cols = cell.cols;
+                merged.scale = cell.scale;  // 缩放（大字块）随字形槽一起搬运
                 // 底色槽：只有给过底色才覆盖。没给就保留底下的——"字压在世界底上"
                 if (cell.alpha != 0) {
                     merged.bg = cell.bg;

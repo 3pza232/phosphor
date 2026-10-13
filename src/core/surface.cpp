@@ -13,8 +13,12 @@ Surface::Surface(Screen& screen, int origin_x, int origin_y, int w, int h)
 void Surface::put(int x, int y, char32_t ch, Color fg, Color bg, uint8_t scale) {
     const int cols = text::char_width(ch);
     const uint8_t block = (scale >= 2 && scale <= Screen::kMaxCellScale) ? scale : 1;
-    // 宽字占 cols 格、缩放块占 cols*block 列 x block 行：整块放得下才写
-    if (cols == 0 || x < 0 || y < 0 || x + cols * block > w_ || y + block > h_) return;
+    // 宽字占 cols 格、缩放块占 cols*block 列 x block 行：整块放得下才写。
+    // 右/下边界用 64 位算——卡带可能传接近 INT_MAX 的坐标，int 相加会溢出（UB）
+    if (cols == 0 || x < 0 || y < 0) return;
+    if (static_cast<long long>(x) + static_cast<long long>(cols) * block > w_ ||
+        static_cast<long long>(y) + block > h_)
+        return;
     screen_.put(ox_ + x, oy_ + y, ch, fg, bg, block);
 }
 

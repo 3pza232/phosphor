@@ -352,6 +352,14 @@ TEST(screen_scaled_cell_reserves_block) {
     CHECK_EQ(int(w.at(4, 1).scale), 0);  // 块内其余格被覆盖
     CHECK_EQ(int(w.at(5, 1).scale), 0);
     CHECK_EQ(int(w.at(2, 2).scale), 0);
+
+    // 宽字左邻紧挨大字头：续格落到块内，必须连带清掉整块（不留孤儿覆盖格）
+    w.put(1, 1, U'\u4E2D', Color::white, Color::black);
+    bool orphan = false;
+    for (int yy = 0; yy < 6; ++yy)
+        for (int xx = 0; xx < 12; ++xx)
+            if (w.at(xx, yy).scale == 0) orphan = true;
+    CHECK(!orphan);
 }
 
 TEST(surface_clips_to_bounds) {
