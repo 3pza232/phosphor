@@ -51,4 +51,15 @@ inline void order_by_recent(std::vector<CartInfo>& carts, const std::vector<std:
                      [&rank](const CartInfo& a, const CartInfo& b) { return rank(a) < rank(b); });
 }
 
+/// 卡带 id 的合法形状：小写字母 / 数字 / 连字符，1..64。
+/// id 会拼进存档路径（`saves/<id>.sav`）与 `<id>.phos`——放任 `..` / `:` / 绝对路径就能越出
+/// 存档目录、或冒用别的卡带存档。主机端（`parse_manifest`）与打包器（`scaffold_cart`）
+/// 都走这一份校验，规则只写一处
+inline bool is_valid_cart_id(const std::string& id) {
+    if (id.empty() || id.size() > 64) return false;
+    for (char c : id)
+        if (!((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-')) return false;
+    return true;
+}
+
 } // namespace phos

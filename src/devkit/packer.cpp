@@ -1,6 +1,7 @@
 #include "devkit/packer.hpp"
 
 #include "cart/cart_files.hpp"
+#include "cart/cart_info.hpp"
 #include "cart/cartridge.hpp"
 
 #include <miniz.h>
@@ -165,6 +166,12 @@ bool scaffold_cart(const std::string& template_dir, const std::string& target_di
 
     // 占位符的值每个文件都一样，先定下来：id 缺省取目录名，标题缺省与 id 相同
     const std::string id = info.id.empty() ? directory_id(to) : info.id;
+    // id 是存档路径与 <id>.phos 的来源，先按同一份规则校验：否则会生成一个装不进主机的卡带，
+    // 而错误要等到几分钟后插卡才暴露
+    if (!is_valid_cart_id(id)) {
+        error = "invalid cart id (use [a-z0-9-], 1..64): " + id;
+        return false;
+    }
     const std::string name = info.name.empty() ? id : info.name;
     const std::string author = info.author.empty() ? "you" : info.author;
 

@@ -145,6 +145,10 @@ ApiCheckResult check_api(const std::string& annotation_path) {
 
     sol::state lua;
     lua.open_libraries(sol::lib::base, sol::lib::string, sol::lib::table, sol::lib::math);
+    // 与其它脚本宿主一致：base 自带的文件/加载函数一律摘掉（这里虽是可信输入，也不留口子）
+    lua["dofile"] = sol::nil;
+    lua["loadfile"] = sol::nil;
+    lua["load"] = sol::nil;
     register_host_api(lua, host);
 
     std::set<std::string> registered_functions, registered_tables, registered_fields;

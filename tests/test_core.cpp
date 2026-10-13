@@ -636,6 +636,18 @@ TEST(order_by_recent_puts_recent_first) {
     CHECK_EQ(plain[0].id, std::string("a"));
 }
 
+TEST(cart_id_validation) {
+    CHECK(is_valid_cart_id("snake"));
+    CHECK(is_valid_cart_id("net-demo"));
+    CHECK(is_valid_cart_id("a1-b2"));
+    CHECK(!is_valid_cart_id(""));                     // 空
+    CHECK(!is_valid_cart_id("Snake"));                // 大写
+    CHECK(!is_valid_cart_id(".."));                   // 越界
+    CHECK(!is_valid_cart_id("a/b"));                  // 路径分隔
+    CHECK(!is_valid_cart_id("c:x"));                  // 盘符 / 冒号
+    CHECK(!is_valid_cart_id(std::string(65, 'a')));   // 超长
+}
+
 TEST(cart_files_read_cap_and_path_safety) {
     namespace fs = std::filesystem;
     const fs::path dir = fs::temp_directory_path() / "phosphor_unit_cart";

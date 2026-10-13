@@ -45,16 +45,6 @@ struct WatchdogScope {
     }
 };
 
-/// 卡带 id 的合法形状：小写字母/数字/连字符，1..64。
-/// id 会拼进存档路径（saves/<id>.sav）与 <id>.phos —— 放任 ".." / ":" / 绝对路径就能
-/// 越出存档目录、甚至覆盖其它卡带的存档。主机端**强制校验**，不依赖卡带自觉
-bool valid_cart_id(const std::string& id) {
-    if (id.empty() || id.size() > 64) return false;
-    for (char c : id)
-        if (!((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-')) return false;
-    return true;
-}
-
 } // namespace
 
 CartInfo parse_manifest(const std::string& manifest_text, const std::string& cart_path) {
@@ -114,7 +104,7 @@ CartInfo parse_manifest(const std::string& manifest_text, const std::string& car
     info.entry = get_str("entry");
 
     if (info.id.empty()) info.error = "manifest missing required field: id";
-    else if (!valid_cart_id(info.id))
+    else if (!is_valid_cart_id(info.id))
         info.error = "manifest id must match [a-z0-9-]{1,64}: " + info.id;
     else if (info.entry.empty()) info.error = "manifest missing required field: entry";
     else info.error.clear();
