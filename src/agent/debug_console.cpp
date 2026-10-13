@@ -8,25 +8,22 @@ namespace phos {
 
 namespace {
 
-/// 递归画一组参数：本层滑条 + 子组（折叠节点，**默认关闭**）。
-/// 用 PushID(&node) 让同名节点在 ImGui 里互不撞 ID；将来新增的组 / 参数自动出现
-void draw_params(DebugGroup& group) {
+/// 递归画一组参数：本层滑条 + 子组（**CollapsingHeader** 折叠块，默认关闭，与其它分区一致）。
+/// ID 一律用**稳定的路径字符串**（`###` 后缀），**绝不能用节点地址**——参数树每帧重建、
+/// 地址每次都变，用地址当 ID 会让 ImGui 每帧都当成"新节点"，于是"点开→瞬间又关闭"
+void draw_params(DebugGroup& group, const std::string& path) {
     for (DebugParam& p : group.params) {
-        ImGui::PushID(&p);
         if (!p.readable) {
             ImGui::TextDisabled("%s  (unreadable)", p.name.c_str());
-        } else if (ImGui::SliderFloat(p.name.c_str(), &p.value, p.min, p.max, "%.3f")) {
-            p.changed = true;
+            continue;
         }
-        ImGui::PopID();
+        const std::string id = p.name + "###" + path + "/" + p.name;
+        if (ImGui::SliderFloat(id.c_str(), &p.value, p.min, p.max, "%.3f")) p.changed = true;
     }
     for (DebugGroup& sub : group.groups) {
-        ImGui::PushID(&sub);
-        if (ImGui::TreeNodeEx(sub.label.c_str(), ImGuiTreeNodeFlags_SpanAvailWidth)) {
-            draw_params(sub);
-            ImGui::TreePop();
-        }
-        ImGui::PopID();
+        const std::string sub_path = path + "/" + sub.label;
+        const std::string id = sub.label + "###" + sub_path;  // ### 之后才是（稳定的）ID
+        if (ImGui::CollapsingHeader(id.c_str())) draw_params(sub, sub_path);
     }
 }
 
@@ -106,6 +103,9 @@ void DebugConsole::render(const DebugInfo& info) {
         ImGui::Text("content        %d x %d", info.content_w, info.content_h);
         ImGui::Text("sidebar panel  %d cols", info.panel_w);
         ImGui::Text("rng seed       %u", info.rng_seed);
+        // 主机行为开关（与卡带参数无关，故放 HOST）：打开面板是否冻结卡带
+        if (info.pause_when_open)
+            ImGui::Checkbox("Pause while panel is open", info.pause_when_open);
     }
 
     if (ImGui::CollapsingHeader("CARTRIDGE", ImGuiTreeNodeFlags_DefaultOpen)) {
@@ -124,14 +124,11 @@ void DebugConsole::render(const DebugInfo& info) {
     }
 
     if (ImGui::CollapsingHeader("CART PARAMS", ImGuiTreeNodeFlags_DefaultOpen)) {
-        if (info.pause_when_open)  // 主机行为开关：打开面板是否暂停（英文字样，agent/玩家都认）
-            ImGui::Checkbox("Pause while panel is open", info.pause_when_open);
-        ImGui::Separator();
         const DebugGroup* root = info.params_root;
         if (!root || (root->params.empty() && root->groups.empty())) {
             ImGui::TextUnformatted("(cart exposes no params via phos.debug.number)");
         } else {
-            draw_params(*info.params_root);
+            draw_params(*info.params_root, "");
             ImGui::TextDisabled("edits apply next frame");
         }
     }
