@@ -4,10 +4,10 @@ local Panel = {}
 local Text = {
   zh = { log = "棋谱", cap = "被吃", red = "红", black = "黑",
          move = "方向键 移动", ab = "[%s] 选/落  [%s] 取消",
-         undo = "[%s] 悔棋", new = "[%s] 重开" },
+         undo = "[%s] 悔棋", pause = "[%s] 暂停" },
   en = { log = "MOVES", cap = "CAPTURED", red = "R", black = "B",
          move = "ARROWS move", ab = "[%s] pick  [%s] cancel",
-         undo = "[%s] undo", new = "[%s] new" },
+         undo = "[%s] undo", pause = "[%s] pause" },
 }
 
 function Panel.draw(game, cart)
@@ -47,7 +47,7 @@ function Panel.draw(game, cart)
   P.print(1, ph - 4, phos.text.fit(t.move, pw - 2), C.dark_gray)
   P.print(1, ph - 3, phos.text.fit(string.format(t.ab, kn("a"), kn("b")), pw - 2), C.white)
   P.print(1, ph - 2, phos.text.fit(string.format(t.undo, kn("backspace")), pw - 2), C.gray)
-  P.print(1, ph - 1, phos.text.fit(string.format(t.new, kn("start")), pw - 2), C.gray)
+  P.print(1, ph - 1, phos.text.fit(string.format(t.pause, kn("start")), pw - 2), C.gray)
 end
 
 return Panel

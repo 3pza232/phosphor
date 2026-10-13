@@ -9,14 +9,16 @@ local Text = {
     red = "红（先行）", black = "黑", lv = { "简单", "老手", "超算" },
     menu_hint = "↑↓ 选择   ←→ 调整   %s 开始",
     your = "你的回合", theirs = "对方回合", check = "将军！",
-    win = "你赢了！", lose = "你输了", drawn = "终局", again = "按 %s 再来一局",
+    win = "你赢了！", lose = "你输了", drawn = "终局", pause = "暂停中",
+    exit = "[ESC] 返回卡带架",
   },
   en = {
     title = "CHINESE CHESS", menu_title = "MATCH SETUP", side = "SIDE", level = "COMPUTER",
     red = "RED (first)", black = "BLACK", lv = { "EASY", "VETERAN", "SUPER" },
     menu_hint = "↑↓ SELECT   ←→ CHANGE   %s START",
     your = "YOUR TURN", theirs = "OPPONENT", check = "CHECK!",
-    win = "YOU WIN", lose = "YOU LOSE", drawn = "GAME OVER", again = "press %s for a new game",
+    win = "YOU WIN", lose = "YOU LOSE", drawn = "GAME OVER", pause = "PAUSED",
+    exit = "[ESC] back to shelf",
   },
 }
 
@@ -24,7 +26,8 @@ local screen     -- "menu" / "play"
 local menu = { row = 1, side = 1, level = 2 }   -- side: 1 红 / 2 黑；level: 1..3
 local game
 local cart = {}
-local cf, cr = 4, 9     -- 光标（红帅默认位置）
+local cf, cr = 4, 9     -- 光标（初始停在自己那方的将/帅上）
+local paused = false
 
 -- 棋盘布局：文件间距 5、行距 3，河界再加一行；棋子摆在**两条格线的交点**上。
 local FILE = function(f) return 2 + 5 * f end
@@ -39,7 +42,8 @@ end
 local function begin_match()
   local side = (menu.side == 1) and "r" or "b"
   game = Game.new(rng, phos.sys.time, side, menu.level)
-  cf, cr = 4, 9
+  cf, cr = 4, (menu.side == 1) and 9 or 0   -- 光标停在**自己那方的将/帅**上
+  paused = false
   screen = "play"
   phos.audio.music(require("music"))   -- 选择界面不放音乐，进对局才放
 end
@@ -95,18 +99,20 @@ end
 
 -- ── 对局 ─────────────────────────────────────────────────
 local function update_play(dt)
+  -- Enter 开关暂停：暂停期间整局冻结（含 AI 与音乐）
   if phos.input.pressed("start") then
-    screen = "menu"               -- 回到设置界面（重开）
-    phos.audio.stop_music()
+    paused = not paused
+    phos.audio.paused(paused)
+    phos.audio.beep(paused and 300 or 760, 0.04)
     return
   end
-  if game.over then
-    if phos.input.pressed("a") then begin_match() end
-    if phos.input.pressed("backspace") then
-      if game:undo() then phos.audio.beep(420, 0.05) end
-    end
-    return
+  if paused then return end
+
+  if phos.input.pressed("backspace") then
+    if game:undo() then phos.audio.beep(420, 0.05) else phos.audio.beep(240, 0.03) end
   end
+
+  if game.over then return end   -- 终局不再重开（防误触）；回卡带架用 ESC
 
   if phos.input.pressed("left") then cf = math.max(0, cf - 1) end
   if phos.input.pressed("right") then cf = math.min(8, cf + 1) end
@@ -114,9 +120,6 @@ local function update_play(dt)
   if phos.input.pressed("down") then cr = math.min(9, cr + 1) end
 
   if phos.input.pressed("b") then game:cancel(); phos.audio.beep(300, 0.03) end
-  if phos.input.pressed("backspace") then
-    if game:undo() then phos.audio.beep(420, 0.05) else phos.audio.beep(240, 0.03) end
-  end
   if phos.input.pressed("a") and game.turn == game.player_side then
     local r = game:choose(cf, cr)
     if r == "selected" then phos.audio.beep(700, 0.03)
@@ -228,10 +231,12 @@ local function draw_play()
 
   local sy = py + ROW(9) + 3
   local st = game:status()
-  if game.over then
+  if paused then
+    S.print(px + 2, sy, t.pause, C.yellow)
+  elseif game.over then
     local res = (st.winner == st.player_side) and t.win or (st.winner and t.lose or t.drawn)
     S.print(px + 2, sy, res, C.yellow)
-    S.print(px + 2, sy + 1, string.format(t.again, phos.input.key_name("a")), C.white)
+    S.print(px + 2, sy + 1, t.exit, C.dark_gray)
   else
     S.print(px + 2, sy, (st.turn == st.player_side) and t.your or t.theirs,
             (st.turn == st.player_side) and C.cyan or C.gray)
