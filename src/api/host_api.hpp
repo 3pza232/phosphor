@@ -45,6 +45,10 @@ struct HostContext {
     /// 卡带是否接管 Esc（`phos.sys.capture_escape`）：true 时 Esc 作为普通键注入卡带。
     /// 由 App 指向其成员；未接（无头）时为 nullptr，capture_escape 调用安全无效
     bool* capture_escape = nullptr;
+    /// 本帧是否有输入框声明要收中文（`phos.input.field({ ime = true })` 被 feed 时置位）。
+    /// App 每帧清零、帧末据此开关系统输入法。**默认关**——游戏进行中、以及不声明中文的框
+    /// （含主机自带的卡带架搜索）都不该挂着输入法
+    bool ime_wanted = false;
     std::string language = "zh";        // 界面语言（"zh"/"en"）：卡带据此选自己的文案
     std::mt19937 rng;                   // 确定性模式下由种子驱动
 

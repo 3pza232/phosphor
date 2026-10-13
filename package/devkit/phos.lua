@@ -424,7 +424,7 @@ function phos.input.text() end
 ---创建一个**文本输入框缓冲**：过滤、按码点退格、限长都在主机侧完成
 ---（与主机界面的磁带码输入是同一套实现），卡带只管每帧 feed() 一次、然后读 value。
 ---用于命名 / 密码 / 输入磁带码等长按输入场景，比自己拼字符串稳。
----@param cfg table|nil filter = "any"|"printable"|"ascii"|"digits"|"hex"|"letters"|function(cp)->bool；max = 码点数上限（0=不限）
+---@param cfg table|nil filter = "any"|"printable"|"ascii"|"digits"|"hex"|"letters"|function(cp)->bool；max = 码点数上限（0=不限）；ime = true 才收中文（默认关；仅 Windows）
 ---@return phos.TextField
 function phos.input.field(cfg) end
 

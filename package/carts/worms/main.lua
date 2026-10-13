@@ -537,7 +537,7 @@ function init()
 	menu.row = 1
 	-- 昵称输入框（局域网用）：过滤、按码点退格、限长都在主机的文本缓冲里做。
 	-- 缓冲跨多次编辑保留，所以"改一下名字"不必从头敲
-	menu.field = phos.input.field({ filter = "printable", max = 8 })
+	menu.field = phos.input.field({ filter = "printable", max = 8, ime = true })
 	menu.nick_edit, menu.nick_err = false, false
 	lan = nil
 	phos.panel.resize(0) -- 菜单不需要侧栏：留着那条竖线会压住浮窗

@@ -77,9 +77,9 @@ target_include_directories(phosphor PRIVATE
     ${EXTERN}/sol2
     ${EXTERN}/miniaudio)
 target_link_libraries(phosphor PRIVATE glad glfw lua miniz imgui opengl32 gdi32 user32 shell32)
-# 控制通道使用 Winsock（仅 Windows）
+# 控制通道使用 Winsock，输入法开关使用 IMM32（均仅 Windows）
 if(WIN32)
-    target_link_libraries(phosphor PRIVATE ws2_32)
+    target_link_libraries(phosphor PRIVATE ws2_32 imm32)
 endif()
 
 # MinGW：静态链接运行时，产出免依赖 exe

@@ -38,6 +38,10 @@ public:
     /// 渲染与读回必须用它，否则画面只填到左下角一块（见 Renderer::set_framebuffer_size）
     int framebuffer_width() const;
     int framebuffer_height() const;
+
+    /// 开关本窗口的**系统输入法**：只让声明了 `ime = true` 的输入框收中文。
+    /// 仅 Windows 实现（`ImmAssociateContext`）；其它平台是空操作。幂等，可按帧调
+    void set_ime_enabled(bool enabled);
     /// 改写标题栏文字（agent 接管时用于提示"谁在操作"）
     void set_title(const std::string& title) const;
     void poll_events() const;
@@ -49,6 +53,9 @@ public:
 private:
     Window() = default;
     GLFWwindow* window_ = nullptr;
+    /// 系统给的输入法上下文（Windows 的 HIMC，用 void* 存以保持头文件平台无关）；
+    /// 关输入法前记住它，开回来时原样还给它
+    void* ime_context_ = nullptr;
 };
 
 } // namespace phos

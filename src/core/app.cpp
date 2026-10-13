@@ -109,6 +109,8 @@ int App::run(const CliOptions& opts) {
 
 void App::advance(float dt, Renderer* renderer, Window* window) {
     log::set_frame(frame_count_);  // 日志挂到帧时间线上
+    // 本帧"要不要中文"由输入框 feed 时重新举手（见 HostContext::ime_wanted）：不举手 = 关输入法
+    host_.ime_wanted = false;
     // 调试台"打开即暂停"时，卡带看到的时间与**帧号**都冻结（画面仍重绘）——只冻结时间的话，
     // 按帧驱动的绘制还会动
     if (!(console_.open && pause_when_open_)) host_.frame = frame_count_;
@@ -534,6 +536,9 @@ int App::run_windowed(const CliOptions& opts) {
                     cart_->debug_param_write(p->index, p->value);
             }
         }
+        // 输入法开关：本帧有框声明要中文就打开系统输入法，否则关（见 HostContext::ime_wanted）。
+        // 只在本机（Windows）实现；其它平台是空操作。非 Windows 下中文输入本就由各自的 IM 框架管
+        window.set_ime_enabled(host_.ime_wanted);
         window.swap_buffers();
 
         // 帧率档位：每秒最多刷新这么多次画面。**只在实时（非单步）时生效** ——

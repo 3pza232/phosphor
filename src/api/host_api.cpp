@@ -307,13 +307,19 @@ void register_host_api(sol::state& lua, HostContext& host) {
     // 卡带只管 feed() 与读 value()——"删掉一个中文字"因此不会变成半个字符。
     lua.new_usertype<CartTextField>(
         "phos.TextField", sol::no_constructor,
-        "feed", [&host](CartTextField& self) { self.feed(host.time, host.input->text()); },
+        "feed",
+        [&host](CartTextField& self) {
+            self.feed(host.time, host.input->text());
+            // 声明"要收中文"的框被喂的**这一帧**，举手告诉主机打开系统输入法（见 HostContext::ime_wanted）
+            if (self.ime()) host.ime_wanted = true;
+        },
         "clear", &CartTextField::clear, "value", sol::property(&CartTextField::value),
         "count", sol::property(&CartTextField::count));
 
     input["field"] = [&lua](sol::optional<sol::table> cfg) -> CartTextField {
         std::string preset = "any";
         std::size_t max_chars = 0;
+        bool ime = false;
         bool has_custom = false;
         sol::protected_function custom;
         if (cfg) {
@@ -329,6 +335,8 @@ void register_host_api(sol::state& lua, HostContext& host) {
                 const int requested = limit.as<int>();
                 max_chars = requested > 0 ? static_cast<std::size_t>(requested) : 0;
             }
+            sol::object ime_flag = (*cfg)["ime"];
+            if (ime_flag.is<bool>()) ime = ime_flag.as<bool>();
         }
 
         text::TextInput::Filter accept = text::TextInput::accept_any;
@@ -352,7 +360,7 @@ void register_host_api(sol::state& lua, HostContext& host) {
             // 写错预设名不该静默变成"全收"，那会让卡带以为过滤生效了
             log::warn("phos.input.field: unknown filter '" + preset + "', using 'any'");
         }
-        return CartTextField(std::move(accept), max_chars);
+        return CartTextField(std::move(accept), max_chars, ime);
     };
 
     // --- phos.save（需 manifest 声明 save = true） ---

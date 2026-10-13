@@ -15,13 +15,16 @@ namespace phos {
 /// 按码点删，中文不会被删成半个序列。
 ///
 /// 卡带侧用法：
-///   local field = phos.input.field({ filter = "hex", max = 64 })
+///   local field = phos.input.field({ filter = "hex", max = 64, ime = true })
 ///   function update(dt) field:feed() end   -- 同一帧多次调用是幂等的
 ///   ... field.value / field.count / field:clear()
+///
+/// `ime = true` 表示"这个框要收中文"：卡带 feed 它的这一帧，主机据此打开系统输入法；
+/// 不做声明的框（含主机的卡带架搜索）收不了中文——换输入法候选里敲出来的字进不来。
 class CartTextField {
 public:
-    CartTextField(text::TextInput::Filter accept, std::size_t max_chars)
-        : input_(std::move(accept), max_chars) {}
+    CartTextField(text::TextInput::Filter accept, std::size_t max_chars, bool ime = false)
+        : input_(std::move(accept), max_chars), ime_(ime) {}
 
     /// 消费"本帧"输入文本。`now` 是主机的卡带运行秒数：同一帧内重复调用幂等
     /// （`Input::text()` 的语义本来就是"本帧文本"），卡带不必小心调用次数。
@@ -34,10 +37,13 @@ public:
     void clear() { input_.clear(); }
     const std::string& value() const { return input_.value(); }
     std::size_t count() const { return input_.count(); }
+    /// 本框是否声明"要收中文"（决定主机是否打开系统输入法）
+    bool ime() const { return ime_; }
 
 private:
     text::TextInput input_;
     double last_feed_time_ = -1.0;
+    bool ime_ = false;
 };
 
 } // namespace phos

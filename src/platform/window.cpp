@@ -4,8 +4,14 @@
 #include "core/text.hpp"
 
 #include <glad/glad.h>
+#define GLFW_EXPOSE_NATIVE_WIN32
 #include <GLFW/glfw3.h>
+#include <GLFW/glfw3native.h>
 #include <stb_image.h>
+
+#ifdef _WIN32
+#include <imm.h>  // 输入法上下文（ImmAssociateContext）：按输入框声明开关系统输入法
+#endif
 
 #include <optional>
 
@@ -198,6 +204,23 @@ int Window::framebuffer_height() const {
     int w = 0, h = 0;
     if (window_) glfwGetFramebufferSize(window_, &w, &h);
     return h;
+}
+
+void Window::set_ime_enabled(bool enabled) {
+#ifdef _WIN32
+    if (!window_) return;
+    HWND hwnd = glfwGetWin32Window(window_);
+    if (!hwnd) return;
+    if (enabled) {
+        if (ime_context_) ImmAssociateContext(hwnd, static_cast<HIMC>(ime_context_));
+    } else if (ime_context_ == nullptr) {
+        // 第一次关之前先把系统给的默认上下文记下来，之后才能原样开回来。此后重复调用是空操作
+        ime_context_ = ImmGetContext(hwnd);
+        ImmAssociateContext(hwnd, nullptr);
+    }
+#else
+    (void)enabled;  // 其它平台的输入法由各自 IM 框架管，这里不介入
+#endif
 }
 
 void Window::set_title(const std::string& title) const {
