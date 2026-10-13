@@ -5,8 +5,10 @@
 色板/主题…），所以测的就是真代码；不依赖 GL / 显卡 / 窗口，任何机器都能跑。
 本脚本只负责"找到可执行文件、跑它、把退出码翻译成门禁结论"。
 
-需要先构建（`-DPHOSPHOR_BUILD_TESTS=ON` 时随主机构建一起产出）。用法
-（工作目录必须是含 phosphor_tests 的构建目录）::
+`phosphor_tests` 是**纯测试产物**：`clean.py` 会把它清掉以保持构建目录干净。
+所以它不在时本脚本**按需重建**（增量链一下，很快），用后即清的目录照样能通过门禁。
+
+用法（工作目录必须是含 phosphor.exe 的构建目录）::
 
     cd build
     python ../tools/unit_smoke.py
@@ -14,6 +16,7 @@
 
 from __future__ import annotations
 
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -31,11 +34,23 @@ def find_binary() -> Path | None:
     return None
 
 
+def build_binary() -> None:
+    """按需构建测试目标（幂等、增量）。找不到 cmake 或构建失败就静默返回，由调用方报错。"""
+    cmake = shutil.which("cmake")
+    if cmake is None:
+        return
+    subprocess.run([cmake, "--build", ".", "--target", "phosphor_tests"],
+                   capture_output=True, text=True)
+
+
 def run() -> int:
     report, _ = reporter("PHOSPHOR unit")
 
     binary = find_binary()
-    report.check(binary is not None, "phosphor_tests 已构建（-DPHOSPHOR_BUILD_TESTS=ON）")
+    if binary is None:
+        build_binary()  # 用后即清的构建目录里没有它：自愈
+        binary = find_binary()
+    report.check(binary is not None, "phosphor_tests 可用（必要时已按需构建）")
     if binary is None:
         return report.finish()
 

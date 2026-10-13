@@ -9,7 +9,9 @@
 不带前缀的脚本分不出"临时"还是"要留的工具"，迟早攒成一片垃圾。
 
 **绝不触碰**：config.json（你的机器设置）、saves/*.sav（你的存档）、
-carts/ 下的卡带本体、构建产物（exe / 库 / CMake 文件）。
+carts/ 下的卡带本体，以及运行主机所需的构建产物（`phosphor.exe` / 库 / CMake 文件）。
+**唯一例外**：`phosphor_tests(.exe)` 会被清掉——它是纯门禁产物、随时可重建
+（下次 `run_checks.py` 的 unit 门禁会按需重建），清掉它能让构建目录干净些。
 
 用法（在含 phosphor.exe 的构建目录执行）::
 
@@ -27,6 +29,9 @@ EPHEMERAL_PATHS = ["imgui.ini", "dist", "shots", "saves/demo", "tests-out"]
 
 #: 按通配符删除的名字（匹配文件名本身，含目录）
 EPHEMERAL_GLOBS = ["*.log", "_*"]
+
+#: 纯测试产物：只为门禁存在，随时可重建，故一并清掉
+TEST_BINARIES = ["phosphor_tests", "phosphor_tests.exe"]
 
 
 def main() -> int:
@@ -48,6 +53,8 @@ def main() -> int:
             drop(path, path.name)
     for relative in EPHEMERAL_PATHS:
         drop(root / relative, relative)
+    for name in TEST_BINARIES:
+        drop(root / name, name + "（纯测试产物，可重建）")
 
     print()
     print(f"清掉 {removed} 项；config.json 与 saves/*.sav 没有被碰")
