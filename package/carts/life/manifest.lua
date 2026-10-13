@@ -2,7 +2,7 @@
 -- name 是卡带架与侧栏显示的标题；id 建议与目录同名
 return {
   id = "life",
-  name = "LIFE",
+  name = { zh = "生命游戏", en = "LIFE" },
   version = "1.0.0",
   author = "PZA",
   desc = {

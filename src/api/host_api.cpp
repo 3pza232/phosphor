@@ -447,7 +447,7 @@ void register_host_api(sol::state& lua, HostContext& host) {
         sol::table out = lua.create_table();
         const CartInfo* info = host.cart_info;  // 未插卡（主机脚本）时为空
         out["id"] = info ? info->id : std::string();
-        out["name"] = info ? info->name : std::string();
+        out["name"] = info ? info->name.get(host.language == "en") : std::string();
         out["version"] = info ? info->version : std::string();
         out["author"] = info ? info->author : std::string();
         // 简介是身份里唯一需要本地化的字段：按当前界面语言取（英文缺失时回落中文）

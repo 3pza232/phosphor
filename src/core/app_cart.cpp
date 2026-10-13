@@ -47,7 +47,7 @@ void App::load_cart_path(const std::string& path) {
     play_event("insert");
 
     const CartInfo& info = cart_->info();
-    log::info("cart loaded: id=" + info.id + " name=" + info.name + " version=" + info.version +
+    log::info("cart loaded: id=" + info.id + " name=" + info.name.get(false) + " version=" + info.version +
               " sidebar_w=" + std::to_string(cart_->sidebar_width()) + " path=" + cart_path_);
     control_.send_event("cart.loaded", "\"id\":" + json::quote(info.id) +
                                             ",\"path\":" + json::quote(cart_path_));

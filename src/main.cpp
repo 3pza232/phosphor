@@ -20,7 +20,7 @@ static int run_scan(const std::string& dir, bool json) {
     } else {
         for (const auto& c : carts) {
             if (c.error.empty())
-                std::printf("%-16s %-20s %s\n", c.id.c_str(), c.name.c_str(),
+                std::printf("%-16s %-20s %s\n", c.id.c_str(), c.name.get(false).c_str(),
                             c.version.c_str());
             else
                 std::printf("%-16s [损坏] %s\n", c.id.c_str(), c.error.c_str());

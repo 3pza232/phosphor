@@ -35,7 +35,7 @@ void draw_list(Screen& screen, const ui::Rect& content, const ShelfView& view,
     // 右：图标铭牌（带边框）+ 简介框
     const CartInfo& cart = carts[static_cast<size_t>(view.cursor)];
     const ui::Rect plate{plate_x, content.y + 3, kListPlateW, kListPlateH};
-    ui::frame(screen, plate, cart.name, style);
+    ui::frame(screen, plate, display_name(cart, view.lang), style);
     ui::icon(screen, cart.icon_rows, cart.icon_colors, plate.x + plate.w / 2,
              plate.y + plate.h / 2, 1, 1.0f, style.accent);
 
@@ -76,10 +76,11 @@ void draw_window(Screen& screen, const ui::Rect& content, const ShelfView& view,
 
     // 当前卡带：图标铭牌（标题嵌在上边框）
     const CartInfo& cart = carts[static_cast<size_t>(view.cursor)];
+    const std::string name = display_name(cart, view.lang);
     ui::frame(screen, icon_plate_rect(cart, center_x, content.y + kIconCenterY, 1, 3),
-              cart.name, style);
+              name, style);
 
-    const std::string title = count > 1 ? "<  " + cart.name + "  >" : cart.name;
+    const std::string title = count > 1 ? "<  " + name + "  >" : name;
     ui::print_centered(screen, content.y + kTitleY, title, style.accent, style.bg,
                        content.x, content.w);
     ui::text_block(screen, content.x + 8, content.y + kTitleY + 3, content.w - 16,
@@ -96,7 +97,8 @@ void draw_empty(Screen& screen, const ui::Rect& content, const ui::Style& style,
 } // namespace
 
 std::string display_name(const CartInfo& cart, Lang lang) {
-    return cart.error.empty() ? cart.name : cart.name + tr(lang, Msg::shelf_broken);
+    const std::string& name = cart.name.get(lang == Lang::en);
+    return cart.error.empty() ? name : name + tr(lang, Msg::shelf_broken);
 }
 
 ui::Rect icon_plate_rect(const CartInfo& cart, int center_x, int center_y, int step,

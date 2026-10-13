@@ -9,13 +9,15 @@
 
 namespace phos {
 
-/// 一段可本地化的文本（当前用于 manifest 的 desc）：
-/// `desc = "…"` 表示中英同文；`desc = { zh = "…", en = "…" }` 各语言一份。
+/// 一段可本地化的文本（当前用于 manifest 的 name / desc）：
+/// `name = "SNAKE"` 表示中英同文；`name = { zh = "贪吃蛇", en = "SNAKE" }` 各语言一份。
 struct Localized {
     std::string zh;
     std::string en;
     /// 按机器界面语言取；english=false → 中文（en 为空时回落中文，绝不给出空串）
     const std::string& get(bool english) const { return english && !en.empty() ? en : zh; }
+    /// 两边都没写
+    bool empty() const { return zh.empty() && en.empty(); }
 };
 
 /// 卡带元信息（来自 manifest.lua）。
@@ -24,7 +26,7 @@ struct Localized {
 /// 这份纯数据，不该因为"要用 CartInfo"就连整个 Lua 宿主（sol2）一起编译
 struct CartInfo {
     std::string id;
-    std::string name;
+    Localized name;      // 显示名：manifest 可给字符串（同文）或 { zh = …, en = … }
     std::string author;
     std::string version;
     Localized desc;

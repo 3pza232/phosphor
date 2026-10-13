@@ -134,7 +134,7 @@ void App::handle_intent(const Shell::Intent& intent, Renderer* renderer, Window*
     if (intent.open_tape) {
         // 磁带码界面刚打开：把当前卡带的码交过去（Shell 自己拿不到存档）
         SaveStore* save = cart_ ? cart_->save() : nullptr;
-        shell_.set_tape(cart_ ? cart_->info().name : std::string(),
+        shell_.set_tape(cart_ ? cart_->info().name.get(config_.language == "en") : std::string(),
                         save ? save->export_code() : std::string(), save != nullptr);
     }
     if (intent.tape_import) {

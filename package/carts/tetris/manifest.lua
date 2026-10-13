@@ -1,7 +1,7 @@
 -- manifest.lua —— 俄罗斯方块
 return {
   id = "tetris",
-  name = "TETRIS",
+  name = { zh = "俄罗斯方块", en = "TETRIS" },
   version = "1.0.0",
   author = "PZA",
   desc = {

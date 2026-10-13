@@ -1,7 +1,7 @@
 -- manifest.lua —— SNAKE.EXE 卡带标签
 return {
   id      = "snake",
-  name    = "SNAKE",
+  name    = { zh = "贪吃蛇", en = "SNAKE" },
   author  = "PZA",
   version = "1.1.0",
   -- 简介双语：卡带架按机器的界面语言取（只写字符串则中英同文）

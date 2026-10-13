@@ -127,7 +127,7 @@ std::string App::control_state_json() const {
     if (cart_) {
         const CartInfo& info = cart_->info();
         out << ",\"cart\":{\"id\":" << json::quote(info.id)
-            << ",\"name\":" << json::quote(info.name)
+            << ",\"name\":" << json::quote(info.name.get(config_.language == "en"))
             << ",\"version\":" << json::quote(info.version)
             << ",\"author\":" << json::quote(info.author)
             << ",\"path\":" << json::quote(cart_path_)
@@ -185,7 +185,7 @@ std::string App::carts_json() const {
     // 字段集与 `--scan --json` 共用一份实现（agent/cart_json.hpp）
     // 这里刻意**重扫一次**目录而不是复用卡带架：控制通道是给工具用的，
     // 它要的是"磁盘上现在有什么"（含目录顺序），而不是玩家眼里的排序结果
-    return "\"carts\":" + cart_list_json(scan_carts(kCartDir));
+    return "\"carts\":" + cart_list_json(scan_carts(kCartDir), config_.language == "en");
 }
 
 std::string App::shelf_json() const {

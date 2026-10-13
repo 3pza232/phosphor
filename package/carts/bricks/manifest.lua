@@ -1,7 +1,7 @@
 -- manifest.lua —— 打砖块
 return {
   id = "bricks",
-  name = "BRICKS",
+  name = { zh = "打砖块", en = "BRICKS" },
   version = "1.0.0",
   author = "PZA",
   desc = {

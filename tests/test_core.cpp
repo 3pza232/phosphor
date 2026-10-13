@@ -407,9 +407,9 @@ TEST(shelf_search_states) {
 
 TEST(shelf_search_match_case_insensitive_subsequence) {
     std::vector<CartInfo> carts(3);
-    carts[0].id = "snake";  carts[0].name = "SNAKE";
-    carts[1].id = "worms";  carts[1].name = "WORMS";
-    carts[2].id = "tetris"; carts[2].name = "TETRIS";
+    carts[0].id = "snake";  carts[0].name.zh = "贪吃蛇";     carts[0].name.en = "SNAKE";
+    carts[1].id = "worms";  carts[1].name.zh = "炮兵对战";   carts[1].name.en = "WORMS";
+    carts[2].id = "tetris"; carts[2].name.zh = "俄罗斯方块"; carts[2].name.en = "TETRIS";
 
     ShelfSearch s;
     s.begin_edit();
@@ -426,6 +426,13 @@ TEST(shelf_search_match_case_insensitive_subsequence) {
     hits = s.match(carts);
     CHECK_EQ(hits.size(), size_t(1));
     CHECK_EQ(hits[0], 1);
+
+    s.cancel();
+    s.begin_edit();
+    s.apply_text("方块");  // 名字本地化后中文名同样可搜
+    hits = s.match(carts);
+    CHECK_EQ(hits.size(), size_t(1));
+    CHECK_EQ(hits[0], 2);  // tetris（俄罗斯方块）
 
     s.cancel();
     s.begin_edit();

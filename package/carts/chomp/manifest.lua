@@ -1,7 +1,7 @@
 -- manifest.lua —— CHOMP 卡带标签
 return {
   id      = "chomp",
-  name    = "CHOMP",
+  name    = { zh = "吃豆人", en = "CHOMP" },
   author  = "PZA",
   version = "1.0.0",
   -- 简介双语：卡带架按机器的界面语言取（只写字符串则中英同文）

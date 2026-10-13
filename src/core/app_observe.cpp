@@ -43,7 +43,7 @@ void App::fill_debug_info(DebugInfo& info) {
 
     if (cart_) {
         info.cart_id = cart_->info().id;
-        info.cart_name = cart_->info().name;
+        info.cart_name = cart_->info().name.get(config_.language == "en");
         info.cart_version = cart_->info().version;
         info.cart_author = cart_->info().author;
         info.lua_mem_kb = cart_->lua_memory_kb();

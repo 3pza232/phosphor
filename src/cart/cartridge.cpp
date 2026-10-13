@@ -98,7 +98,7 @@ CartInfo parse_manifest(const std::string& manifest_text, const std::string& car
     };
 
     info.id = get_str("id");
-    info.name = get_str("name");
+    info.name = get_localized("name");
     info.author = get_str("author");
     info.version = get_str("version");
     info.desc = get_localized("desc");
@@ -190,7 +190,7 @@ bool Cartridge::load_entry(const std::string& pack_dir, const std::string& entry
         return false;
     }
     info_.id = "host-script";
-    info_.name = entry;
+    info_.name.zh = entry;
     host.save = nullptr;  // 主机脚本不参与存档
     return assemble(entry, host);
 }

@@ -7,7 +7,7 @@ namespace phos {
 
 namespace {
 
-/// ASCII 折叠：卡带 id 与名字都是英文数字，够用；非 ASCII 原样比较
+/// ASCII 折叠：卡带 id 与英文名都是英文数字，够用；非 ASCII（中文名）按 UTF-8 字节原样比较
 char fold(char c) { return static_cast<char>(std::tolower(static_cast<unsigned char>(c))); }
 
 /// 子序列匹配的打分。<0 表示不匹配（这条约定要守住——0 分是"匹配但很勉强"）。
@@ -31,10 +31,13 @@ int score_match(std::string_view query, std::string_view target) {
     return score - static_cast<int>(target.size()) / 4;
 }
 
-/// 一只卡带对查询串的分数：id 与显示名各算一次，取高的那个。
-/// 两个字段都要看：玩家可能记得住标题，也可能记得住目录名
+/// 一只卡带对查询串的分数：id 与**两种语言的**显示名各算一次，取最高的那个。
+/// 三个字段都要看：玩家可能记得住标题、目录名，也可能用中文名找（名字本地化后两边都得可搜）
 int cart_score(std::string_view query, const CartInfo& cart) {
-    return std::max(score_match(query, cart.id), score_match(query, cart.name));
+    int best = score_match(query, cart.id);
+    best = std::max(best, score_match(query, cart.name.zh));
+    best = std::max(best, score_match(query, cart.name.en));
+    return best;
 }
 
 } // namespace

@@ -12,10 +12,10 @@ namespace phos {
 /// 两边各写一份字段集必然漂移：同一张卡带在 CLI 与通道里字段不一样，agent 只能各猜一套。
 ///
 /// 字段：`id` / `name` / `version` / `author` / `sidebar_w` / `wants_save` / `path` /
-/// `error`（无错误时为 `null`）
-std::string cart_json(const CartInfo& info);
+/// `error`（无错误时为 `null`）。`name` 按界面语言给（english=false → 中文）
+std::string cart_json(const CartInfo& info, bool english = false);
 
 /// JSON 数组形式的卡带列表（形如 `[{…},{…}]`，不含外层键名）
-std::string cart_list_json(const std::vector<CartInfo>& carts);
+std::string cart_list_json(const std::vector<CartInfo>& carts, bool english = false);
 
 } // namespace phos

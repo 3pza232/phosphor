@@ -70,7 +70,9 @@ def run() -> int:
         report.check(reload_reply.get("host_time") == 0, "reload resets the cart's own clock")
 
         carts = host.carts()
-        report.check(any(c.get("name") == "SNAKE" for c in carts), "carts.scan lists the installed cart")
+        # 卡带显示名现在按界面语言本地化，故按 id 找、名字非空即可（不写死中文/英文）
+        report.check(any(c.get("id") == "snake" and c.get("name") for c in carts),
+                     "carts.scan lists the installed cart")
 
         report.check(host.send("bogus").get("ok") is False, "unknown command is rejected, not ignored")
 

@@ -253,6 +253,9 @@ void App::tick_boot(float dt) {
 
 void App::tick_shell(Renderer* renderer, Window* window) {
     const Shell::Intent intent = shell_.update(input_, kLogicStep);
+    // 卡带架的搜索框也要能收中文（与卡带声明 ime=true 的框走同一条路）：正在输入 → 开输入法。
+    // 只认"正在输入"这一态——只显示不输入的确认态不该挂着输入法
+    if (shell_.shelf_search().editing()) host_.ime_wanted = true;
     shell_.draw(display_.screen);
     shell_.set_lamps_solid(false);
 

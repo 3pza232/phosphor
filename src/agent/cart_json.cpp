@@ -4,9 +4,9 @@
 
 namespace phos {
 
-std::string cart_json(const CartInfo& info) {
+std::string cart_json(const CartInfo& info, bool english) {
     std::string out = "{\"id\":" + json::quote(info.id);
-    out += ",\"name\":" + json::quote(info.name);
+    out += ",\"name\":" + json::quote(info.name.get(english));
     out += ",\"version\":" + json::quote(info.version);
     out += ",\"author\":" + json::quote(info.author);
     out += ",\"sidebar_w\":" + std::to_string(info.sidebar_w);
@@ -18,11 +18,11 @@ std::string cart_json(const CartInfo& info) {
     return out + "}";
 }
 
-std::string cart_list_json(const std::vector<CartInfo>& carts) {
+std::string cart_list_json(const std::vector<CartInfo>& carts, bool english) {
     std::string out = "[";
     for (size_t i = 0; i < carts.size(); ++i) {
         if (i) out += ",";
-        out += cart_json(carts[i]);
+        out += cart_json(carts[i], english);
     }
     return out + "]";
 }

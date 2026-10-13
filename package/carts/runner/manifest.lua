@@ -1,7 +1,7 @@
 -- manifest.lua —— RUNNER 卡带标签
 return {
   id      = "runner",
-  name    = "RUNNER",
+  name    = { zh = "跑酷", en = "RUNNER" },
   author  = "PZA",
   version = "1.0.0",
   -- 简介双语：卡带架按机器的界面语言取（只写字符串则中英同文）

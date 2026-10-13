@@ -29,13 +29,13 @@ std::vector<CartInfo> scan_carts(const std::string& dir) {
             CartInfo info;
             info.path = path;
             info.id = entry.path().stem().string();
-            info.name = info.id;
+            info.name.zh = info.id;
             info.error = "cannot read manifest.lua";
             out.push_back(std::move(info));
             continue;
         }
         CartInfo info = parse_manifest(*manifest, path);
-        if (info.name.empty()) info.name = info.id;
+        if (info.name.empty()) info.name.zh = info.id;
         out.push_back(std::move(info));
     }
 
