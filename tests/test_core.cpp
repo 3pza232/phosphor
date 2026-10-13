@@ -15,6 +15,7 @@
 #include "core/text.hpp"
 #include "core/text_input.hpp"
 #include "core/ui.hpp"
+#include "cart/save_store.hpp"
 #include "pack/builtin.hpp"
 #include "shell/shelf_search.hpp"
 
@@ -530,6 +531,67 @@ TEST(ui_navigate_wrap_and_actions) {
     CHECK(action == ui::NavAction::cancel);
 
     CHECK_EQ(ui::navigate(input, 0, 5, action), 0);  // 空列表
+}
+
+// ---------------------------------------------------------------- save store
+
+TEST(save_store_roundtrip_and_limits) {
+    const std::filesystem::path dir =
+        std::filesystem::temp_directory_path() / "phosphor_unit_saves";
+    std::error_code ec;
+    std::filesystem::remove_all(dir, ec);
+
+    SaveStore store;
+    CHECK(store.open(dir.string(), "snake"));
+    CHECK_EQ(store.size(), size_t(0));
+    CHECK(store.set("high", "9000"));
+    CHECK(store.get("high").has_value());
+    CHECK_EQ(*store.get("high"), std::string("9000"));
+
+    // 越界一律拒绝：空键 / 超长键 / 键含 '=' / 超长值
+    CHECK(!store.set("", "x"));
+    CHECK(!store.set(std::string(SaveStore::kMaxKeyLength + 1, 'k'), "x"));
+    CHECK(!store.set("a=b", "x"));
+    CHECK(!store.set("k", std::string(SaveStore::kMaxValueLength + 1, 'v')));
+
+    // 落盘：另一个实例读到同样的数据
+    SaveStore reopened;
+    CHECK(reopened.open(dir.string(), "snake"));
+    CHECK_EQ(*reopened.get("high"), std::string("9000"));
+
+    // 条目上限：写满 kMaxEntries 后，新键被拒
+    CHECK(store.erase("high"));
+    for (int i = 0; i < static_cast<int>(SaveStore::kMaxEntries); ++i)
+        CHECK(store.set("k" + std::to_string(i), "v"));
+    CHECK(!store.set("overflow", "v"));
+
+    std::filesystem::remove_all(dir, ec);
+}
+
+TEST(save_store_export_import_roundtrip) {
+    const std::filesystem::path dir =
+        std::filesystem::temp_directory_path() / "phosphor_unit_saves2";
+    std::error_code ec;
+    std::filesystem::remove_all(dir, ec);
+
+    SaveStore a;
+    CHECK(a.open(dir.string(), "life"));
+    CHECK(a.set("gen", "42"));
+    CHECK(a.set("best", "1337"));
+    const std::string code = a.export_code();
+    CHECK(!code.empty());
+
+    SaveStore b;  // 另一台"机器"
+    CHECK(b.open(dir.string(), "life2"));
+    CHECK(b.import_code(code));
+    CHECK_EQ(*b.get("best"), std::string("1337"));
+
+    // 非法码：整份拒绝，原数据不动
+    CHECK(!b.import_code("XY"));   // 偶数长度但非十六进制
+    CHECK(!b.import_code("ABC"));  // 奇数长度
+    CHECK_EQ(*b.get("best"), std::string("1337"));
+
+    std::filesystem::remove_all(dir, ec);
 }
 
 } // namespace

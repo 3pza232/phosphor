@@ -131,6 +131,7 @@ if(PHOSPHOR_BUILD_TESTS)
         src/core/input.cpp
         src/core/ui.cpp
         src/pack/builtin.cpp
+        src/cart/save_store.cpp
         src/shell/shelf_search.cpp)
     target_include_directories(phosphor_tests PRIVATE ${CMAKE_SOURCE_DIR}/src)
     if(MINGW)
