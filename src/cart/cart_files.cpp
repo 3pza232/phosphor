@@ -1,5 +1,6 @@
 #include "cart/cart_files.hpp"
 
+#include "core/defaults.hpp"
 #include "core/log.hpp"
 
 #include <miniz.h>
@@ -14,10 +15,6 @@ namespace phos {
 
 namespace {
 
-/// 单个包内文件的读取上限。素材按需整读进 Lua 堆，越大越危险——一张超大文本/音频会在
-/// 分配时才发现把堆撑爆。越限一律**拒读并留痕**（见 roadmap 第 8 条），让卡带作者看得见
-constexpr std::uintmax_t kMaxReadBytes = 8u * 1024 * 1024;
-
 /// 包根目录名（目录卡带）/ 文件名去扩展名（.phos）——即 mods 目录所用的卡带 id
 std::string cart_id_of(const std::string& cart_path) {
     namespace fs = std::filesystem;
@@ -31,7 +28,7 @@ std::optional<std::string> read_disk_file(const std::filesystem::path& path) {
     std::error_code ec;
     if (!fs::is_regular_file(path, ec)) return std::nullopt;
     const std::uintmax_t bytes = fs::file_size(path, ec);
-    if (ec || bytes > kMaxReadBytes) {
+    if (ec || bytes > kMaxAssetBytes) {
         log::warn("asset too large, refusing to read: " + path.string());
         return std::nullopt;
     }
@@ -99,7 +96,7 @@ std::optional<std::string> CartFiles::read_packed(const std::string& inner_path)
         mz_zip_reader_end(&zip);
         return std::nullopt;
     }
-    if (stat.m_uncomp_size > kMaxReadBytes) {
+    if (stat.m_uncomp_size > kMaxAssetBytes) {
         log::warn("asset too large, refusing to read: " + inner_path);
         mz_zip_reader_end(&zip);
         return std::nullopt;

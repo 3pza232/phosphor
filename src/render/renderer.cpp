@@ -184,6 +184,10 @@ bool Renderer::init(const std::vector<std::string>& font_files, int cell_w, int 
 
     glGenVertexArrays(1, &vao_);
     glGenBuffers(1, &vbo_);
+    if (vao_ == 0 || vbo_ == 0) {
+        err = "GL 顶点缓冲创建失败";
+        return false;
+    }
     glBindVertexArray(vao_);
     glBindBuffer(GL_ARRAY_BUFFER, vbo_);
 
@@ -240,14 +244,15 @@ bool Renderer::reload_fonts(const std::vector<std::string>& font_files, std::str
 }
 
 bool Renderer::build_font_atlas(std::unique_ptr<FontChain> fonts, std::string& err) {
-    fonts_ = std::move(fonts);
-
     std::vector<unsigned char> bitmap(static_cast<size_t>(kAtlasSize) * kAtlasSize, 0);
     std::vector<FontChain::PackedGlyph> packed;
-    if (!fonts_->pack_ascii(kFirstChar, kCharCount, kFontPixels, kAtlasSize, bitmap, packed)) {
+    // 先在**局部**上打包：失败就原样返回，别把 fonts_ 换成一条没装成的链
+    // （否则 reload 的回滚只还原纹理，而字形/度量会与旧链对不上）
+    if (!fonts->pack_ascii(kFirstChar, kCharCount, kFontPixels, kAtlasSize, bitmap, packed)) {
         err = "字体图集打包失败（图集尺寸不足？）";
         return false;
     }
+    fonts_ = std::move(fonts);  // 打包成功才接管
 
     for (size_t i = 0; i < packed.size() && i < kCharCount; ++i) {
         const FontChain::PackedGlyph& p = packed[i];
@@ -276,6 +281,10 @@ bool Renderer::build_font_atlas(std::unique_ptr<FontChain> fonts, std::string& e
     pack_scale_ = em > 0.0f ? static_cast<float>(cell_h_) / em : 1.0f;
 
     glGenTextures(1, &font_tex_);
+    if (font_tex_ == 0) {
+        err = "glGenTextures 失败（纹理名耗尽？）";
+        return false;
+    }
     glBindTexture(GL_TEXTURE_2D, font_tex_);
     glPixelStorei(GL_UNPACK_ALIGNMENT, 1);  // 图集是单通道 8 位，行宽按字节算
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RED, kAtlasSize, kAtlasSize, 0,
@@ -430,8 +439,10 @@ void Renderer::draw(const Screen& screen) {
     win_h_px_ = static_cast<float>(cell_h_) * screen.height();
 
     vertices_.clear();
-    // 每格最多两块四边形（底色 + 字形），每块 6 个顶点
-    vertices_.reserve(static_cast<size_t>(screen.width()) * screen.height() * 12 * 10);
+    // 单趟峰值：字形趟每格最多 (kMaxInks+1) 块四边形（叠笔 + 主字形），每块 6 顶点 ×10 float。
+    // 一次 reserve 覆盖本帧后面所有趟（clear 不缩容），避免逐趟 realloc
+    vertices_.reserve(static_cast<size_t>(screen.width()) * screen.height() *
+                      (Screen::kMaxInks + 1) * 6 * 10);
     emit_backgrounds(screen, 0, 0, false);
     // ① 底：**不透明**，整帧唯一一次清屏
     submit(win_w_px_, win_h_px_, false, true);

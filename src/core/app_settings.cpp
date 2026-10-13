@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <filesystem>
 #include <fstream>
 
 namespace phos {
@@ -131,15 +132,18 @@ int App::sample_handle_for(const std::string& event, const std::string& path) {
 
     int handle = 0;
     if (host_.cart_files) {
-        // 音效包的音频文件：按包目录读取（此处 path 相对包目录）
-        if (auto bytes = [&]() -> std::optional<std::string> {
-                std::ifstream in(sound_pack.dir + "/" + path, std::ios::binary);
-                if (!in) return std::nullopt;
+        // 音效包的音频文件：按包目录读取（此处 path 相对包目录）。
+        // 读之前**先看大小**：与卡带素材同一道闸，不把天量文件读进内存再交给解码器
+        const std::string file = sound_pack.dir + "/" + path;
+        std::error_code ec;
+        const auto on_disk = std::filesystem::file_size(file, ec);
+        if (!ec && on_disk <= kMaxAssetBytes) {
+            std::ifstream in(file, std::ios::binary);
+            if (in) {
                 std::ostringstream ss;
                 ss << in.rdbuf();
-                return ss.str();
-            }()) {
-            handle = audio_.load_sample(key, *bytes);
+                handle = audio_.load_sample(key, ss.str());
+            }
         }
     }
     sample_cache_[key] = handle;

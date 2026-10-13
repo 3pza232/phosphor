@@ -19,6 +19,10 @@ constexpr float kMusicNoteVolume = 0.22f;  // 音序器单音音量（多轨叠�
 constexpr int kSemitoneA4 = 69;
 constexpr float kFreqA4 = 440.0f;
 
+/// 音量夹到 0..1；非有限值（NaN / ±inf）当 0 处理。
+/// `std::clamp` 遇到 NaN 会**原样返回**，一个坏音量会污染整条混音，所以统一走这里
+float clamp01(float v) { return std::isfinite(v) ? std::clamp(v, 0.0f, 1.0f) : 0.0f; }
+
 /// 半音相对 A4 的频率
 float semitone_freq(int midi_note) {
     return kFreqA4 * std::pow(2.0f, static_cast<float>(midi_note - kSemitoneA4) / 12.0f);
@@ -198,14 +202,17 @@ void Audio::shutdown() {
 }
 
 void Audio::set_master_volume(float volume) {
+    if (!std::isfinite(volume)) return;  // NaN/±inf：忽略，保住当前值，别污染混音
     master_volume_.store(std::clamp(volume, 0.0f, 1.0f));
 }
 
 void Audio::set_music_volume(float volume) {
+    if (!std::isfinite(volume)) return;
     music_volume_.store(std::clamp(volume, 0.0f, 1.0f));
 }
 
 void Audio::set_sfx_volume(float volume) {
+    if (!std::isfinite(volume)) return;
     sfx_volume_.store(std::clamp(volume, 0.0f, 1.0f));
 }
 
@@ -248,7 +255,7 @@ void Audio::spawn_voice(const ToneSpec& spec, bool music) {
         voice->dur = std::max(0.01f, spec.dur);
         voice->attack = std::max(0.0f, spec.attack);
         voice->release = std::max(0.01f, spec.release);
-        voice->volume = std::clamp(spec.volume, 0.0f, 1.0f);
+        voice->volume = clamp01(spec.volume);
         voice->t = 0.0f;
         voice->phase = 0.0f;
         voice->sample = nullptr;
@@ -337,10 +344,11 @@ void Audio::apply(Request& request) {
                 if (voice->active) continue;
                 voice->active = true;
                 voice->is_sample = true;
+                voice->is_music = false;  // 采样走**音效**音量：声部会复用，不写就会继承上一支的 music 标记
                 voice->sample = sample;
                 voice->pos = 0;
                 voice->loop = request.loop;
-                voice->volume = std::clamp(request.volume, 0.0f, 1.0f);
+                voice->volume = clamp01(request.volume);
                 voice->sample_handle = request.handle;
                 break;
             }
@@ -405,12 +413,21 @@ int Audio::load_sample(const std::string& name, const std::string& bytes) {
         ma_decoder_uninit(&decoder);
         return 0;
     }
+    // 解码后的 PCM 体积也要设上限：压缩文件（或伪造的长度）可能解出天量样本，
+    // 8 MiB 的**编码**上限拦不住它（见 roadmap 第 8 条的精神）
+    constexpr ma_uint64 kMaxDecodedBytes = 32ull * 1024 * 1024;
+    if (frame_count * 2 * sizeof(float) > kMaxDecodedBytes) {
+        log::warn("sample too large, refusing to decode: " + name);
+        ma_decoder_uninit(&decoder);
+        return 0;
+    }
 
     auto sample = std::make_unique<Sample>();
     sample->pcm.resize(static_cast<size_t>(frame_count) * 2);
     ma_uint64 read = 0;
     if (ma_decoder_read_pcm_frames(&decoder, sample->pcm.data(), frame_count, &read) !=
-        MA_SUCCESS) {
+            MA_SUCCESS ||
+        read == 0) {  // 一帧都没读到：当无效——否则空 PCM 遇上 loop 会越界读
         ma_decoder_uninit(&decoder);
         return 0;
     }
