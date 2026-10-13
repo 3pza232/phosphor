@@ -78,7 +78,7 @@ local function draw_menu()
   S.clear()
 
   local bw = 34
-  local box = phos.ui.modal(bw, 7, t.title)
+  local box = phos.ui.modal(bw, 7, t.menu_title)
 
   local side_col = { C.red, C.white }
   local rows = {

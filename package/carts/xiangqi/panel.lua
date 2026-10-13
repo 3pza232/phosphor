@@ -21,7 +21,11 @@ function Panel.draw(game, cart)
   local show = ph - 10
   local first = math.max(1, #game.log - show + 1)
   for i = first, #game.log do
-    P.print(1, 5 + (i - first), phos.text.fit(game.log[i], pw - 2), C.white)
+    local m = game.log[i]                    -- 结构化的一步；文案按界面语言拼
+    local who = (m.s == "r") and t.red or t.black
+    local line = string.format("%s %s %d,%d-%d,%d", who, game:name_of(m),
+                               m.f + 1, m.r + 1, m.tf + 1, m.tr + 1)
+    P.print(1, 5 + (i - first), phos.text.fit(line, pw - 2), C.white)
   end
 
   -- 被吃子（红吃掉的黑子 / 黑吃掉的红子）

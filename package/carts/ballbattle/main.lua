@@ -92,7 +92,6 @@ function draw()
   local p = game.player
 
   -- 缩放：体型越大看得越远（否则大球糊满整屏）。1 屏幕格 = scale 个世界单位
-  -- 缩放：体型越大看得越远（否则大球糊满整屏）。1 屏幕格 = scale 个世界单位
   local scale = math.min(4, 1 + math.floor(p.r / 8))
   view_scale = scale
 

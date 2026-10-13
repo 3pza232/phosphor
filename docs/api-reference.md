@@ -526,7 +526,7 @@ phos.input.duration("right")   -- 已按住的秒数（松开 = 0）：长按类
 phos.input.keys()              -- 主机见过的所有键名（写"按任意键改绑定"时遍历它）
 phos.input.down("start") / "select"
 -- 键盘专属的四颗：空格 / 逗号 / 句点 / 退格（主机不给它们配手柄替代键）
-phos.input.down("space") / "comma" / "period"
+phos.input.down("space") / "comma" / "period" / "backspace"
 
 -- 边沿触发：本帧刚按下 / 刚松开 --
 phos.input.pressed("a")

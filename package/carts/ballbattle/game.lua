@@ -22,6 +22,7 @@ function Game.new(rand)
   self.rand = rand or function() return 0.5 end
   self.time = 0
   self.alive = true
+  self.won = false
   self.eaten = 0
   self.best_r = START_R
   self.blobs = {}
@@ -87,8 +88,8 @@ function Game:think_ai(b, dt)
     end
   end
   if threat > 0 then
-    -- 逃跑方向要**归一化**后再取远方目标点：直接拿加权和当目标点，威胁远时向量很短，
-    -- 目标点离自己不到一格就"冻在原地"慢吞吞（玩家一靠近就觉得它们不动了）
+    -- 逃跑方向**必须归一化**再取远处目标点：加权和的长度随距离变小，直接当目标点会落在
+    -- 一格之内 → AI 判定"已到"便停步（表现为玩家一靠近它们就不走了）
     local fl = hypot(flee_x, flee_y)
     if fl > 0.001 then
       b.tx, b.ty = b.x + flee_x / fl * 24, b.y + flee_y / fl * 24
@@ -183,7 +184,10 @@ function Game:update(dt)
   end
 
   if self.player.r > self.best_r then self.best_r = self.player.r end
-  if #self.blobs == 1 and self.alive then events.won = true end
+  if #self.blobs == 1 and self.alive then
+    self.won = true
+    events.won = true
+  end
   return events
 end
 
@@ -196,7 +200,7 @@ end
 
 function Game:status()
   return {
-    alive = self.alive, time = self.time, eaten = self.eaten,
+    alive = self.alive, won = self.won, time = self.time, eaten = self.eaten,
     size = self.player.r, px = self.player.x, py = self.player.y,
     world_w = Game.WORLD_W, world_h = Game.WORLD_H,
     blobs = #self.blobs, food = #self.food,

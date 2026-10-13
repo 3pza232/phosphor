@@ -87,10 +87,14 @@ void key_callback(GLFWwindow*, int key, int, int action, int) {
     }
     if (*g_handlers.input_block) return;  // 调试台打开期间输入不注入游戏
 
-    // 退格走文本通道：GLFW 的字符回调不会为它触发，所以在这里补一次，
-    // 让输入层照约定把 '\b' 交给文本缓冲（磁带码输入、卡带的文本输入都靠它）
-    if (key == GLFW_KEY_BACKSPACE && (action == GLFW_PRESS || action == GLFW_REPEAT)) {
-        g_handlers.input->push_text(std::string(1, text::kBackspace));
+    // 退格：GLFW 的字符回调不为它触发，所以在这里补。**两层都要给**——
+    // ① 文本通道：push '\b'，磁带码输入与卡带的文本框靠它；
+    // ② 普通键：set_key("backspace")，卡带想把它当功能键（如象棋悔棋）时才能 pressed 到
+    if (key == GLFW_KEY_BACKSPACE) {
+        if (action == GLFW_PRESS || action == GLFW_REPEAT)
+            g_handlers.input->push_text(std::string(1, text::kBackspace));
+        if (action == GLFW_PRESS || action == GLFW_RELEASE)
+            g_handlers.input->set_key("backspace", action == GLFW_PRESS);
         return;
     }
 
