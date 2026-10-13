@@ -40,7 +40,7 @@ public:
         bool font_changed = false;
         int font_index = -1;
         bool font_size_changed = false;
-        int font_size = 0;  // 0 = 跟随字体方案；否则为用户选定的像素高
+        int font_size = 0;  // 0 = 跟随字体方案；否则为用户选定的字号
         bool skin_changed = false;
         int skin_index = -1;
         bool boot_changed = false;
@@ -67,7 +67,7 @@ public:
     const std::vector<CartInfo>& carts() const { return carts_; }
     /// 告知可选字体方案名与当前项
     void set_fonts(std::vector<std::string> names, int active);
-    /// 告知当前生效字号（像素高）。改值经 Intent 交回主机落盘
+    /// 告知当前生效字号（= 单元格像素边长）。改值经 Intent 交回主机落盘
     void set_font_size(int px);
     int font_px() const { return font_px_; }
     /// 告知可选皮肤名与当前项
@@ -206,7 +206,7 @@ private:
     int sound_index_ = 0;
     std::vector<std::string> font_names_;
     int font_index_ = 0;
-    int font_px_ = kDefaultFontPx;  // 当前生效字号（像素高 = 单元格边长）
+    int font_px_ = kDefaultFontPx;  // 当前生效字号（= 单元格像素边长）
     bool lamps_solid_ = false;
 
     int crt_level_ = kDefaultCrtLevel;

@@ -516,6 +516,9 @@ int App::run_windowed(const CliOptions& opts) {
             }
         }
 
+        // 窗口尺寸可能刚被"改字号 / 换主题"改过（handle_intent 在 advance 之后才 resize）：
+        // present 前重新对齐帧缓冲尺寸，否则这一帧的视口仍是旧尺寸，画面会露出一条黑边
+        renderer.set_framebuffer_size(window.framebuffer_width(), window.framebuffer_height());
         // 底 + 逐层叠画 + 主机 chrome：顺序与原点收在 Display::present 一处
         const bool layered = playing_ && host_.layers.active();
         const bool overlay = playing_ && host_.panel_w > 0;

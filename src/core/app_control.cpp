@@ -81,7 +81,7 @@ std::string App::control_state_json() const {
                            ? ""
                            : packs_.sounds[static_cast<size_t>(packs_.sound_index)].id)
         << ",\"font\":" << json::quote(font_scheme_)
-        << ",\"font_size\":" << font_px_  // 当前生效字号（像素高）
+        << ",\"font_size\":" << font_px_  // 当前字号 = 单元格像素边长（整机缩放）
         // 本帧是否有输入框在"举手要中文"：卡带声明 ime=true 的框被 feed，或卡带架搜索在输入。
         // 主机据此开关系统输入法（仅 Windows 实际生效），也给测试一个可读的信号
         << ",\"ime\":" << (host_.ime_wanted ? "true" : "false")

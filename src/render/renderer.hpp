@@ -85,7 +85,7 @@ private:
     static std::unique_ptr<FontChain> load_font_chain(const std::vector<std::string>& font_files);
     /// 用已装载的字体链重建图集与度量（换字体与初始化共用）
     bool build_font_atlas(std::unique_ptr<FontChain> fonts, std::string& err);
-    /// 按当前 font_px_（0 = 填满单元格）重算绘制缩放与垂直居中量
+    /// 按当前格尺寸重算绘制缩放（字形等比缩放进格、填满格高）
     void update_scale();
     /// 取字形：ASCII 走静态区，其余按需光栅化并装入动态区。
     /// 返回 nullptr 表示字体链里没有这个字形（调用方改用占位符）。

@@ -71,7 +71,7 @@ private:
     /// 装载字体链：wanted 为方案名，方案不可用时退回 default 并告警
     void load_font_chain(const std::string& wanted);
 
-    /// 当前生效字号（像素高）：用户显式选了就用它，否则方案声明的字号，再否则出厂默认
+    /// 当前生效字号（= 单元格像素边长）：用户显式选了就用它，否则方案声明的字号，再否则出厂默认
     int effective_font_px() const;
     /// 按 effective_font_px() 把单元格尺寸推给渲染器、调整窗口大小（截图路径每帧现读
     /// font_px_，无需处理）。字号 = 格边长，行距随之缩放
@@ -209,7 +209,7 @@ private:
     std::vector<std::string> font_schemes_;     // 全部可用方案名（default 排最前，供设置界面）
     std::string font_scheme_;                   // 实际生效的方案（配置指定不可用时退回 default）
     int font_scheme_size_ = 0;                  // 当前方案声明的字号（0 = 未声明）
-    int font_px_ = kDefaultFontPx;              // 当前生效字号（字形绘制像素高）
+    int font_px_ = kDefaultFontPx;              // 当前生效字号（= 单元格像素边长）
 
     // 运行形态（供状态查询与窗口标题使用）
     bool headless_ = false;          // true = 无窗口（agent/CI）
