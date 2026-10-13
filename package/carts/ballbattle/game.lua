@@ -87,7 +87,14 @@ function Game:think_ai(b, dt)
     end
   end
   if threat > 0 then
-    b.tx, b.ty = b.x + flee_x, b.y + flee_y
+    -- 逃跑方向要**归一化**后再取远方目标点：直接拿加权和当目标点，威胁远时向量很短，
+    -- 目标点离自己不到一格就"冻在原地"慢吞吞（玩家一靠近就觉得它们不动了）
+    local fl = hypot(flee_x, flee_y)
+    if fl > 0.001 then
+      b.tx, b.ty = b.x + flee_x / fl * 24, b.y + flee_y / fl * 24
+    else
+      b.tx, b.ty = b.x + 24, b.y
+    end
   elseif tgt_x then
     b.tx, b.ty = tgt_x, tgt_y
   elseif hypot(b.tx - b.x, b.ty - b.y) < 3 then

@@ -525,7 +525,7 @@ phos.input.down("a")     / "b"     / "x"  / "y"
 phos.input.duration("right")   -- 已按住的秒数（松开 = 0）：长按类手感不必自己攒计时
 phos.input.keys()              -- 主机见过的所有键名（写"按任意键改绑定"时遍历它）
 phos.input.down("start") / "select"
--- 键盘专属的三颗：空格 / 逗号 / 句点（主机不给它们配手柄替代键）
+-- 键盘专属的四颗：空格 / 逗号 / 句点 / 退格（主机不给它们配手柄替代键）
 phos.input.down("space") / "comma" / "period"
 
 -- 边沿触发：本帧刚按下 / 刚松开 --
@@ -552,7 +552,7 @@ local s = phos.input.text()      -- UTF-8 字符串；无输入时为空串
 | a / b | **A / B** | `a` 是确认，`b` 是取消 / 返回 |
 | x / y | **X / Y** | 卡带专用（主机保留键是 Esc / F2） |
 | start / select | Enter / Shift | `start` 是卡带自己的开始 / 暂停 |
-| space / comma / period | **空格 / , / .** | 键盘专属：留给"用了就舒服"的功能（发射、镜头平移这类）；手柄上没有对应位置 |
+| space / comma / period / backspace | **空格 / , / . / 退格** | 键盘专属：留给"用了就舒服"的功能（发射、镜头平移、悔棋这类）；手柄上没有对应位置 |
 | 系统菜单 | Esc | 主机保留，卡带收不到 |
 
 键位分两层，别混用：

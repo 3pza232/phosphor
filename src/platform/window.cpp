@@ -58,6 +58,7 @@ std::string key_name_from_glfw(int glfw_key) {
         case GLFW_KEY_LEFT_BRACKET: return "lbrace";
         case GLFW_KEY_RIGHT_BRACKET: return "rbrace";
         case GLFW_KEY_BACKSLASH: return "backslash";
+        case GLFW_KEY_BACKSPACE: return "backspace";
         case GLFW_KEY_TAB: return "tab";
         default: return {};
     }

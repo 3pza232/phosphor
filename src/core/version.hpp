@@ -8,7 +8,8 @@ namespace phos {
 ///   x：**能力世代**更替——新增子系统，或卡带 API 世代 `kPhosApiVersion` 变了
 /// 0.8.0：同屏多字号——`phos.screen/panel/ui` 的 `put`/`print` 增加可选 `scale`
 ///         （更大的字成块占位）；字体方案可显式声明字号与回退顺序。卡带 API 进世代 6
-inline constexpr const char* kVersion = "0.8.0";
+/// 0.8.1：小补——`phos.input` 增键盘专属键 `backspace`（退格）；字体方案可声明可调字号范围（Mod 可改）
+inline constexpr const char* kVersion = "0.8.1";
 /// 产品名
 inline constexpr const char* kProductName = "PHOSPHOR";
 /// 卡带 API 世代：manifest 声明 `phos_api` 高于它就拒绝加载，

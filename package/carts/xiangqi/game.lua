@@ -18,19 +18,32 @@ local function in_palace(f, r, s)
 end
 local function crossed(r, s) return (s == RED and r <= 4) or (s == BLACK and r >= 5) end
 
-function Game.new(rand, now)
+-- AI 等级：1 较简单（但仍有水平）、2 老手、3 超算（搜得更深、想得更久、更少随手）
+local LEVELS = {
+  { depth = 2, budget = 700, noise = 1.6, delay = 0.35 },
+  { depth = 3, budget = 1500, noise = 0.35, delay = 0.75 },
+  { depth = 4, budget = 2200, noise = 0.06, delay = 1.4 },
+}
+
+function Game.new(rand, now, player_side, level)
   local self = setmetatable({}, Game)
   self.rand = rand or function() return 0.5 end
   self.now = now                       -- 计时函数（测 AI 思考耗时；缺省不用）
   self.nodes = 0
   self.think_ms = 0
-  self.player_side, self.ai_side = RED, BLACK
-  self.turn = RED               -- 红先
+  self.player_side = player_side or RED
+  self.ai_side = foe(self.player_side)
+  self.turn = RED               -- 红先（玩家执黑时电脑先走）
+  local lv = LEVELS[math.max(1, math.min(3, level or 2))]
+  self.level = math.max(1, math.min(3, level or 2))
+  self.ai_depth, self.ai_budget = lv.depth, lv.budget
+  self.ai_noise, self.ai_delay = lv.noise, lv.delay
   self.over, self.winner = false, nil
   self.sel = nil                -- 选中：{ f, r, moves }
   self.log = {}                 -- 棋谱（每步一条字符串）
   self.captured = { r = {}, b = {} }
-  self.ai_timer = 0
+  self.history = {}             -- 每步前的快照，供悔棋
+  self.ai_timer = (self.turn == self.ai_side) and self.ai_delay or 0
   self.board = {}
   for r = 0, FH - 1 do
     self.board[r] = {}
@@ -243,7 +256,25 @@ local FILE_CN = { "1", "2", "3", "4", "5", "6", "7", "8", "9" }
 
 function Game:name_of(p) return NAMES[p.s][p.t] end
 
+local function copy_board(src)
+  local out = {}
+  for r = 0, FH - 1 do
+    out[r] = {}
+    for f = 0, FW - 1 do
+      local p = src[r][f]
+      if p then out[r][f] = { t = p.t, s = p.s } end
+    end
+  end
+  return out
+end
+
+function Game:snapshot()
+  return { board = copy_board(self.board), turn = self.turn,
+           log = #self.log, capb = #self.captured.b, capr = #self.captured.r }
+end
+
 function Game:do_move(f, r, tf, tr)
+  self.history[#self.history + 1] = self:snapshot()
   local p = self:piece(f, r)
   local cap = self:piece(tf, tr)
   self.board[tr][tf] = p
@@ -255,11 +286,31 @@ function Game:do_move(f, r, tf, tr)
   self.last = { f = f, r = r, tf = tf, tr = tr }
   self.sel = nil
   self.turn = foe(self.turn)
-  if self.turn == self.ai_side then self.ai_timer = 0.6 end
+  if self.turn == self.ai_side then self.ai_timer = self.ai_delay end
   if #self:all_legal(self.turn) == 0 then
     self.over, self.winner = true, foe(self.turn)   -- 无子可走即负（将死或困毙）
   end
   return cap
+end
+
+-- 悔棋：回退到"玩家该走"的那一步（一般一次退两步：自己的 + 电脑的应手）
+function Game:can_undo() return #self.history > 0 end
+
+function Game:undo()
+  if not self:can_undo() then return false end
+  local s
+  repeat
+    s = table.remove(self.history)
+    if not s then break end
+    self.board = s.board
+    self.turn = s.turn
+    for i = #self.log, s.log + 1, -1 do self.log[i] = nil end
+    for i = #self.captured.b, s.capb + 1, -1 do self.captured.b[i] = nil end
+    for i = #self.captured.r, s.capr + 1, -1 do self.captured.r[i] = nil end
+    self.over, self.winner, self.sel = false, nil, nil
+  until self.turn == self.player_side or #self.history == 0
+  self.ai_timer = 0
+  return true
 end
 
 -- 玩家点选：选中 / 落子 / 换选 / 取消
@@ -308,9 +359,8 @@ function Game:attacked(f, r, by)
 end
 
 -- ── AI：alpha-beta 搜索 ──────────────────────────────────────────────
--- 候选搜索深度与节点上限：节点上限夹住单帧耗时（主机的看门狗是 100ms/调用）
-local AI_DEPTH = 3
-local NODE_BUDGET = 3000
+-- 深度 / 节点上限 / 随机扰动 / 思考时长由**等级**决定（见 LEVELS，在 Game.new 里落到实例上）。
+-- 节点上限夹住单帧耗时（主机的看门狗是 100ms/调用）。
 
 -- 局面评估（黑方视角，AI 执黑）：子力 + 少量位置奖励
 local function evaluate(self)
@@ -359,7 +409,7 @@ end
 
 search = function(self, depth, alpha, beta)
   self.nodes = self.nodes + 1
-  if depth <= 0 or self.nodes > NODE_BUDGET then return evaluate(self) end
+  if depth <= 0 or self.nodes > self.ai_budget then return evaluate(self) end
 
   local moves = pseudo_moves(self, self.turn)
   order(self, moves)
@@ -387,7 +437,7 @@ search = function(self, depth, alpha, beta)
       if best < beta then beta = best end
     end
     if beta <= alpha then break end
-    if self.nodes > NODE_BUDGET then break end
+    if self.nodes > self.ai_budget then break end
   end
   return best
 end
@@ -397,19 +447,23 @@ function Game:pick_ai_move()
   self.nodes = 0
   local legal = self:all_legal(self.ai_side)   -- 根节点用**严格合法**走法（返回的走法必然合法）
   order(self, legal)
-  local best, best_score = nil, -math.huge
+  -- 评分是"黑方视角"：AI 执黑就取最大、执红取最小
+  local maximize = (self.ai_side == BLACK)
+  local best, best_score = nil, maximize and -math.huge or math.huge
   for _, mv in ipairs(legal) do
     local p, cap = self:piece(mv.f, mv.r), self:piece(mv.tf, mv.tr)
     self.board[mv.tr][mv.tf] = p
     self.board[mv.r][mv.f] = nil
     self.turn = foe(self.turn)
     self.nodes = self.nodes + 1
-    local sc = search(self, AI_DEPTH, -math.huge, math.huge) + self.rand() * 0.2
+    local sc = search(self, self.ai_depth, -math.huge, math.huge)
+    sc = sc + (self.rand() - 0.5) * self.ai_noise   -- 等级越低扰动越大（会犯错）
     self.turn = foe(self.turn)
     self.board[mv.r][mv.f] = p
     self.board[mv.tr][mv.tf] = cap
-    if sc > best_score then best_score, best = sc, mv end
-    if self.nodes > NODE_BUDGET then break end
+    if maximize and sc > best_score then best_score, best = sc, mv end
+    if (not maximize) and sc < best_score then best_score, best = sc, mv end
+    if self.nodes > self.ai_budget then break end
   end
   self.think_ms = math.floor(((self.now and self.now() or 0) - t0) * 1000)
   return best
@@ -434,9 +488,10 @@ end
 function Game:status()
   return {
     turn = self.turn, over = self.over, winner = self.winner,
+    player_side = self.player_side, level = self.level,
     in_check = (not self.over) and self:in_check(self.turn) or false,
     moves = #self.log, sel = self.sel and (self.sel.f .. "," .. self.sel.r) or "",
-    think_ms = self.think_ms, nodes = self.nodes,
+    can_undo = self:can_undo(), think_ms = self.think_ms, nodes = self.nodes,
   }
 end
 
