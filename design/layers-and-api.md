@@ -504,6 +504,6 @@ if phos.layer then ... else ... end    -- 探的是"这个接口在不在"，不
 - [x] `merge_ms` ≤ 0.3ms（实测约 0.03ms）；60 档 `render_fps` 不低于无层基线 95%
 - [x] `docs/api-reference.md` 补 `phos.layer`（句柄字段 / `order` / `remove` / 单层读取语义）、
       `docs/agent-interface.md`、`docs/cart-format.md`（`phos_api` 一节）同批更新
-- [ ] 手册里仍差三段细目：region 的 `keep` 解析域、层的 alpha 布尔语义总表、抖屏 recipe
-      （设计与实现在 §3.3 与本文其它节，api-reference 只欠这三段）
+- [x] 手册三段细目已补齐：region 的 `keep` 解析域、层的 alpha 布尔语义总表、抖屏 recipe
+      （见 `docs/api-reference.md` 的 `phos.ui.region` / `phos.layer` 两节）
 - [x] 版本：`kPhosApiVersion = 2` 与 manifest 门控用例（v2 卡带在 v1 主机被拒）

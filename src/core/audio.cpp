@@ -161,6 +161,7 @@ bool Audio::init(std::string& err) {
 
     if (ma_device_init(context_.get(), &config, device_.get()) != MA_SUCCESS) {
         device_.reset();
+        ma_context_uninit(context_.get());  // 上下文已初始化成功，失败退出前要收尾（否则整会话泄漏）
         context_.reset();
         err = "audio device init failed";
         return false;
@@ -174,6 +175,7 @@ bool Audio::init(std::string& err) {
     if (ma_device_start(device_.get()) != MA_SUCCESS) {
         ma_device_uninit(device_.get());
         device_.reset();
+        ma_context_uninit(context_.get());
         context_.reset();
         err = "audio device start failed";
         return false;
@@ -261,7 +263,9 @@ void Audio::spawn_voice(const ToneSpec& spec, bool music) {
         voice->sample = nullptr;
         return;
     }
-    // 声部用尽：丢弃本次触发（宁可静音也不卡音频线程）
+    // 声部用尽：丢弃本次触发（宁可静音也不卡音频线程），但要计入 dropped——
+    // 否则"少了一声"在诊断里看不见
+    ++dropped_;
 }
 
 void Audio::spawn_voice_note(const std::string& note, const ToneSpec& base, bool music) {
@@ -295,11 +299,11 @@ void Audio::play_percussion(char token) {
 
 void Audio::play_tune(const Tune& tune) {
     if (!active_) return;
-    order_names_ = tune.order;  // 主线程侧留一份名字，供状态查询显示
     Request request;
     request.kind = Request::Kind::tune;
     request.tune = std::make_unique<Tune>(tune);
-    push(std::move(request));
+    // 入队成功才更新查询用的名字：队列满时主机侧不该报告一个没在播的曲子
+    if (push(std::move(request))) order_names_ = tune.order;
 }
 
 std::string Audio::music_section() const {
@@ -313,6 +317,7 @@ void Audio::stop_music() {
     Request request;
     request.kind = Request::Kind::silence_music;
     push(std::move(request));
+    order_names_.clear();  // 清查询用的名字：否则 music_section_count() 还报上一首的段数
 }
 
 void Audio::stop_all() {
@@ -340,6 +345,7 @@ void Audio::apply(Request& request) {
                     ? sample_table_[static_cast<size_t>(request.handle - 1)].get()
                     : nullptr;
             if (!sample) break;
+            bool spawned = false;
             for (auto& voice : voices_) {
                 if (voice->active) continue;
                 voice->active = true;
@@ -350,8 +356,10 @@ void Audio::apply(Request& request) {
                 voice->loop = request.loop;
                 voice->volume = clamp01(request.volume);
                 voice->sample_handle = request.handle;
+                spawned = true;
                 break;
             }
+            if (!spawned) ++dropped_;  // 声部池用尽
             break;
         }
         case Request::Kind::stop_sample:
