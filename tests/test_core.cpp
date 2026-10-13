@@ -17,6 +17,7 @@
 #include "core/ui.hpp"
 #include "cart/save_store.hpp"
 #include "pack/builtin.hpp"
+#include "pack/content_library.hpp"
 #include "shell/shelf_search.hpp"
 
 #include <algorithm>
@@ -592,6 +593,27 @@ TEST(save_store_export_import_roundtrip) {
     CHECK_EQ(*b.get("best"), std::string("1337"));
 
     std::filesystem::remove_all(dir, ec);
+}
+
+// ---------------------------------------------------------------- 内容库
+
+TEST(content_library_resolve_palette) {
+    ContentLibrary lib;
+    lib.palettes.push_back(builtin_palette());  // [0] id="default"
+    lib.palettes.push_back(raw_palette());      // [1] id="none"
+
+    Skin skin = builtin_skin();
+    skin.palette = "none";  // 主题声明使用 raw 色板
+    lib.skins.push_back(skin);
+    lib.skin_index = 0;
+
+    lib.resolve_palette();
+    CHECK_EQ(lib.palette_index, 1);  // 命中 raw（id="none"）
+
+    skin.palette = "does-not-exist";
+    lib.skins[0] = skin;
+    lib.resolve_palette();
+    CHECK_EQ(lib.palette_index, 0);  // 找不到 -> 回落 [0]（兜底）
 }
 
 } // namespace

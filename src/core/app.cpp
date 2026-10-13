@@ -4,7 +4,6 @@
 #include "render/font.hpp"
 #include "core/effects.hpp"
 #include "core/log.hpp"
-#include "pack/builtin.hpp"
 #include "core/version.hpp"
 #include "platform/window.hpp"
 #include "render/renderer.hpp"
@@ -38,34 +37,11 @@ void sort_by_recent(std::vector<CartInfo>& carts, const std::vector<std::string>
 int App::run(const CliOptions& opts) {
     config_ = load_config(kConfigPath);
 
-    palettes_.push_back(raw_palette());
-    merge_packs(palettes_, scan_palettes(kUserPaletteDir));
-    merge_packs(palettes_, scan_palettes(kFactoryPaletteDir));
-    // 色板由主题 skin.palette 在 apply_skin 里解析；这里先装出厂兜底，供解析前使用
-    palette_index_ = 0;
-    active_palette_ = palettes_[palette_index_];
+    // 内容包（皮肤/色板/开机动画/音效）：扫描用户区+出厂区并按配置定位 —— 交给内容库
+    packs_.scan(config_);
+    active_palette_ = packs_.palette();  // 解析前先用出厂兜底；apply_skin 里再按主题解一次
 
-    skins_ = scan_skins(kUserSkinDir);
-    merge_packs(skins_, scan_skins(kFactorySkinDir));
-    if (skins_.empty()) skins_.push_back(builtin_skin());
-    skin_index_ = 0;
-    for (size_t i = 0; i < skins_.size(); ++i)
-        if (skins_[i].id == config_.skin) skin_index_ = static_cast<int>(i);
-
-    boots_ = scan_boots(kUserBootDir);
-    merge_packs(boots_, scan_boots(kFactoryBootDir));
-    boot_index_ = 0;
-    for (size_t i = 0; i < boots_.size(); ++i)
-        if (boots_[i].id == config_.boot) boot_index_ = static_cast<int>(i);
-
-    sounds_.push_back(silent_sound_pack());
-    merge_packs(sounds_, scan_sounds(kUserSoundDir));
-    merge_packs(sounds_, scan_sounds(kFactorySoundDir));
-    sound_index_ = 0;
-    for (size_t i = 0; i < sounds_.size(); ++i)
-        if (sounds_[i].id == config_.sound) sound_index_ = static_cast<int>(i);
-
-    apply_skin(skin_index_, nullptr);  // 建立几何与外壳
+    apply_skin(packs_.skin_index, nullptr);  // 建立几何与外壳
     apply_crt(config_.crt_level, nullptr);
 
     // 字体方案：theme/font/<方案名>/，方案内 font.* 是主字体（ASCII 与字形风格）、
@@ -87,14 +63,14 @@ int App::run(const CliOptions& opts) {
     refresh_shelf_order();
 
     std::vector<std::string> names;
-    for (const auto& skin : skins_) names.push_back(skin.name);
-    shell_.set_skins(names, skin_index_);
+    for (const auto& skin : packs_.skins) names.push_back(skin.name);
+    shell_.set_skins(names, packs_.skin_index);
     names.clear();
-    for (const auto& boot : boots_) names.push_back(boot.name);
-    shell_.set_boots(names, boot_index_);
+    for (const auto& boot : packs_.boots) names.push_back(boot.name);
+    shell_.set_boots(names, packs_.boot_index);
     names.clear();
-    for (const auto& sound : sounds_) names.push_back(sound.name);
-    shell_.set_sounds(names, sound_index_);
+    for (const auto& sound : packs_.sounds) names.push_back(sound.name);
+    shell_.set_sounds(names, packs_.sound_index);
     int font_index = 0;
     for (size_t i = 0; i < font_schemes_.size(); ++i)
         if (font_schemes_[i] == font_scheme_) font_index = static_cast<int>(i);
@@ -106,7 +82,7 @@ int App::run(const CliOptions& opts) {
     shell_.set_fps(config_.fps);
     shell_.set_music_volume(config_.music_volume);
     shell_.set_sfx_volume(config_.sfx_volume);
-    shell_.set_skin(skins_[skin_index_]);
+    shell_.set_skin(packs_.skin());
 
     // 音频必须先于开机动画就绪：boot 事件音与动画脚本的 phos.audio.* 都在第一秒内发生
     if (!opts.headless) init_audio();
@@ -129,10 +105,12 @@ int App::run(const CliOptions& opts) {
         }
     }
     log::info("session start: mode=" + std::string(opts.headless ? "headless" : "window") +
-              " skin=" + skins_[skin_index_].id + " palette=" + active_palette_.id +
-              " boot=" + boots_[boot_index_].id + " sound=" + sounds_[sound_index_].id +
-              " packs=" + std::to_string(skins_.size()) + "/" + std::to_string(palettes_.size()) +
-              "/" + std::to_string(boots_.size()) + "/" + std::to_string(sounds_.size()));
+              " skin=" + packs_.skin().id + " palette=" + active_palette_.id +
+              " boot=" + packs_.boots[static_cast<size_t>(packs_.boot_index)].id +
+              " sound=" + packs_.sounds[static_cast<size_t>(packs_.sound_index)].id +
+              " packs=" + std::to_string(packs_.skins.size()) + "/" +
+              std::to_string(packs_.palettes.size()) + "/" +
+              std::to_string(packs_.boots.size()) + "/" + std::to_string(packs_.sounds.size()));
 
     const int code = opts.headless ? run_headless(opts) : run_windowed(opts);
     // 关机路径逐段留痕：机器"关不掉"时，日志的最后一行就是卡住的位置
@@ -311,7 +289,7 @@ bool App::any_key_edge() const {
 ui::Rect App::content_rect() const {
     // 与外壳读同一份皮肤几何（core/skin.hpp 的 content_rect）：
     // host_.content_* 是给卡带 API 用的镜像，由 apply_skin 一处写入
-    return phos::content_rect(skins_[static_cast<size_t>(skin_index_)]);
+    return phos::content_rect(packs_.skin());
 }
 
 void App::start_boot_animation() {
@@ -319,9 +297,10 @@ void App::start_boot_animation() {
     in_boot_ = true;
     boot_script_.reset();
 
-    if (!boots_.empty()) {
+    if (!packs_.boots.empty()) {
         boot_script_ = std::make_unique<Cartridge>();
-        if (!boot_script_->load_entry(boots_[boot_index_].dir, "main.lua", host_))
+        if (!boot_script_->load_entry(packs_.boots[static_cast<size_t>(packs_.boot_index)].dir,
+                                      "main.lua", host_))
             boot_script_.reset();  // 加载失败：回退内置自检动画
     }
     shell_.set_external_boot(boot_script_ != nullptr);
@@ -330,10 +309,12 @@ void App::start_boot_animation() {
     // 启动日志：一行说明这轮开机动画来自哪里、音频是否已就绪
     // （"audio silent" 只应出现在 --headless 运行中）
     std::fprintf(stderr, "boot: %s (audio %s)\n",
-                 boot_script_ ? boots_[boot_index_].id.c_str() : "built-in self-check",
+                 boot_script_ ? packs_.boots[static_cast<size_t>(packs_.boot_index)].id.c_str()
+                              : "built-in self-check",
                  audio_.active() ? "ready" : "silent");
     log::info("boot animation: " +
-              (boot_script_ ? boots_[boot_index_].id : std::string("built-in self-check")));
+              (boot_script_ ? packs_.boots[static_cast<size_t>(packs_.boot_index)].id
+                            : std::string("built-in self-check")));
 
     play_event("boot");
 }
@@ -426,7 +407,7 @@ int App::run_headless(const CliOptions& opts) {
 
 int App::run_windowed(const CliOptions& opts) {
     std::string error;
-    const Skin& skin = skins_[skin_index_];
+    const Skin& skin = packs_.skin();
     const WindowHandlers handlers{&input_,      &escape_flag_, &settings_flag_,
                                   &console_flag_, &input_blocked_, &capture_escape_};
     Window window = Window::create(skin.grid_w() * kCellPx, skin.grid_h() * kCellPx,

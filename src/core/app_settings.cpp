@@ -17,10 +17,10 @@ void App::save_config_now() {
 
 
 void App::apply_skin(int index, Window* window, Renderer* renderer) {
-    if (index < 0 || index >= static_cast<int>(skins_.size())) return;
-    skin_index_ = index;
+    if (index < 0 || index >= static_cast<int>(packs_.skins.size())) return;
+    packs_.skin_index = index;
 
-    Skin& skin = skins_[skin_index_];
+    Skin& skin = packs_.skins[static_cast<size_t>(packs_.skin_index)];
     // 内容区尺寸统一由主机规定（皮肤只决定外壳装饰），避免切换时内容区尺寸漂移
     skin.screen_w = kContentW;
     skin.screen_h = kContentH;
@@ -36,11 +36,8 @@ void App::apply_skin(int index, Window* window, Renderer* renderer) {
 
     // 主题自带色板：按皮肤声明的 palette 名解析出激活色板——卡带配色与 CRT 参数随主题一起变。
     // 色板随主题（skin.palette），设置里无独立项
-    int pal = 0;
-    for (size_t i = 0; i < palettes_.size(); ++i)
-        if (palettes_[i].id == skin.palette) { pal = static_cast<int>(i); break; }
-    palette_index_ = pal;
-    active_palette_ = palettes_[static_cast<size_t>(pal)];
+    packs_.resolve_palette();
+    active_palette_ = packs_.palette();
     host_.panel_bg = skin.panel;  // 侧栏默认底色随主题（卡带 init 里就会读到）
     apply_crt(config_.crt_level, renderer);
     if (cart_) cart_->apply_palette(active_palette_);
@@ -110,24 +107,25 @@ void App::apply_crt(int level, Renderer* renderer) {
 
 
 void App::apply_boot(int index) {
-    if (index < 0 || index >= static_cast<int>(boots_.size())) return;
-    boot_index_ = index;
-    config_.boot = boots_[boot_index_].id;
+    if (index < 0 || index >= static_cast<int>(packs_.boots.size())) return;
+    packs_.boot_index = index;
+    config_.boot = packs_.boots[static_cast<size_t>(packs_.boot_index)].id;
     save_config_now();
 }
 
 
 void App::apply_sound(int index) {
-    if (index < 0 || index >= static_cast<int>(sounds_.size())) return;
-    sound_index_ = index;
+    if (index < 0 || index >= static_cast<int>(packs_.sounds.size())) return;
+    packs_.sound_index = index;
     sample_cache_.clear();  // 包已切换，缓存句柄随旧包失效
-    config_.sound = sounds_[sound_index_].id;
+    config_.sound = packs_.sounds[static_cast<size_t>(packs_.sound_index)].id;
     save_config_now();
 }
 
 
 int App::sample_handle_for(const std::string& event, const std::string& path) {
-    const std::string key = sounds_[sound_index_].id + ":" + event;
+    const SoundPack& sound_pack = packs_.sounds[static_cast<size_t>(packs_.sound_index)];
+    const std::string key = sound_pack.id + ":" + event;
     auto it = sample_cache_.find(key);
     if (it != sample_cache_.end()) return it->second;
 
@@ -135,7 +133,7 @@ int App::sample_handle_for(const std::string& event, const std::string& path) {
     if (host_.cart_files) {
         // 音效包的音频文件：按包目录读取（此处 path 相对包目录）
         if (auto bytes = [&]() -> std::optional<std::string> {
-                std::ifstream in(sounds_[sound_index_].dir + "/" + path, std::ios::binary);
+                std::ifstream in(sound_pack.dir + "/" + path, std::ios::binary);
                 if (!in) return std::nullopt;
                 std::ostringstream ss;
                 ss << in.rdbuf();
@@ -150,8 +148,8 @@ int App::sample_handle_for(const std::string& event, const std::string& path) {
 
 
 void App::play_event(const std::string& event) {
-    if (sounds_.empty()) return;
-    const SoundPack& pack = sounds_[sound_index_];
+    if (packs_.sounds.empty()) return;
+    const SoundPack& pack = packs_.sounds[static_cast<size_t>(packs_.sound_index)];
 
     if (auto it = pack.files.find(event); it != pack.files.end()) {
         const int handle = sample_handle_for(event, it->second);

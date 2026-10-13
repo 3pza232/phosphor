@@ -85,16 +85,18 @@ void App::handle_intent(const Shell::Intent& intent, Renderer* renderer, Window*
     }
     if (intent.skin_changed) {
         apply_skin(intent.skin_index, window, renderer);
-        log::info("setting skin=" + skins_[skin_index_].id);
+        log::info("setting skin=" + packs_.skin().id);
     }
     if (intent.boot_changed) {
         apply_boot(intent.boot_index);
-        log::info("setting boot=" + boots_[boot_index_].id);
+        log::info("setting boot=" +
+                  packs_.boots[static_cast<size_t>(packs_.boot_index)].id);
     }
     if (intent.sound_changed) {
         apply_sound(intent.sound_index);
         play_event("confirm");  // 立即试听新音效包
-        log::info("setting sound=" + sounds_[sound_index_].id);
+        log::info("setting sound=" +
+                  packs_.sounds[static_cast<size_t>(packs_.sound_index)].id);
     }
     if (intent.shelf_style_changed) {
         config_.shelf_style = shell_.shelf_style() == ShelfStyle::list ? "list" : "window";

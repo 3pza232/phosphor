@@ -68,10 +68,16 @@ std::string App::control_state_json() const {
         << ",\"content_w\":" << kContentW << ",\"content_h\":" << kContentH
         << ",\"panel_w\":" << host_.panel_w << ",\"seed\":" << rng_seed_
         << ",\"host_time\":" << host_.time
-        << ",\"skin\":" << json::quote(skins_[skin_index_].id)
+        << ",\"skin\":" << json::quote(packs_.skin().id)
         << ",\"palette\":" << json::quote(active_palette_.id)
-        << ",\"boot\":" << json::quote(boots_.empty() ? "" : boots_[boot_index_].id)
-        << ",\"sound\":" << json::quote(sounds_.empty() ? "" : sounds_[sound_index_].id)
+        << ",\"boot\":"
+        << json::quote(packs_.boots.empty()
+                           ? ""
+                           : packs_.boots[static_cast<size_t>(packs_.boot_index)].id)
+        << ",\"sound\":"
+        << json::quote(packs_.sounds.empty()
+                           ? ""
+                           : packs_.sounds[static_cast<size_t>(packs_.sound_index)].id)
         << ",\"font\":" << json::quote(font_scheme_)
         << ",\"language\":" << json::quote(lang_name(shell_.language()))
         << ",\"cursor\":" << (playing_ ? -1 : shell_.cursor())
@@ -126,14 +132,14 @@ std::string App::control_state_json() const {
     out << ",\"save\":{\"available\":" << (host_.save ? "true" : "false")
         << ",\"entries\":" << (host_.save ? host_.save->size() : 0) << "}";
 
-    out << ",\"packs\":{\"skin\":" << pack_json(skins_, by_name)
-        << ",\"skin_ids\":" << pack_json(skins_, by_id)
-        << ",\"palette\":" << pack_json(palettes_, by_name)
-        << ",\"palette_ids\":" << pack_json(palettes_, by_id)
-        << ",\"boot\":" << pack_json(boots_, by_name)
-        << ",\"boot_ids\":" << pack_json(boots_, by_id)
-        << ",\"sound\":" << pack_json(sounds_, by_name)
-        << ",\"sound_ids\":" << pack_json(sounds_, by_id)
+    out << ",\"packs\":{\"skin\":" << pack_json(packs_.skins, by_name)
+        << ",\"skin_ids\":" << pack_json(packs_.skins, by_id)
+        << ",\"palette\":" << pack_json(packs_.palettes, by_name)
+        << ",\"palette_ids\":" << pack_json(packs_.palettes, by_id)
+        << ",\"boot\":" << pack_json(packs_.boots, by_name)
+        << ",\"boot_ids\":" << pack_json(packs_.boots, by_id)
+        << ",\"sound\":" << pack_json(packs_.sounds, by_name)
+        << ",\"sound_ids\":" << pack_json(packs_.sounds, by_id)
         << ",\"font\":[";
     for (size_t i = 0; i < font_schemes_.size(); ++i)
         out << (i ? "," : "") << json::quote(font_schemes_[i]);

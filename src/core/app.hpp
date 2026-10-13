@@ -14,7 +14,7 @@
 #include "core/screen.hpp"
 #include "core/skin.hpp"
 #include "net/net.hpp"
-#include "pack/pack.hpp"
+#include "pack/content_library.hpp"
 #include "shell/shell.hpp"
 
 #include <map>
@@ -126,17 +126,6 @@ private:
     static constexpr const char* kFontDir = "theme/font";                // 字体方案根目录
     static constexpr const char* kDefaultFontScheme = "default";         // 出厂默认方案名
 
-    // 内容目录：用户区优先，出厂区兜底（查找顺序见 content-packs.md）
-    static constexpr const char* kUserSkinDir = "theme/skin";
-    static constexpr const char* kUserPaletteDir = "theme/palette";
-    static constexpr const char* kUserBootDir = "theme/boot";
-    static constexpr const char* kUserSoundDir = "theme/sound";
-    // 出厂区：随主机发布的内容包的位置；用户区有同名项时用户区优先
-    static constexpr const char* kFactorySkinDir = "system/skin";
-    static constexpr const char* kFactoryPaletteDir = "system/palette";
-    static constexpr const char* kFactoryBootDir = "system/boot";
-    static constexpr const char* kFactorySoundDir = "system/sound";
-
     // 仪式感时长（秒）
     static constexpr float kInsertFlashTime = 0.30f;
     static constexpr float kEjectCollapseTime = 0.35f;
@@ -161,16 +150,11 @@ private:
     bool quit_ = false;
 
     Config config_;
-    std::vector<Skin> skins_;
-    int skin_index_ = 0;
-    std::vector<Palette> palettes_;
-    int palette_index_ = 0;
+    /// 内容包（皮肤/色板/开机动画/音效）：有什么、选中哪个，见 pack/content_library.hpp
+    ContentLibrary packs_;
+    /// 当前生效的色板副本：由主题的 skin.palette 解析而来，host_.palette 指向它
     Palette active_palette_;
     CrtParams active_crt_;
-    std::vector<BootPack> boots_;
-    int boot_index_ = 0;
-    std::vector<SoundPack> sounds_;
-    int sound_index_ = 0;
 
     Audio audio_;
     Net net_;  // 局域网联机（随卡带生命周期，见 app_cart.cpp）
