@@ -35,11 +35,10 @@ public:
     /// 字体文件全部不可用时返回 false 且**不动已生效的字体**（换字失败不该黑屏）。
     bool reload_fonts(const std::vector<std::string>& font_files, std::string& err);
 
-    /// 设置字形**绘制像素高**（= 字号）。0（或小于 1）表示"填满单元格"（等于 cell_h，
-    /// 即默认观感）。字形始终按 kFontPixels 光栅化、绘制时缩放到这里给的高度，并在
-    /// 单元格里垂直居中——字号小于格高时字变小、四周留白，大于格高时字变大、溢出格。
-    /// 只改缩放，不重光栅化；但动态区里全角字形的居中量依赖缩放，故会清掉缓存
-    void set_font_px(int px);
+    /// 设置**单元格像素边长**（= 字号）。整机字符大小随之缩放：行距 = 格高，字形仍填满格。
+    /// 只改缩放（图集按 kFontPixels 光栅化、绘制时缩放），但动态区里全角字形的居中量依赖
+    /// 缩放，故会清掉其缓存。图集尚未建立时只记尺寸，等 build_font_atlas 再按它算
+    void set_cell_px(int px);
 
     /// 绘制整个字符网格
     void draw(const Screen& screen);
@@ -124,8 +123,6 @@ private:
     int cell_w_ = 16, cell_h_ = 16;
     float font_ascent_ = 0.0f;   // 主字体基线（kFontPixels 尺度）
     float em32_ = 0.0f;          // 主字体 em 高度（kFontPixels 尺度），缩放换算基准
-    int font_px_ = 0;            // 字形绘制像素高（0 = 填满单元格 = cell_h_）
-    float voff_ = 0.0f;          // 单元格内的垂直居中偏移（单元格像素）
     CrtParams crt_{};
 
     // ASCII 32..126 的字形信息（静态区：一次打包，跨帧复用）

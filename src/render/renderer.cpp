@@ -301,17 +301,15 @@ bool Renderer::build_font_atlas(std::unique_ptr<FontChain> fonts, std::string& e
 }
 
 void Renderer::update_scale() {
-    // 字号：显式给了就用它，否则填满单元格（cell_h_）。缩放把 kFontPixels 尺度的字形
-    // 映射到"绘制像素"，字号=格高时与"填满单元格"完全一致
-    const float px = font_px_ > 0 ? static_cast<float>(font_px_) : static_cast<float>(cell_h_);
-    pack_scale_ = em32_ > 0.0f ? px / em32_ : 1.0f;
-    voff_ = (static_cast<float>(cell_h_) - px) * 0.5f;  // 单元格内垂直居中（字号=格高时为 0）
+    // 字形按 kFontPixels 光栅化，绘制时等比缩放进单元格：em 方框映射到格高
+    pack_scale_ = em32_ > 0.0f ? static_cast<float>(cell_h_) / em32_ : 1.0f;
 }
 
-void Renderer::set_font_px(int px) {
-    font_px_ = px > 0 ? px : 0;
+void Renderer::set_cell_px(int px) {
+    cell_w_ = px > 0 ? px : 1;
+    cell_h_ = px > 0 ? px : 1;
     update_scale();
-    // 图集还没建（init 之前）：先把字号记下，等 build_font_atlas 时按它算缩放即可。
+    // 图集尚未建立（init 之前）：格尺寸已记下，等 build_font_atlas 再按它打包与算缩放。
     // 此时 pen_x0_/pen_y0_ 还是 0（静态 ASCII 区起点），拨回会把 ASCII 区当动态区覆盖
     if (font_tex_ == 0) return;
     // 动态区里全角字形的"两格居中"量按 pack_scale_ 烘焙过，缩放变了必须整片重装；
@@ -376,7 +374,7 @@ void Renderer::emit_glyphs(const Screen& screen, int ox, int oy, bool layer, Gly
         const Glyph& g = *glyph;
         const float s = pack_scale_;
         const float gx = (ox + x) * cw + g.xoff * s;
-        const float gy = (oy + y) * chh + voff_ + (font_ascent_ + g.yoff) * s;
+        const float gy = (oy + y) * chh + (font_ascent_ + g.yoff) * s;
         const float gw = g.w * s;
         const float gh = g.h * s;
 
@@ -434,11 +432,9 @@ void Renderer::submit(float win_w, float win_h, bool layer, bool clear_first) {
     shader_.use();
     shader_.set_vec2("u_resolution", win_w, win_h);
     shader_.set_int("u_font", 0);
-    // 辉光邻域取 **±1 屏幕像素**（与 CPU 光栅化一路一致）。字形按 pack_scale_ 缩放绘制，
-    // 图集里 1 纹素在屏幕上占 pack_scale_ 个像素，故 UV 步长要乘 1/pack_scale_
-    const float halo_step =
-        pack_scale_ > 0.0f ? (1.0f / kAtlasSize) / pack_scale_ : 1.0f / kAtlasSize;
-    shader_.set_vec2("u_texel", halo_step, halo_step);
+    // 辉光邻域取图集里 ±1 纹素（字形缩放进格后约半屏像素）：出厂就有的弱字符辉光。
+    // 步长**不随字号放大**——放大会在字形周围浮出细线小点
+    shader_.set_vec2("u_texel", 1.0f / kAtlasSize, 1.0f / kAtlasSize);
 
     auto set_float = [this](const char* name, float value) {
         glUniform1f(glGetUniformLocation(shader_.id(), name), value);

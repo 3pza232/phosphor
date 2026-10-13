@@ -23,14 +23,15 @@ inline constexpr std::uintmax_t kMaxAssetBytes = 8u * 1024 * 1024;
 /// 面板宽度是与主机共享的布局量（分隔线、面板局部坐标都跟着它走），
 /// 所以钳制只写一份——两处各写一套，迟早对同一个输入给出两个结果
 inline int clamp_panel_w(int w) { return w < 0 ? 0 : (w > kPanelMaxW ? kPanelMaxW : w); }
-inline constexpr int kCellPx = 16;      // 单元格像素边长
+inline constexpr int kCellPx = 16;      // 默认单元格像素边长（= 默认字号）
 inline constexpr int kLogicFps = 60;    // 逻辑帧率（游戏速度由它定，不随"帧率"设置变）
 
-/// 字号（字形绘制像素高）。格高是 kCellPx(=16)：字号=16 时字形填满单元格（出厂观感）。
-/// 范围与默认放这里，"配置校验""设置界面""字体方案默认"三处读同一份
-inline constexpr int kMinFontPx = 6;      // 最小字号（再小就糊成一团）
-inline constexpr int kMaxFontPx = 24;     // 最大字号（再大就明显溢出格、糊邻格）
-inline constexpr int kDefaultFontPx = kCellPx;  // 出厂字号 = 填满单元格
+/// 字号 = **单元格像素边长**：它就是整台机器字符的大小，行距（格高）随之缩放——
+/// 字号小则行距紧、字号大则行距松，不会出现"小字行距过宽 / 大字上下相碰"。范围与默认
+/// 放这里，"配置校验""设置界面""字体方案默认"三处读同一份
+inline constexpr int kMinFontPx = 12;    // 最小字号（再小几乎看不清）
+inline constexpr int kMaxFontPx = 24;    // 最大字号（再大窗口就偏大）
+inline constexpr int kDefaultFontPx = kCellPx;  // 出厂字号（= 默认格宽）
 
 /// "帧率"设置的可选档位：每秒最多刷新多少次**画面**。逻辑帧率恒为 kLogicFps，
 /// 所以这个档位只改刷新率与 CPU 占用，**不改游戏速度**：30 更省电、更有老机器的顿感，

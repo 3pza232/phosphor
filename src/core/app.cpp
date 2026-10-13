@@ -35,6 +35,7 @@ int App::run(const CliOptions& opts) {
     for (const FontScheme& s : font_scheme_list_) font_schemes_.push_back(s.name);
     load_font_chain(config_.font);
     font_px_ = effective_font_px();  // 字号：用户设置 > 方案声明 > 出厂默认
+    host_.cell_px = font_px_;        // ink_box 的兜底宽度随格边长
 
     host_.screen = &display_.screen;
     host_.input = &input_;
@@ -62,7 +63,7 @@ int App::run(const CliOptions& opts) {
     for (size_t i = 0; i < font_schemes_.size(); ++i)
         if (font_schemes_[i] == font_scheme_) font_index = static_cast<int>(i);
     shell_.set_fonts(font_schemes_, font_index);
-    shell_.set_font_size(font_px_, config_.font_size == 0);
+    shell_.set_font_size(font_px_);
     shell_.set_language(lang_from_name(config_.language));
 
     shell_.set_shelf_style(config_.shelf_style == "list" ? ShelfStyle::list : ShelfStyle::window);
@@ -419,7 +420,7 @@ int App::run_windowed(const CliOptions& opts) {
     const Skin& skin = packs_.skin();
     const WindowHandlers handlers{&input_,      &escape_flag_, &settings_flag_,
                                   &console_flag_, &input_blocked_, &capture_escape_};
-    Window window = Window::create(skin.grid_w() * kCellPx, skin.grid_h() * kCellPx,
+    Window window = Window::create(skin.grid_w() * font_px_, skin.grid_h() * font_px_,
                                    kProductName, handlers, error);
     if (!window.valid()) {
         std::fprintf(stderr, "ERROR: %s\n", error.c_str());
@@ -427,11 +428,10 @@ int App::run_windowed(const CliOptions& opts) {
     }
 
     Renderer renderer;
-    if (!renderer.init(font_files_, kCellPx, kCellPx, error)) {
+    if (!renderer.init(font_files_, font_px_, font_px_, error)) {
         std::fprintf(stderr, "ERROR: %s\n", error.c_str());
         return 3;
     }
-    renderer.set_font_px(font_px_);
     renderer.set_crt(active_crt_);
     // 字形度量交给 API 层（phos.text.ink_box）：与绘制同一份图集度量。
     // 无头模式不装它，调用方退回整格宽

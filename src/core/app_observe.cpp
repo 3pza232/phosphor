@@ -126,9 +126,8 @@ void App::maybe_dump(const CliOptions& opts, long frame) const {
 bool App::write_screenshot(const std::string& path, int& width, int& height,
                            std::string& error) const {
     ScreenImageOptions options;
-    options.cell_w = kCellPx;
-    options.cell_h = kCellPx;
-    options.font_px = font_px_;  // 截图字号与窗口一致（同一份有效字号）
+    options.cell_w = font_px_;  // 字号 = 格边长：截图与窗口同一份
+    options.cell_h = font_px_;
     options.crt = active_crt_;
     // 截图必须与窗口所见一致：底 + 逐层叠画（像素级合成），
     // 而不是合成后的文本网格 —— 那条路一格只有一个字形，会把下层"顶掉"

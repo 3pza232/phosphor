@@ -42,6 +42,8 @@ struct HostContext {
     /// 字形墨迹框查询（`phos.text.ink_box`）。窗口渲染器就绪时由 App 装配；
     /// 无头或字体未就绪时为空，调用方退回整格宽（见 core/text.hpp 的 GlyphBox）
     std::function<GlyphBox(char32_t)> glyph_metrics;
+    /// 当前单元格像素边长（= 字号）：`phos.text.ink_box` 无渲染器时按它退回整格宽
+    int cell_px = kCellPx;
     /// 卡带是否接管 Esc（`phos.sys.capture_escape`）：true 时 Esc 作为普通键注入卡带。
     /// 由 App 指向其成员；未接（无头）时为 nullptr，capture_escape 调用安全无效
     bool* capture_escape = nullptr;

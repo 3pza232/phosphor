@@ -267,7 +267,7 @@ void register_host_api(sol::state& lua, HostContext& host) {
     // "底板/装饰按字身算宽度"要靠它。拿不到字体度量时给整格宽并注明 approx
     text_api["ink_box"] = [&host](const sol::object& ch) {
         const char32_t cp = api::read_char(ch, U' ');
-        const GlyphBox box = host.glyph_metrics ? host.glyph_metrics(cp) : GlyphBox{0, kCellPx, true};
+        const GlyphBox box = host.glyph_metrics ? host.glyph_metrics(cp) : GlyphBox{0, host.cell_px, true};
         return std::make_tuple(box.xoff, box.width, box.approx);
     };
 

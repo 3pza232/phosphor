@@ -70,14 +70,8 @@ std::string row_text(SettingId id, const SettingsContext& ctx) {
         case SettingId::font:
             return label(lang, Msg::row_font) + "< " +
                    pick(ctx.fonts, ctx.font_index, tr(lang, Msg::value_default)) + " >";
-        case SettingId::font_size: {
-            // "自动"时把方案/出厂给出的实际字号一并写出来，否则用户不知道自动是多少
-            const std::string value =
-                ctx.font_auto ? std::string(tr(lang, Msg::value_font_auto)) + " (" +
-                                    std::to_string(ctx.font_px) + ")"
-                              : std::to_string(ctx.font_px);
-            return label(lang, Msg::row_font_size) + "< " + value + " >";
-        }
+        case SettingId::font_size:
+            return label(lang, Msg::row_font_size) + "< " + std::to_string(ctx.font_px) + " >";
         case SettingId::scanlines:
             return label(lang, Msg::row_scanlines) + "[ " +
                    crt_level_label(lang, ctx.crt_level) + " ]";

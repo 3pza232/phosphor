@@ -27,9 +27,6 @@ namespace shelf {
 /// 渲染卡带架主体（列表样式为列表+信息窗；视窗样式为带框图标轮播）
 void draw(Screen& screen, const ui::Rect& content, const ShelfView& view, const ui::Style& style);
 
-/// 图标铭牌矩形（按图标尺寸与缩放步长推导）
-ui::Rect icon_plate_rect(const CartInfo& cart, int center_x, int center_y, int step, int padding);
-
 /// 卡带在列表/轮播中的显示名（损坏卡带的标记随界面语言）
 std::string display_name(const CartInfo& cart, Lang lang);
 

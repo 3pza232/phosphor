@@ -33,7 +33,7 @@ void App::apply_skin(int index, Window* window, Renderer* renderer) {
     host_.content_h = kContentH;
 
     shell_.set_skin(skin);
-    if (window) window->resize(skin.grid_w() * kCellPx, skin.grid_h() * kCellPx);
+    if (window) window->resize(skin.grid_w() * font_px_, skin.grid_h() * font_px_);
 
     // 主题自带色板：按皮肤声明的 palette 名解析出激活色板——卡带配色与 CRT 参数随主题一起变。
     // 色板随主题（skin.palette），设置里无独立项
@@ -83,23 +83,26 @@ int App::effective_font_px() const {
 }
 
 
-void App::apply_font_px(Renderer* renderer) {
+void App::apply_font_px(Renderer* renderer, Window* window) {
     font_px_ = effective_font_px();
-    if (renderer) renderer->set_font_px(font_px_);
-    shell_.set_font_size(font_px_, config_.font_size == 0);  // 设置行显示与实际生效保持同步
+    host_.cell_px = font_px_;                       // ink_box 的兜底宽度随格边长
+    if (renderer) renderer->set_cell_px(font_px_);  // 字形随格缩放
+    const Skin& skin = packs_.skin();
+    if (window) window->resize(skin.grid_w() * font_px_, skin.grid_h() * font_px_);
+    shell_.set_font_size(font_px_);                 // 设置行显示与实际生效保持同步
 }
 
 
-void App::apply_font_size(int px, Renderer* renderer) {
+void App::apply_font_size(int px, Renderer* renderer, Window* window) {
     // 0 = 跟随字体方案；正数钳进合法区间（越界不静默保留）
     config_.font_size = px <= 0 ? 0
                                 : (px < kMinFontPx ? kMinFontPx : (px > kMaxFontPx ? kMaxFontPx : px));
-    apply_font_px(renderer);
+    apply_font_px(renderer, window);
     save_config_now();
 }
 
 
-void App::apply_font_scheme(int index, Renderer* renderer) {
+void App::apply_font_scheme(int index, Renderer* renderer, Window* window) {
     if (index < 0 || index >= static_cast<int>(font_schemes_.size())) return;
     load_font_chain(font_schemes_[static_cast<size_t>(index)]);
 
@@ -112,7 +115,7 @@ void App::apply_font_scheme(int index, Renderer* renderer) {
         host_.glyph_metrics = [renderer](char32_t cp) { return renderer->ink_box(cp); };
     }
     // 换方案可能改变"方案声明的字号"（配置为 0=跟随时），字号与字体链一起落地
-    apply_font_px(renderer);
+    apply_font_px(renderer, window);
 
     config_.font = font_scheme_;
     save_config_now();

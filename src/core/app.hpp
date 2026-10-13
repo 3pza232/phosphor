@@ -73,14 +73,15 @@ private:
 
     /// 当前生效字号（像素高）：用户显式选了就用它，否则方案声明的字号，再否则出厂默认
     int effective_font_px() const;
-    /// 按 effective_font_px() 把字号推给渲染器（截图路径每帧现读 font_px_，无需处理）
-    void apply_font_px(class Renderer* renderer);
+    /// 按 effective_font_px() 把单元格尺寸推给渲染器、调整窗口大小（截图路径每帧现读
+    /// font_px_，无需处理）。字号 = 格边长，行距随之缩放
+    void apply_font_px(class Renderer* renderer, class Window* window);
     /// 设置字号：px<=0 表示"跟随字体方案"（0）；正数钳进 [kMinFontPx, kMaxFontPx] 后生效并落盘
-    void apply_font_size(int px, class Renderer* renderer);
+    void apply_font_size(int px, class Renderer* renderer, class Window* window);
 
     // 内容包应用
     void apply_skin(int index, class Window* window, class Renderer* renderer = nullptr);
-    void apply_font_scheme(int index, class Renderer* renderer);
+    void apply_font_scheme(int index, class Renderer* renderer, class Window* window);
     void apply_boot(int index);
     void apply_sound(int index);
     void apply_crt(int level, class Renderer* renderer);

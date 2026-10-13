@@ -76,8 +76,8 @@ void App::handle_intent(const Shell::Intent& intent, Renderer* renderer, Window*
         save_config_now();
         log::info("setting fps=" + std::to_string(config_.fps));
     }
-    if (intent.font_changed) apply_font_scheme(intent.font_index, renderer);
-    if (intent.font_size_changed) apply_font_size(intent.font_size, renderer);
+    if (intent.font_changed) apply_font_scheme(intent.font_index, renderer, window);
+    if (intent.font_size_changed) apply_font_size(intent.font_size, renderer, window);
     if (intent.language_changed) {
         config_.language = lang_name(shell_.language());
         host_.language = config_.language;  // 卡带下一帧就会跟着换文案
