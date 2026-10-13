@@ -692,6 +692,12 @@ phos.debug.number("武器1 半径", function() return WEAPONS[1].radius end,
   agent 也能实时调参（见 `agent-interface.md`）。注意 `debug.set` **不做 min/max 钳制**
   （那是滑条的活），值原样交给卡带的 `set`。
 - 调试台用**反引号键**（`` ` ``，就是键盘左上角那个 `~` 键）呼出。
+- **分组**：`opts.group` 把参数放进折叠层级（`"武器"` / `{zh=,en=}` 单层；数组 = 多层，如
+  `{ {zh="武器",en="WEAPONS"}, weapon.name }`）。分组是**默认关闭**的折叠节点，将来新增的
+  组 / 参数自动出现——遍历武器表逐件登记即可，加武器时面板自己会长出来。
+- **文案随语言**：`name` 与组标签都可写成 `{ zh = …, en = … }`；切界面语言时篮子文案跟着变。
+- 面板里还有个开关 **`Pause while panel is open`**：勾上后打开调试台即冻结游戏（画面不动、
+  参数照调），方便对着静止画面细调。
 
 ## phos.sys
 

@@ -54,9 +54,11 @@ public:
     std::string global_json(const std::string& path);
 
     /// 卡带注册的一个可实时调参数（`phos.debug.number`）：get 读当前值、set 写回。
-    /// 带 sol 类型，故留在 cart/；控制台只吃它的**纯数据**快照（`DebugParamView` / agent 的 DebugParam）
+    /// name / group 是**可本地化**的（字符串，或 { zh =, en = } 表）——界面语言切换时篮子文案跟着变。
+    /// 带 sol 类型，故留在 cart/；控制台只吃它的纯数据快照（`DebugParamView`）
     struct DebugRegistration {
-        std::string name;
+        Localized name;
+        std::vector<Localized> group;  // 折叠分组路径（空 = 顶层直接显示）
         sol::protected_function get;
         sol::protected_function set;
         float min = 0.0f, max = 1.0f, step = 0.01f;
@@ -64,14 +66,15 @@ public:
 
     /// `phos.debug.number(name, get, set, opts)` 的落地：登记一个可实时调的参数。
     /// 名字空或 get 不是函数则拒。
-    bool debug_register(std::string name, sol::protected_function get, sol::protected_function set,
-                        float min, float max, float step);
+    bool debug_register(Localized name, std::vector<Localized> group, sol::protected_function get,
+                        sol::protected_function set, float min, float max, float step);
 
     size_t debug_param_count() const { return debug_regs_.size(); }
 
-    /// 第 i 个参数的**纯数据**快照：名字 + 当前值（调 get）+ 范围。get 出错时 ok=false。
+    /// 第 i 个参数的**纯数据**快照：名字 + 分组路径 + 当前值（调 get）+ 范围。get 出错时 ok=false。
     struct DebugParamView {
-        std::string name;
+        Localized name;
+        std::vector<Localized> group;
         float value = 0.0f;
         float min = 0.0f, max = 1.0f, step = 0.01f;
         bool ok = false;

@@ -38,6 +38,41 @@ Surface panel_surface(HostContext& host) {
 using api::default_bg;
 using api::default_fg;
 
+/// 篮子文案 → Localized：字符串（中英同文）或 `{ zh = …, en = … }` 表。
+/// 控制台按当前界面语言取一份，于是切换语言时篮子文案跟着变
+Localized read_label(const sol::object& object) {
+    Localized out;
+    if (object.is<std::string>()) {
+        out.zh = out.en = object.as<std::string>();
+    } else if (object.is<sol::table>()) {
+        const sol::table t = object.as<sol::table>();
+        const sol::object zh = t["zh"];
+        const sol::object en = t["en"];
+        if (zh.is<std::string>()) out.zh = zh.as<std::string>();
+        if (en.is<std::string>()) out.en = en.as<std::string>();
+        if (out.zh.empty()) out.zh = out.en;  // 只写一种也不至于空着
+        if (out.en.empty()) out.en = out.zh;
+    }
+    return out;
+}
+
+/// 折叠分组路径：`"武器"` / `{ zh =, en = }` = 单层；数组 = 多层（每项又是一个标签）。
+/// 缺省/空 = 顶层直接显示
+std::vector<Localized> read_group_path(const sol::object& object) {
+    std::vector<Localized> path;
+    if (object.is<std::string>()) {
+        path.push_back(read_label(object));
+    } else if (object.is<sol::table>()) {
+        const sol::table t = object.as<sol::table>();
+        if (t["zh"].is<std::string>() || t["en"].is<std::string>()) {
+            path.push_back(read_label(object));  // 单层本地化标签
+        } else {
+            for (size_t i = 1; i <= t.size(); ++i) path.push_back(read_label(t[i]));
+        }
+    }
+    return path;
+}
+
 /// 给 `phos.screen` / `phos.panel` 绑定**同一套**绘制方法（put/print/fill/clear/blit/blend/
 /// back/back_rect/plot）。两组只差两件事：画到哪块 `Surface`、写底色的默认值——
 /// 都由 `is_panel` 一处决定。抽到一处后，"省略底色的规则"只有一份实现。
@@ -179,17 +214,20 @@ void register_host_api(sol::state& lua, HostContext& host) {
     // 卡带注册"一个数值 + 怎么读 get + 怎么写 set + 范围"，调试台据此画滑条。
     // 注册随卡带生命周期；未挂卡带（无卡 / 宿主动画脚本）时安全无效
     sol::table debug = phos.create_named("debug");
-    debug["number"] = [&host](const std::string& name, sol::protected_function get,
+    debug["number"] = [&host](sol::object name, sol::protected_function get,
                               sol::protected_function set, sol::optional<sol::table> opts) {
         if (!host.cart) return;
         float min = 0.0f, max = 1.0f, step = 0.01f;
+        std::vector<Localized> group;
         if (opts) {
             const sol::table t = *opts;
             min = static_cast<float>(api::read_number(t, "min", min));
             max = static_cast<float>(api::read_number(t, "max", max));
             step = static_cast<float>(api::read_number(t, "step", step));
+            group = read_group_path(t["group"]);
         }
-        host.cart->debug_register(name, std::move(get), std::move(set), min, max, step);
+        host.cart->debug_register(read_label(name), std::move(group), std::move(get),
+                                  std::move(set), min, max, step);
     };
 
     // --- phos.text（文本度量） ---

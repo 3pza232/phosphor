@@ -701,10 +701,12 @@ function phos.cart.info() end
 phos.debug = {}
 
 ---注册一个可实时调的**数值**参数。
----@param name string 面板上显示的名字
+---@param name string|table 面板上显示的名字；写 `{ zh = …, en = … }` 可随界面语言切换（只写一种也认）
 ---@param get fun():number 读当前值（面板打开或 state.query 时被调用——不必每帧执行）
 ---@param set fun(value:number) 写回
----@param opts table|nil min / max（滑条范围）、step（拖动步长）
+---@param opts table|nil min / max（滑条范围）、step（拖动步长）、
+---       group = 折叠分组：字符串或 `{ zh =, en = }`（单层），或数组（多层，每项又是标签）。
+---       分组在面板里是**默认关闭**的折叠节点，将来新增的组 / 参数自动出现
 function phos.debug.number(name, get, set, opts) end
 
 -- ─────────────────────────────────────────────────────────────────────────

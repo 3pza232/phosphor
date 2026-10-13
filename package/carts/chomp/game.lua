@@ -388,9 +388,9 @@ end
 -- 可调参数（`~` 调试台，见 phos.debug.number）：闭包直接读写本模块的常数，改完即时生效
 function Game.tunables()
   return {
-    { name = "玩家步长", get = function() return STEP end, set = function(v) STEP = v end,
-      min = 0.04, max = 0.30, step = 0.005 },
-    { name = "幽灵步长", get = function() return GHOST_STEP end,
+    { name = { zh = "玩家步长", en = "Player step" }, get = function() return STEP end,
+      set = function(v) STEP = v end, min = 0.04, max = 0.30, step = 0.005 },
+    { name = { zh = "幽灵步长", en = "Ghost step" }, get = function() return GHOST_STEP end,
       set = function(v) GHOST_STEP = v end, min = 0.04, max = 0.35, step = 0.005 },
   }
 end

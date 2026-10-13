@@ -165,7 +165,9 @@ void App::tick_playing(float dt) {
 
     using clock = std::chrono::steady_clock;
     const auto t0 = clock::now();
-    bool ok = cart_->update(dt);
+    // 调试台"打开即暂停"：卡带不推进（画面仍重绘、参数照调）。短路 || = 冻结时不调 update
+    const bool frozen = console_.open && pause_when_open_;
+    bool ok = frozen || cart_->update(dt);
     const auto t1 = clock::now();
     // 插卡瞬间的画面抖动：隔帧跳过一次绘制，形成电压不稳的闪烁
     const bool flicker = insert_flash_ > 0.0f && (frame_count_ % 3 == 0);
@@ -516,11 +518,17 @@ int App::run_windowed(const CliOptions& opts) {
             console_.render(info);
             renderer.set_crt(active_crt_);  // 仪表盘可直接调参并即时生效
             // 调试台改过的卡带参数：帧末写回（不在渲染中途改卡带状态）。
-            // 下标与 debug_params_ 一一对应（fill_debug_info 刚按同一顺序填的）
+            // 参数在**分组树**里，递归收"改过的"叶子，按它们各自登记的下标写回
             if (cart_) {
-                for (size_t i = 0; i < debug_params_.size(); ++i)
-                    if (debug_params_[i].changed)
-                        cart_->debug_param_write(i, debug_params_[i].value);
+                std::vector<const DebugParam*> changed;
+                auto collect = [&changed](const DebugGroup& group, auto&& self) -> void {
+                    for (const DebugParam& p : group.params)
+                        if (p.changed) changed.push_back(&p);
+                    for (const DebugGroup& sub : group.groups) self(sub, self);
+                };
+                collect(params_root_, collect);
+                for (const DebugParam* p : changed)
+                    cart_->debug_param_write(p->index, p->value);
             }
         }
         window.swap_buffers();

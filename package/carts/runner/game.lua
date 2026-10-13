@@ -246,9 +246,9 @@ end
 -- 可调参数（`~` 调试台，见 phos.debug.number）
 function Game.tunables()
   return {
-    { name = "基础速度", get = function() return BASE_SPEED end,
+    { name = { zh = "基础速度", en = "Base speed" }, get = function() return BASE_SPEED end,
       set = function(v) BASE_SPEED = v end, min = 3, max = 30, step = 0.5 },
-    { name = "重力", get = function() return GRAVITY end,
+    { name = { zh = "重力", en = "Gravity" }, get = function() return GRAVITY end,
       set = function(v) GRAVITY = v end, min = 5, max = 80, step = 1 },
   }
 end

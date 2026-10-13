@@ -93,10 +93,11 @@ std::string App::control_state_json() const {
     // 卡带注册的可调参数（phos.debug.number）当前值；无卡带或未注册为空数组
     out << ",\"debug_params\":[";
     if (cart_) {
+        const bool english = config_.language == "en";  // 名字按当前语言给，与人看到的篮子一致
         const size_t count = cart_->debug_param_count();
         for (size_t i = 0; i < count; ++i) {
             const Cartridge::DebugParamView view = cart_->debug_param(i);
-            out << (i ? "," : "") << "{\"name\":" << json::quote(view.name)
+            out << (i ? "," : "") << "{\"name\":" << json::quote(view.name.get(english))
                 << ",\"value\":" << view.value << "}";
         }
     }
@@ -495,9 +496,10 @@ void App::execute_control(const ControlCommand& command) {
         }
         bool found = false;
         bool written = false;
+        const bool english = config_.language == "en";  // 按当前语言解析的名字匹配
         for (size_t i = 0; i < cart_->debug_param_count(); ++i) {
             const Cartridge::DebugParamView view = cart_->debug_param(i);
-            if (view.name != param) continue;
+            if (view.name.get(english) != param) continue;
             written = cart_->debug_param_write(i, static_cast<float>(value));
             found = true;
             break;

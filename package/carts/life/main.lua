@@ -47,7 +47,8 @@ function init()
   running = true
   tick = 0
   -- 把"每代用时"交给 `~` 调试台：实时改成快/慢放（见 phos.debug.number）
-  phos.debug.number("每代用时", function() return GENERATION_TIME end,
+  phos.debug.number({ zh = "每代用时", en = "Gen interval" },
+                    function() return GENERATION_TIME end,
                     function(v) GENERATION_TIME = v end,
                     { min = 0.02, max = 1.0, step = 0.01 })
   phos.audio.music(Music)  -- 缓慢环境音（主机在换卡/拔卡时会自动停）

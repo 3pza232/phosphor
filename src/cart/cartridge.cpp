@@ -324,15 +324,25 @@ void Cartridge::apply_palette(const Palette& palette) {
     apply_palette_to(lua_, palette);
 }
 
-bool Cartridge::debug_register(std::string name, sol::protected_function get,
-                               sol::protected_function set, float min, float max, float step) {
-    if (name.empty() || !get.valid()) return false;
+bool Cartridge::debug_register(Localized name, std::vector<Localized> group,
+                               sol::protected_function get, sol::protected_function set, float min,
+                               float max, float step) {
+    if ((name.zh.empty() && name.en.empty()) || !get.valid()) return false;
     if (debug_regs_.size() >= kMaxDebugParams) return false;  // 上限：每帧要调全部 get，不设限会被拖慢
-    // 同名不重复登记：否则面板出现两条、debug.set 只改到第一条，行为含糊
-    for (const DebugRegistration& reg : debug_regs_)
-        if (reg.name == name) return false;
+    // 同名**同组**才拒；不同分组下允许重名（"武器/火箭/伤害" 与 "武器/手雷/伤害" 本就是两项）
+    const auto same_label = [](const Localized& a, const Localized& b) {
+        return a.zh == b.zh && a.en == b.en;
+    };
+    for (const DebugRegistration& reg : debug_regs_) {
+        if (reg.group.size() != group.size() || !same_label(reg.name, name)) continue;
+        bool same_group = true;
+        for (size_t k = 0; k < group.size() && same_group; ++k)
+            same_group = same_label(reg.group[k], group[k]);
+        if (same_group) return false;
+    }
     DebugRegistration reg;
     reg.name = std::move(name);
+    reg.group = std::move(group);
     reg.get = std::move(get);
     reg.set = std::move(set);
     reg.min = min;
@@ -347,6 +357,7 @@ Cartridge::DebugParamView Cartridge::debug_param(size_t index) {
     if (index >= debug_regs_.size()) return out;
     const DebugRegistration& reg = debug_regs_[index];
     out.name = reg.name;
+    out.group = reg.group;
     out.min = reg.min;
     out.max = reg.max;
     out.step = reg.step;

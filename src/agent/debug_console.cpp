@@ -6,6 +6,32 @@
 
 namespace phos {
 
+namespace {
+
+/// 递归画一组参数：本层滑条 + 子组（折叠节点，**默认关闭**）。
+/// 用 PushID(&node) 让同名节点在 ImGui 里互不撞 ID；将来新增的组 / 参数自动出现
+void draw_params(DebugGroup& group) {
+    for (DebugParam& p : group.params) {
+        ImGui::PushID(&p);
+        if (!p.readable) {
+            ImGui::TextDisabled("%s  (unreadable)", p.name.c_str());
+        } else if (ImGui::SliderFloat(p.name.c_str(), &p.value, p.min, p.max, "%.3f")) {
+            p.changed = true;
+        }
+        ImGui::PopID();
+    }
+    for (DebugGroup& sub : group.groups) {
+        ImGui::PushID(&sub);
+        if (ImGui::TreeNodeEx(sub.label.c_str(), ImGuiTreeNodeFlags_SpanAvailWidth)) {
+            draw_params(sub);
+            ImGui::TreePop();
+        }
+        ImGui::PopID();
+    }
+}
+
+} // namespace
+
 bool DebugConsole::init(GLFWwindow* window, const std::vector<std::string>& font_files,
                         std::string& err) {
     IMGUI_CHECKVERSION();
@@ -98,17 +124,14 @@ void DebugConsole::render(const DebugInfo& info) {
     }
 
     if (ImGui::CollapsingHeader("CART PARAMS", ImGuiTreeNodeFlags_DefaultOpen)) {
-        if (!info.params || info.params->empty()) {
+        if (info.pause_when_open)  // 主机行为开关：打开面板是否暂停（英文字样，agent/玩家都认）
+            ImGui::Checkbox("Pause while panel is open", info.pause_when_open);
+        ImGui::Separator();
+        const DebugGroup* root = info.params_root;
+        if (!root || (root->params.empty() && root->groups.empty())) {
             ImGui::TextUnformatted("(cart exposes no params via phos.debug.number)");
         } else {
-            for (auto& p : *info.params) {
-                if (!p.readable) {
-                    ImGui::TextDisabled("%s  (unreadable)", p.name.c_str());
-                    continue;
-                }
-                if (ImGui::SliderFloat(p.name.c_str(), &p.value, p.min, p.max, "%.3f"))
-                    p.changed = true;
-            }
+            draw_params(*info.params_root);
             ImGui::TextDisabled("edits apply next frame");
         }
     }

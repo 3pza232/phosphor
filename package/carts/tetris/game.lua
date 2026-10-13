@@ -221,7 +221,7 @@ end
 -- 可调参数（`~` 调试台，见 phos.debug.number）
 function Game.tunables()
   return {
-    { name = "重力倍率", get = function() return GRAVITY_SCALE end,
+    { name = { zh = "重力倍率", en = "Gravity scale" }, get = function() return GRAVITY_SCALE end,
       set = function(v) GRAVITY_SCALE = v end, min = 0.25, max = 4.0, step = 0.05 },
   }
 end

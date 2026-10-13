@@ -181,9 +181,11 @@ private:
     unsigned rng_seed_ = 0;
 
     DebugConsole console_;
-    /// 卡带注册的可调参数快照（`phos.debug.number`）：每帧由 fill_debug_info 重建，
-    /// 控制台在此之上改值，帧末写回卡带
-    std::vector<DebugParam> debug_params_;
+    /// 卡带注册的可调参数**分组树**（`phos.debug.number`）：每帧由 fill_debug_info 重建（文案按当前
+    /// 语言解析），控制台在叶子上改值，帧末写回卡带
+    DebugGroup params_root_;
+    /// "打开调试台即暂停游戏"：控制台里的复选框写它，主循环据此冻结卡带
+    bool pause_when_open_ = false;
     bool escape_flag_ = false;
     bool capture_escape_ = false;  // 卡带是否接管 Esc（phos.sys.capture_escape）
     bool settings_flag_ = false;

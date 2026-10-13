@@ -461,19 +461,25 @@ end
 
 function init()
 	build_palette()
-	-- 可调参数交给 `~` 调试台（phos.debug.number）：把常挂心的数挂上，边打边调。
-	-- 武器**按 id 定位**（不认下标）：LIST 顺序一变，按下标取就取错那把了
-	local function weapon_by_id(id)
-		for _, w in ipairs(Weapons.LIST) do if w.id == id then return w end end
-	end
-	phos.debug.number("爬虫速度", function() return Worms.WALK_SPEED end,
+	-- 可调参数交给 `~` 调试台（phos.debug.number）：常挂心的数挂上，边打边调（中英双语，随界面语言切换）
+	-- 顶层：虫子自己的几个数
+	phos.debug.number({ zh = "虫虫生命", en = "Worm HP" }, function() return Worms.MAX_HP end,
+	                  function(v) Worms.MAX_HP = v end, { min = 10, max = 500, step = 10 })
+	phos.debug.number({ zh = "爬行速度", en = "Crawl speed" }, function() return Worms.WALK_SPEED end,
 	                  function(v) Worms.WALK_SPEED = v end, { min = 2, max = 30, step = 0.5 })
-	local rocket = weapon_by_id("bazooka")
-	if rocket then
-		phos.debug.number("火箭筒伤害", function() return rocket.damage end,
-		                  function(v) rocket.damage = v end, { min = 0, max = 200, step = 1 })
-		phos.debug.number("火箭筒半径", function() return rocket.radius end,
-		                  function(v) rocket.radius = v end, { min = 1, max = 12, step = 0.5 })
+	phos.debug.number({ zh = "跳跃力", en = "Jump power" }, function() return Worms.JUMP_VY end,
+	                  function(v) Worms.JUMP_VY = v end, { min = -30, max = -3, step = 1 })
+	-- 武器：一个大折叠（"武器"）下、每件武器一个小折叠。**遍历 LIST**，于是将来加武器会自动出现在面板里
+	for _, w in ipairs(Weapons.LIST) do
+		local path = { { zh = "武器", en = "WEAPONS" }, w.name }  -- 大折叠 → 小折叠（武器名取自武器表）
+		if w.damage then
+			phos.debug.number({ zh = "伤害", en = "Damage" }, function() return w.damage end,
+			                  function(v) w.damage = v end, { group = path, min = 0, max = 200, step = 1 })
+		end
+		if w.radius then
+			phos.debug.number({ zh = "爆炸半径", en = "Blast radius" }, function() return w.radius end,
+			                  function(v) w.radius = v end, { group = path, min = 1, max = 12, step = 0.5 })
+		end
 	end
 	-- 分层：天空与地形照旧画**底层**（phos.screen），前景（特效/瞄准/角色/雨雪）一层、
 	-- 读数与浮字一层、浮窗一层，按 z 叠上去。
