@@ -1,12 +1,19 @@
 #include "api/lua_value.hpp"
 
 #include "api/host_api.hpp"
+#include "core/screen.hpp"
 #include "core/text.hpp"
 
 #include <cmath>
 #include <sol/sol.hpp>
 
 namespace phos::api {
+
+std::uint8_t read_scale(const sol::optional<int>& scale) {
+    const int s = scale.value_or(1);
+    if (s < 2) return 1;
+    return static_cast<std::uint8_t>(s > Screen::kMaxCellScale ? Screen::kMaxCellScale : s);
+}
 
 int read_channel(const sol::object& object, int fallback) {
     if (!object.is<double>() && !object.is<int>()) return fallback;

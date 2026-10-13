@@ -60,7 +60,8 @@ function phos.screen.playfield() end
 ---@param ch string|integer 字符（也可给**码点**整数）
 ---@param fg phos.Color|nil
 ---@param bg phos.Color|nil
-function phos.screen.put(x, y, ch, fg, bg) end
+---@param scale integer|nil 字号倍数：>=2 时是大字号（占 scale 列 x scale 行），上限 3；省略=1
+function phos.screen.put(x, y, ch, fg, bg, scale) end
 
 ---写一行文本（超出内容区宽度的部分按**显示宽度**截断，汉字算两格；省略 bg = 保留该格原有背景）
 ---@param x integer
@@ -68,7 +69,8 @@ function phos.screen.put(x, y, ch, fg, bg) end
 ---@param text string
 ---@param fg phos.Color|nil
 ---@param bg phos.Color|nil
-function phos.screen.print(x, y, text, fg, bg) end
+---@param scale integer|nil 字号倍数（>=2 时每个字占 scale 列 x scale 行，逐字前进）
+function phos.screen.print(x, y, text, fg, bg, scale) end
 
 ---填充矩形（**总是写底色**，省略 = 黑）
 ---@param x integer
@@ -205,7 +207,8 @@ function phos.panel.plot(x, y, fg) end
 ---@param ch string|integer 字符（也可给**码点**整数）
 ---@param fg phos.Color|nil
 ---@param bg phos.Color|nil
-function phos.panel.put(x, y, ch, fg, bg) end
+---@param scale integer|nil 字号倍数：>=2 时是大字号（占 scale 列 x scale 行），上限 3；省略=1
+function phos.panel.put(x, y, ch, fg, bg, scale) end
 
 ---写一行文本（超出面板宽度的部分按显示宽度截断；省略 bg = 保留该格原有背景）
 ---@param x integer
@@ -213,7 +216,8 @@ function phos.panel.put(x, y, ch, fg, bg) end
 ---@param text string
 ---@param fg phos.Color|nil
 ---@param bg phos.Color|nil
-function phos.panel.print(x, y, text, fg, bg) end
+---@param scale integer|nil 字号倍数（>=2 时每个字占 scale 列 x scale 行，逐字前进）
+function phos.panel.print(x, y, text, fg, bg, scale) end
 
 ---填充矩形（省略 bg = 主题面板色 skin.panel）
 ---@param x integer

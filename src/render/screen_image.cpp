@@ -133,8 +133,6 @@ std::optional<ScreenImage> render_screen_image(const Screen& screen,
 
     const int cell_w = std::max(1, options.cell_w);
     const int cell_h = std::max(1, options.cell_h);
-    // 字形按 cell_h 光栅化；基线取主字体的 ascent（全角字形已按主字体基线对齐）
-    const float baseline = fonts.ascent(static_cast<float>(cell_h));
 
     ScreenImage image;
     image.width = screen.width() * cell_w;
@@ -153,23 +151,27 @@ std::optional<ScreenImage> render_screen_image(const Screen& screen,
     // 一格的字形：先按**追加顺序**画笔迹，最后画 ch —— ch 是最前面那一笔。
     // 顺序必须与 GL 那条路（Renderer::emit_glyphs）一致：两条路画的是同一张图，
     // 截图与无头回归才有意义
-    const auto draw_pens = [&](const Screen& grid, int cx, int cy, int x0, int y0) {
+    const auto draw_pens = [&](const Screen& grid, int cx, int cy, int x0, int y0, int scale) {
         const Cell& cell = grid.at(cx, cy);
+        const int sc = scale < 1 ? 1 : scale;
+        // 字形按 cell_h 光栅化；基线取主字体的 ascent（全角字形已按主字体基线对齐）。
+        // 缩放块的头格把两者都放大到 sc 倍
+        const float px = static_cast<float>(cell_h * sc);
+        const float base = fonts.ascent(px);
         const auto one = [&](char32_t ch, const Color& fg) {
             if (ch == U' ') return;
-            // 全角字符的位图天然比半角宽一倍，贴在同一基线上就自然跨两格
-            GlyphBitmap bitmap = fonts.rasterize(ch, static_cast<float>(cell_h));
+            GlyphBitmap bitmap = fonts.rasterize(ch, px);
             if (bitmap.width <= 0 || bitmap.height <= 0) {
                 if (ch == U'?') return;
-                bitmap = fonts.rasterize(U'?', static_cast<float>(cell_h));  // 无字形：占位
+                bitmap = fonts.rasterize(U'?', px);  // 无字形：占位
                 if (bitmap.width <= 0 || bitmap.height <= 0) return;
             }
             // 全角字形把"字身框"在两格槽里居中：字体的推进宽度只有一格（16px），
             // 不居中的话汉字会挤在左边、右边空出一格。半角直接用字体的推进位置
             int glyph_x = x0 + bitmap.xoff;
-            if (cell.cols == 2) glyph_x += (cell_w * 2 - bitmap.advance) / 2;
+            if (cell.cols == 2) glyph_x += (cell_w * 2 * sc - bitmap.advance) / 2;
             blend_glyph(canvas, bitmap.pixels, bitmap.width, bitmap.height, glyph_x,
-                        y0 + static_cast<int>(baseline) + bitmap.yoff, fg, options.crt.glow);
+                        y0 + static_cast<int>(base) + bitmap.yoff, fg, options.crt.glow);
         };
         for (const Screen::Ink& ink : grid.inks(cx, cy)) one(ink.ch, ink.fg);
         one(cell.ch, cell.fg);
@@ -178,17 +180,18 @@ std::optional<ScreenImage> render_screen_image(const Screen& screen,
     for (int cy = 0; cy < screen.height(); ++cy) {
         for (int cx = 0; cx < screen.width(); ++cx) {
             const Cell& cell = screen.at(cx, cy);
-            // 续格整格属于左邻的宽字符：不单独铺底（会把字形右半边盖掉），字形也由头格画完；
-            // 但**这一格上的笔迹要画**——否则 blend 到续格的那一笔会凭空消失
-            if (cell.cols == 0) {
-                draw_pens(screen, cx, cy, cx * cell_w, cy * cell_h);
+            // 续格 / 被缩放块覆盖的格：不单独铺底（宽字/大字由头格画完），但**这一格上的
+            // 笔迹要画**——否则 blend 到这里的那一笔会凭空消失
+            if (cell.cols == 0 || cell.scale == 0) {
+                draw_pens(screen, cx, cy, cx * cell_w, cy * cell_h, 1);
                 continue;
             }
 
             const int x0 = cx * cell_w;
             const int y0 = cy * cell_h;
-            fill_cell(canvas, x0, y0, cell_w * cell.cols, cell_h, cell.bg);
-            draw_pens(screen, cx, cy, x0, y0);
+            const int sc = cell.scale < 1 ? 1 : cell.scale;
+            fill_cell(canvas, x0, y0, cell_w * cell.cols * sc, cell_h * sc, cell.bg);
+            draw_pens(screen, cx, cy, x0, y0, sc);
         }
     }
 
@@ -201,12 +204,13 @@ std::optional<ScreenImage> render_screen_image(const Screen& screen,
             for (int cy = 0; cy < src.height(); ++cy) {
                 for (int cx = 0; cx < src.width(); ++cx) {
                     const Cell& cell = src.at(cx, cy);
-                    if (cell.cols == 0) continue;   // 续格：整格由左邻的宽字形覆盖
+                    if (cell.cols == 0 || cell.scale == 0) continue;  // 续格 / 被缩放块覆盖
                     const int x0 = (origin_x + cx) * cell_w;
                     const int y0 = (origin_y + cy) * cell_h;
+                    const int sc = cell.scale < 1 ? 1 : cell.scale;
                     if (cell.alpha != 0)
-                        fill_cell(canvas, x0, y0, cell_w * cell.cols, cell_h, cell.bg);
-                    draw_pens(src, cx, cy, x0, y0);
+                        fill_cell(canvas, x0, y0, cell_w * cell.cols * sc, cell_h * sc, cell.bg);
+                    draw_pens(src, cx, cy, x0, y0, sc);
                 }
             }
         }
@@ -218,11 +222,13 @@ std::optional<ScreenImage> render_screen_image(const Screen& screen,
         for (int cy = 0; cy < overlay->height(); ++cy) {
             for (int cx = 0; cx < overlay->width(); ++cx) {
                 const Cell& cell = overlay->at(cx, cy);
-                if (cell.cols == 0) continue;
+                if (cell.cols == 0 || cell.scale == 0) continue;
                 const int x0 = (origin_x + cx) * cell_w;
                 const int y0 = (origin_y + cy) * cell_h;
-                if (cell.alpha != 0) fill_cell(canvas, x0, y0, cell_w * cell.cols, cell_h, cell.bg);
-                draw_pens(*overlay, cx, cy, x0, y0);
+                const int sc = cell.scale < 1 ? 1 : cell.scale;
+                if (cell.alpha != 0)
+                    fill_cell(canvas, x0, y0, cell_w * cell.cols * sc, cell_h * sc, cell.bg);
+                draw_pens(*overlay, cx, cy, x0, y0, sc);
             }
         }
     }

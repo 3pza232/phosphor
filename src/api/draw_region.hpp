@@ -45,8 +45,8 @@ public:
 
     // 坐标均为区域局部坐标；颜色由 Lua 绑定层转换后传入
     void clear(Color fg, Color bg);
-    void put(int x, int y, char32_t ch, Color fg, Color bg);
-    void print(int x, int y, std::string_view text, Color fg, Color bg);
+    void put(int x, int y, char32_t ch, Color fg, Color bg, uint8_t scale = 1);
+    void print(int x, int y, std::string_view text, Color fg, Color bg, uint8_t scale = 1);
     void fill(int x, int y, int w, int h, char32_t ch, Color fg, Color bg);
     /// 一次写多行（每行一条字符串）：地图/画面搬运用，避免逐格与逐行调用
     void blit(int x, int y, const std::vector<std::string>& rows, Color fg, Color bg);

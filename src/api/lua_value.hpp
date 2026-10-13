@@ -3,6 +3,7 @@
 #include "core/color.hpp"
 #include "core/palette.hpp"
 
+#include <cstdint>
 #include <map>
 #include <sol/sol.hpp>
 
@@ -53,5 +54,9 @@ Color slot_color(const HostContext& host, PaletteSlot slot, Color fallback);
 Color default_fg(const HostContext& host);
 /// 省略**背景**时的默认色 = 激活色板的 black（`panel.fill/clear` 另取主题面板色）
 Color default_bg(const HostContext& host);
+
+/// 缩放参数（`phos.screen` / `phos.panel` / `phos.ui` 的 `put`/`print` 可选末参）：
+/// < 2 按常规（1），超过 `Screen::kMaxCellScale` 钳到上限。是"更大的字"的入参
+std::uint8_t read_scale(const sol::optional<int>& scale);
 
 } // namespace phos::api

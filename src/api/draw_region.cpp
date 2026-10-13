@@ -91,12 +91,12 @@ ui::Style DrawRegion::style() const { return cart_style(host_); }
 
 void DrawRegion::clear(Color fg, Color bg) { surface_of().clear(fg, bg); }
 
-void DrawRegion::put(int x, int y, char32_t ch, Color fg, Color bg) {
-    surface_of().put(x, y, ch, fg, bg);
+void DrawRegion::put(int x, int y, char32_t ch, Color fg, Color bg, uint8_t scale) {
+    surface_of().put(x, y, ch, fg, bg, scale);
 }
 
-void DrawRegion::print(int x, int y, std::string_view text, Color fg, Color bg) {
-    surface_of().print(x, y, text, fg, bg);
+void DrawRegion::print(int x, int y, std::string_view text, Color fg, Color bg, uint8_t scale) {
+    surface_of().print(x, y, text, fg, bg, scale);
 }
 
 void DrawRegion::fill(int x, int y, int w, int h, char32_t ch, Color fg, Color bg) {

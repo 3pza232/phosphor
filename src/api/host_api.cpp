@@ -81,15 +81,16 @@ std::vector<Localized> read_group_path(const sol::object& object) {
 /// 在关闭 Lua 时析构这些闭包会崩（闭包按值存非平凡对象时的 GC 析构问题）。
 void bind_surface_api(sol::table& t, HostContext& host, bool is_panel) {
     t["put"] = [&host, is_panel](int x, int y, const sol::object& ch, sol::object fg,
-                                 sol::object bg) {
+                                 sol::object bg, sol::optional<int> scale) {
         Surface s = is_panel ? panel_surface(host) : content_surface(host);
         s.put(x, y, api::read_char(ch, U' '), api::read_color(fg, default_fg(host)),
-              api::read_background(bg));
+              api::read_background(bg), api::read_scale(scale));
     };
     t["print"] = [&host, is_panel](int x, int y, const std::string& text, sol::object fg,
-                                   sol::object bg) {
+                                   sol::object bg, sol::optional<int> scale) {
         Surface s = is_panel ? panel_surface(host) : content_surface(host);
-        s.print(x, y, text, api::read_color(fg, default_fg(host)), api::read_background(bg));
+        s.print(x, y, text, api::read_color(fg, default_fg(host)), api::read_background(bg),
+                api::read_scale(scale));
     };
     // fill / clear：省略底色 = 本面的默认底色（screen=色板 black；panel=主题面板色）。
     // 清屏若按"保留背景"来就变成什么都不做

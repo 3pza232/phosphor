@@ -15,12 +15,18 @@ namespace phos {
 /// 全角字符（CJK 等）占两格：左格是"头"（`cols = 2`），右格是"续格"
 /// （`cols = 0`，自身没有字形，绘制时跳过）。这样"格"仍然是等宽单位，
 /// 渲染与对齐只需认 `cols`，不必满屏推断宽度。
+///
+/// 缩放（`scale`）与 `cols` **正交**：`cols` 管横向续格（宽字），`scale` 管"更大的字"
+/// 成块覆盖（`scale=S>=2` 的头格占 `cols*S` 列 × `S` 行，块内其余格 `scale = 0` 被覆盖）。
+/// 于是同一屏可以并存不同大小的字：`scale = 1` 是常规正文，`scale >= 2` 是大标题
 struct Cell {
     char32_t ch = U' ';
     Color fg = Color::white;
     Color bg = Color::black;
     /// 列宽：1 = 半角；2 = 全角头格；0 = 续格（右半，由左邻格决定外观）
     uint8_t cols = 1;
+    /// 缩放：1 = 普通；S>=2 = 缩放块头格；0 = 被缩放块覆盖（自身无字形，绘制时跳过）
+    uint8_t scale = 1;
     /// 底色是否存在：0 = 透明（层合成时跳过底色），非 0 = 存在。
     /// 底层网格的默认 `alpha` 是 255（不透明）；层缓冲的清屏把它置 0。
     /// 注意：`put` 的默认底色是 `kKeepBg`（保留原底色），所以"不动背景"是默认行为
@@ -31,6 +37,7 @@ struct Cell {
     void clear_glyph() {
         ch = U' ';
         cols = 1;
+        scale = 1;
     }
 };
 
@@ -50,6 +57,9 @@ public:
     ///     否则新内容根本画不出来（新的一笔是表层，不能丢）。
     static constexpr int kMaxInks = 3;
 
+    /// 单格缩放上限：`scale` 就是这个范围里的整数（1 = 常规，2/3 = 更大字号）
+    static constexpr int kMaxCellScale = 3;
+
     /// 叠在同一格上的一笔（`ch` 之外的字形）
     struct Ink {
         char32_t ch = U' ';
@@ -63,12 +73,15 @@ public:
     void resize(int w, int h);
 
     // 越界写入静默裁剪——卡带/调用方不必做边缘防御
-    /// 写一个字符（全角字符额外占用右邻格作为续格）。
+    /// 写一个字符（全角字符额外占用右邻格作为续格）。`scale >= 2` 时写成**缩放块**
+    /// （占 `cols*scale` 列 × `scale` 行，块内其余格标记为被覆盖），于是同屏可有不同字号。
     /// 默认底色 `kKeepBg` = **保留该格原有底色**（透明），"透明底"因此只有一个解析点。
     /// 要铺一块实底（机身、面板）就显式传背景色
-    void put(int x, int y, char32_t ch, Color fg = Color::white, Color bg = kKeepBg);
+    void put(int x, int y, char32_t ch, Color fg = Color::white, Color bg = kKeepBg,
+             uint8_t scale = 1);
     /// 写一行文本（UTF-8 解码后按显示宽度推进；控制字符跳过）。底色默认保留
-    void print(int x, int y, std::string_view text, Color fg = Color::white, Color bg = kKeepBg);
+    void print(int x, int y, std::string_view text, Color fg = Color::white, Color bg = kKeepBg,
+               uint8_t scale = 1);
     /// 填充矩形。底色默认保留；要实底就显式传背景色
     void fill(int x, int y, int w, int h, char32_t ch,
               Color fg = Color::white, Color bg = kKeepBg);
@@ -153,6 +166,12 @@ private:
 
     /// 按**子位掩码**落笔（plot 的里子：位序在这里定，也只在这里定）
     void plot_bit(int x, int y, uint8_t bit, Color fg);
+
+    /// 覆盖 (x,y) 的缩放块的头格坐标；不在任何缩放块里时返回 false。
+    /// 只在头格左上方的有界窗口内扫（块不大），`put` 写到块内任意一格时靠它清整块
+    bool scaled_block_of(int x, int y, int& head_x, int& head_y) const;
+    /// 把 (x,y) 所在的缩放块清成空格（连带清掉笔迹与子位累积）
+    void clear_scaled_block_at(int x, int y, Color fg, Color bg, bool keeps_bg);
 
     /// 子位累积：`plot` 要知道这一格"已经占了哪几个子位"，两次半笔才能合成一个象限字形。
     /// 与笔迹表同一套稀疏策略：只有 plot 过的格才在表里

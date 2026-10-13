@@ -10,14 +10,17 @@ Surface::Surface(Screen& screen, int origin_x, int origin_y, int w, int h)
     : screen_(screen), ox_(origin_x), oy_(origin_y),
       w_(w < 0 ? 0 : w), h_(h < 0 ? 0 : h) {}
 
-void Surface::put(int x, int y, char32_t ch, Color fg, Color bg) {
+void Surface::put(int x, int y, char32_t ch, Color fg, Color bg, uint8_t scale) {
     const int cols = text::char_width(ch);
-    if (cols == 0 || x < 0 || x + cols > w_ || y < 0 || y >= h_) return;
-    screen_.put(ox_ + x, oy_ + y, ch, fg, bg);
+    const uint8_t block = (scale >= 2 && scale <= Screen::kMaxCellScale) ? scale : 1;
+    // 宽字占 cols 格、缩放块占 cols*block 列 x block 行：整块放得下才写
+    if (cols == 0 || x < 0 || y < 0 || x + cols * block > w_ || y + block > h_) return;
+    screen_.put(ox_ + x, oy_ + y, ch, fg, bg, block);
 }
 
-void Surface::print(int x, int y, std::string_view text, Color fg, Color bg) {
-    if (y < 0 || y >= h_) return;
+void Surface::print(int x, int y, std::string_view text, Color fg, Color bg, uint8_t scale) {
+    const uint8_t block = (scale >= 2 && scale <= Screen::kMaxCellScale) ? scale : 1;
+    if (y < 0 || y + block > h_) return;  // 块高放不下
     // 右缘按**显示宽度**截断（汉字算两格），一次解码走完：先截成串再逐码点写
     // 会把同一段文本解码两遍。起笔落在面外时 x 可负，那时保留整行、
     // 由逐格判断丢弃左边看不见的部分
@@ -25,9 +28,9 @@ void Surface::print(int x, int y, std::string_view text, Color fg, Color bg) {
     for (char32_t cp : text::decode(text)) {
         const int cols = text::char_width(cp);
         if (cols == 0) continue;
-        if (col >= 0 && col + cols > w_) break;  // 右边界放不下就停，宁少画不错位
-        if (col >= 0) screen_.put(ox_ + col, oy_ + y, cp, fg, bg);
-        col += cols;
+        if (col >= 0 && col + cols * block > w_) break;  // 右边界放不下就停，宁少画不错位
+        if (col >= 0) screen_.put(ox_ + col, oy_ + y, cp, fg, bg, block);
+        col += cols * block;
     }
 }
 

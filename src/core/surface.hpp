@@ -23,10 +23,10 @@ class Surface {
 public:
     Surface(Screen& screen, int origin_x, int origin_y, int w, int h);
 
-    /// 写一个字符。宽字符在最后一列放不下时整格不写（宁少画一个字，不留半个）
-    void put(int x, int y, char32_t ch, Color fg, Color bg);
+    /// 写一个字符。宽字符/缩放块在面内放不下时整格不写（宁少画一个字，不留半个）
+    void put(int x, int y, char32_t ch, Color fg, Color bg, uint8_t scale = 1);
     /// 写一行文本。超出右缘的部分按**显示宽度**截断，左缘之外的部分不写
-    void print(int x, int y, std::string_view text, Color fg, Color bg);
+    void print(int x, int y, std::string_view text, Color fg, Color bg, uint8_t scale = 1);
     /// 填一块矩形。宽字符按两格一组铺，末列只剩一格时留空
     void fill(int x, int y, int w, int h, char32_t ch, Color fg, Color bg);
     /// 一次写多行（每行一条字符串），逐行按 print 的规则

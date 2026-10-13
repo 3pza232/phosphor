@@ -59,6 +59,8 @@ phos.screen.put(x, y, ch)              -- 写一个字符（ch 为单字符字�
 phos.screen.put(x, y, ch, fg, bg)      -- 带颜色
 phos.screen.print(x, y, text)          -- 从 (x,y) 起写一行文本
 phos.screen.print(x, y, text, fg, bg)
+phos.screen.put(x, y, ch, fg, bg, scale)    -- scale>=2：那一个字占 scale 列 x scale 行（大字号）
+phos.screen.print(x, y, text, fg, bg, scale)-- 整行按 scale 放大（逐字前进，块宽 = 宽度*scale）
 phos.screen.fill(x, y, w, h, ch, fg, bg) -- 填充矩形
 phos.screen.blit(x, y, rows, fg, bg)   -- 一次写多行（地图/画面搬运；超宽按显示宽度截断）
 phos.screen.clear()                    -- 全清（空格 + 默认色）
@@ -91,6 +93,10 @@ ch, fg, bg = phos.screen.get(x, y)
 | `panel.fill` / `panel.clear` | 省略 = **主题面板色**（`skin.panel`）：右栏不属于游戏画面，底色随主题，不透出游戏、也不是写死的黑 |
 
 > **省略 `fg`（前景）时 = 激活色板的 `white`。** 于是"换主题（预设）"会连同卡带的清屏底与文字底色一起改变——这是多主题适配的根。
+
+> **同屏多字号**：`put` / `print` 的**可选末参 `scale`**（1~3）让同一画面里并存大小不同的字——
+> `scale = 2` 的那个字占 2 列 x 2 行（块内其余格自动留给它），`scale = 3` 占 3 列 x 3 行。
+> 典型用法：大标题 `scale = 2`、正文省略（= 1）。`screen` / `panel` / `ui.region` 都支持
 
 所以"要让这块地方不透底"是**显式给色**，而不是指望默认值：
 `phos.screen.print(x, y, text, fg, bg)`。

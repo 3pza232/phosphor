@@ -137,13 +137,16 @@ void register_ui_api(sol::state& lua, HostContext& host) {
         // 区域里的 put / print / fill / blit / clear 都默认**保留背景**（省略 bg → keep）：
         // 覆盖层压在游戏画面上时，字缝里透出的是底图而不是黑块
         "put",
-        [&host](DrawRegion& r, int x, int y, sol::object ch, sol::object fg, sol::object bg) {
+        [&host](DrawRegion& r, int x, int y, sol::object ch, sol::object fg, sol::object bg,
+                sol::optional<int> scale) {
             r.put(x, y, api::read_char(ch, U' '), api::read_color(fg, api::default_fg(host)),
-                  api::read_background(bg));
+                  api::read_background(bg), api::read_scale(scale));
         },
         "print",
-        [&host](DrawRegion& r, int x, int y, const std::string& text, sol::object fg, sol::object bg) {
-            r.print(x, y, text, api::read_color(fg, api::default_fg(host)), api::read_background(bg));
+        [&host](DrawRegion& r, int x, int y, const std::string& text, sol::object fg,
+                sol::object bg, sol::optional<int> scale) {
+            r.print(x, y, text, api::read_color(fg, api::default_fg(host)), api::read_background(bg),
+                    api::read_scale(scale));
         },
         "fill",
         [&host](DrawRegion& r, int x, int y, int w, int h, sol::object ch, sol::object fg,

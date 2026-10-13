@@ -324,6 +324,36 @@ TEST(screen_back_with_keep_is_noop) {
     CHECK_EQ(int(s.at(0, 0).bg.g), 60);
 }
 
+TEST(screen_scaled_cell_reserves_block) {
+    // 2x2 大字：头格 scale=2，块内其余格被覆盖（scale=0）
+    Screen s(10, 6);
+    s.put(2, 1, U'A', Color::white, Color::black, 2);
+    CHECK_EQ(int(s.at(2, 1).scale), 2);   // 头格
+    CHECK_EQ(int(s.at(2, 1).cols), 1);
+    CHECK_EQ(int(s.at(2, 1).ch), int(U'A'));
+    CHECK_EQ(int(s.at(3, 1).scale), 0);   // 被覆盖
+    CHECK_EQ(int(s.at(2, 2).scale), 0);
+    CHECK_EQ(int(s.at(3, 2).scale), 0);
+    CHECK_EQ(int(s.glyph_at(2, 1)), int(U'A'));
+    CHECK_EQ(int(s.glyph_at(3, 1)), 0);   // 覆盖格自身没有字形
+
+    // 写到块内任意一格都先清整块，否则会留下残缺的块
+    s.put(3, 2, U'B', Color::white, Color::black);
+    CHECK_EQ(int(s.at(2, 1).scale), 1);   // 头格回到常规
+    CHECK_EQ(int(s.at(2, 1).ch), int(U' '));
+    CHECK_EQ(int(s.at(3, 2).ch), int(U'B'));
+
+    // 全角缩放块：占 4 列 x 2 行（宽字 2 列 x 2 行）
+    Screen w(12, 6);
+    w.put(2, 1, U'\u4E2D', Color::white, Color::black, 2);  // 中
+    CHECK_EQ(int(w.at(2, 1).cols), 2);
+    CHECK_EQ(int(w.at(2, 1).scale), 2);
+    CHECK_EQ(int(w.at(3, 1).cols), 0);   // 宽字续格
+    CHECK_EQ(int(w.at(4, 1).scale), 0);  // 块内其余格被覆盖
+    CHECK_EQ(int(w.at(5, 1).scale), 0);
+    CHECK_EQ(int(w.at(2, 2).scale), 0);
+}
+
 TEST(surface_clips_to_bounds) {
     Screen screen(6, 3);
     Surface surface(screen, 0, 0, 3, 2);  // 面只有左上 3x2

@@ -6,9 +6,9 @@ namespace phos {
 /// 进位规矩（1.0 之前不承诺兼容性，只求"看一眼版本号就知道这批改动的分量"）：
 ///   y：同世代内的修错与小补（新增一张卡带、修一条文档、补一个门禁）
 ///   x：**能力世代**更替——新增子系统，或卡带 API 世代 `kPhosApiVersion` 变了
-/// 0.7.0：架构与健壮性里程碑——抽出内部子系统（`ContentLibrary` / `Display` 等）与纯逻辑
-///        单元测试层；沙箱 / 资产 / 音频 / GL 一批加固。**卡带 API 不变**（`kPhosApiVersion` 仍为 5）
-inline constexpr const char* kVersion = "0.7.0";
+/// 0.8.0：同屏多字号——`phos.screen/panel/ui` 的 `put`/`print` 增加可选 `scale`
+///         （更大的字成块占位）；字体方案可显式声明字号与回退顺序。卡带 API 进世代 6
+inline constexpr const char* kVersion = "0.8.0";
 /// 产品名
 inline constexpr const char* kProductName = "PHOSPHOR";
 /// 卡带 API 世代：manifest 声明 `phos_api` 高于它就拒绝加载，
@@ -20,6 +20,7 @@ inline constexpr const char* kProductName = "PHOSPHOR";
 ///   4 = 局域网联机（phos.net：开房/加入/收发/发现）
 ///   5 = 主题携带内容色板：`phos.color.*` 随主题变；卡带默认前景/背景取自色板，
 ///       面板与浮层默认底色取自主题（卡带不必改代码，但配色会随主题变）
-inline constexpr int kPhosApiVersion = 5;
+///   6 = 同屏多字号：`put`/`print` 增加可选 `scale`（>=2 时那一个字占 scale 列 x scale 行）
+inline constexpr int kPhosApiVersion = 6;
 
 } // namespace phos

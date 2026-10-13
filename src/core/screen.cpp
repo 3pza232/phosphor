@@ -17,7 +17,7 @@ void Screen::resize(int w, int h) {
     plot_bits_.clear();
 }
 
-void Screen::put(int x, int y, char32_t ch, Color fg, Color bg) {
+void Screen::put(int x, int y, char32_t ch, Color fg, Color bg, uint8_t scale) {
     if (y < 0 || y >= h_) return;
     // 替换语义：这一格（以及被宽字符连带清理的邻格）的**笔迹与子位累积一并清掉** ——
     // put 是"把这一格改成这个字"，不是"再画一笔"（那是 blend / plot）。
@@ -38,6 +38,17 @@ void Screen::put(int x, int y, char32_t ch, Color fg, Color bg) {
     const int width = text::char_width(ch);
     // 给了底色就是"这一格的底存在"；带 keep 的写入不动它
     const uint8_t alpha = keeps_bg ? 0 : 255;
+    // 缩放规范化：只有 2..kMaxCellScale 才算"大字号块"，其余按常规
+    const uint8_t block = (scale >= 2 && scale <= kMaxCellScale) ? scale : 1;
+
+    // 写到块内任意一格，先清掉它所在的旧缩放块（否则会留下残缺的块）
+    clear_scaled_block_at(x, y, fg, bg, keeps_bg);
+    // 新写的是缩放块：把新块覆盖范围内的旧缩放块一并清掉
+    if (block >= 2 && x >= 0 && x < w_) {
+        for (int dy = 0; dy < block; ++dy)
+            for (int dx = 0; dx < width * block; ++dx)
+                clear_scaled_block_at(x + dx, y + dy, fg, bg, keeps_bg);
+    }
 
     // 先清理被覆盖的旧内容：写到续格上要连带清掉它的头格，
     // 写到全角头格上要连带清掉它的续格——否则会留下半个宽字符
@@ -66,10 +77,11 @@ void Screen::put(int x, int y, char32_t ch, Color fg, Color bg) {
     c.fg = fg;
     c.bg = bg;
     c.cols = static_cast<uint8_t>(width);
+    c.scale = block;
     if (!keeps_bg) c.alpha = alpha;
     drop_inks_at(x, y);
 
-    // 续格顺手写上；落在最后一列时没有右邻格可写，最右侧就只剩头格——这是原始网格
+    // 宽字符续格顺手写上；落在最后一列时没有右邻格可写，最右侧就只剩头格——这是原始网格
     // 原有的行为，外壳自己的排版依赖它：贴边时看得见半个宽字，比整格少一个字好。
     // 卡带那一侧的 Surface 反过来——放不下就整格不写（见 core/surface.cpp）
     if (width == 2 && x + 1 < w_) {
@@ -88,9 +100,71 @@ void Screen::put(int x, int y, char32_t ch, Color fg, Color bg) {
         tail.fg = fg;
         tail.bg = bg;
         tail.cols = 0;
+        tail.scale = 1;
         if (!keeps_bg) tail.alpha = alpha;
         drop_inks_at(x + 1, y);
     }
+
+    // 缩放块：块内其余格标记为"被覆盖"（scale = 0），空字形、同底色 —— 绘制时整块跳过，
+    // 由头格的字形一次画满。宽字续格（上一段写的）不在此列，它仍是"宽字的右半"
+    if (block >= 2) {
+        for (int dy = 0; dy < block; ++dy)
+            for (int dx = 0; dx < width * block; ++dx) {
+                if (dx == 0 && dy == 0) continue;                // 头格
+                if (width == 2 && dx == 1 && dy == 0) continue;  // 宽字续格
+                const int cx = x + dx, cy = y + dy;
+                if (cx < 0 || cx >= w_ || cy < 0 || cy >= h_) continue;
+                Cell& cov = cells_[static_cast<size_t>(index_of(cx, cy))];
+                cov.ch = U' ';
+                cov.fg = fg;
+                cov.bg = bg;
+                cov.cols = 1;
+                cov.scale = 0;
+                if (!keeps_bg) cov.alpha = alpha;
+                drop_inks_at(cx, cy);
+            }
+    }
+}
+
+bool Screen::scaled_block_of(int x, int y, int& head_x, int& head_y) const {
+    if (x < 0 || x >= w_ || y < 0 || y >= h_) return false;
+    // 头格只可能在 (x,y) 的左上：往上 < kMaxCellScale 行、往左 < 2*kMaxCellScale 列
+    for (int hy = y; hy > y - kMaxCellScale && hy >= 0; --hy) {
+        for (int hx = x; hx > x - 2 * kMaxCellScale && hx >= 0; --hx) {
+            const Cell& head = cells_[static_cast<size_t>(index_of(hx, hy))];
+            if (head.scale < 2) continue;
+            const int bw = head.cols * head.scale;
+            const int bh = head.scale;
+            if (x >= hx && x < hx + bw && y >= hy && y < hy + bh) {
+                head_x = hx;
+                head_y = hy;
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+void Screen::clear_scaled_block_at(int x, int y, Color fg, Color bg, bool keeps_bg) {
+    int hx = 0, hy = 0;
+    if (!scaled_block_of(x, y, hx, hy)) return;
+    const Cell& head = cells_[static_cast<size_t>(index_of(hx, hy))];
+    const int bw = head.cols * head.scale;
+    const int bh = head.scale;
+    for (int cy = hy; cy < hy + bh; ++cy)
+        for (int cx = hx; cx < hx + bw; ++cx) {
+            if (cx < 0 || cx >= w_ || cy < 0 || cy >= h_) continue;
+            const int index = index_of(cx, cy);
+            Cell& c = cells_[static_cast<size_t>(index)];
+            c.ch = U' ';
+            c.cols = 1;
+            c.scale = 1;
+            c.fg = fg;
+            c.bg = bg;
+            if (!keeps_bg) c.alpha = 255;
+            if (!inks_.empty()) inks_.erase(index);
+            if (!plot_bits_.empty()) plot_bits_.erase(index);
+        }
 }
 
 std::vector<Screen::Ink>* Screen::inks_at(int x, int y) {
@@ -203,8 +277,8 @@ void Screen::plot_bit(int x, int y, uint8_t bit, Color fg) {
     if ((bit & 0x0F) == 0) return;
     const int index = index_of(x, y);
     Cell& cell = cells_[static_cast<size_t>(index)];
-    // 宽字（头格或续格）上不落半笔：改掉头格的字形会留下半截续格，改续格则根本没有槽位
-    if (cell.cols != 1) return;
+    // 宽字（头格或续格）与被缩放块覆盖的格上不落半笔：改掉字形会留下半截邻格或残缺的块
+    if (cell.cols != 1 || cell.scale != 1) return;
     plot_bits_[index] |= static_cast<uint8_t>(bit & 0x0F);
     const uint8_t bits = plot_bits_[index];
     cell.ch = quadrant_glyph(bits);
@@ -237,12 +311,13 @@ void Screen::clear_transparent() {
     plot_bits_.clear();
 }
 
-void Screen::print(int x, int y, std::string_view text, Color fg, Color bg) {
+void Screen::print(int x, int y, std::string_view text, Color fg, Color bg, uint8_t scale) {
+    const uint8_t block = (scale >= 2 && scale <= kMaxCellScale) ? scale : 1;
     for (char32_t ch : text::decode(text)) {
         const int width = text::char_width(ch);
         if (width == 0) continue;
-        put(x, y, ch, fg, bg);
-        x += width;
+        put(x, y, ch, fg, bg, block);
+        x += width * block;  // 缩放块的宽度是 width*scale，按此推进才不互相覆盖
         if (x >= w_) return;  // 右侧已越界：后面的字符不会再显示
     }
 }
@@ -274,6 +349,7 @@ const Cell& Screen::at(int x, int y) const {
 char32_t Screen::glyph_at(int x, int y) const {
     if (x < 0 || y < 0 || x >= w_ || y >= h_) return 0;  // 越界不算"这格有东西"
     const Cell& cell = at(x, y);
+    if (cell.scale == 0) return 0;  // 被缩放块覆盖：这一格自身没有字形（它的字在上方/左方的头格）
     const Cell* source = &cell;
     if (cell.cols == 0) {
         // 续格：宽字符问哪一格都答得出（字形与字符都在头格上）

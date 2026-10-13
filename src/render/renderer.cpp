@@ -336,12 +336,15 @@ void Renderer::emit_backgrounds(const Screen& screen, int ox, int oy, bool given
     for (int y = 0; y < screen.height(); ++y) {
         for (int x = 0; x < screen.width(); ++x) {
             const Cell& cell = screen.at(x, y);
-            if (cell.cols == 0) continue;  // 续格：整格由左邻的宽字形覆盖
+            if (cell.cols == 0 || cell.scale == 0) continue;  // 续格 / 被缩放块覆盖
             // 图层：没给过底色的格**什么都不铺**，下层从这一格透出来
             if (given_bg_only && cell.alpha == 0) continue;
 
             const float bx0 = (ox + x) * cw, by0 = (oy + y) * chh;
-            const float bx1 = bx0 + (cell.cols == 2 ? cw * 2 : cw), by1 = by0 + chh;
+            // 缩放块的底色整块铺满 cols*scale 列 x scale 行（由头格一次铺完）
+            const float bx1 =
+                bx0 + cw * (cell.cols == 2 ? 2.0f : 1.0f) * static_cast<float>(cell.scale);
+            const float by1 = by0 + chh * static_cast<float>(cell.scale);
             push_vert(bx0, by0, cell.bg);
             push_vert(bx1, by0, cell.bg);
             push_vert(bx1, by1, cell.bg);
@@ -364,15 +367,17 @@ void Renderer::emit_glyphs(const Screen& screen, int ox, int oy, bool layer, Gly
     };
 
     // 推**一笔**：几何与底色归位都在这里，一笔一份四边形。
-    // 与"一格一份"的区别只在调用次数 —— 叠了笔的格会调它两次以上
-    const auto push_pen = [&](int x, int y, char32_t ch, const Color& fg, const Color& bg) {
+    // 与"一格一份"的区别只在调用次数 —— 叠了笔的格会调它两次以上。
+    // `scale` 是这一笔的缩放（`cell.scale`）：字形按它放大，从本格向右下铺开
+    const auto push_pen = [&](int x, int y, char32_t ch, const Color& fg, const Color& bg,
+                              uint8_t scale) {
         // 字体链里没有该字形时退到占位符：宁可显示 '?'，也不留一格空白
         const Glyph* glyph = glyph_for(ch);
         if (!glyph) glyph = glyph_for(U'?');
         if (!glyph) return;
 
         const Glyph& g = *glyph;
-        const float s = pack_scale_;
+        const float s = pack_scale_ * static_cast<float>(scale <= 0 ? 1 : scale);
         const float gx = (ox + x) * cw + g.xoff * s;
         const float gy = (oy + y) * chh + (font_ascent_ + g.yoff) * s;
         const float gw = g.w * s;
@@ -390,12 +395,12 @@ void Renderer::emit_glyphs(const Screen& screen, int ox, int oy, bool layer, Gly
     for (int y = 0; y < screen.height(); ++y) {
         for (int x = 0; x < screen.width(); ++x) {
             const Cell& cell = screen.at(x, y);
-            // 续格自身没有字形（宽字形由头格一次画完），但**这一格上的笔迹要画**——
-            // 否则 blend 到续格的那一笔会凭空消失。它只属于"覆盖率趟"
-            if (cell.cols == 0) {
+            // 续格与被缩放块覆盖的格自身没有字形（宽字/大字已由头格一次画完），但**这一格上的
+            // 笔迹要画**——否则 blend 到这里的那一笔会凭空消失。它只属于"覆盖率趟"
+            if (cell.cols == 0 || cell.scale == 0) {
                 if (pick == GlyphPick::plain) continue;
                 for (const Screen::Ink& ink : screen.inks(x, y))
-                    if (ink.ch != U' ') push_pen(x, y, ink.ch, ink.fg, cell.bg);
+                    if (ink.ch != U' ') push_pen(x, y, ink.ch, ink.fg, cell.bg, 1);
                 continue;
             }
             // 趟的分配看这一格**有没有笔迹**：没有的走不透明趟，有的走覆盖率趟。
@@ -409,9 +414,9 @@ void Renderer::emit_glyphs(const Screen& screen, int ox, int oy, bool layer, Gly
             // 同一格里于是"先深后浅"（底线、风痕、正在画的这一笔各归各位），
             // 而不是后来者把前者顶掉
             for (const Screen::Ink& ink : screen.inks(x, y)) {
-                if (ink.ch != U' ') push_pen(x, y, ink.ch, ink.fg, cell.bg);
+                if (ink.ch != U' ') push_pen(x, y, ink.ch, ink.fg, cell.bg, 1);
             }
-            if (cell.ch != U' ') push_pen(x, y, cell.ch, cell.fg, cell.bg);  // 空格没有字形
+            if (cell.ch != U' ') push_pen(x, y, cell.ch, cell.fg, cell.bg, cell.scale);
         }
     }
 }
