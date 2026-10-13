@@ -9,6 +9,7 @@
 #include "core/config.hpp"
 #include "core/crt.hpp"
 #include "core/defaults.hpp"
+#include "core/display.hpp"
 #include "core/input.hpp"
 #include "core/palette.hpp"
 #include "core/screen.hpp"
@@ -130,14 +131,8 @@ private:
     static constexpr float kInsertFlashTime = 0.30f;
     static constexpr float kEjectCollapseTime = 0.35f;
 
-    Screen screen_;
-    /// 图层合成**之前**的那一帧（壳 + 卡带画的世界）。有图层的卡带渲染走它：
-    /// 各图层由渲染器按 z 逐层叠画，做到"一格能同时看见两层的笔画"。
-    /// 屏幕文本与 agent 读的仍是合成结果 screen_（一格一个字形）
-    Screen base_screen_;
-    /// 内容区大小的"主机 chrome"（侧栏底色/分隔线）：画在**所有卡带图层之上**。
-    /// 图层会盖住底层，所以侧栏分隔线必须走这里才能在窗口里看得见（见 Renderer::draw_overlay）
-    Screen chrome_;
+    /// 三块显示面（卡带纹理视图 / 合成前底图 / 主机 chrome）与合成顺序，见 core/display.hpp
+    Display display_;
     Input input_;
     HostContext host_;
     Shell shell_;

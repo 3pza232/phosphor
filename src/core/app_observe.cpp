@@ -32,8 +32,8 @@ void App::fill_debug_info(DebugInfo& info) {
     info.mode = mode_name();
     info.playing = playing_;
     info.host_time = host_.time;
-    info.grid_w = screen_.width();
-    info.grid_h = screen_.height();
+    info.grid_w = display_.screen.width();
+    info.grid_h = display_.screen.height();
     info.content_w = kContentW;
     info.content_h = kContentH;
     info.panel_w = host_.panel_w;
@@ -82,7 +82,7 @@ std::string App::window_title_for_state() const {
 
 void App::maybe_dump(const CliOptions& opts, long frame) const {
     if (opts.dump_every > 0 && frame % opts.dump_every == 0)
-        std::printf("----- frame %ld -----\n%s", frame, screen_.to_text().c_str());
+        std::printf("----- frame %ld -----\n%s", frame, display_.screen.to_text().c_str());
 }
 
 
@@ -95,9 +95,9 @@ bool App::write_screenshot(const std::string& path, int& width, int& height,
     // 截图必须与窗口所见一致：底 + 逐层叠画（像素级合成），
     // 而不是合成后的文本网格 —— 那条路一格只有一个字形，会把下层"顶掉"
     const bool layered = playing_ && host_.layers.active();
-    const Screen& base = layered ? base_screen_ : screen_;
-    // 有图层的卡带，分隔线只在 chrome_ 里（base 快照在写分隔线之前），截图要补上才与窗口一致
-    const Screen* overlay = (layered && host_.panel_w > 0) ? &chrome_ : nullptr;
+    const Screen& base = layered ? display_.base : display_.screen;
+    // 有图层的卡带，分隔线只在 chrome 里（base 快照在写分隔线之前），截图要补上才与窗口一致
+    const Screen* overlay = (layered && host_.panel_w > 0) ? &display_.chrome : nullptr;
     const auto image = render_screen_image(base, font_files_, options, error,
                                            layered ? &host_.layers : nullptr,
                                            host_.content_x, host_.content_y, overlay);
@@ -111,7 +111,7 @@ bool App::write_screenshot(const std::string& path, int& width, int& height,
 
 void App::write_final_outputs(const CliOptions& opts) const {
     if (opts.dump_screen)
-        std::printf("%s", screen_.to_text().c_str());
+        std::printf("%s", display_.screen.to_text().c_str());
 
     if (!opts.screenshot) return;
     int width = 0, height = 0;

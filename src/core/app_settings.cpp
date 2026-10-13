@@ -25,7 +25,7 @@ void App::apply_skin(int index, Window* window, Renderer* renderer) {
     skin.screen_w = kContentW;
     skin.screen_h = kContentH;
 
-    screen_.resize(skin.grid_w(), skin.grid_h());
+    display_.screen.resize(skin.grid_w(), skin.grid_h());
     host_.content_x = skin.screen_x;
     host_.content_y = skin.screen_y;
     host_.content_w = kContentW;

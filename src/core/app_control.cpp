@@ -64,7 +64,8 @@ std::string App::control_state_json() const {
         << ",\"playing\":" << (playing_ ? "true" : "false")
         << ",\"stepping\":" << (control_stepping_ ? "true" : "false")
         << ",\"pending_steps\":" << pending_steps_
-        << ",\"grid_w\":" << screen_.width() << ",\"grid_h\":" << screen_.height()
+        << ",\"grid_w\":" << display_.screen.width()
+        << ",\"grid_h\":" << display_.screen.height()
         << ",\"content_w\":" << kContentW << ",\"content_h\":" << kContentH
         << ",\"panel_w\":" << host_.panel_w << ",\"seed\":" << rng_seed_
         << ",\"host_time\":" << host_.time
@@ -256,11 +257,11 @@ void App::execute_control(const ControlCommand& command) {
 
     if (name == "screen.read") {
         // 默认读**合并结果**（整屏，与既有语义一致）；带 layer 时读单份内容：
-        // layer = "screen" 读的同样是合并后的整屏（层是就地合并进 screen_ 的，没有
+        // layer = "screen" 读的同样是合并后的整屏（层是就地合并进 display_.screen 的，没有
         // "合并前的那一层"可读），之所以收这个取值，只是让"我读的是整屏"能被显式写出来；
         // 其余按卡带注册的层名读那一层自己。层缓冲是内容区局部坐标，所以行数就是内容区高
         const std::string which = args.str("layer");
-        const Screen* source = &screen_;
+        const Screen* source = &display_.screen;
         std::string label = "merged";
         if (!which.empty() && which != "screen") {
             const Layer* layer = host_.layers.find(which);

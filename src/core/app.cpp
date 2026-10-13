@@ -49,7 +49,7 @@ int App::run(const CliOptions& opts) {
     font_schemes_ = font_scheme_names(kFontDir);
     load_font_chain(config_.font);
 
-    host_.screen = &screen_;
+    host_.screen = &display_.screen;
     host_.input = &input_;
     host_.palette = &active_palette_;
     host_.language = config_.language;
@@ -131,14 +131,15 @@ void App::advance(float dt, Renderer* renderer, Window* window) {
         eject_collapse_ -= dt;
         const float progress =
             1.0f - std::max(0.0f, eject_collapse_ / kEjectCollapseTime);
-        shell_.draw_chassis(screen_);
-        effects::draw_eject_collapse(screen_, content_rect(), progress, shell_.skin().accent);
+        shell_.draw_chassis(display_.screen);
+        effects::draw_eject_collapse(display_.screen, content_rect(), progress,
+                                     shell_.skin().accent);
         input_.next_frame();
         return;
     }
 
     if (in_boot_) {
-        shell_.draw(screen_);
+        shell_.draw(display_.screen);
         tick_boot(dt);
         if (boot_should_end()) end_boot();
         return;
@@ -159,12 +160,12 @@ void App::end_boot() {
 
 void App::tick_playing(float dt) {
     host_.time += dt;
-    shell_.draw_chassis(screen_);
+    shell_.draw_chassis(display_.screen);
     shell_.set_lamps_solid(true);
 
     // 主机 chrome（侧栏分隔线）每帧重画：它由渲染器画在**所有图层之上**——
     // 画在底层会被卡带的世界图层盖住（这正是"窗口里看不到分隔线"的原因）
-    chrome_.clear_transparent();
+    display_.chrome.clear_transparent();
     // 主题面板色交给卡带 API：`panel.clear()` 不带色时用它当底色 —— 右栏随主题，不透出游戏
     host_.panel_bg = shell_.skin().panel;
 
@@ -186,7 +187,7 @@ void App::tick_playing(float dt) {
     if (insert_flash_ > 0.0f) {
         insert_flash_ -= dt;
         // 插卡闪屏是主机外壳的瞬时效果，用主题色
-        effects::draw_insert_flash(screen_, content_rect(), shell_.skin().accent,
+        effects::draw_insert_flash(display_.screen, content_rect(), shell_.skin().accent,
                                    shell_.skin().frame, frame_count_);
     }
 
@@ -194,12 +195,12 @@ void App::tick_playing(float dt) {
     // 没建层的卡带 `active()` 为假，这一步不存在——不是"快路径等价"，是根本没有它。
     //
     // 这里做的是**文本视图**的合成（一格一个字形，取最上面那层）。**渲染不读它**：
-    // 渲染用 base_screen_ + 各图层逐层叠画，那是像素级叠加，一格能同时看见两层的笔画
+    // 渲染用 display_.base + 各图层逐层叠画，那是像素级叠加，一格能同时看见两层的笔画
     timing_.merge_ms = 0.0f;
     if (drawn && ok && host_.layers.active()) {
-        base_screen_ = screen_;
+        display_.base = display_.screen;
         const auto m0 = clock::now();
-        host_.layers.merge_over(screen_, host_.content_x, host_.content_y);
+        host_.layers.merge_over(display_.screen, host_.content_x, host_.content_y);
         timing_.merge_ms = std::chrono::duration<float, std::milli>(clock::now() - m0).count();
     }
 
@@ -227,10 +228,10 @@ void App::tick_playing(float dt) {
     if (host_.panel_w > 0) {
         const int dx = host_.panel_origin_x() - 1;   // 分隔线贴着面板左缘
         const Color divider = shell_.skin().frame;   // 分隔线取主题边框色（不随内容色板走）
-        const int lx = dx - host_.content_x;         // chrome_ 是内容区局部坐标
+        const int lx = dx - host_.content_x;         // chrome 是内容区局部坐标
         for (int y = host_.content_y; y < host_.content_y + host_.content_h; ++y) {
-            screen_.put(dx, y, U'|', divider);                    // 文本视图（agent 读 screen_）
-            chrome_.put(lx, y - host_.content_y, U'|', divider);  // 窗口：画在所有图层之上
+            display_.screen.put(dx, y, U'|', divider);  // 文本视图（agent 读 screen）
+            display_.chrome.put(lx, y - host_.content_y, U'|', divider);  // 窗口：画在所有图层之上
         }
     }
     input_.next_frame();
@@ -253,7 +254,7 @@ void App::tick_boot(float dt) {
 
 void App::tick_shell(Renderer* renderer, Window* window) {
     const Shell::Intent intent = shell_.update(input_, kLogicStep);
-    shell_.draw(screen_);
+    shell_.draw(display_.screen);
     shell_.set_lamps_solid(false);
 
     // 界面按键音：确认键与普通键区分
@@ -506,16 +507,11 @@ int App::run_windowed(const CliOptions& opts) {
             }
         }
 
-        // 有图层的卡带：底（合成前的世界）+ 逐层叠画 —— 像素级"叠"，
-        // 于是雨滴能落在地形的笔画之上、笔画之外仍是地形。
-        // 没建层的卡带只画一块网格（不经过层合成）
+        // 底 + 逐层叠画 + 主机 chrome：顺序与原点收在 Display::present 一处
         const bool layered = playing_ && host_.layers.active();
-        renderer.draw(layered ? base_screen_ : screen_);
-        if (layered) renderer.draw_layers(host_.layers, host_.content_x, host_.content_y);
-        // 主机 chrome（侧栏分隔线）压在**所有图层之上**，否则会被卡带世界盖住。
-        // 只在"正在玩"时叠：暂停/磁带/卡带架没有卡带侧栏，留着会画出一条孤零零的竖线
-        if (playing_ && host_.panel_w > 0)
-            renderer.draw_overlay(chrome_, host_.content_x, host_.content_y);
+        const bool overlay = playing_ && host_.panel_w > 0;
+        display_.present(renderer, host_.layers, host_.content_x, host_.content_y, layered,
+                         overlay);
         // frame.read 的读回点：本帧已画完、尚未 swap。放在调试台之前，
         // 读回的是卡带画面本身，不含仪表盘
         complete_frame_read(&renderer);
