@@ -2,6 +2,7 @@
 
 #include "core/defaults.hpp"
 #include "core/log.hpp"
+#include "core/mods.hpp"
 
 #include <miniz.h>
 
@@ -60,10 +61,8 @@ CartFiles CartFiles::open(const std::string& cart_path) {
     }
     cf.cart_path_ = cart_path;
 
-    // 覆盖层 Mod 目录：mods/<卡带id>（与程序包同级）
-    const std::string id = cart_id_of(cart_path);
-    fs::path mod = fs::path("mods") / id;
-    if (!id.empty() && fs::is_directory(mod, ec)) cf.mod_dir_ = mod.generic_string();
+    // 卡带 id：覆盖层按 `mods/<任意名>/overrides/<卡带id>/<路径>` 查找（见 core/mods.hpp）
+    cf.cart_id_ = cart_id_of(cart_path);
 
     cf.valid_ = true;
     return cf;
@@ -72,10 +71,12 @@ CartFiles CartFiles::open(const std::string& cart_path) {
 std::optional<std::string> CartFiles::read(const std::string& inner_path) const {
     if (!valid_ || !path_safe(inner_path)) return std::nullopt;
 
-    // 覆盖层优先：同一路径的文件放 mods/<卡带id>/ 下即可替换（manifest 除外）
-    if (!mod_dir_.empty() && inner_path != "manifest.lua") {
-        if (auto overridden = read_disk_file(std::filesystem::path(mod_dir_) / inner_path))
-            return overridden;
+    // 覆盖层优先：任意 mod 可替换包内文件（manifest 除外——身份必须稳定）
+    if (inner_path != "manifest.lua") {
+        const std::string over = mod_override(cart_id_, inner_path);
+        if (!over.empty()) {
+            if (auto overridden = read_disk_file(over)) return overridden;
+        }
     }
     return read_packed(inner_path);
 }
@@ -119,10 +120,12 @@ std::optional<std::size_t> CartFiles::size(const std::string& inner_path) const 
     if (!valid_ || !path_safe(inner_path)) return std::nullopt;
 
     // 覆盖层优先（与 read 同一套查找）
-    if (!mod_dir_.empty() && inner_path != "manifest.lua") {
-        std::error_code ec;
-        const fs::path p = fs::path(mod_dir_) / inner_path;
-        if (fs::is_regular_file(p, ec)) return static_cast<std::size_t>(fs::file_size(p, ec));
+    if (inner_path != "manifest.lua") {
+        const std::string over = mod_override(cart_id_, inner_path);
+        if (!over.empty()) {
+            std::error_code ec;
+            if (fs::is_regular_file(over, ec)) return static_cast<std::size_t>(fs::file_size(over, ec));
+        }
     }
     if (!is_zip_) {
         std::error_code ec;

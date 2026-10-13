@@ -282,7 +282,7 @@ theme/font/default/
 
   `order` 里没列到的字体文件按文件名规则**附在其后**（绝不静默丢字）；`size` 是方案建议的字号。
   `min`/`max` 是**设置界面"字号"行的可调范围**——抬高 `max` 就是"允许更大的字"，
-  且**可用 Mod 覆盖**（`mods/<方案名>/font.lua`，不改原文件；见「六、Mod 体系」）。
+  且**可用 Mod 覆盖**（`mods/<任意名>/overrides/default/font.lua`，不改原文件；见「六、Mod 体系」）。
 - 坏字体文件被跳过并告警；方案缺失或装不出字体时退回 `default` 方案并告警
   —— 绝不因此开不了机
 - 想换中文观感：复制 `default/` 成新目录（如 `theme/font/hei/`），换掉字形文件，
@@ -304,26 +304,34 @@ theme/font/default/
 
 ### 覆盖层 Mod（Resource Override）——已实装
 
-任何卡带/内容包**脚本与资源**都可被同名文件覆盖：
+**Mod 就是 `mods/` 下的一个文件夹**，自由命名、**放进 mods/ 即自动生效**（没有开关、
+没有"方案"之分）。一个 mod 可以覆盖多个目标，覆盖项放在 `overrides/` 下、按目标的 id 分目录：
 
 ```
-mods/<目标id>/<与包内相同的相对路径>
+mods/<任意名>/overrides/<目标id>/<目标内路径>
 
-例：mods/snake/panel.lua          → 替换贪吃蛇侧栏
-    mods/snake/game.lua           → 改玩法规则/数值
-    mods/snake/assets/map.txt     → 改关卡数据（经 phos.assets 读到的是覆盖后的内容）
-    mods/rust-cabinet/skin.lua    → 改机台外观
-    mods/static-rain/main.lua     → 改开机动画
-    mods/relay/sounds.lua         → 改主机音效
+例：mods/big-font/overrides/default/font.lua     → 抬高大字号上限（覆盖 default 字体方案）
+    mods/my-tweaks/overrides/snake/panel.lua     → 改贪吃蛇侧栏
+    mods/my-tweaks/overrides/snake/game.lua      → 改贪吃蛇玩法数值
+    mods/my-tweaks/overrides/snake/assets/map.txt→ 改关卡数据（经 phos.assets 读到的是覆盖后的）
+    mods/dark/overrides/graphite/skin.lua        → 改某个主题的外观
+    mods/dark/overrides/static-rain/main.lua     → 改开机动画
+    mods/loud/overrides/relay/sounds.lua         → 改主机音效
 ```
 
-- 目标 id = 文件夹名（`.phos` 单文件取文件名去后缀）
-- 查找顺序：`mods/<id>/…` 优先，包内本体兜底；**mods 无需修改原包**，删除即还原
+- 目标 id：内容包的文件夹名、字体方案名，或卡带 id（目录名；`.phos` 单文件取文件名去后缀）
+- 覆盖项与包内路径一致（`font.lua` / `skin.lua` / `panel.lua` / `assets/…`）；一个 mod 可放多条
+- **多个 mod 改同一文件**：按 mod **目录名排序**，后者覆盖前者（可预测、与文件系统顺序无关）
+- 查找顺序：命中的 mod 覆盖优先，否则包内本体兜底；**mods 无需修改原包**，删除即还原
 - 覆盖层只替换"内容"，不改变"身份"
 
-**唯一例外：`manifest.lua` 不可被覆盖。** 卡带的身份
+**唯一例外：卡带的 `manifest.lua` 不可被覆盖。** 身份
 （`id` / `entry` / `save` 等）必须稳定，否则扫描、打包与运行时会
 对同一张卡带产生不同认知——这是刻意的防线，不是遗漏。
+
+> 引擎这边只有一处实现：`core/mods.hpp` 的路径解析（`pack/` 与 `cart/` 共用），
+> 启动时扫描一次 `mods/*/overrides/**` 并建表。**不硬编码任何具体 mod**——
+> 引擎提供的是"覆盖任意内容文件"这条通用能力，具体改什么由 mod 自己决定。
 
 ### 脚本插件 Mod（Lua Plugin）——第二世代预留
 

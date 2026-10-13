@@ -129,6 +129,7 @@ if(PHOSPHOR_BUILD_TESTS)
         src/core/surface.cpp
         src/core/layered_screen.cpp
         src/core/input.cpp
+        src/core/mods.cpp
         src/core/ui.cpp
         src/pack/builtin.cpp
         src/cart/save_store.cpp

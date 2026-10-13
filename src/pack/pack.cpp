@@ -3,6 +3,7 @@
 #include "api/lua_value.hpp"
 #include "core/defaults.hpp"
 #include "core/log.hpp"
+#include "core/mods.hpp"
 #include "core/text.hpp"
 #include "render/font.hpp"
 
@@ -15,14 +16,13 @@ namespace phos {
 
 namespace {
 
-/// 包脚本路径解析：`mods/<包id>/<文件名>` 存在则优先（覆盖层 Mod，见 content-packs.md）。
+/// 包脚本路径解析：被任意 mod 覆盖则用覆盖版（见 pack/mods.hpp）。
 /// 覆盖层只替换脚本正文，包的身份与列表仍由文件夹决定。
 std::string pack_script_path(const std::string& dir, const char* filename) {
     namespace fs = std::filesystem;
-    std::error_code ec;
     const std::string id = fs::path(dir).filename().string();
-    fs::path mod = fs::path("mods") / id / filename;
-    if (!id.empty() && fs::is_regular_file(mod, ec)) return mod.generic_string();
+    const std::string over = mod_override(id, filename);
+    if (!over.empty()) return over;
     return (fs::path(dir) / filename).string();
 }
 
