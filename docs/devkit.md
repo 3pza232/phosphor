@@ -160,6 +160,33 @@ local name = phos.lang.pick({ zh = "普通炮弹", en = "SHELL" })
 会原样显示中文**——这是最常见的"适配没做完"。排版别忘上一条：中英宽度不同，
 要对齐就用 `phos.text.pad`。
 
+## 配色：一律用主题色板
+
+**这是最常被写错、也最影响观感的一条：卡带不要写死颜色。**
+
+```lua
+local C, S = phos.color, phos.screen
+
+S.clear()                              -- 清屏底 = 色板的 black（不是写死的黑）
+S.print(x, y, "HP", C.green)           -- 用色板绿
+S.put(x, y, "@", C.yellow, C.black)    -- 要实底时也取色板色
+phos.screen.fill(x, y, w, h, " ", C.black)   -- 省略底色 = 色板 black
+```
+
+- `phos.color` 的 12 个常量（`black/white/gray/dark_gray/red/green/blue/yellow/cyan/magenta/orange/purple`）
+  **取自当前主题声明的色板**——换主题就整体变色。写死 `{ 6, 8, 20 }` 这类 RGB 就等于
+  放弃了"主题"这个卖点：换个主题，你的背景还赖在原地，跟别的界面两块颜色各说各话。
+- 语义化地选色：用 `C.cyan` 当"玩家"、`C.red` 当"敌人"、`C.dark_gray` 当弱化的网格线，
+  而不是"这个角落看着是青的就写 rgb(0,200,200)"。
+- 只有**确实需要与主题无关的固定色**（特殊特效、按数值连续变化的色）才用 `phos.color.rgb`，
+  而且尽量只用在点缀上——**大面积底色 / 文字 / 网格一律用色板色**。
+- "省略底色是什么意思"分两组（写卡带最易踩）：`put` / `print` 省略 = **保留该格原底**（透明，
+  字压在世界/机身上不留色块），`fill` / `clear` / `blit` / `back*` 省略 = **写色板的 black**。
+  完整表见 [api-reference.md](api-reference.md) 的 `phos.screen` 一节。
+
+> 自检：卡带写完后 `grep rgb package/carts/<你的id>/*.lua`——除了刻意为之的点缀，
+> 不该有别的命中。
+
 ## 多文件卡带
 
 卡带可用 `require` 拆成模块：
