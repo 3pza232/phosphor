@@ -362,6 +362,26 @@ TEST(screen_scaled_cell_reserves_block) {
     CHECK(!orphan);
 }
 
+TEST(layered_merge_normalizes_scaled_block) {
+    // 上层压掉大字块里的一格 → 整块归一消失（要么完整、要么不出现），只留下上层的字
+    LayeredScreen layers;
+    layers.reset(8, 8);
+    layers.create("lo", 0)->cells.put(2, 2, U'A', Color::white, Color::black, 2);
+    layers.create("hi", 1)->cells.put(3, 2, U'@', Color::white, Color::black, 1);
+
+    Screen merged(8, 8);
+    CHECK(layers.merge_over(merged, 0, 0));
+    CHECK_EQ(int(merged.at(2, 2).scale), 1);  // 头格被清
+    CHECK_EQ(int(merged.at(2, 2).ch), int(U' '));
+    CHECK_EQ(int(merged.at(3, 2).ch), int(U'@'));  // 上层那个字还在
+
+    bool orphan = false;
+    for (int y = 0; y < 8; ++y)
+        for (int x = 0; x < 8; ++x)
+            if (merged.at(x, y).scale == 0) orphan = true;
+    CHECK(!orphan);  // 没有残留的被覆盖格
+}
+
 TEST(surface_clips_to_bounds) {
     Screen screen(6, 3);
     Surface surface(screen, 0, 0, 3, 2);  // 面只有左上 3x2

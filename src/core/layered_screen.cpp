@@ -12,29 +12,50 @@ bool uses_cell(const Cell& cell) {
     return cell.alpha != 0 || cell.ch != U' ' || cell.cols == 0 || cell.scale == 0;
 }
 
-/// 合成后的宽字符归一。一格只有一个字形槽，而宽字占两格：
-/// 上层若压掉了某宽字的续格（或留下无头的续格），这个字就渲染不出来，
-/// 于是把不成对的格子降级成空格——底色留着，只是不再有字
-void normalize_wide_chars(Screen& target, int ox, int oy, int w, int h) {
+/// 合成后的单元格归一。一格只有一个字形槽，而宽字占两格、大字占一个块：
+/// 上层若压掉了宽字的续格或大字块里的一格，这个字就渲染不出来、或渲染得残缺，
+/// 于是把它降级成空格——底色留着，只是不再有字。两遍合起来就是
+/// "宽字 / 大字要么完整、要么不出现在画面上"
+void normalize_cells(Screen& target, int ox, int oy, int w, int h) {
+    // ① 头格完整性：宽字要有配对续格；大字块内其余格要么被覆盖（scale=0）、要么是宽字续格
     for (int y = 0; y < h; ++y) {
         for (int x = 0; x < w; ++x) {
             const Cell& cell = target.at(ox + x, oy + y);
-            if (cell.cols != 2) continue;
-            const bool tail_ok = x + 1 < w && target.at(ox + x + 1, oy + y).cols == 0;
-            if (tail_ok) continue;
+            bool intact = true;
+            if (cell.cols == 2)
+                intact = x + 1 < w && target.at(ox + x + 1, oy + y).cols == 0;
+            if (intact && cell.scale >= 2) {
+                const int bw = cell.cols * cell.scale;
+                const int bh = cell.scale;
+                for (int dy = 0; dy < bh && intact; ++dy)
+                    for (int dx = 0; dx < bw && intact; ++dx) {
+                        if (dx == 0 && dy == 0) continue;  // 头格自身
+                        // 块越界 = 残缺；宽字续格（头格右邻）是被允许的，其余格必须是被覆盖
+                        if (x + dx >= w || y + dy >= h) {
+                            intact = false;
+                        } else if (!(cell.cols == 2 && dx == 1 && dy == 0) &&
+                                   target.at(ox + x + dx, oy + y + dy).scale != 0) {
+                            intact = false;
+                        }
+                    }
+            }
+            if (intact) continue;
             Cell fixed = cell;
             fixed.clear_glyph();
             target.set(ox + x, oy + y, fixed);
         }
     }
-    // 上一步抹掉的头格会把自己的续格变成孤儿，所以这一遍放在后面：
-    // 它顺带清掉那些续格，两遍合起来就是"宽字要么完整、要么不出现在画面上"
+    // ② 非头格：宽字续格要有头格；被覆盖格要有罩着它的头格 —— 都没有就清掉。上一步清掉的
+    //    头格留下的孤儿续格/覆盖格在这里一并收掉
     for (int y = 0; y < h; ++y) {
         for (int x = 0; x < w; ++x) {
             const Cell& cell = target.at(ox + x, oy + y);
-            if (cell.cols != 0) continue;
-            const bool head_ok = x > 0 && target.at(ox + x - 1, oy + y).cols == 2;
-            if (head_ok) continue;
+            bool orphan = false;
+            if (cell.cols == 0)
+                orphan = !(x > 0 && target.at(ox + x - 1, oy + y).cols == 2);
+            if (!orphan && cell.scale == 0)
+                orphan = !target.covered_by_scaled_block(ox + x, oy + y);
+            if (!orphan) continue;
             Cell fixed = cell;
             fixed.clear_glyph();
             target.set(ox + x, oy + y, fixed);
@@ -149,7 +170,7 @@ bool LayeredScreen::merge_over(Screen& target, int origin_x, int origin_y) {
         }
     }
 
-    normalize_wide_chars(target, origin_x, origin_y, w, h);
+    normalize_cells(target, origin_x, origin_y, w, h);
     return true;
 }
 

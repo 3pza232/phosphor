@@ -367,6 +367,11 @@ char32_t Screen::glyph_at(int x, int y) const {
     return source->ch;
 }
 
+bool Screen::covered_by_scaled_block(int x, int y) const {
+    int head_x = 0, head_y = 0;
+    return scaled_block_of(x, y, head_x, head_y);
+}
+
 std::string Screen::to_text() const {
     std::string out;
     out.reserve(static_cast<size_t>(w_ + 1) * h_);

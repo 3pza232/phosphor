@@ -153,6 +153,10 @@ public:
     /// 读到的画面与 dump 出来的文本对不上。
     char32_t glyph_at(int x, int y) const;
 
+    /// (x,y) 是否落在某个**缩放块**里（含头格自身）。层合成后的"大字归一"靠它判定
+    /// 一个被覆盖格是不是还有头格罩着
+    bool covered_by_scaled_block(int x, int y) const;
+
 private:
     /// 线性下标：全工程"格 (x, y) → cells_ 下标"的唯一换算，笔迹表与子位表也共用它。
     /// 各处自己写 `y * w_ + x` 时漏一个 `w_` 就会静默写错格，收成一处就没有这种可能
