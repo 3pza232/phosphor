@@ -17,6 +17,7 @@ namespace phos {
 
 class Audio;
 class CartFiles;
+class Cartridge;
 class Net;
 struct CartInfo;
 
@@ -31,6 +32,9 @@ struct HostContext {
     Net* net = nullptr;                 // 局域网联机（未接时为 nullptr，phos.net 安全空壳）
     const CartFiles* cart_files = nullptr;  // 当前卡带包（读取包内音频等资源）
     const CartInfo* cart_info = nullptr;    // 当前卡带的身份（来自 manifest.lua；见 phos.cart）
+    /// 当前卡带（供 `phos.debug.number` 把可调参数注册到它上面）。由 Cartridge 装配时挂上、
+    /// 拔卡时清空；无卡带时为 nullptr，phos.debug.* 安全无效
+    Cartridge* cart = nullptr;
     std::string save_dir = kSaveDir;    // 存档目录（--save-dir / 测试模式可改指向独立目录）
     double time = 0.0;                  // 卡带运行秒数
     long frame = 0;                     // 正在推进的逻辑帧号（与 state.query 的 frame 同源）

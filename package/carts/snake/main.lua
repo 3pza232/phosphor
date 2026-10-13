@@ -31,6 +31,10 @@ function init()
   Scores.load()
   game = Game.new()
   phos.audio.music(Music)  -- 开机即播放本卡带的音乐
+  -- 把"移动间隔"放进调试台的可调篮子：`~` 面板里拖滑条就能实时改速度
+  phos.debug.number("移动间隔", function() return game.move_interval end,
+                    function(v) game.move_interval = v end,
+                    { min = 0.03, max = 0.30, step = 0.005 })
 end
 
 function update(dt)

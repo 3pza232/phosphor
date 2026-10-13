@@ -81,6 +81,22 @@ void DebugConsole::render(const DebugInfo& info) {
         }
     }
 
+    if (ImGui::CollapsingHeader("CART PARAMS", ImGuiTreeNodeFlags_DefaultOpen)) {
+        if (!info.params || info.params->empty()) {
+            ImGui::TextUnformatted("(cart exposes no params via phos.debug.number)");
+        } else {
+            for (auto& p : *info.params) {
+                if (!p.readable) {
+                    ImGui::TextDisabled("%s  (unreadable)", p.name.c_str());
+                    continue;
+                }
+                if (ImGui::DragFloat(p.name.c_str(), &p.value, p.step, p.min, p.max, "%.3f"))
+                    p.changed = true;
+            }
+            ImGui::TextDisabled("edits apply next frame");
+        }
+    }
+
     if (ImGui::CollapsingHeader("CONTENT & SHELL", ImGuiTreeNodeFlags_DefaultOpen)) {
         ImGui::Text("console theme  %s", info.skin_name.c_str());
         ImGui::Text("boot animation %s", info.boot_name.c_str());

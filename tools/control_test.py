@@ -38,6 +38,17 @@ def run() -> int:
         report.check(state.get("cart", {}).get("id") == "snake", "cart metadata identifies snake")
         print(f"state   : frame={state.get('frame')} grid={state.get('grid_w')}x{state.get('grid_h')}")
 
+        # 调试篮子（phos.debug.number）：snake 注册了"移动间隔"，agent 可读可写
+        params = state.get("debug_params") or []
+        report.check(any(p.get("name") == "移动间隔" for p in params),
+                     "state.query exposes the cart's debug params")
+        set_reply = host.send("debug.set", name="移动间隔", value=0.05)
+        report.check(set_reply.get("ok") is True, "debug.set writes a cart param")
+        after = host.state().get("debug_params") or []
+        report.check(any(p.get("name") == "移动间隔" and abs(p.get("value", 0) - 0.05) < 1e-6
+                         for p in after),
+                     "debug.set took effect (read back 0.05)")
+
         # 单步的确定性：两次 time.step 的帧号差必须精确等于请求的帧数
         first = host.step(30).get("frame")
         second = host.step(10)

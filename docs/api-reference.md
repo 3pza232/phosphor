@@ -663,6 +663,30 @@ cart.desc     -- 简介（按当前界面语言取；英文缺失时回落中文
 不要在 Lua 里再抄一份字符串——那样改了 manifest 就会留下对不上的旧文案。
 未插卡时（主机脚本，例如出厂启动动画）各项为空串。
 
+## phos.debug
+
+把玩法里的常数登记进"**可调篮子**"，就能在运行中用 `~` 呼出的调试台**拖滑条实时改**，
+不必反复改代码重启。写玩法时（移动速度、生命值、武器半径/威力……）随手一挂即可。
+
+```lua
+-- 注册一个可调数值：get 读当前值、set 写回，range 决定滑条
+local SPEED = 1.0
+phos.debug.number("移动速度", function() return SPEED end,
+                  function(v) SPEED = v end, { min = 0.1, max = 3.0, step = 0.05 })
+
+-- 嵌套数据也能调（回调自己存取）：武器表里第 1 件的半径
+phos.debug.number("武器1 半径", function() return WEAPONS[1].radius end,
+                  function(v) WEAPONS[1].radius = v end, { min = 1, max = 12, step = 0.5 })
+```
+
+- `get` / `set` 是**卡带自己的函数**，后端存储随意（局部变量、表字段、对象成员都行）——
+  这正是它比"声明一个值交给主机保管"更实用的地方。
+- `opts`：`min` / `max`（滑条范围）、`step`（拖动步长）。
+- **注册随卡带生命周期**：拔卡即清；未插卡（主机脚本）时调用安全无效。
+- 面板里的改动**下一帧**才写回（不在渲染中途改卡带状态）。
+- 同一批参数也经控制通道的 `state.query.debug_params` 暴露——agent 能读能配合
+  （见 `agent-interface.md`）。
+
 ## phos.sys
 
 ```lua

@@ -53,6 +53,34 @@ public:
     /// 不存在或不可序列化时返回空串
     std::string global_json(const std::string& path);
 
+    /// 卡带注册的一个可实时调参数（`phos.debug.number`）：get 读当前值、set 写回。
+    /// 带 sol 类型，故留在 cart/；控制台只吃它的**纯数据**快照（`DebugParamView` / agent 的 DebugParam）
+    struct DebugRegistration {
+        std::string name;
+        sol::protected_function get;
+        sol::protected_function set;
+        float min = 0.0f, max = 1.0f, step = 0.01f;
+    };
+
+    /// `phos.debug.number(name, get, set, opts)` 的落地：登记一个可实时调的参数。
+    /// 名字空或 get 不是函数则拒。
+    bool debug_register(std::string name, sol::protected_function get, sol::protected_function set,
+                        float min, float max, float step);
+
+    size_t debug_param_count() const { return debug_regs_.size(); }
+
+    /// 第 i 个参数的**纯数据**快照：名字 + 当前值（调 get）+ 范围。get 出错时 ok=false。
+    struct DebugParamView {
+        std::string name;
+        float value = 0.0f;
+        float min = 0.0f, max = 1.0f, step = 0.01f;
+        bool ok = false;
+    };
+    DebugParamView debug_param(size_t index);
+
+    /// 写第 i 个参数（调 set）；越界或无 set 返回 false
+    bool debug_param_write(size_t index, float value);
+
     /// 色板热更新（切换主题时重写 phos.color 常量）
     void apply_palette(const Palette& palette);
 
@@ -70,6 +98,7 @@ private:
     CartFiles files_;  // 持有包引用：卡带存活期间 API 可随时读取包内资源
     CartInfo info_;
     SaveStore save_;
+    std::vector<DebugRegistration> debug_regs_;  // phos.debug.number 登记的参数
     std::string error_;
 };
 

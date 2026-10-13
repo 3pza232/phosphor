@@ -144,6 +144,7 @@ void App::advance(float dt, Renderer* renderer, Window* window) {
 void App::end_boot() {
     in_boot_ = false;
     boot_script_.reset();
+    host_.cart = nullptr;  // 宿主动画脚本的 DebugConsole 注册随它一起收
     shell_.set_external_boot(false);
     shell_.to_shelf();
 }
@@ -510,6 +511,13 @@ int App::run_windowed(const CliOptions& opts) {
             fill_debug_info(info);
             console_.render(info);
             renderer.set_crt(active_crt_);  // 仪表盘可直接调参并即时生效
+            // 调试台改过的卡带参数：帧末写回（不在渲染中途改卡带状态）。
+            // 下标与 debug_params_ 一一对应（fill_debug_info 刚按同一顺序填的）
+            if (cart_) {
+                for (size_t i = 0; i < debug_params_.size(); ++i)
+                    if (debug_params_[i].changed)
+                        cart_->debug_param_write(i, debug_params_[i].value);
+            }
         }
         window.swap_buffers();
 

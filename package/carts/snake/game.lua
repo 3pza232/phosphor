@@ -16,6 +16,8 @@ Game.__index = Game
 function Game.new()
   local self = setmetatable({}, Game)
   self:reset()
+  -- 每次移动的间隔（秒）。**不放进 reset**：这样 `~` 面板调好的速度在死亡重开后仍在
+  self.move_interval = MOVE_INTERVAL
   return self
 end
 
@@ -88,8 +90,8 @@ function Game:update(dt)
   if not self.alive then return events end
 
   self.acc = self.acc + dt
-  while self.acc >= MOVE_INTERVAL do
-    self.acc = self.acc - MOVE_INTERVAL
+  while self.acc >= self.move_interval do
+    self.acc = self.acc - self.move_interval
     local what = self:step()
     if what == "eaten" then events.eaten = true end
     if what == "died" then

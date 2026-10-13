@@ -237,6 +237,8 @@ double Object::num(std::string_view key, double fallback) const {
     return fallback;
 }
 
+double Object::number(std::string_view key, double fallback) const { return num(key, fallback); }
+
 int Object::integer(std::string_view key, int fallback) const {
     auto it = values_.find(std::string(key));
     if (it == values_.end()) return fallback;

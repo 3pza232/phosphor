@@ -178,6 +178,9 @@ private:
     unsigned rng_seed_ = 0;
 
     DebugConsole console_;
+    /// 卡带注册的可调参数快照（`phos.debug.number`）：每帧由 fill_debug_info 重建，
+    /// 控制台在此之上改值，帧末写回卡带
+    std::vector<DebugParam> debug_params_;
     bool escape_flag_ = false;
     bool capture_escape_ = false;  // 卡带是否接管 Esc（phos.sys.capture_escape）
     bool settings_flag_ = false;

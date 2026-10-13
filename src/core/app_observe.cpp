@@ -61,6 +61,25 @@ void App::fill_debug_info(DebugInfo& info) {
 
     info.crt = &active_crt_;  // 仪表盘可直接调参，所以给的是可写指针
 
+    // 卡带注册的可调参数（`phos.debug.number`）：调 get 取当前值，填一份纯数据快照供调试台画滑条
+    debug_params_.clear();
+    if (cart_) {
+        const size_t count = cart_->debug_param_count();
+        debug_params_.reserve(count);
+        for (size_t i = 0; i < count; ++i) {
+            const Cartridge::DebugParamView view = cart_->debug_param(i);
+            DebugParam p;
+            p.name = view.name;
+            p.value = view.value;
+            p.min = view.min;
+            p.max = view.max;
+            p.step = view.step;
+            p.readable = view.ok;
+            debug_params_.push_back(std::move(p));
+        }
+    }
+    info.params = &debug_params_;
+
     // 键名表是动态的（卡带想用什么键就是什么键），所以这里遍历"见过的键名"，
     // 而不是某张写死在主机里的固定表
     for (const auto& name : input_.names()) {

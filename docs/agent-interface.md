@@ -129,6 +129,7 @@ phosphor --pack carts/snake --json
 | `cart.load` | `path` | 加载卡带（目录或 `.phos`） |
 | `cart.reload` | — | 热重载当前卡带（改完代码立即生效） |
 | `cart.eject` | — | 弹出卡带，回到系统界面 |
+| `debug.set` | `name`, `value` | 设置卡带注册的可调参数（`phos.debug.number`）当前值——与 `~` 调试台同一处落地；先读 `state.query.debug_params` 拿名字 |
 | `quit` | — | 关闭主机进程 |
 
 ### `state.query` 字段表
@@ -158,6 +159,7 @@ phosphor --pack carts/snake --json
 | `cart` | 卡带元信息与开销：`id` / `name` / `version` / `author` / `path` / `sidebar_w`；`update_ms` / `draw_ms`（最近一帧）、`update_peak_ms` / `draw_peak_ms`（约 1 秒窗口峰值，查偶发卡顿看这个）、`lua_mem_kb`（Lua 堆）。未插卡时为 `null` |
 | `merge_ms` | 图层合成耗时（**卡带没建层时恒为 0**） |
 | `layers` | 该卡带的图层清单（名称 / z / 可见性，z 升序；空数组 = 没建层） |
+| `debug_params` | 卡带注册的可调参数（`phos.debug.number`）当前值：`[{name, value}, ...]`（空数组 = 没注册）。人用调试台拖，agent 用这个读 |
 | `held_keys` | 当前按住的虚拟键名数组 |
 | `save` | 存档概况 `{ available, entries }` |
 | `seed` / `host_time` | 本次随机种子 / 卡带眼里的运行秒数 |

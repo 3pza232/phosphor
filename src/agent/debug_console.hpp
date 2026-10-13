@@ -10,6 +10,16 @@ struct GLFWwindow;
 
 namespace phos {
 
+/// 一个可实时调的卡带参数（`phos.debug.number` 的**纯数据**快照）。
+/// 控制台画滑条直接改 `value`；改动由 App 帧末写回卡带（见 App::run_windowed）
+struct DebugParam {
+    std::string name;
+    float value = 0.0f;
+    float min = 0.0f, max = 1.0f, step = 0.01f;
+    bool readable = true;  // get 取不到值的项只展示名字，不画滑条
+    bool changed = false;  // 控制台改过：置位，App 据此写回
+};
+
 /// 仪表盘展示的主机运行参数（由 App 每帧填充）。
 /// `crt` 指向激活的 CRT 参数，可直接在面板中调节并即时生效。
 struct DebugInfo {
@@ -41,6 +51,8 @@ struct DebugInfo {
 
     // 可实时调节
     CrtParams* crt = nullptr;
+    /// 卡带注册的可调参数快照（`phos.debug.number`）；App 每帧重建，控制台在此改 `value`
+    std::vector<DebugParam>* params = nullptr;
 };
 
 /// ImGui 参数仪表盘（` 键呼出）。

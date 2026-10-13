@@ -28,6 +28,10 @@ public:
     std::string str(std::string_view key, std::string_view fallback = "") const;
     int integer(std::string_view key, int fallback = 0) const;
 
+    /// 浮点读取：本协议多数数值是整数，但少数需要小数（如 `debug.set` 的参数值）。
+    /// `num` 是它的实现，公开出来给这些调用方用
+    double number(std::string_view key, double fallback = 0.0) const;
+
     /// 布尔读取：接受 true/false，以及字符串 "1"/"true"/"down"/"on"/"yes"（其余算 false）
     bool flag(std::string_view key, bool fallback = false) const;
 
@@ -48,8 +52,7 @@ private:
         std::shared_ptr<Object> object;  // Kind::object：嵌套对象
     };
 
-    /// 原样取数（integer 的实现基础）。对外只暴露 integer：本协议里所有数值字段都是整数，
-    /// 没有调用方需要 double，多开一个出口只会让"该用哪个"变得含糊
+    /// 原样取数（integer / number 的实现基础）
     double num(std::string_view key, double fallback = 0.0) const;
 
     /// parse 的递归体（带嵌套深度上限）：不可信 JSON（控制通道行、网络包）可能上千层

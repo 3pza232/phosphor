@@ -87,8 +87,21 @@ std::string App::control_state_json() const {
         << ",\"fps\":" << config_.fps
         << ",\"render_fps\":" << host_.fps
         << ",\"merge_ms\":" << timing_.merge_ms
-        << ",\"layers\":" << layers_json(host_.layers)
-        << ",\"video\":" << json::quote(headless_ ? "headless" : "window")
+        << ",\"layers\":" << layers_json(host_.layers);
+
+    // 卡带注册的可调参数（phos.debug.number）当前值；无卡带或未注册为空数组
+    out << ",\"debug_params\":[";
+    if (cart_) {
+        const size_t count = cart_->debug_param_count();
+        for (size_t i = 0; i < count; ++i) {
+            const Cartridge::DebugParamView view = cart_->debug_param(i);
+            out << (i ? "," : "") << "{\"name\":" << json::quote(view.name)
+                << ",\"value\":" << view.value << "}";
+        }
+    }
+    out << "]";
+
+    out << ",\"video\":" << json::quote(headless_ ? "headless" : "window")
         << ",\"control_port\":" << control_port_
         << ",\"music_volume\":" << config_.music_volume
         << ",\"sfx_volume\":" << config_.sfx_volume
@@ -456,6 +469,35 @@ void App::execute_control(const ControlCommand& command) {
     if (name == "cart.eject") {
         eject_cart();
         control_.reply(command.id, "");
+        return;
+    }
+
+    if (name == "debug.set") {
+        // 与调试台同一处落地（debug_param_write）：agent 也能实时调卡带的可调参数
+        if (!cart_) {
+            control_.reply_error(command.id, "no cart loaded");
+            return;
+        }
+        const std::string param = args.str("name");
+        if (param.empty()) {
+            control_.reply_error(command.id, "missing 'name'");
+            return;
+        }
+        const double value = args.number("value", 0.0);
+        bool found = false;
+        for (size_t i = 0; i < cart_->debug_param_count(); ++i) {
+            const Cartridge::DebugParamView view = cart_->debug_param(i);
+            if (view.name != param) continue;
+            cart_->debug_param_write(i, static_cast<float>(value));
+            found = true;
+            break;
+        }
+        if (!found) {
+            control_.reply_error(command.id, "no such param: " + param);
+            return;
+        }
+        control_.reply(command.id,
+                       "\"name\":" + json::quote(param) + ",\"value\":" + std::to_string(value));
         return;
     }
 

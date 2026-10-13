@@ -68,6 +68,7 @@ void App::eject_cart() {
     host_.save = nullptr;
     host_.cart_files = nullptr;
     host_.cart_info = nullptr;
+    host_.cart = nullptr;  // 可调参数注册随卡带一起收（phos.debug.number）
     host_.layers.reset(host_.content_w, host_.content_h);  // 层随卡带销毁
     timing_.reset();  // 卡带逐帧耗时归零：否则拔卡后 state.query 还报着上一张的耗时
     shell_.set_lamps_solid(false);

@@ -175,6 +175,23 @@ void register_host_api(sol::state& lua, HostContext& host) {
     // 右栏不属于游戏画面，底色随主题，而不是透出游戏、也不是砸一块写死的黑
     bind_surface_api(panel, host, /*is_panel=*/true);
 
+    // --- phos.debug（把卡带的可调参数交给 `~` 调试台做实时微调） ---
+    // 卡带注册"一个数值 + 怎么读 get + 怎么写 set + 范围"，调试台据此画滑条。
+    // 注册随卡带生命周期；未挂卡带（无卡 / 宿主动画脚本）时安全无效
+    sol::table debug = phos.create_named("debug");
+    debug["number"] = [&host](const std::string& name, sol::protected_function get,
+                              sol::protected_function set, sol::optional<sol::table> opts) {
+        if (!host.cart) return;
+        float min = 0.0f, max = 1.0f, step = 0.01f;
+        if (opts) {
+            const sol::table t = *opts;
+            min = static_cast<float>(api::read_number(t, "min", min));
+            max = static_cast<float>(api::read_number(t, "max", max));
+            step = static_cast<float>(api::read_number(t, "step", step));
+        }
+        host.cart->debug_register(name, std::move(get), std::move(set), min, max, step);
+    };
+
     // --- phos.text（文本度量） ---
     // 中文一个字占两格，卡带要自己排版（居中、对齐、定宽字段）就得先问宽度，
     // 而不是拿 #str 当列数——那是字节数，中文会被算成 3 格

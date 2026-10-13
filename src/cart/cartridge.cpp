@@ -215,6 +215,7 @@ bool Cartridge::assemble(const std::string& entry, HostContext& host) {
     // 卡带内模块加载：只允许读取本包内的 .lua，模块可拆分为多个文件
     lua_["require"] = [this](const std::string& name) { return load_module(name); };
 
+    host.cart = this;  // 供 phos.debug.number 把参数注册落到本卡带（见 host_api 的 phos.debug）
     register_host_api(lua_, host);
 
     // 挂上指令计数钩子（是否布防由 WatchdogScope 决定）：入口脚本自己也可能死循环，
@@ -320,6 +321,48 @@ std::string Cartridge::global_json(const std::string& path) {
 
 void Cartridge::apply_palette(const Palette& palette) {
     apply_palette_to(lua_, palette);
+}
+
+bool Cartridge::debug_register(std::string name, sol::protected_function get,
+                               sol::protected_function set, float min, float max, float step) {
+    if (name.empty() || !get.valid()) return false;
+    DebugRegistration reg;
+    reg.name = std::move(name);
+    reg.get = std::move(get);
+    reg.set = std::move(set);
+    reg.min = min;
+    reg.max = max > min ? max : min + 1.0f;
+    reg.step = step > 0.0f ? step : 0.01f;
+    debug_regs_.push_back(std::move(reg));
+    return true;
+}
+
+Cartridge::DebugParamView Cartridge::debug_param(size_t index) {
+    DebugParamView out;
+    if (index >= debug_regs_.size()) return out;
+    const DebugRegistration& reg = debug_regs_[index];
+    out.name = reg.name;
+    out.min = reg.min;
+    out.max = reg.max;
+    out.step = reg.step;
+    WatchdogScope guard;  // get 是卡带代码：同样受看门狗约束
+    const sol::protected_function_result r = reg.get();
+    if (!r.valid()) return out;  // 读失败：ok=false，控制台按"取不到"处理
+    const sol::object v = r;
+    if (v.is<double>() || v.is<int>()) {
+        out.value = v.as<float>();
+        out.ok = true;
+    }
+    return out;
+}
+
+bool Cartridge::debug_param_write(size_t index, float value) {
+    if (index >= debug_regs_.size()) return false;
+    DebugRegistration& reg = debug_regs_[index];
+    if (!reg.set.valid()) return false;
+    WatchdogScope guard;
+    const sol::protected_function_result r = reg.set(value);
+    return r.valid();
 }
 
 bool Cartridge::update(float dt) {
