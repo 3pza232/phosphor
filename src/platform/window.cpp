@@ -119,15 +119,11 @@ void key_callback(GLFWwindow*, int key, int, int action, int) {
     }
     if (*g_handlers.input_block) return;  // 调试台打开期间输入不注入游戏
 
-    // 退格：GLFW 的字符回调不为它触发，所以在这里补。**两层都要给**——
-    // ① 文本通道：push '\b'，磁带码输入与卡带的文本框靠它；
-    // ② 普通键：set_key("backspace")，卡带想把它当功能键（如象棋悔棋）时才能 pressed 到
-    if (key == GLFW_KEY_BACKSPACE) {
-        if (action == GLFW_PRESS || action == GLFW_REPEAT)
-            g_handlers.input->push_text(std::string(1, text::kBackspace));
-        if (action == GLFW_PRESS || action == GLFW_RELEASE)
-            g_handlers.input->set_key("backspace", action == GLFW_PRESS);
-        return;
+    // 退格：GLFW 的字符回调不为它触发，所以这里补一次 '\b' 给**文本通道**
+    // （磁带码输入、卡带的文本框靠它，见 worms 昵称框）。**不 return**——下面的通用键映射
+    // 照常把 "backspace" 也交给卡带当功能键（如象棋悔棋）
+    if (key == GLFW_KEY_BACKSPACE && (action == GLFW_PRESS || action == GLFW_REPEAT)) {
+        g_handlers.input->push_text(std::string(1, text::kBackspace));
     }
 
     if (action == GLFW_PRESS || action == GLFW_RELEASE) {
