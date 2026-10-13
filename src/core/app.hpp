@@ -132,6 +132,8 @@ private:
 
     static constexpr float kLogicStep = 1.0f / static_cast<float>(kLogicFps);
     static constexpr const char* kConfigPath = "config.json";
+    /// 实际配置路径（--config 可改；工具脚本据此把实测配置与用户的 config.json 隔开）
+    std::string config_path_ = kConfigPath;
     static constexpr const char* kCartDir = "carts";
     /// 卡带架的"最近打开"记录（见 core/config.hpp 的 load_recent）
     static constexpr const char* kRecentPath = "recent.txt";

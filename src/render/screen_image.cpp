@@ -178,9 +178,12 @@ std::optional<ScreenImage> render_screen_image(const Screen& screen,
     for (int cy = 0; cy < screen.height(); ++cy) {
         for (int cx = 0; cx < screen.width(); ++cx) {
             const Cell& cell = screen.at(cx, cy);
-            // 续格整格属于左邻的宽字符：既不能单独铺底（会把字形右半边盖掉），
-            // 也不需要绘制——宽字符的背景与字形由它的头格一次画完
-            if (cell.cols == 0) continue;
+            // 续格整格属于左邻的宽字符：不单独铺底（会把字形右半边盖掉），字形也由头格画完；
+            // 但**这一格上的笔迹要画**——否则 blend 到续格的那一笔会凭空消失
+            if (cell.cols == 0) {
+                draw_pens(screen, cx, cy, cx * cell_w, cy * cell_h);
+                continue;
+            }
 
             const int x0 = cx * cell_w;
             const int y0 = cy * cell_h;

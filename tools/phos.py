@@ -26,6 +26,7 @@ import os
 import socket
 import subprocess
 import sys
+import tempfile
 import time
 from typing import Any, Iterable, Sequence
 
@@ -46,6 +47,24 @@ class HostError(RuntimeError):
     """控制通道层面的失败（连不上、超时、主机退出）"""
 
 
+#: 门禁/工具用的确定配置：与用户的 `config.json` **隔离**——皮肤决定色板、进而决定像素，
+#: 用户改了皮肤不该让像素门禁变红。graphite 是出厂观感
+DEFAULT_CONFIG: dict[str, Any] = {
+    "theme": {
+        "skin": "graphite",
+        "boot": "default",
+        "sound": "default",
+        "font": "default",
+        "language": "zh",
+    },
+    "shelf_style": "window",
+    "crt_level": 2,
+    "fps": 60,
+    "music_volume": 80,
+    "sfx_volume": 90,
+}
+
+
 class Host:
     """一次被驱动的宿主运行。用 with 语句确保进程一定被收掉。"""
 
@@ -57,6 +76,7 @@ class Host:
         timeout: float = 15.0,
         log_path: str | None = None,
         headless: bool = True,
+        config: str | None = None,
     ) -> None:
         if not os.path.exists(exe):
             raise HostError(f"{exe} 不存在——请在含 phosphor.exe 的构建目录里运行")
@@ -64,12 +84,18 @@ class Host:
         self.log_path = log_path or "host_stderr.log"
         self.headless = headless
         self.port = free_port()
+        if config is None:
+            # 未指定：写一份确定的默认配置到临时文件，与用户的 config.json 隔离
+            config = os.path.join(tempfile.gettempdir(), f"phos-cfg-{self.port}.json")
+            with open(config, "w", encoding="utf-8") as handle:
+                json.dump(DEFAULT_CONFIG, handle, ensure_ascii=False)
         args = [exe]
         if cart:
             args += ["--cart", cart]
         args += ["--control", str(self.port)]
         if headless:
             args.append("--headless")  # 要"开窗给人看"的脚本必须能关掉它
+        args += ["--config", config]
         args += list(extra)
 
         self._log = open(self.log_path, "wb")

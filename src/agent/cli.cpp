@@ -49,6 +49,9 @@ std::optional<std::string> parse_cli(int argc, char** argv, CliOptions& out) {
         } else if (arg == "--save-dir") {
             if (auto err = need_value("--save-dir")) return err;
             out.save_dir = argv[++i];
+        } else if (arg == "--config") {
+            if (auto err = need_value("--config")) return err;
+            out.config = argv[++i];
         } else if (arg == "--check-api") {
             out.check_api = true;
         } else if (arg == "--control") {

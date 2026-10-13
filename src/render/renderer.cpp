@@ -390,7 +390,14 @@ void Renderer::emit_glyphs(const Screen& screen, int ox, int oy, bool layer, Gly
     for (int y = 0; y < screen.height(); ++y) {
         for (int x = 0; x < screen.width(); ++x) {
             const Cell& cell = screen.at(x, y);
-            if (cell.cols == 0) continue;   // 续格：宽字形由头格一次画完
+            // 续格自身没有字形（宽字形由头格一次画完），但**这一格上的笔迹要画**——
+            // 否则 blend 到续格的那一笔会凭空消失。它只属于"覆盖率趟"
+            if (cell.cols == 0) {
+                if (pick == GlyphPick::plain) continue;
+                for (const Screen::Ink& ink : screen.inks(x, y))
+                    if (ink.ch != U' ') push_pen(x, y, ink.ch, ink.fg, cell.bg);
+                continue;
+            }
             // 趟的分配看这一格**有没有笔迹**：没有的走不透明趟，有的走覆盖率趟。
             // 逐格分趟而不是整屏分趟 —— 一趟只能有一种写法，整屏分趟会把底也带上
             const bool has_pens = !screen.inks(x, y).empty();

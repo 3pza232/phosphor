@@ -57,21 +57,26 @@ void close_socket(Socket s) {
 /// 单条命令队列的上限：主线程每帧才排空一次，突发命令不能无限堆积
 constexpr size_t kMaxQueuedCommands = 1024;
 
-/// 逐行切分（NDJSON）；返回是否读到完整行
-bool read_line(Socket socket, std::string& buffer, std::string& line) {
+/// 单行上限（含缓冲）：防御畸形/恶意输入把内存吃光
+constexpr size_t kMaxLineBytes = 1u << 20;
+
+/// 逐行切分（NDJSON）的结果
+enum class LineResult { line, eof, too_long };
+
+LineResult read_line(Socket socket, std::string& buffer, std::string& line) {
     while (true) {
         const size_t newline = buffer.find('\n');
         if (newline != std::string::npos) {
             line = buffer.substr(0, newline);
             buffer.erase(0, newline + 1);
             if (!line.empty() && line.back() == '\r') line.pop_back();
-            return true;
+            return LineResult::line;
         }
+        if (buffer.size() > kMaxLineBytes) return LineResult::too_long;
         char chunk[1024];
         const int received = ::recv(socket, chunk, sizeof(chunk), 0);
-        if (received <= 0) return false;
+        if (received <= 0) return LineResult::eof;
         buffer.append(chunk, static_cast<size_t>(received));
-        if (buffer.size() > 1u << 20) return false;  // 单行上限 1MB，防御畸形输入
     }
 }
 
@@ -180,7 +185,22 @@ struct ControlChannel::Impl {
 
             std::string buffer;
             std::string line;
-            while (!stopping.load() && read_line(accepted, buffer, line)) handle_line(line);
+            bool keep = true;
+            while (!stopping.load() && keep) {
+                switch (read_line(accepted, buffer, line)) {
+                    case LineResult::line:
+                        handle_line(line);
+                        break;
+                    case LineResult::too_long:
+                        // 单行超限：回一条错误再断开——静默丢弃会让对端以为命令被吞了
+                        send_line("{\"id\":0,\"ok\":false,\"error\":\"line too long\"}");
+                        keep = false;
+                        break;
+                    case LineResult::eof:
+                        keep = false;
+                        break;
+                }
+            }
 
             connected.store(false);
             // 关闭权归"仍持有该句柄的一方"：stop() 可能已经抢先收走并关掉了它

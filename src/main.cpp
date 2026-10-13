@@ -172,6 +172,7 @@ int main(int argc, char** argv) {
                 "  --name <标题>        --new 的卡带标题（默认与 id 相同）\n"
                 "  --author <作者>      --new 的卡带作者（默认取模板里的值）\n"
                 "  --save-dir <目录>    存档目录（默认 saves）\n"
+                "  --config <文件>      配置路径（默认 config.json；测试据此隔离实测配置）\n"
                 "  --check-api          核对 devkit/phos.lua 与已注册 API 是否一致\n"
                 "  --json               机器可读输出\n"
                 "\n"

@@ -19,7 +19,8 @@
 namespace phos {
 
 int App::run(const CliOptions& opts) {
-    config_ = load_config(kConfigPath);
+    if (opts.config) config_path_ = *opts.config;
+    config_ = load_config(config_path_);
 
     // 内容包（皮肤/色板/开机动画/音效）：扫描用户区+出厂区并按配置定位 —— 交给内容库
     packs_.scan(config_);

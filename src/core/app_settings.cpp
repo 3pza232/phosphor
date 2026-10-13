@@ -13,7 +13,7 @@
 namespace phos {
 
 void App::save_config_now() {
-    save_config(kConfigPath, config_);
+    save_config(config_path_, config_);
 }
 
 
