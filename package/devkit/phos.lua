@@ -702,7 +702,7 @@ phos.debug = {}
 
 ---注册一个可实时调的**数值**参数。
 ---@param name string 面板上显示的名字
----@param get fun():number 读当前值（每帧被调用，保持廉价）
+---@param get fun():number 读当前值（面板打开或 state.query 时被调用——不必每帧执行）
 ---@param set fun(value:number) 写回
 ---@param opts table|nil min / max（滑条范围）、step（拖动步长）
 function phos.debug.number(name, get, set, opts) end

@@ -6,6 +6,7 @@
 #include "render/renderer.hpp"
 #include "render/screen_image.hpp"
 
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <sstream>
@@ -483,17 +484,30 @@ void App::execute_control(const ControlCommand& command) {
             control_.reply_error(command.id, "missing 'name'");
             return;
         }
+        if (!args.has("value")) {
+            control_.reply_error(command.id, "missing 'value'");
+            return;
+        }
         const double value = args.number("value", 0.0);
+        if (!std::isfinite(value)) {
+            control_.reply_error(command.id, "value must be a finite number");
+            return;
+        }
         bool found = false;
+        bool written = false;
         for (size_t i = 0; i < cart_->debug_param_count(); ++i) {
             const Cartridge::DebugParamView view = cart_->debug_param(i);
             if (view.name != param) continue;
-            cart_->debug_param_write(i, static_cast<float>(value));
+            written = cart_->debug_param_write(i, static_cast<float>(value));
             found = true;
             break;
         }
         if (!found) {
             control_.reply_error(command.id, "no such param: " + param);
+            return;
+        }
+        if (!written) {  // 卡带的 set 缺失或出错：如实回报，别假装写成功
+            control_.reply_error(command.id, "cart rejected value for: " + param);
             return;
         }
         control_.reply(command.id,

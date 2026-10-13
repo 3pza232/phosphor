@@ -144,7 +144,7 @@ void App::advance(float dt, Renderer* renderer, Window* window) {
 void App::end_boot() {
     in_boot_ = false;
     boot_script_.reset();
-    host_.cart = nullptr;  // 宿主动画脚本的 DebugConsole 注册随它一起收
+    clear_host_cart();  // 宿主动画脚本的 save / cart_files / cart_info / cart 注册随它一起收
     shell_.set_external_boot(false);
     shell_.to_shelf();
 }
@@ -238,6 +238,7 @@ void App::tick_boot(float dt) {
         log::warn("boot script failed, falling back to built-in self-check: " +
                   boot_script_->error());
         boot_script_.reset();
+        clear_host_cart();
         shell_.set_external_boot(false);
     }
     input_.next_frame();
@@ -288,12 +289,15 @@ void App::start_boot_animation() {
     boot_elapsed_ = 0.0f;
     in_boot_ = true;
     boot_script_.reset();
+    clear_host_cart();  // 上一段动画脚本（若有）的 host 指针收干净
 
     if (!packs_.boots.empty()) {
         boot_script_ = std::make_unique<Cartridge>();
         if (!boot_script_->load_entry(packs_.boots[static_cast<size_t>(packs_.boot_index)].dir,
-                                      "main.lua", host_))
+                                      "main.lua", host_)) {
             boot_script_.reset();  // 加载失败：回退内置自检动画
+            clear_host_cart();
+        }
     }
     shell_.set_external_boot(boot_script_ != nullptr);
     shell_.to_boot();

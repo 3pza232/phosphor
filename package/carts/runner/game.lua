@@ -188,9 +188,11 @@ function Game:update(dt)
   local milestone = math.floor(self.score / 100)
   if milestone > self.milestone then
     self.milestone = milestone
-    self.speed = BASE_SPEED + SPEED_GAIN * milestone
     events.milestone = milestone
   end
+  -- 每帧按**当前** BASE_SPEED 重算：于是 `~` 调试台改"基础速度"能立即生效
+  -- （只在跨里程碑时重算的话，改了要等下次跨百分才动，看不出效果）
+  self.speed = BASE_SPEED + SPEED_GAIN * self.milestone
 
   -- --- 障碍：开局等一等，之后按"上一组走出了多远"放下一个 ---
   local last = self.obstacles[#self.obstacles]

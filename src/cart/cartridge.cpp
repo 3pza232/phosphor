@@ -18,6 +18,7 @@ namespace {
 /// 于是失控走的是既有的"卡带出错 → 安全拔卡 + 错误屏"通道
 constexpr int kWatchdogStep = 20000;   // 每多少条 VM 指令查一次时钟（≈0.1ms，开销可忽略）
 constexpr int kWatchdogLimitMs = 100;  // 单次卡带调用的墙钟上限
+constexpr size_t kMaxDebugParams = 64; // phos.debug.number 的登记上限（每帧要调全部 get）
 
 std::chrono::steady_clock::time_point g_watchdog_deadline;
 bool g_watchdog_armed = false;
@@ -326,6 +327,10 @@ void Cartridge::apply_palette(const Palette& palette) {
 bool Cartridge::debug_register(std::string name, sol::protected_function get,
                                sol::protected_function set, float min, float max, float step) {
     if (name.empty() || !get.valid()) return false;
+    if (debug_regs_.size() >= kMaxDebugParams) return false;  // 上限：每帧要调全部 get，不设限会被拖慢
+    // 同名不重复登记：否则面板出现两条、debug.set 只改到第一条，行为含糊
+    for (const DebugRegistration& reg : debug_regs_)
+        if (reg.name == name) return false;
     DebugRegistration reg;
     reg.name = std::move(name);
     reg.get = std::move(get);

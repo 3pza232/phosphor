@@ -27,7 +27,11 @@ void App::load_cart_path(const std::string& path) {
     if (!cart_->load(path, host_)) {
         last_error_ = cart_->error();
         cart_.reset();
-        // 保留 cart_path_：一次失败的 reload 不该让后续 cart.reload 变成"没有卡带可重载"
+        clear_host_cart();
+        // playing_ 也要落回 false：否则"正在玩时 reload 失败"会让下一帧 tick_playing 去
+        // cart_->update() 一个空指针。加载失败就该回到错误屏、不再推进卡带。
+        // （**不清 cart_path_**：一次失败的 reload 不该让后续 cart.reload 变成"没有卡带可重载"）
+        playing_ = false;
         shell_.show_error(last_error_);
         play_event("error");
         log_cart_error("load failed: " + last_error_);
@@ -65,15 +69,21 @@ void App::eject_cart() {
     playing_ = false;
     capture_escape_ = false;  // Esc 接管随卡带一起收：否则拔卡后系统界面再也收不到 Esc
     host_.panel_w = 0;
-    host_.save = nullptr;
-    host_.cart_files = nullptr;
-    host_.cart_info = nullptr;
-    host_.cart = nullptr;  // 可调参数注册随卡带一起收（phos.debug.number）
+    clear_host_cart();  // save / cart_files / cart_info / cart 全是指向这张卡带的指针，一并清
     host_.layers.reset(host_.content_w, host_.content_h);  // 层随卡带销毁
     timing_.reset();  // 卡带逐帧耗时归零：否则拔卡后 state.query 还报着上一张的耗时
     shell_.set_lamps_solid(false);
     input_.release_all();
     agent_.pending_releases.clear();
+}
+
+void App::clear_host_cart() {
+    // 这四处都指向"当前卡带（或宿主动画脚本）"。销毁点必须调用它，否则留下的是悬垂指针——
+    // phos.save / phos.assets / phos.cart / phos.debug 都靠它们，谁也不该读到已析构的对象
+    host_.save = nullptr;
+    host_.cart_files = nullptr;
+    host_.cart_info = nullptr;
+    host_.cart = nullptr;
 }
 
 

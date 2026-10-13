@@ -19,19 +19,15 @@ bool DebugConsole::init(GLFWwindow* window, const std::vector<std::string>& font
     io.IniFilename = nullptr;
 
     // 面板会显示卡带注册的**中文**参数名，而 ImGui 默认字体没有 CJK 字形（会显示成 ????）。
-    // 用引擎字体链合并出一份面板字体：主字体给 ASCII 观感，回退字体（font-cn）补齐 CJK 码位。
-    // MergeMode 只补缺、不覆盖主字体已有的字形。加载失败就退回默认字体（中文仍会显示成 ?）
+    // 用引擎字体链合并出一份面板字体：主字体给 ASCII 观感、回退字体（font-cn）补 CJK。
+    // ImGui 1.92 的字形是**按需加载**（glyph ranges 已是 legacy，传不传都一样）：合并源里
+    // 谁能画出某码点就用谁，故 ranges 传 nullptr 即可。加载失败退回默认字体（中文会显示成 ?）
     if (!font_files.empty()) {
-        ImFontConfig base_cfg;
-        base_cfg.OversampleH = base_cfg.OversampleV = 1;
-        if (io.Fonts->AddFontFromFileTTF(font_files[0].c_str(), 16.0f, &base_cfg,
-                                         io.Fonts->GetGlyphRangesDefault())) {
+        if (io.Fonts->AddFontFromFileTTF(font_files[0].c_str(), 16.0f, nullptr, nullptr)) {
             for (size_t i = 1; i < font_files.size(); ++i) {
                 ImFontConfig merge_cfg;
                 merge_cfg.MergeMode = true;
-                merge_cfg.OversampleH = merge_cfg.OversampleV = 1;
-                io.Fonts->AddFontFromFileTTF(font_files[i].c_str(), 16.0f, &merge_cfg,
-                                             io.Fonts->GetGlyphRangesChineseSimplifiedCommon());
+                io.Fonts->AddFontFromFileTTF(font_files[i].c_str(), 16.0f, &merge_cfg, nullptr);
             }
         }
     }

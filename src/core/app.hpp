@@ -55,6 +55,9 @@ private:
     void load_cart(int index);
     void load_cart_path(const std::string& path);
     void eject_cart();
+    /// 卡带 / 宿主动画脚本被销毁后，清空 HostContext 里指向它的那几个指针
+    /// （save / cart_files / cart_info / cart）——否则它们成了悬垂指针。销毁点统一调它
+    void clear_host_cart();
     /// 重扫卡带目录并按"最近打开"重排架子（启动时与拔卡回架子后各调用一次）
     void refresh_shelf_order();
 

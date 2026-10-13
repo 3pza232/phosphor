@@ -23,6 +23,7 @@ phos.lang     -- 卡带文案取当前语言那一列（dict / pick）
 phos.audio    -- 合成音/音符/打击乐/音序器音乐/采样
 phos.save     -- 存档（需 manifest 声明 save = true）
 phos.assets   -- 包内资源读取（文本 / 按行 / 存在性 / 大小 / 列表）
+phos.debug    -- 可调参数篮子：注册数值，用 `~` 调试台实时微调（见下节）
 phos.sys      -- 系统信息与工具
 phos.cart     -- 当前卡带的身份（id / 标题 / 版本 / 作者 / 简介）
 phos.net      -- 局域网联机：开房 / 加入 / 收发消息 / 发现（见下节）
@@ -680,12 +681,17 @@ phos.debug.number("武器1 半径", function() return WEAPONS[1].radius end,
 ```
 
 - `get` / `set` 是**卡带自己的函数**，后端存储随意（局部变量、表字段、对象成员都行）——
-  这正是它比"声明一个值交给主机保管"更实用的地方。
-- `opts`：`min` / `max`（滑条范围）、`step`（拖动步长）。
+  这正是它比"声明一个值交给主机保管"更实用的地方。`get` 只在**面板打开**或 `state.query`
+  时被调用，不必每帧执行。
+- `opts`：`min` / `max`（滑条范围，缺省 0 / 1）、`step`（拖动步长，缺省 0.01）。
+  退化范围有兜底（`max <= min` 记作 `min + 1`，`step <= 0` 记作 0.01）；**空名 / 重名 /
+  超过上限（64）**的注册会被忽略。
 - **注册随卡带生命周期**：拔卡即清；未插卡（主机脚本）时调用安全无效。
 - 面板里的改动**下一帧**才写回（不在渲染中途改卡带状态）。
-- 同一批参数也经控制通道的 `state.query.debug_params` 暴露——agent 能读能配合
-  （见 `agent-interface.md`）。
+- 同一批参数也经控制通道暴露：`state.query.debug_params`（读）+ `debug.set`（写）——
+  agent 也能实时调参（见 `agent-interface.md`）。注意 `debug.set` **不做 min/max 钳制**
+  （那是滑条的活），值原样交给卡带的 `set`。
+- 调试台用**反引号键**（`` ` ``，就是键盘左上角那个 `~` 键）呼出。
 
 ## phos.sys
 

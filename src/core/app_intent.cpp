@@ -17,6 +17,7 @@ void App::handle_escape() {
     if (in_boot_) {
         in_boot_ = false;
         boot_script_.reset();
+        clear_host_cart();
         shell_.set_external_boot(false);
         shell_.to_shelf();
         return;
