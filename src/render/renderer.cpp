@@ -386,7 +386,11 @@ void Renderer::emit_glyphs(const Screen& screen, int ox, int oy, bool layer, Gly
 }
 
 void Renderer::submit(float win_w, float win_h, bool layer, bool clear_first) {
-    glViewport(0, 0, static_cast<int>(win_w), static_cast<int>(win_h));
+    // 视口用**帧缓冲**尺寸（高 DPI 下大于逻辑尺寸）：NDC 仍按逻辑尺寸算（u_resolution），
+    // 于是逻辑画面被拉伸铺满整个 framebuffer，而不是只占左下角一块
+    const int vw = fb_w_ > 0 ? fb_w_ : static_cast<int>(win_w);
+    const int vh = fb_h_ > 0 ? fb_h_ : static_cast<int>(win_h);
+    glViewport(0, 0, vw, vh);
     // 清屏**整帧只能有一次**（画底那一趟）。逐层叠画时每层也要铺底，但那是画在
     // 已经画好的画面上：谁再清一次，底就被抹掉，画面只剩各层的字形
     if (clear_first) {
@@ -488,8 +492,9 @@ void Renderer::draw_layers(const LayeredScreen& layers, int origin_x, int origin
 }
 
 bool Renderer::read_frame(std::vector<unsigned char>& rgba, int& width, int& height) {
-    const int w = static_cast<int>(win_w_px_);
-    const int h = static_cast<int>(win_h_px_);
+    // 读回尺寸与视口一致：有帧缓冲尺寸就用它（高 DPI 下读的是整帧，而非左下角一块）
+    const int w = fb_w_ > 0 ? fb_w_ : static_cast<int>(win_w_px_);
+    const int h = fb_h_ > 0 ? fb_h_ : static_cast<int>(win_h_px_);
     if (w <= 0 || h <= 0) return false;  // 还没画过任何一帧
 
     rgba.assign(static_cast<size_t>(w) * static_cast<size_t>(h) * 4, 0);

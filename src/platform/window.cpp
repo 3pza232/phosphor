@@ -188,6 +188,18 @@ void Window::resize(int width, int height) const {
     glfwSetWindowSize(window_, width, height);
 }
 
+int Window::framebuffer_width() const {
+    int w = 0, h = 0;
+    if (window_) glfwGetFramebufferSize(window_, &w, &h);
+    return w;
+}
+
+int Window::framebuffer_height() const {
+    int w = 0, h = 0;
+    if (window_) glfwGetFramebufferSize(window_, &w, &h);
+    return h;
+}
+
 void Window::set_title(const std::string& title) const {
     if (window_) glfwSetWindowTitle(window_, title.c_str());
 }

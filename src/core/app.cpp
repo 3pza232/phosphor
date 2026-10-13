@@ -111,6 +111,11 @@ void App::advance(float dt, Renderer* renderer, Window* window) {
     log::set_frame(frame_count_);  // 日志挂到帧时间线上
     host_.frame = frame_count_;    // 卡带侧 phos.sys.frame() 的取值来源
 
+    // 帧缓冲尺寸（物理像素）每帧交给渲染器：高 DPI 下它不等于逻辑网格尺寸，
+    // 视口/读回要用它，画面才铺满窗口（见 Renderer::set_framebuffer_size）
+    if (renderer && window && window->valid())
+        renderer->set_framebuffer_size(window->framebuffer_width(), window->framebuffer_height());
+
     // 拔卡收缩动画期间独占画面（机器"断电"的一瞬）
     if (eject_collapse_ > 0.0f) {
         eject_collapse_ -= dt;

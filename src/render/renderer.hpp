@@ -48,6 +48,13 @@ public:
     /// 与 draw_layers 同一套像素级合成（透明处透出下层），只是不参与卡带的图层栈
     void draw_overlay(const Screen& overlay, int origin_x, int origin_y);
 
+    /// 目标帧缓冲尺寸（**物理像素**）：App 每帧从窗口查得后写入。高 DPI / 分数缩放下它
+    /// 大于逻辑网格尺寸——视口与读回用它，逻辑画面才会铺满整个 framebuffer（否则只占左下角）
+    void set_framebuffer_size(int w, int h) {
+        fb_w_ = w;
+        fb_h_ = h;
+    }
+
     /// 一个字形在格内的墨迹框（像素，相对格左缘）。按需装入字形，与绘制同一份度量；
     /// 字体链里没有该字形时退回整格宽并置 approx
     GlyphBox ink_box(char32_t cp);
@@ -123,6 +130,8 @@ private:
     std::vector<float> vertices_;  // 每帧重建的顶点数据
     // 窗口像素尺寸：draw() 时记下，逐层叠画要拿它做 NDC 换算（层缓冲比窗口小）
     float win_w_px_ = 0.0f, win_h_px_ = 0.0f;
+    // 帧缓冲尺寸（物理像素）：非零就用它做 glViewport / glReadPixels，否则回退到逻辑尺寸
+    int fb_w_ = 0, fb_h_ = 0;
 };
 
 } // namespace phos

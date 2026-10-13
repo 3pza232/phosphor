@@ -34,6 +34,10 @@ public:
     bool should_close() const;
     /// 调整窗口尺寸（切换游戏机主题时几何变化）
     void resize(int width, int height) const;
+    /// 帧缓冲尺寸（**物理像素**）。高 DPI / 分数缩放下会大于窗口的逻辑尺寸——
+    /// 渲染与读回必须用它，否则画面只填到左下角一块（见 Renderer::set_framebuffer_size）
+    int framebuffer_width() const;
+    int framebuffer_height() const;
     /// 改写标题栏文字（agent 接管时用于提示"谁在操作"）
     void set_title(const std::string& title) const;
     void poll_events() const;

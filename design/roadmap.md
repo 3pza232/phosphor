@@ -240,15 +240,17 @@ CPU 截图路径每次现读字体链（无需处理）；测试环境固定为 
 
 ### [~] 19. 音频 / GL 资源审计的一批修复与遗留
 
-- **已修**：采样声部走错音量（`is_music` 未清）、解码 PCM 无上限、音效包采样绕过素材闸、
-  音量 NaN 污染混音、`glGen*` 结果未查、`build_font_atlas` 失败回滚不完整、顶点 reserve 低估
-- **已知未做（留作记录）**：
-  * 音频：实时回调里仍有堆分配/释放（`tune_` 赋值、`sample_table_` 增长等）——有爆音风险，
-    要改成预分配/无锁池才稳妥；`dropped` 未计"声部池用尽"；`order_names_` 在队列满 / stop 后
-    可能与实际不符；`ma_context` 在 init 失败路径未 `uninit`
-  * GL：视口与 `glReadPixels` 用**逻辑**网格尺寸、不查 `glfwGetFramebufferSize`——在
-    高 DPI / 分数缩放的 framebuffer 上会错位（Windows 默认无缩放，故当前无影响）；
-    `glReadPixels` 失败未检测；续格上的笔迹被跳过
+- **已修**：
+  * 音频——采样声部走错音量（`is_music` 未清）、解码 PCM 无上限（加 32 MiB + 拒空 PCM）、
+    音效包采样绕过素材闸、音量 NaN 污染混音、init 失败路径未 `uninit` 后端上下文、
+    声部池用尽未计入 `dropped`、`order_names_` 在队列满/stop 后陈旧、`sample_table_` 未预留
+  * GL——`glGen*` 结果未查、`build_font_atlas` 失败回滚不完整、顶点 reserve 低估、
+    **视口/`glReadPixels` 改用帧缓冲尺寸**（高 DPI 不再错位，Windows 上仍是 no-op）
+- **已知未做（留作记录，皆低危）**：
+  * 音频：实时回调在**罕见事件**（换曲子 / 登记采样）时仍会分配/释放——但稳态（每音符、
+    每采样触发）已无分配（音符名走 SSO），故只在换曲/加载那一刻有理论爆音面。要做成
+    严格的 RT-safe 需给"旧曲子"加一个主线程回收槽 + 音频门禁，收益低、风险高，暂不做
+  * GL：`glReadPixels` 失败未检测；续格上的笔迹被跳过（宽头字形本就盖住那片）
 
 ---
 

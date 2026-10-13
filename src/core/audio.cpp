@@ -14,6 +14,9 @@ namespace phos {
 namespace {
 
 constexpr int kMaxVoices = 48;
+/// 可登记的采样上限：音频线程侧的 sample_table_ 按它预留，登记时不再重分配
+/// （回调正拿着表里的裸指针，重分配会把它失效）；超限在 load_sample 处就拒
+constexpr size_t kMaxSamples = 128;
 constexpr float kTwoPi = 6.2831853f;
 constexpr float kMusicNoteVolume = 0.22f;  // 音序器单音音量（多轨叠加后的基准）
 constexpr int kSemitoneA4 = 69;
@@ -171,6 +174,8 @@ bool Audio::init(std::string& err) {
 
     voices_.reserve(kMaxVoices);
     for (int i = 0; i < kMaxVoices; ++i) voices_.push_back(std::make_unique<Voice>());
+    // 采样表按上限预留（此刻设备还没启动，音频线程未起）：登记时就地放入，不重分配
+    sample_table_.reserve(kMaxSamples);
 
     if (ma_device_start(device_.get()) != MA_SUCCESS) {
         ma_device_uninit(device_.get());
@@ -408,6 +413,9 @@ int Audio::load_sample(const std::string& name, const std::string& bytes) {
 
     for (size_t i = 0; i < sample_names_.size(); ++i)
         if (sample_names_[i] == name) return static_cast<int>(i) + 1;
+    // 上限在**主线程**侧就拦住：音频线程的 sample_table_ 只按 kMaxSamples 预留，
+    // 两个表必须一一对应（句柄 = 登记序号），不能让音频线程单方面丢登记
+    if (sample_names_.size() >= kMaxSamples) return 0;
 
     ma_decoder_config config =
         ma_decoder_config_init(ma_format_f32, 2, static_cast<ma_uint32>(sample_rate_));
