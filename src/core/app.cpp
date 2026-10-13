@@ -1,6 +1,7 @@
 #include "core/app.hpp"
 
 #include "cart/cart_scanner.hpp"
+#include "cart/cart_info.hpp"
 #include "render/font.hpp"
 #include "core/effects.hpp"
 #include "core/log.hpp"
@@ -17,22 +18,6 @@
 #include <thread>
 
 namespace phos {
-
-namespace {
-
-/// 按"最近打开"重排卡带：最近的在最前，其余保持扫描顺序（stable）。
-/// 用 id 匹配而不是路径——同一张卡带换个目录也认得出来；
-/// 不在记录里的（新卡带）排在后面，位置由扫描顺序决定
-void sort_by_recent(std::vector<CartInfo>& carts, const std::vector<std::string>& recent) {
-    const auto rank = [&recent](const CartInfo& cart) {
-        const auto it = std::find(recent.begin(), recent.end(), cart.id);
-        return it == recent.end() ? recent.size() : static_cast<size_t>(it - recent.begin());
-    };
-    std::stable_sort(carts.begin(), carts.end(),
-                     [&rank](const CartInfo& a, const CartInfo& b) { return rank(a) < rank(b); });
-}
-
-} // namespace
 
 int App::run(const CliOptions& opts) {
     config_ = load_config(kConfigPath);
@@ -271,7 +256,7 @@ bool App::boot_should_end() const {
 /// 按卡带架上的下标插卡（路径来自卡带列表，见 Shell::cart_path_at）
 void App::refresh_shelf_order() {
     std::vector<CartInfo> carts = scan_carts(kCartDir);
-    sort_by_recent(carts, load_recent(kRecentPath));
+    order_by_recent(carts, load_recent(kRecentPath));
     shell_.set_carts(std::move(carts));
 }
 

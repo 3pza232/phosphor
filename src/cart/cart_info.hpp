@@ -2,6 +2,7 @@
 
 #include "core/color.hpp"
 
+#include <algorithm>
 #include <map>
 #include <string>
 #include <vector>
@@ -37,5 +38,17 @@ struct CartInfo {
     std::vector<std::string> icon_rows;
     std::map<char, Color> icon_colors;
 };
+
+/// 按"最近打开"重排卡带：最近的在最前，其余保持原顺序（stable）。
+/// 用 id 匹配而不是路径——同一张卡带换个目录也认得出来；不在记录里的（新卡带）排在后面，
+/// 位置由原顺序决定。纯函数（只读 CartInfo 与 recent 列表），单测直接覆盖
+inline void order_by_recent(std::vector<CartInfo>& carts, const std::vector<std::string>& recent) {
+    const auto rank = [&recent](const CartInfo& cart) {
+        const auto it = std::find(recent.begin(), recent.end(), cart.id);
+        return it == recent.end() ? recent.size() : static_cast<size_t>(it - recent.begin());
+    };
+    std::stable_sort(carts.begin(), carts.end(),
+                     [&rank](const CartInfo& a, const CartInfo& b) { return rank(a) < rank(b); });
+}
 
 } // namespace phos

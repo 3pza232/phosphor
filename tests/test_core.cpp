@@ -15,6 +15,7 @@
 #include "core/text.hpp"
 #include "core/text_input.hpp"
 #include "core/ui.hpp"
+#include "cart/cart_info.hpp"
 #include "cart/save_store.hpp"
 #include "pack/builtin.hpp"
 #include "pack/content_library.hpp"
@@ -614,6 +615,24 @@ TEST(content_library_resolve_palette) {
     lib.skins[0] = skin;
     lib.resolve_palette();
     CHECK_EQ(lib.palette_index, 0);  // 找不到 -> 回落 [0]（兜底）
+}
+
+TEST(order_by_recent_puts_recent_first) {
+    std::vector<CartInfo> carts(3);
+    carts[0].id = "snake";
+    carts[1].id = "worms";
+    carts[2].id = "tetris";
+
+    order_by_recent(carts, {"tetris", "snake"});  // 最近打开：tetris 最前
+    CHECK_EQ(carts[0].id, std::string("tetris"));
+    CHECK_EQ(carts[1].id, std::string("snake"));
+    CHECK_EQ(carts[2].id, std::string("worms"));  // 不在记录里：排后面，保持原相对顺序
+
+    std::vector<CartInfo> plain(2);
+    plain[0].id = "a";
+    plain[1].id = "b";
+    order_by_recent(plain, {});  // 空记录：原样
+    CHECK_EQ(plain[0].id, std::string("a"));
 }
 
 } // namespace
