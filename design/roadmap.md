@@ -202,6 +202,8 @@ CPU 截图路径每次现读字体链（无需处理）；测试环境固定为 
   带 `reset()`——换卡 / 拔卡一次归零（散落时正是漏了 `merge_ms` 出过"拔卡后仍报旧值"的 bug）
 - **第三步（已落地）**：三块显示面（`screen` / `base` / `chrome`）与合成顺序抽成 `core/Display`；
   它只吃 `Renderer`（向下依赖）与整数原点、**不吃 `HostContext`**，因此是干净的分层单元
+- **第四步（已落地）**：控制通道的**会话语义**（单步推进 / 待回包请求 / 注入按键定时释放）
+  收成 `App::AgentSession`，与通道 I/O（`ControlChannel`）分开
 - 详见 `architecture.md` 的"App 的分解（进行中）"
 - `HostContext` 按设计就是 API 层与 App 的共享上下文（指针 + 少量 POD）；收窄成访问器只增
   一层间接、不减少真实耦合，且要改动全部 API 绑定，暂不动

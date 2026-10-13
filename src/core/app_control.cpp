@@ -14,7 +14,7 @@ namespace phos {
 
 namespace {
 
-/// 一次 time.step 最多推进多少逻辑帧：防止一个超大帧数把主机卡住，或 pending_steps_ 累加溢出
+/// 一次 time.step 最多推进多少逻辑帧：防止一个超大帧数把主机卡住，或 agent_.pending_steps 累加溢出
 constexpr int kMaxStepFrames = 100000;
 
 /// 图层清单 → JSON 数组（空数组 = 该卡带没建层）。
@@ -62,8 +62,8 @@ std::string App::control_state_json() const {
     std::ostringstream out;
     out << "\"frame\":" << frame_count_ << ",\"mode\":" << json::quote(mode_name())
         << ",\"playing\":" << (playing_ ? "true" : "false")
-        << ",\"stepping\":" << (control_stepping_ ? "true" : "false")
-        << ",\"pending_steps\":" << pending_steps_
+        << ",\"stepping\":" << (agent_.stepping ? "true" : "false")
+        << ",\"pending_steps\":" << agent_.pending_steps
         << ",\"grid_w\":" << display_.screen.width()
         << ",\"grid_h\":" << display_.screen.height()
         << ",\"content_w\":" << kContentW << ",\"content_h\":" << kContentH
@@ -176,17 +176,17 @@ std::string App::shelf_json() const {
 }
 
 void App::complete_step_request() {
-    if (step_request_id_ < 0) return;
-    control_.reply(step_request_id_, control_state_json());
-    step_request_id_ = -1;
+    if (agent_.step_request_id < 0) return;
+    control_.reply(agent_.step_request_id, control_state_json());
+    agent_.step_request_id = -1;
 }
 
 void App::complete_frame_read(Renderer* renderer) {
-    if (frame_read_id_ < 0) return;
-    const int id = frame_read_id_;
-    const std::string path = frame_read_path_;
-    frame_read_id_ = -1;
-    frame_read_path_.clear();
+    if (agent_.frame_read_id < 0) return;
+    const int id = agent_.frame_read_id;
+    const std::string path = agent_.frame_read_path;
+    agent_.frame_read_id = -1;
+    agent_.frame_read_path.clear();
 
     // 无窗口（或渲染器尚未画过帧）时没有帧缓冲可读：如实报错，不静默返回空画面
     int width = 0, height = 0;
@@ -236,10 +236,10 @@ void App::complete_frame_read(Renderer* renderer) {
 }
 
 void App::release_expired_inputs() {
-    for (auto it = pending_releases_.begin(); it != pending_releases_.end();) {
+    for (auto it = agent_.pending_releases.begin(); it != agent_.pending_releases.end();) {
         if (--it->second <= 0) {
             input_.set_key(it->first, false);
-            it = pending_releases_.erase(it);
+            it = agent_.pending_releases.erase(it);
         } else {
             ++it;
         }
@@ -308,8 +308,8 @@ void App::execute_control(const ControlCommand& command) {
             control_.reply_error(command.id, "no framebuffer in headless mode (use screenshot)");
             return;
         }
-        frame_read_path_ = args.str("path");
-        frame_read_id_ = command.id;
+        agent_.frame_read_path = args.str("path");
+        agent_.frame_read_id = command.id;
         return;
     }
 
@@ -395,7 +395,7 @@ void App::execute_control(const ControlCommand& command) {
 
     if (name == "input.clear") {
         input_.release_all();
-        pending_releases_.clear();
+        agent_.pending_releases.clear();
         control_.reply(command.id, "");
         return;
     }
@@ -403,23 +403,23 @@ void App::execute_control(const ControlCommand& command) {
     if (name == "time.step") {
         // 同一时刻只允许一条 time.step 在途：回包是"推进完毕"的同步点，两个请求共用
         // 一个回包 id 会让先到的那个永远等不到回包
-        if (step_request_id_ >= 0) {
+        if (agent_.step_request_id >= 0) {
             control_.reply_error(command.id, "a time.step is already pending");
             return;
         }
         int frames = args.integer("frames", 1);
         if (frames < 1) frames = 1;
         if (frames > kMaxStepFrames) frames = kMaxStepFrames;
-        control_stepping_ = true;
-        pending_steps_ += frames;
-        step_request_id_ = command.id;  // 全部推进完毕后再回包（确定性同步点）
+        agent_.stepping = true;
+        agent_.pending_steps += frames;
+        agent_.step_request_id = command.id;  // 全部推进完毕后再回包（确定性同步点）
         return;
     }
 
     if (name == "time.resume") {
-        control_stepping_ = false;
-        pending_steps_ = 0;
-        step_request_id_ = -1;
+        agent_.stepping = false;
+        agent_.pending_steps = 0;
+        agent_.step_request_id = -1;
         control_.reply(command.id, control_state_json());
         return;
     }

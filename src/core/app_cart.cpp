@@ -20,7 +20,7 @@ void App::load_cart_path(const std::string& path) {
     display_.chrome.resize(host_.content_w, host_.content_h);  // 主机 chrome 铺满内容区（每帧重画）
     display_.chrome.clear_transparent();
     input_.release_all();
-    pending_releases_.clear();
+    agent_.pending_releases.clear();
     capture_escape_ = false;    // Esc 接管随上一张卡带一起收（phos.sys.capture_escape）
     host_.rng.seed(rng_seed_);  // RNG 每张卡带从同一起始态开始：卡带间不串随机序列
 
@@ -72,7 +72,7 @@ void App::eject_cart() {
     timing_.reset();  // 卡带逐帧耗时归零：否则拔卡后 state.query 还报着上一张的耗时
     shell_.set_lamps_solid(false);
     input_.release_all();
-    pending_releases_.clear();
+    agent_.pending_releases.clear();
 }
 
 

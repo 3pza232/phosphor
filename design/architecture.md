@@ -87,6 +87,7 @@
 | `pack/ContentLibrary` | 内容包"有什么、选中哪个"（皮肤/色板/开机动画/音效），含扫描、按 id 定位、由主题解析色板 | 纯数据 + 扫描；App 只负责把选中项**应用**出去（要动渲染/音频） |
 | `App::CartTiming` | 卡带逐帧耗时（update / draw / 峰值 / 图层合成） | 纯数据；换卡 / 拔卡一次 `reset()` |
 | `Display` | 三块显示面（`screen` / `base` / `chrome`）与合成顺序（`present`） | 只依赖 core 与 `Renderer`（向下），**不吃 `HostContext`**，故是纯展示单元 |
+| `App::AgentSession` | agent 控制通道的**会话语义**（单步推进 / 待回包的请求 / 注入按键的定时释放） | 纯数据；与通道的 I/O（`ControlChannel`）分开 |
 
 **判据**：一个关切若"只依赖 core/ 或同层、且不含设备副作用"，就抽成独立单元；若它需要反过来
 调用 App 的大量行为（卡带生命周期、控制通道命令分发），则先给它一个**注入式窄接口**

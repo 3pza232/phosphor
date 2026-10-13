@@ -100,7 +100,7 @@ private:
     std::string carts_json() const;
     std::string shelf_json() const;
     /// 时间是否由控制通道驱动（此时主循环只在 time.step 时推进逻辑帧）
-    bool control_time_driven() const { return control_.running() && control_stepping_; }
+    bool control_time_driven() const { return control_.running() && agent_.stepping; }
     /// 注入按键的定时释放
     void release_expired_inputs();
     /// 组装窗口标题：agent 接管时明确写出"谁在操作、实时还是单步"
@@ -196,15 +196,20 @@ private:
     int control_port_ = 0;           // 0 = 未开控制通道
     std::string window_title_;       // 当前标题（避免每帧重复设置）
 
-    // 控制通道状态
+    // 控制通道 + agent 会话状态
     ControlChannel control_;
-    bool control_stepping_ = false;      // 时间由 agent 驱动的"单步模式"
-    int pending_steps_ = 0;              // 待推进的逻辑帧数
-    int step_request_id_ = -1;           // 待回包的 time.step 请求 id
-    int frame_read_id_ = -1;             // 待回包的 frame.read 请求 id（<0 = 无）
-    std::string frame_read_path_;        // frame.read 的落盘路径（空 = 只回统计）
-    std::string cart_path_;              // 当前卡带路径（供 cart.reload）
-    std::vector<std::pair<std::string, int>> pending_releases_;  // 注入按键的定时释放（按名字记）
+    /// agent 控制通道的**会话状态**（与通道的 I/O 分开：通道只管收发，这里管"会话语义"：
+    /// 单步推进、待回包的请求、注入按键的定时释放）。集中一处，见 app_control.cpp
+    struct AgentSession {
+        bool stepping = false;        // 时间由 agent 驱动：只在 time.step 时推进逻辑帧
+        int pending_steps = 0;        // 待推进的逻辑帧数
+        int step_request_id = -1;     // 待回包的 time.step 请求 id
+        int frame_read_id = -1;       // 待回包的 frame.read 请求 id（<0 = 无）
+        std::string frame_read_path;  // frame.read 的落盘路径（空 = 只回统计）
+        std::vector<std::pair<std::string, int>> pending_releases;  // 注入按键的定时释放（按名字记）
+    };
+    AgentSession agent_;
+    std::string cart_path_;  // 当前卡带路径（供 cart.reload）
 };
 
 } // namespace phos

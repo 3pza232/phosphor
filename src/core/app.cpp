@@ -330,7 +330,7 @@ void App::apply_input_action(const InputAction& action, int hold_frames) {
         // 并按普通键处理按帧自动释放（frames）
         if (action.host_key == kHostKeyEscape && capture_escape_) {
             input_.set_key("escape", action.down);
-            if (action.down && hold_frames > 0) pending_releases_.emplace_back("escape", hold_frames);
+            if (action.down && hold_frames > 0) agent_.pending_releases.emplace_back("escape", hold_frames);
             return;
         }
         if (!action.down) return;  // 其余主机键只在按下沿生效
@@ -346,13 +346,13 @@ void App::apply_input_action(const InputAction& action, int hold_frames) {
         // 同一个键的定时释放**以最后一次注入为准**（替换而非追加）：追加会让先前那条
         // 计数先把键放开，实际按住时长就不是调用方要的
         bool replaced = false;
-        for (auto& entry : pending_releases_) {
+        for (auto& entry : agent_.pending_releases) {
             if (entry.first != action.key) continue;
             entry.second = hold_frames;
             replaced = true;
             break;
         }
-        if (!replaced) pending_releases_.emplace_back(action.key, hold_frames);
+        if (!replaced) agent_.pending_releases.emplace_back(action.key, hold_frames);
     }
 }
 
@@ -380,7 +380,7 @@ int App::run_headless(const CliOptions& opts) {
         poll_control();
 
         // 单步模式：时间由 agent 的 time.step 驱动，空闲时不做任何推进
-        if (control_time_driven() && pending_steps_ <= 0) {
+        if (control_time_driven() && agent_.pending_steps <= 0) {
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
             continue;
         }
@@ -390,7 +390,7 @@ int App::run_headless(const CliOptions& opts) {
         ++frame;
         ++frame_count_;
         release_expired_inputs();
-        if (control_stepping_ && pending_steps_ > 0 && --pending_steps_ == 0)
+        if (agent_.stepping && agent_.pending_steps > 0 && --agent_.pending_steps == 0)
             complete_step_request();
         maybe_dump(opts, frame);
 
@@ -480,20 +480,20 @@ int App::run_windowed(const CliOptions& opts) {
         // 机器上（关垂直同步、高刷屏、窗口被遮挡）永远攒不够，time.step 永不回包
         if (control_time_driven()) {
             accumulator = 0.0f;
-            while (pending_steps_ > 0) {
+            while (agent_.pending_steps > 0) {
                 // 一批里也要能被"关窗 / 退出 / 帧预算"打断：一次 time.step 要几百帧时，
                 // 把这些检查推到批末就等于期间点关闭没有反应。停下前先回包，
                 // 否则 agent 会等一个永远不会来的响应
                 if (quit_ || window.should_close() ||
                     (opts.frames > 0 && frame_count_ >= opts.frames)) {
-                    pending_steps_ = 0;
+                    agent_.pending_steps = 0;
                     complete_step_request();
                     break;
                 }
                 advance(kLogicStep, &renderer, &window);
                 ++frame_count_;
                 release_expired_inputs();
-                if (--pending_steps_ <= 0) complete_step_request();
+                if (--agent_.pending_steps <= 0) complete_step_request();
                 maybe_dump(opts, frame_count_);
             }
         } else {
