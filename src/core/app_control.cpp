@@ -85,7 +85,7 @@ std::string App::control_state_json() const {
         << ",\"crt_level\":" << config_.crt_level
         << ",\"fps\":" << config_.fps
         << ",\"render_fps\":" << host_.fps
-        << ",\"merge_ms\":" << cart_merge_ms_
+        << ",\"merge_ms\":" << timing_.merge_ms
         << ",\"layers\":" << layers_json(host_.layers)
         << ",\"video\":" << json::quote(headless_ ? "headless" : "window")
         << ",\"control_port\":" << control_port_
@@ -107,9 +107,9 @@ std::string App::control_state_json() const {
             << ",\"path\":" << json::quote(cart_path_)
             << ",\"sidebar_w\":" << info.sidebar_w
             << ",\"lua_mem_kb\":" << cart_->lua_memory_kb()
-            << ",\"update_ms\":" << cart_update_ms_ << ",\"draw_ms\":" << cart_draw_ms_
-            << ",\"update_peak_ms\":" << cart_update_peak_ms_
-            << ",\"draw_peak_ms\":" << cart_draw_peak_ms_ << "}";
+            << ",\"update_ms\":" << timing_.update_ms << ",\"draw_ms\":" << timing_.draw_ms
+            << ",\"update_peak_ms\":" << timing_.update_peak_ms
+            << ",\"draw_peak_ms\":" << timing_.draw_peak_ms << "}";
     } else {
         out << ",\"cart\":null";
     }

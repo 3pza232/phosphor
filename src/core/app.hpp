@@ -164,14 +164,22 @@ private:
     float insert_flash_ = 0.0f;    // 插卡瞬间的电压闪烁
     float eject_collapse_ = 0.0f;  // 拔卡时的画面收缩
 
-    // 运行指标（供仪表盘）
+    // 循环指标（帧号与帧率，整个会话共享）
     float fps_ = 0.0f;
     long frame_count_ = 0;
-    float cart_update_ms_ = 0.0f;
-    float cart_draw_ms_ = 0.0f;
-    float cart_update_peak_ms_ = 0.0f;  // 约 1 秒窗口内的峰值（瞬时值抓不到偶发卡顿）
-    float cart_draw_peak_ms_ = 0.0f;
-    float cart_merge_ms_ = 0.0f;        // 图层合成耗时（没建层的卡带恒为 0）
+
+    /// 卡带逐帧耗时（毫秒）：update / draw / 图层合成，以及约 1 秒窗口内的峰值
+    /// （瞬时值抓不到偶发卡顿，而卡顿恰恰是要查的）。集中一处：换卡 / 拔卡时一次
+    /// `reset()`——散落时正是漏了 `merge_ms`，拔卡后 `state.query` 还报着上一张的耗时
+    struct CartTiming {
+        float update_ms = 0.0f;
+        float draw_ms = 0.0f;
+        float update_peak_ms = 0.0f;
+        float draw_peak_ms = 0.0f;
+        float merge_ms = 0.0f;  // 图层合成耗时（没建层的卡带恒为 0）
+        void reset() { *this = CartTiming{}; }
+    };
+    CartTiming timing_;
     unsigned rng_seed_ = 0;
 
     DebugConsole console_;

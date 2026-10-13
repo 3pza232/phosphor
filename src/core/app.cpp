@@ -195,22 +195,22 @@ void App::tick_playing(float dt) {
     //
     // 这里做的是**文本视图**的合成（一格一个字形，取最上面那层）。**渲染不读它**：
     // 渲染用 base_screen_ + 各图层逐层叠画，那是像素级叠加，一格能同时看见两层的笔画
-    cart_merge_ms_ = 0.0f;
+    timing_.merge_ms = 0.0f;
     if (drawn && ok && host_.layers.active()) {
         base_screen_ = screen_;
         const auto m0 = clock::now();
         host_.layers.merge_over(screen_, host_.content_x, host_.content_y);
-        cart_merge_ms_ = std::chrono::duration<float, std::milli>(clock::now() - m0).count();
+        timing_.merge_ms = std::chrono::duration<float, std::milli>(clock::now() - m0).count();
     }
 
-    cart_update_ms_ = std::chrono::duration<float, std::milli>(t1 - t0).count();
-    cart_draw_ms_ = std::chrono::duration<float, std::milli>(t2 - t1).count();
+    timing_.update_ms = std::chrono::duration<float, std::milli>(t1 - t0).count();
+    timing_.draw_ms = std::chrono::duration<float, std::milli>(t2 - t1).count();
     // 峰值按约 1 秒窗口滚动：瞬时值抓不到偶发卡顿，而卡顿恰恰是要查的东西
-    cart_update_peak_ms_ = std::max(cart_update_peak_ms_, cart_update_ms_);
-    cart_draw_peak_ms_ = std::max(cart_draw_peak_ms_, cart_draw_ms_);
+    timing_.update_peak_ms = std::max(timing_.update_peak_ms, timing_.update_ms);
+    timing_.draw_peak_ms = std::max(timing_.draw_peak_ms, timing_.draw_ms);
     if (frame_count_ % kLogicFps == 0) {
-        cart_update_peak_ms_ = 0.0f;
-        cart_draw_peak_ms_ = 0.0f;
+        timing_.update_peak_ms = 0.0f;
+        timing_.draw_peak_ms = 0.0f;
     }
 
     if (!ok) {

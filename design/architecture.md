@@ -98,6 +98,12 @@
 "manifest 校验 → 资源装载 → 回退默认"机制。卡带加载器也是它的近亲，
 但卡带因生命周期复杂而独立成 `cart/`。
 
+`ContentLibrary`（`pack/content_library.hpp`）持有"本机有哪些内容包、各自选中哪一个"，
+连同扫描规则与两个兜底不变量（`palettes[0]` = raw、`sounds[0]` = silent）。App 只负责把
+选中项**应用出去**（要动渲染 / 音频设备，是主机行为）——于是"列清单 / 按 id 定位 /
+由主题解析色板"不再散落在 App 的各成员里。字体方案**不在**其中：字体链的发现与装载属
+`render/font`，`pack/` 不向上依赖 `render/`（见第一节第 4 条）。
+
 ### render/font —— 字体链与全角字符
 
 **字体链**（`FontChain`）封装 stb_truetype：在生效的字体方案（`theme/font/<方案>/`，

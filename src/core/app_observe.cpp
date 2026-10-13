@@ -38,8 +38,8 @@ void App::fill_debug_info(DebugInfo& info) {
     info.content_h = kContentH;
     info.panel_w = host_.panel_w;
     info.rng_seed = rng_seed_;
-    info.update_ms = cart_update_ms_;
-    info.draw_ms = cart_draw_ms_;
+    info.update_ms = timing_.update_ms;
+    info.draw_ms = timing_.draw_ms;
 
     if (cart_) {
         info.cart_id = cart_->info().id;
