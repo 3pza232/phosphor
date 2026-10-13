@@ -200,6 +200,13 @@ def run() -> int:
             check(words["resume"] in pause_screen or words["eject"] in pause_screen,
                   "pause menu is up")
 
+            section("F2 must NOT open settings from the pause menu (shelf-only)")
+            # 设置浮层只在卡带架唤起；从暂停菜单跳进去会让"关掉设置回哪去"变含糊
+            host.key("settings", frames=3)
+            state = host.state()
+            check(state.get("mode") == "PAUSED",
+                  f"settings key ignored while paused; mode={state.get('mode')}")
+
             section("choose EJECT in the pause menu (walk the cursor to it)")
             # 菜单顺序由主机定义（继续游戏 / 磁带码 / 拔出卡带），这里按光标走
             eject_row = 2

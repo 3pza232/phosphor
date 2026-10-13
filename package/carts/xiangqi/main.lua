@@ -28,6 +28,7 @@ local game
 local cart = {}
 local cf, cr = 4, 9     -- 光标（初始停在自己那方的将/帅上）
 local paused = false
+local PANEL_W = 26      -- manifest 里声明的侧栏宽度（选择界面临时收起）
 
 -- 棋盘布局：文件间距 5、行距 3，河界再加一行；棋子摆在**两条格线的交点**上。
 local FILE = function(f) return 2 + 5 * f end
@@ -44,6 +45,7 @@ local function begin_match()
   game = Game.new(rng, phos.sys.time, side, menu.level)
   cf, cr = 4, (menu.side == 1) and 9 or 0   -- 光标停在**自己那方的将/帅**上
   paused = false
+  phos.panel.resize(PANEL_W)
   screen = "play"
   phos.audio.music(require("music"))   -- 选择界面不放音乐，进对局才放
 end
@@ -53,6 +55,7 @@ function init()
   menu.row, menu.side, menu.level = 1, 1, 2
   screen = "menu"
   game = nil
+  phos.panel.resize(0)   -- 选择界面不需要侧栏：留着那条竖线会压在浮窗上
 end
 
 -- ── 选择界面 ──────────────────────────────────────────────

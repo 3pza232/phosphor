@@ -67,6 +67,9 @@ void Shell::set_sounds(std::vector<std::string> names, int active) {
 void Shell::set_shelf_style(ShelfStyle style) { shelf_style_ = style; }
 
 void Shell::open_settings() {
+    // 设置只在**卡带架**（主机主界面）唤起。暂停/磁带码等是在运行中的卡带之上开的浮层，
+    // 从那里跳进设置会让"关掉设置回哪去"变得含糊；卡带运行时读盘/换卡也不该被打断
+    if (mode_ != ShellMode::shelf) return;
     mode_ = ShellMode::settings;
     settings_cursor_ = 0;
 }
