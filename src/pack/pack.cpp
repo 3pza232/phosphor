@@ -328,10 +328,23 @@ std::vector<FontScheme> scan_font_schemes(const std::string& dir) {
             auto r = lua.safe_script_file(script, &sol::script_pass_on_error);
             if (r.valid() && r.get<sol::object>().is<sol::table>()) {
                 sol::table t = r.get<sol::object>().as<sol::table>();
+                // 可调范围 min/max：Mod 覆盖 font.lua 抬高 max 即"更大字号"，硬上限只到 ceiling
+                auto clamp_range = [](sol::object v, int fallback) {
+                    if (!v.is<double>() && !v.is<int>()) return fallback;
+                    const int px = v.as<int>();
+                    if (px < 1) return 1;
+                    return px > kMaxFontPxCeiling ? kMaxFontPxCeiling : px;
+                };
+                scheme.min_size = clamp_range(t["min"], scheme.min_size);
+                scheme.max_size = clamp_range(t["max"], scheme.max_size);
+                if (scheme.max_size <= scheme.min_size)
+                    scheme.max_size = scheme.min_size + 1;  // 退化范围兜底
                 sol::object size = t["size"];
                 if (size.is<double>() || size.is<int>()) {
                     const int px = size.as<int>();
-                    scheme.size = px < kMinFontPx ? kMinFontPx : (px > kMaxFontPx ? kMaxFontPx : px);
+                    scheme.size =
+                        px < scheme.min_size ? scheme.min_size
+                                             : (px > scheme.max_size ? scheme.max_size : px);
                 }
                 sol::object order = t["order"];
                 if (order.is<sol::table>()) {

@@ -29,9 +29,12 @@ inline constexpr int kLogicFps = 60;    // 逻辑帧率（游戏速度由它定�
 /// 字号 = **单元格像素边长**：它就是整台机器字符的大小，行距（格高）随之缩放——
 /// 字号小则行距紧、字号大则行距松，不会出现"小字行距过宽 / 大字上下相碰"。范围与默认
 /// 放这里，"配置校验""设置界面""字体方案默认"三处读同一份
-inline constexpr int kMinFontPx = 12;    // 最小字号（再小几乎看不清）
-inline constexpr int kMaxFontPx = 24;    // 最大字号（再大窗口就偏大）
+inline constexpr int kMinFontPx = 12;    // 缺省可调范围下限
+inline constexpr int kMaxFontPx = 24;    // 缺省可调范围上限
 inline constexpr int kDefaultFontPx = kCellPx;  // 出厂字号（= 默认格宽）
+/// 字号**硬上限**：字体方案 `font.lua` 声明的 `max`（Mod 可覆盖它来抬高上限）不得超过此值——
+/// 字形按固定高度光栅化，画得比它大就开始放大发糊。是"方案能声明到多大"的上界
+inline constexpr int kMaxFontPxCeiling = 32;
 
 /// "帧率"设置的可选档位：每秒最多刷新多少次**画面**。逻辑帧率恒为 kLogicFps，
 /// 所以这个档位只改刷新率与 CPU 占用，**不改游戏速度**：30 更省电、更有老机器的顿感，

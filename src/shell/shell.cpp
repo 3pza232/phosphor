@@ -40,8 +40,10 @@ void Shell::set_fonts(std::vector<std::string> names, int active) {
         font_index_ = active;
 }
 
-void Shell::set_font_size(int px) {
+void Shell::set_font_size(int px, int min_px, int max_px) {
     font_px_ = px;
+    font_min_ = min_px;
+    font_max_ = max_px;
 }
 
 void Shell::set_skins(std::vector<std::string> names, int active) {
@@ -265,11 +267,11 @@ Shell::Intent Shell::update_settings(const Input& input) {
             break;
         case SettingId::font_size: {
             if (!adjust) break;
-            // 候选：[kMinFontPx, kMaxFontPx] 逐像素（无"自动"——默认就是出厂值，用户直接调）
-            const int count = kMaxFontPx - kMinFontPx + 1;
-            int at = font_px_ >= kMinFontPx && font_px_ <= kMaxFontPx ? font_px_ - kMinFontPx : 0;
+            // 候选：[方案声明的 min, max] 逐像素（无"自动"——默认就是出厂值，用户直接调）
+            const int count = font_max_ - font_min_ + 1;
+            int at = font_px_ >= font_min_ && font_px_ <= font_max_ ? font_px_ - font_min_ : 0;
             at = (at + (right ? 1 : count - 1)) % count;
-            font_px_ = kMinFontPx + at;
+            font_px_ = font_min_ + at;
             intent.font_size_changed = true;
             intent.font_size = font_px_;
             break;

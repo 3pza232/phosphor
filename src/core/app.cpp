@@ -64,7 +64,7 @@ int App::run(const CliOptions& opts) {
     for (size_t i = 0; i < font_schemes_.size(); ++i)
         if (font_schemes_[i] == font_scheme_) font_index = static_cast<int>(i);
     shell_.set_fonts(font_schemes_, font_index);
-    shell_.set_font_size(font_px_);
+    shell_.set_font_size(font_px_, font_min_px_, font_max_px_);
     shell_.set_language(lang_from_name(config_.language));
 
     shell_.set_shelf_style(config_.shelf_style == "list" ? ShelfStyle::list : ShelfStyle::window);

@@ -73,6 +73,9 @@ private:
 
     /// 当前生效字号（= 单元格像素边长）：用户显式选了就用它，否则方案声明的字号，再否则出厂默认
     int effective_font_px() const;
+    /// 当前字体方案声明的**可调字号范围**（设置界面巡回 + 取值钳制的依据；Mod 可抬高 max）
+    int font_min_px() const { return font_min_px_; }
+    int font_max_px() const { return font_max_px_; }
     /// 按 effective_font_px() 把单元格尺寸推给渲染器、调整窗口大小（截图路径每帧现读
     /// font_px_，无需处理）。字号 = 格边长，行距随之缩放
     void apply_font_px(class Renderer* renderer, class Window* window);
@@ -211,6 +214,8 @@ private:
     std::vector<std::string> font_schemes_;     // 全部可用方案名（default 排最前，供设置界面）
     std::string font_scheme_;                   // 实际生效的方案（配置指定不可用时退回 default）
     int font_scheme_size_ = 0;                  // 当前方案声明的字号（0 = 未声明）
+    int font_min_px_ = kMinFontPx;              // 当前方案声明的可调下限
+    int font_max_px_ = kMaxFontPx;              // 当前方案声明的可调上限（Mod 覆盖 font.lua 即可抬高）
     int font_px_ = kDefaultFontPx;              // 当前生效字号（= 单元格像素边长）
 
     // 运行形态（供状态查询与窗口标题使用）

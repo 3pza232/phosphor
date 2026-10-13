@@ -58,9 +58,13 @@ void App::load_font_chain(const std::string& wanted) {
     const auto use = [this, &find](const std::string& name) {
         font_scheme_ = name;
         font_scheme_size_ = 0;
+        font_min_px_ = kMinFontPx;
+        font_max_px_ = kMaxFontPx;
         if (const FontScheme* s = find(name)) {
             font_files_ = s->files;
             font_scheme_size_ = s->size;
+            font_min_px_ = s->min_size;
+            font_max_px_ = s->max_size;  // 方案（或其 Mod 覆盖）声明的可调上限
         } else {
             // 方案不在表里（目录被删 / 名字写错）：现取一次，取不到再由下面兜底
             font_files_ = collect_font_files(std::string(kFontDir) + "/" + name);
@@ -78,7 +82,10 @@ void App::load_font_chain(const std::string& wanted) {
 
 
 int App::effective_font_px() const {
-    if (config_.font_size > 0) return config_.font_size;                // 用户显式选择优先
+    const auto in_range = [this](int px) {
+        return px < font_min_px_ ? font_min_px_ : (px > font_max_px_ ? font_max_px_ : px);
+    };
+    if (config_.font_size > 0) return in_range(config_.font_size);      // 用户显式选择优先
     return font_scheme_size_ > 0 ? font_scheme_size_ : kDefaultFontPx;  // 否则方案声明，再否则出厂默认
 }
 
@@ -89,14 +96,17 @@ void App::apply_font_px(Renderer* renderer, Window* window) {
     if (renderer) renderer->set_cell_px(font_px_);  // 字形随格缩放
     const Skin& skin = packs_.skin();
     if (window) window->resize(skin.grid_w() * font_px_, skin.grid_h() * font_px_);
-    shell_.set_font_size(font_px_);                 // 设置行显示与实际生效保持同步
+    // 设置行显示与实际生效保持同步；巡回范围也交给界面（方案声明的 min~max）
+    shell_.set_font_size(font_px_, font_min_px_, font_max_px_);
 }
 
 
 void App::apply_font_size(int px, Renderer* renderer, Window* window) {
-    // 0 = 跟随字体方案；正数钳进合法区间（越界不静默保留）
-    config_.font_size = px <= 0 ? 0
-                                : (px < kMinFontPx ? kMinFontPx : (px > kMaxFontPx ? kMaxFontPx : px));
+    // 0 = 跟随字体方案；正数钳进**方案声明的范围**（越界不静默保留）
+    const auto in_range = [this](int v) {
+        return v < font_min_px_ ? font_min_px_ : (v > font_max_px_ ? font_max_px_ : v);
+    };
+    config_.font_size = px <= 0 ? 0 : in_range(px);
     apply_font_px(renderer, window);
     save_config_now();
 }

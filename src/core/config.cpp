@@ -67,12 +67,14 @@ Config load_config(const std::string& path) {
     cfg.sound = pick(theme, "sound", cfg.sound);
     cfg.font = pick(theme, "font", cfg.font);
     cfg.language = pick(theme, "language", cfg.language);
-    // 字号：<=0 视作"跟随字体方案"（0）；正数钳进 [kMinFontPx, kMaxFontPx]
+    // 字号：<=0 视作"跟随字体方案"（0）；正数钳进 [kMinFontPx, kMaxFontPxCeiling] 的**宽松**区间
+    // （真正的可调范围由当前字体方案声明，加载时尚不知方案，故只做硬上限钳制）
     const int font_size = pick_int(theme, "font_size", 0);
-    cfg.font_size = font_size <= 0 ? 0
-                                   : (font_size < kMinFontPx ? kMinFontPx
-                                                             : (font_size > kMaxFontPx ? kMaxFontPx
-                                                                                       : font_size));
+    cfg.font_size =
+        font_size <= 0 ? 0
+                       : (font_size < kMinFontPx
+                              ? kMinFontPx
+                              : (font_size > kMaxFontPxCeiling ? kMaxFontPxCeiling : font_size));
 
     const std::string shelf_style = pick(&root, "shelf_style", cfg.shelf_style);
     if (shelf_style == "list" || shelf_style == "window") cfg.shelf_style = shelf_style;
