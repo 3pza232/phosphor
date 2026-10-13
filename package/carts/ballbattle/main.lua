@@ -1,44 +1,43 @@
--- main.lua —— 入口：把输入翻成"意图"、把 game 的状态画出来。规则全在 game.lua。
+-- main.lua —— 入口：把输入翻成"意图"、用**摄像机**跟随玩家取景。规则全在 game.lua。
+-- 颜色一律取自主题色板（phos.color.*），不写死色值——换主题即换配色。
 local Game = require("game")
 local Panel = require("panel")
 
 local Text = {
   zh = { score = "体格", time = "存活", over = "被吞掉啦", won = "你是最大的球！",
-         again = "按 %s 再来一局", pause = "暂停中", hint = "方向键 移动    [%s] 暂停" },
+         again = "按 %s 再来一局", pause = "暂停中", me = "你",
+         hint = "方向键 移动    [%s] 暂停" },
   en = { score = "MASS", time = "TIME", over = "EATEN", won = "YOU ARE THE BIGGEST",
-         again = "press %s to play again", pause = "PAUSED", hint = "ARROWS move   [%s] PAUSE" },
+         again = "press %s to play again", pause = "PAUSED", me = "YOU",
+         hint = "ARROWS move   [%s] PAUSE" },
 }
 
 local game
 local cart = {}
 local paused = false
-local palette   -- 每个球的颜色：玩家青色，电脑暖色
+local rng          -- 主机种子驱动
+local ai_colors    -- 电脑球配色（从色板取，不含玩家色）
 
--- 主机种子驱动的随机：Game 会以 rng()（浮点）与 rng(a,b)（整数）两种方式调用
-local function rng(a, b)
-  if a == nil then return phos.sys.random(0, 9999) / 10000 end
-  return phos.sys.random(a, b)
+local function new_game()
+  game = Game.new(rng)
+  paused = false
 end
 
-local function best_score()
-  return tonumber(phos.save.read("best") or "0") or 0
-end
-
+local function best_score() return tonumber(phos.save.read("best") or "0") or 0 end
 local function save_best()
   local sc = game:status().score
   if sc > best_score() then phos.save.write("best", tostring(sc)) end
 end
 
-local function new_game()
-  local _, _, pw, ph = phos.screen.playfield()
-  game = Game.new(pw, ph, rng)
-  paused = false
-end
-
 function init()
+  local C = phos.color
+  rng = function(a, b)
+    if a == nil then return phos.sys.random(0, 9999) / 10000 end
+    return phos.sys.random(a, b)
+  end
+  -- 电脑球配色：取色板里除玩家青、黑、白之外的醒目色
+  ai_colors = { C.red, C.orange, C.yellow, C.magenta, C.green, C.blue, C.purple }
   cart = phos.cart.info()
-  palette = { player = phos.color.cyan,
-              ai = { phos.color.red, phos.color.orange, phos.color.magenta, phos.color.yellow } }
   new_game()
   phos.audio.music(require("music"))
 end
@@ -51,15 +50,10 @@ function update(dt)
   if paused then return end
 
   if not game.alive then
-    if phos.input.pressed("a") then
-      save_best()
-      new_game()
-      phos.audio.beep(520, 0.06)
-    end
+    if phos.input.pressed("a") then save_best(); new_game(); phos.audio.beep(520, 0.06) end
     return
   end
 
-  -- 输入 → 意图：方向键按住时给方向向量，归一化由 game 做
   local dx = (phos.input.down("right") and 1 or 0) - (phos.input.down("left") and 1 or 0)
   local dy = (phos.input.down("down") and 1 or 0) - (phos.input.down("up") and 1 or 0)
   game:steer(dx, dy)
@@ -73,58 +67,72 @@ function update(dt)
   end
 end
 
--- 一个球画成实心圆：逐格判断圆心距，落在半径内就填块
-local function draw_blob(px, py, b)
-  local col = (b.role == "player") and palette.player or palette.ai[b.ai]
+local function draw_blob(S, px, py, cam_x, cam_y, pw, ph, b, col)
+  local x0, y0 = b.x - cam_x, b.y - cam_y
   local rr = b.r + 0.35
-  for cy = math.floor(b.y - rr), math.ceil(b.y + rr) do
-    for cx = math.floor(b.x - rr), math.ceil(b.x + rr) do
-      local dx, dy = cx - b.x, cy - b.y
-      if dx * dx + dy * dy <= rr * rr then
-        phos.screen.put(px + cx, py + cy, "\u{2588}", col)   -- 全块
+  for cy = math.floor(y0 - rr), math.ceil(y0 + rr) do
+    if cy >= 0 and cy < ph then
+      for cx = math.floor(x0 - rr), math.ceil(x0 + rr) do
+        if cx >= 0 and cx < pw then
+          local dx, dy = cx - x0, cy - y0
+          if dx * dx + dy * dy <= rr * rr then
+            S.put(px + cx, py + cy, "\u{2588}", col)   -- 全块
+          end
+        end
       end
     end
   end
 end
 
-local function draw_field(px, py, pw, ph, t)
-  local C, S = phos.color, phos.screen
-  -- 淡淡的点阵底纹，衬出边界
-  for y = 1, ph - 2, 4 do
-    for x = 1, pw - 2, 4 do S.put(px + x, py + y, "\u{00B7}", C.rgb(30, 40, 60)) end
-  end
-
-  for _, f in ipairs(game.food) do
-    S.put(px + math.floor(f.x), py + math.floor(f.y), "o", C.green)
-  end
-
-  -- 小的先画、大的后画（大球盖在上面）
-  for _, b in ipairs(game:ranked()) do draw_blob(px, py, b) end
-
-  -- 玩家标记：在球上方写一个字，免得在一堆球里认不出自己
-  local p = game.player
-  local label = t.me
-  S.print(px + math.floor(p.x) - 1, py + math.floor(p.y - p.r) - 1, label, C.white)
-end
-
 function draw()
   local C, S = phos.color, phos.screen
   local t = phos.lang.dict(Text)
-  t.me = phos.lang.pick({ zh = "你", en = "YOU" })
   local px, py, pw, ph = S.playfield()
+  local p = game.player
 
-  S.clear(C.rgb(8, 10, 16), C.rgb(8, 10, 16))
-  draw_field(px, py, pw, ph, t)
+  -- 摄像机：以玩家为中心，夹在世界内（世界比屏幕大，所以总是"跟得住"）
+  local cam_x = math.max(0, math.min(p.x - pw / 2, Game.WORLD_W - pw))
+  local cam_y = math.max(0, math.min(p.y - ph / 2, Game.WORLD_H - ph))
 
-  -- 顶部读数
+  S.clear()   -- 空格 + 色板默认底（随主题）
+
+  -- 底纹：随世界走的稀疏点阵，衬出移动感
+  for wy = math.floor(cam_y), math.ceil(cam_y + ph), 1 do
+    for wx = math.floor(cam_x), math.ceil(cam_x + pw), 1 do
+      if wx % 5 == 0 and wy % 5 == 0 then
+        local sx, sy = wx - cam_x, wy - cam_y
+        if sx >= 0 and sx < pw and sy >= 0 and sy < ph then
+          S.put(px + math.floor(sx), py + math.floor(sy), "\u{00B7}", C.dark_gray)
+        end
+      end
+    end
+  end
+
+  for _, f in ipairs(game.food) do
+    local sx, sy = math.floor(f.x - cam_x), math.floor(f.y - cam_y)
+    if sx >= 0 and sx < pw and sy >= 0 and sy < ph then S.put(px + sx, py + sy, "o", C.green) end
+  end
+
+  for _, b in ipairs(game:ranked()) do
+    local col = (b.role == "player") and C.cyan or ai_colors[(b.hue - 1) % #ai_colors + 1]
+    draw_blob(S, px, py, cam_x, cam_y, pw, ph, b, col)
+  end
+
+  -- 玩家标记：球上方一个字，免得在一堆球里认不出自己
+  local sy = math.floor(p.y - cam_y) - math.ceil(p.r) - 1
+  S.print(px + math.floor(p.x - cam_x) - 1, py + sy, t.me, C.white)
+
+  -- 顶部读数：体格 / 存活 / 名次 / 坐标
   local st = game:status()
-  S.print(px + 1, py, string.format("%s %d    %s %.1fs", t.score, st.score, t.time, st.time),
-          C.white)
+  local rank = 1
+  for i, b in ipairs(game:ranked()) do if b == p then rank = i break end end
+  S.print(px + 1, py, string.format("%s %d   %s %.1fs   #%d/%d   (%d,%d)",
+          t.score, st.score, t.time, st.time, rank, st.blobs,
+          math.floor(p.x), math.floor(p.y)), C.white)
 
   if not game.alive then
-    local over = st.won and t.won or t.over
-    local box = phos.ui.modal(20, 5, "")
-    phos.ui.center_text(box.y + 1, over)
+    local box = phos.ui.modal(22, 5, "")
+    phos.ui.center_text(box.y + 1, st.won and t.won or t.over)
     phos.ui.center_text(box.y + 3, string.format(t.again, phos.input.key_name("a")))
   elseif paused then
     phos.ui.center_text(py + math.floor(ph / 2), t.pause)
