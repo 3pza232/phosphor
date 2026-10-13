@@ -575,8 +575,10 @@ TEST(config_font_size_scope_and_clamp) {
         return load_config(path.string());
     };
 
-    // 字号住在 theme 作用域里（与 font 同级）
-    CHECK_EQ(load_json(R"({"theme":{"font_size":99}})").font_size, kMaxFontPx);  // 越界钳到上限
+    // 字号住在 theme 作用域里（与 font 同级）。加载时只做**宽松**钳制（[min, 硬上限]）——
+    // 真正的可调范围由当前字体方案声明（Mod 可抬高 max），加载时还不知道方案
+    CHECK_EQ(load_json(R"({"theme":{"font_size":99}})").font_size, kMaxFontPxCeiling);
+    CHECK_EQ(load_json(R"({"theme":{"font_size":28}})").font_size, 28);  // 落在硬上限内 → 原样保留
     CHECK_EQ(load_json(R"({"theme":{"font_size":3}})").font_size, kMinFontPx);   // 越界钳到下限
     CHECK_EQ(load_json(R"({"theme":{"font_size":-1}})").font_size, 0);           // 负数 = 跟随方案
     CHECK_EQ(load_json(R"({"theme":{"font":"x"}})").font_size, 0);               // 缺省 = 跟随方案
