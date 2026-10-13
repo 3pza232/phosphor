@@ -637,6 +637,11 @@ local size = phos.assets.size("assets/map.txt")     -- 字节数（缺失为 0�
 local all  = phos.assets.list("assets/")            -- 列出包内文件（可省略前缀）
 ```
 
+> **单文件上限 8 MiB**：`text` / `rows` 会整读进内存，超过上限的文件**拒读**（返回 `nil`
+> 并写主机日志）——一张超大素材不该无声地把 Lua 堆撑爆。`size` / `exists` 只查元信息、不读
+> 全文，所以**先问大小再决定读不读**是安全的（`exists` 对超大文件仍如实报告存在）。
+```
+
 适合放的东西：关卡 / 地图 / 对话表（一行一个元素，用 `rows` 读）、字符画素材、
 音频文件（配合 `phos.audio.sample`）、平衡性数值表（改数值不必动代码）。
 

@@ -54,8 +54,9 @@ void register_assets_api(sol::state& lua, HostContext& host) {
 
     assets["size"] = [&host](const std::string& path) -> int {
         if (!host.cart_files) return 0;
-        auto data = host.cart_files->read(path);
-        return data ? static_cast<int>(data->size()) : 0;
+        // 只查大小、不读全文：于是"先问多大再决定读不读"不构成爆堆风险（见 roadmap 第 8 条）
+        const auto bytes = host.cart_files->size(path);
+        return bytes ? static_cast<int>(*bytes) : 0;
     };
 
     // 列出包内文件（可按前缀过滤），便于工具与调试

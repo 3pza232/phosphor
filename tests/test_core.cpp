@@ -15,6 +15,7 @@
 #include "core/text.hpp"
 #include "core/text_input.hpp"
 #include "core/ui.hpp"
+#include "cart/cart_files.hpp"
 #include "cart/cart_info.hpp"
 #include "cart/save_store.hpp"
 #include "pack/builtin.hpp"
@@ -633,6 +634,34 @@ TEST(order_by_recent_puts_recent_first) {
     plain[1].id = "b";
     order_by_recent(plain, {});  // 空记录：原样
     CHECK_EQ(plain[0].id, std::string("a"));
+}
+
+TEST(cart_files_read_cap_and_path_safety) {
+    namespace fs = std::filesystem;
+    const fs::path dir = fs::temp_directory_path() / "phosphor_unit_cart";
+    std::error_code ec;
+    fs::remove_all(dir, ec);
+    fs::create_directories(dir, ec);
+    {
+        std::ofstream out(dir / "hi.txt", std::ios::binary);
+        out << "hello";
+    }
+    {
+        std::ofstream out(dir / "big.txt", std::ios::binary);
+        out << std::string(9u * 1024 * 1024, 'x');  // 超过 8 MiB 上限
+    }
+
+    const CartFiles files = CartFiles::open(dir.string());
+    CHECK(files.valid());
+    CHECK_EQ(files.read("hi.txt").value_or(""), std::string("hello"));
+    CHECK(!files.read("big.txt").has_value());  // 超限：拒读
+    CHECK(files.exists("big.txt"));             // 但存在性如实
+    CHECK_EQ(files.size("big.txt").value_or(0), size_t(9u * 1024 * 1024));
+    CHECK(!files.read("../escape.txt").has_value());  // 越界：拒读
+    CHECK(!files.read("/abs.txt").has_value());       // 绝对路径：拒读
+    CHECK(!files.exists("../escape.txt"));
+
+    std::filesystem::remove_all(dir, ec);
 }
 
 } // namespace

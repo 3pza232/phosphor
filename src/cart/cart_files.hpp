@@ -20,11 +20,15 @@ public:
 
     bool valid() const { return valid_; }
 
-    /// 读取包内文件全文（经 mods 覆盖层）；不存在或越界返回 nullopt
+    /// 读取包内文件全文（经 mods 覆盖层）；不存在、越界、或超过单文件大小上限时返回 nullopt。
+    /// 上限见实现里的 kMaxReadBytes——一张超大素材不该无声地把 Lua 堆撑爆
     std::optional<std::string> read(const std::string& inner_path) const;
 
-    /// 文件是否存在
+    /// 文件是否存在（只 stat / 查目录项，**不读全文**，所以超大文件也如实报告存在）
     bool exists(const std::string& inner_path) const;
+
+    /// 文件字节数（只 stat / 查目录项，不读全文）；不存在或越界返回 nullopt
+    std::optional<std::size_t> size(const std::string& inner_path) const;
 
     /// 包内条目列表（'/' 分隔，含前缀过滤，已排序；不含 mods 新增文件）
     std::vector<std::string> entries(const std::string& prefix = "") const;

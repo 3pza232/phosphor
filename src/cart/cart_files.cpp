@@ -1,5 +1,7 @@
 #include "cart/cart_files.hpp"
 
+#include "core/log.hpp"
+
 #include <miniz.h>
 
 #include <algorithm>
@@ -11,6 +13,10 @@
 namespace phos {
 
 namespace {
+
+/// 单个包内文件的读取上限。素材按需整读进 Lua 堆，越大越危险——一张超大文本/音频会在
+/// 分配时才发现把堆撑爆。越限一律**拒读并留痕**（见 roadmap 第 8 条），让卡带作者看得见
+constexpr std::uintmax_t kMaxReadBytes = 8u * 1024 * 1024;
 
 /// 包根目录名（目录卡带）/ 文件名去扩展名（.phos）——即 mods 目录所用的卡带 id
 std::string cart_id_of(const std::string& cart_path) {
@@ -24,6 +30,11 @@ std::optional<std::string> read_disk_file(const std::filesystem::path& path) {
     namespace fs = std::filesystem;
     std::error_code ec;
     if (!fs::is_regular_file(path, ec)) return std::nullopt;
+    const std::uintmax_t bytes = fs::file_size(path, ec);
+    if (ec || bytes > kMaxReadBytes) {
+        log::warn("asset too large, refusing to read: " + path.string());
+        return std::nullopt;
+    }
     std::ifstream in(path, std::ios::binary);
     if (!in) return std::nullopt;
     std::ostringstream ss;
@@ -81,6 +92,18 @@ std::optional<std::string> CartFiles::read_packed(const std::string& inner_path)
 
     mz_zip_archive zip{};
     if (!mz_zip_reader_init_file(&zip, cart_path_.c_str(), 0)) return std::nullopt;
+    // 先看大小再解压：超过上限就直接拒，别先分配一大块再丢（那正是要防的爆堆）
+    const int idx = mz_zip_reader_locate_file(&zip, inner_path.c_str(), nullptr, 0);
+    mz_zip_archive_file_stat stat{};
+    if (idx < 0 || !mz_zip_reader_file_stat(&zip, idx, &stat)) {
+        mz_zip_reader_end(&zip);
+        return std::nullopt;
+    }
+    if (stat.m_uncomp_size > kMaxReadBytes) {
+        log::warn("asset too large, refusing to read: " + inner_path);
+        mz_zip_reader_end(&zip);
+        return std::nullopt;
+    }
     size_t size = 0;
     void* data = mz_zip_reader_extract_file_to_heap(&zip, inner_path.c_str(), &size, 0);
     mz_zip_reader_end(&zip);
@@ -91,7 +114,34 @@ std::optional<std::string> CartFiles::read_packed(const std::string& inner_path)
 }
 
 bool CartFiles::exists(const std::string& inner_path) const {
-    return read(inner_path).has_value();
+    return size(inner_path).has_value();
+}
+
+std::optional<std::size_t> CartFiles::size(const std::string& inner_path) const {
+    namespace fs = std::filesystem;
+    if (!valid_ || !path_safe(inner_path)) return std::nullopt;
+
+    // 覆盖层优先（与 read 同一套查找）
+    if (!mod_dir_.empty() && inner_path != "manifest.lua") {
+        std::error_code ec;
+        const fs::path p = fs::path(mod_dir_) / inner_path;
+        if (fs::is_regular_file(p, ec)) return static_cast<std::size_t>(fs::file_size(p, ec));
+    }
+    if (!is_zip_) {
+        std::error_code ec;
+        const fs::path p = fs::path(cart_path_) / inner_path;
+        if (!fs::is_regular_file(p, ec)) return std::nullopt;
+        return static_cast<std::size_t>(fs::file_size(p, ec));
+    }
+    mz_zip_archive zip{};
+    if (!mz_zip_reader_init_file(&zip, cart_path_.c_str(), 0)) return std::nullopt;
+    const int idx = mz_zip_reader_locate_file(&zip, inner_path.c_str(), nullptr, 0);
+    mz_zip_archive_file_stat stat{};
+    std::optional<std::size_t> out;
+    if (idx >= 0 && mz_zip_reader_file_stat(&zip, idx, &stat))
+        out = static_cast<std::size_t>(stat.m_uncomp_size);
+    mz_zip_reader_end(&zip);
+    return out;
 }
 
 std::vector<std::string> CartFiles::entries(const std::string& prefix) const {
