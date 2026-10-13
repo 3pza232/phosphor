@@ -74,7 +74,7 @@ std::string App::control_state_json() const {
         << ",\"sound\":" << json::quote(sounds_.empty() ? "" : sounds_[sound_index_].id)
         << ",\"font\":" << json::quote(font_scheme_)
         << ",\"language\":" << json::quote(lang_name(shell_.language()))
-        << ",\"cursor\":" << shell_.cursor()
+        << ",\"cursor\":" << (playing_ ? -1 : shell_.cursor())
         << ",\"shelf\":" << shelf_json()
         << ",\"crt_level\":" << config_.crt_level
         << ",\"fps\":" << config_.fps

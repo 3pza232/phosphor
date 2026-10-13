@@ -99,7 +99,7 @@ void post_process(Canvas& canvas, const CrtParams& crt) {
             1.0f - crt.scanline * smoothstep(kScanlineDarkStart, kScanlineDarkEnd, phase);
 
         for (int x = 0; x < canvas.width; ++x) {
-            const int sub = x % 3;  // 孔径格栅：RGB 子像素各自全亮，其余通道压暗
+            const int sub = x % static_cast<int>(kMaskPeriodPx);  // 孔径格栅：RGB 子像素各自全亮，其余通道压暗
             unsigned char* p = canvas.at(x, y);
             for (int channel = 0; channel < 3; ++channel) {
                 const float mask = (sub == channel) ? 1.0f : (1.0f - crt.mask);

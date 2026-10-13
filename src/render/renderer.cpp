@@ -55,6 +55,7 @@ in vec3 v_bg;
 uniform sampler2D u_font;
 uniform vec2 u_texel;    // 字体图集纹素尺寸（辉光采样步长）
 uniform float u_period;  // 扫描线周期（像素）
+uniform float u_maskperiod;  // 孔径格栅周期（像素，= RGB 子像素列数）
 uniform float u_scan;    // 扫描线深度 0..1
 uniform float u_mask;    // 孔径格栅强度 0..1
 uniform float u_glow;    // 字符辉光 0..1
@@ -80,7 +81,7 @@ void main() {
     float scanline = 1.0 - u_scan * dark_line;
 
     // 孔径格栅：RGB 子像素垂直条纹
-    float sub = mod(gl_FragCoord.x, 3.0);
+    float sub = mod(gl_FragCoord.x, u_maskperiod);
     vec3 mask = vec3(1.0 - u_mask);
     if (sub < 1.0) mask.r = 1.0;
     else if (sub < 2.0) mask.g = 1.0;
@@ -400,6 +401,7 @@ void Renderer::submit(float win_w, float win_h, bool layer, bool clear_first) {
         glUniform1f(glGetUniformLocation(shader_.id(), name), value);
     };
     set_float("u_period", kScanlinePeriodPx);
+    set_float("u_maskperiod", kMaskPeriodPx);
     set_float("u_scan", crt_.scanline);
     set_float("u_mask", crt_.mask);
     set_float("u_glow", crt_.glow);

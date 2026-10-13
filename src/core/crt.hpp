@@ -21,6 +21,10 @@ struct CrtParams {
 /// 扫描线周期（像素）。固定在 3px 左右才像"屏幕行"，过大就变成整片变暗。
 inline constexpr float kScanlinePeriodPx = 3.0f;
 
+/// 孔径格栅周期（像素）= RGB 三色子像素的列数。CPU 光栅化与窗口着色器共用一处，
+/// 免得两边各写一个 3、改一处漏一处
+inline constexpr float kMaskPeriodPx = 3.0f;
+
 /// 暗线在周期内的相位区间（起点、终点）：两端平滑过渡，避免出现硬边。
 /// CPU 光栅化与 GL 着色器共用（着色器经 uniform 取值），两条渲染路径才对得上。
 inline constexpr float kScanlineDarkStart = 0.68f;
