@@ -170,7 +170,8 @@ net / input / host / control 多个协作者、且依赖 `HostContext`（api 层
 本地控制通道（NDJSON over TCP，含 `debug.set`）、日志落盘（`--log`）。
 本模块**基本只读**（观测状态 + 注入输入）。**唯一会写游戏状态的入口，是卡带自己登记的可调参数**
 （`phos.debug.number`）——人用面板拖、agent 用 `debug.set`，写的都是**卡带自己的变量**，
-主机不为卡带内容背书，也不含任何玩法逻辑。
+主机不为卡带内容背书，也不含任何玩法逻辑。（调试台另有一个 `Pause while panel is open` 开关，
+只冻结卡带的 `update`，不写任何状态。）
 
 ### shell —— 外壳层
 

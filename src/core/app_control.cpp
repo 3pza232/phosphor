@@ -97,8 +97,14 @@ std::string App::control_state_json() const {
         const size_t count = cart_->debug_param_count();
         for (size_t i = 0; i < count; ++i) {
             const Cartridge::DebugParamView view = cart_->debug_param(i);
+            // 分组路径用 '/' 拼成串（json_lite 不解析数组）：同名参数（如每件武器的"伤害"）靠它区分
+            std::string group;
+            for (const Localized& seg : view.group) {
+                if (!group.empty()) group += "/";
+                group += seg.get(english);
+            }
             out << (i ? "," : "") << "{\"name\":" << json::quote(view.name.get(english))
-                << ",\"value\":" << view.value << "}";
+                << ",\"group\":" << json::quote(group) << ",\"value\":" << view.value << "}";
         }
     }
     out << "]";
@@ -494,20 +500,35 @@ void App::execute_control(const ControlCommand& command) {
             control_.reply_error(command.id, "value must be a finite number");
             return;
         }
-        bool found = false;
         bool written = false;
         const bool english = config_.language == "en";  // 按当前语言解析的名字匹配
+        const std::string want_group = args.str("group");  // 可选：与 state.query 里的 group 一致（消歧）
+        const auto group_of = [english](const Cartridge::DebugParamView& view) {
+            std::string g;
+            for (const Localized& seg : view.group) {
+                if (!g.empty()) g += "/";
+                g += seg.get(english);
+            }
+            return g;
+        };
+        int match = -1;
+        int hits = 0;
         for (size_t i = 0; i < cart_->debug_param_count(); ++i) {
             const Cartridge::DebugParamView view = cart_->debug_param(i);
             if (view.name.get(english) != param) continue;
-            written = cart_->debug_param_write(i, static_cast<float>(value));
-            found = true;
-            break;
+            if (!want_group.empty() && group_of(view) != want_group) continue;
+            ++hits;
+            if (match < 0) match = static_cast<int>(i);
         }
-        if (!found) {
+        if (hits == 0) {
             control_.reply_error(command.id, "no such param: " + param);
             return;
         }
+        if (hits > 1) {  // 重名（如每件武器的"伤害"）：让调用方带上 group，别猜
+            control_.reply_error(command.id, "ambiguous name; pass 'group': " + param);
+            return;
+        }
+        written = cart_->debug_param_write(static_cast<size_t>(match), static_cast<float>(value));
         if (!written) {  // 卡带的 set 缺失或出错：如实回报，别假装写成功
             control_.reply_error(command.id, "cart rejected value for: " + param);
             return;
