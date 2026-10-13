@@ -18,7 +18,7 @@ namespace {
 /// 于是失控走的是既有的"卡带出错 → 安全拔卡 + 错误屏"通道
 constexpr int kWatchdogStep = 20000;   // 每多少条 VM 指令查一次时钟（≈0.1ms，开销可忽略）
 constexpr int kWatchdogLimitMs = 100;  // 单次卡带调用的墙钟上限
-constexpr size_t kMaxDebugParams = 64; // phos.debug.number 的登记上限（每帧要调全部 get）
+constexpr size_t kMaxDebugParams = 128; // phos.debug.* 的登记上限（每帧要调全部 get）
 
 std::chrono::steady_clock::time_point g_watchdog_deadline;
 bool g_watchdog_armed = false;
@@ -324,7 +324,7 @@ void Cartridge::apply_palette(const Palette& palette) {
     apply_palette_to(lua_, palette);
 }
 
-bool Cartridge::debug_register(Localized name, std::vector<Localized> group,
+bool Cartridge::debug_register(Localized name, std::vector<Localized> group, DebugKind kind,
                                sol::protected_function get, sol::protected_function set, float min,
                                float max, float step) {
     if ((name.zh.empty() && name.en.empty()) || !get.valid()) return false;
@@ -343,6 +343,7 @@ bool Cartridge::debug_register(Localized name, std::vector<Localized> group,
     DebugRegistration reg;
     reg.name = std::move(name);
     reg.group = std::move(group);
+    reg.kind = kind;
     reg.get = std::move(get);
     reg.set = std::move(set);
     reg.min = min;
@@ -358,6 +359,7 @@ Cartridge::DebugParamView Cartridge::debug_param(size_t index) {
     const DebugRegistration& reg = debug_regs_[index];
     out.name = reg.name;
     out.group = reg.group;
+    out.kind = reg.kind;
     out.min = reg.min;
     out.max = reg.max;
     out.step = reg.step;

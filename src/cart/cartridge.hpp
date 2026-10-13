@@ -4,6 +4,7 @@
 #include "cart/cart_files.hpp"
 #include "cart/cart_info.hpp"
 #include "cart/save_store.hpp"
+#include "core/defaults.hpp"
 
 #include <sol/sol.hpp>
 
@@ -53,28 +54,31 @@ public:
     /// 不存在或不可序列化时返回空串
     std::string global_json(const std::string& path);
 
-    /// 卡带注册的一个可实时调参数（`phos.debug.number`）：get 读当前值、set 写回。
+    /// 卡带注册的一个可实时调参数（`phos.debug.*`）：get 读当前值、set 写回。
     /// name / group 是**可本地化**的（字符串，或 { zh =, en = } 表）——界面语言切换时篮子文案跟着变。
     /// 带 sol 类型，故留在 cart/；控制台只吃它的纯数据快照（`DebugParamView`）
     struct DebugRegistration {
         Localized name;
         std::vector<Localized> group;  // 折叠分组路径（空 = 顶层直接显示）
+        DebugKind kind = DebugKind::number;
         sol::protected_function get;
         sol::protected_function set;
         float min = 0.0f, max = 1.0f, step = 0.01f;
     };
 
-    /// `phos.debug.number(name, get, set, opts)` 的落地：登记一个可实时调的参数。
+    /// `phos.debug.number / integer / toggle` 的落地：登记一个可实时调的参数。
     /// 名字空或 get 不是函数则拒。
-    bool debug_register(Localized name, std::vector<Localized> group, sol::protected_function get,
-                        sol::protected_function set, float min, float max, float step);
+    bool debug_register(Localized name, std::vector<Localized> group, DebugKind kind,
+                        sol::protected_function get, sol::protected_function set, float min,
+                        float max, float step);
 
     size_t debug_param_count() const { return debug_regs_.size(); }
 
-    /// 第 i 个参数的**纯数据**快照：名字 + 分组路径 + 当前值（调 get）+ 范围。get 出错时 ok=false。
+    /// 第 i 个参数的**纯数据**快照：名字 + 分组路径 + 类型 + 当前值（调 get）+ 范围。get 出错时 ok=false。
     struct DebugParamView {
         Localized name;
         std::vector<Localized> group;
+        DebugKind kind = DebugKind::number;
         float value = 0.0f;
         float min = 0.0f, max = 1.0f, step = 0.01f;
         bool ok = false;

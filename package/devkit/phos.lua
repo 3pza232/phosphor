@@ -709,6 +709,16 @@ phos.debug = {}
 ---       分组在面板里是**默认关闭**的折叠节点，将来新增的组 / 参数自动出现
 function phos.debug.number(name, get, set, opts) end
 
+---注册一个可实时调的**整数**参数（滑条取整——弹药数 / 弹丸数之类）。
+---参数形状与 phos.debug.number 相同；min / max / step 按整数给（如 1 / 20 / 1）
+function phos.debug.integer(name, get, set, opts) end
+
+---注册一个可实时调的**布尔**参数（复选框）。
+---@param name string|table 同上
+---@param get fun():boolean 读当前值
+---@param set fun(value:boolean) 写回
+function phos.debug.toggle(name, get, set) end
+
 -- ─────────────────────────────────────────────────────────────────────────
 -- phos.net —— 局域网联机（第四代接口）
 --

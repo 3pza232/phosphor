@@ -87,6 +87,7 @@ void App::fill_debug_info(DebugInfo& info) {
             DebugParam p;
             p.name = view.name.get(english);
             p.index = i;
+            p.kind = view.kind;
             p.value = view.value;
             p.min = view.min;
             p.max = view.max;

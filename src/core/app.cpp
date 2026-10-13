@@ -150,7 +150,10 @@ void App::end_boot() {
 }
 
 void App::tick_playing(float dt) {
-    host_.time += dt;
+    // 调试台"打开即暂停"：**整机**冻结——卡带不推进、主机时间不走、声音也停（画面仍重绘、参数照调）
+    const bool frozen = console_.open && pause_when_open_;
+    audio_.set_paused(frozen);
+    if (!frozen) host_.time += dt;
     shell_.draw_chassis(display_.screen);
     shell_.set_lamps_solid(true);
 
@@ -165,9 +168,7 @@ void App::tick_playing(float dt) {
 
     using clock = std::chrono::steady_clock;
     const auto t0 = clock::now();
-    // 调试台"打开即暂停"：卡带不推进（画面仍重绘、参数照调）。短路 || = 冻结时不调 update
-    const bool frozen = console_.open && pause_when_open_;
-    bool ok = frozen || cart_->update(dt);
+    bool ok = frozen || cart_->update(dt);  // 冻结时不推进卡带（短路 ||）
     const auto t1 = clock::now();
     // 插卡瞬间的画面抖动：隔帧跳过一次绘制，形成电压不稳的闪烁
     const bool flicker = insert_flash_ > 0.0f && (frame_count_ % 3 == 0);

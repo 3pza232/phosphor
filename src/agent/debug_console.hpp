@@ -16,9 +16,10 @@ namespace phos {
 struct DebugParam {
     std::string name;      // 已按当前界面语言解析
     std::size_t index = 0; // 在卡带参数表里的下标（App 写回时用）
+    DebugKind kind = DebugKind::number;  // 浮点滑条 / 整数滑条 / 复选框
     float value = 0.0f;
     float min = 0.0f, max = 1.0f, step = 0.01f;
-    bool readable = true;  // get 取不到值的项只展示名字，不画滑条
+    bool readable = true;  // get 取不到值的项只展示名字，不画控件
     bool changed = false;  // 控制台改过：置位，App 据此写回
 };
 

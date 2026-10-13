@@ -18,7 +18,21 @@ void draw_params(DebugGroup& group, const std::string& path) {
             continue;
         }
         const std::string id = p.name + "###" + path + "/" + p.name;
-        if (ImGui::SliderFloat(id.c_str(), &p.value, p.min, p.max, "%.3f")) p.changed = true;
+        if (p.kind == DebugKind::boolean) {
+            bool on = p.value != 0.0f;
+            if (ImGui::Checkbox(id.c_str(), &on)) {
+                p.value = on ? 1.0f : 0.0f;
+                p.changed = true;
+            }
+        } else if (p.kind == DebugKind::integer) {
+            int v = static_cast<int>(p.value + (p.value < 0 ? -0.5f : 0.5f));
+            if (ImGui::SliderInt(id.c_str(), &v, static_cast<int>(p.min), static_cast<int>(p.max))) {
+                p.value = static_cast<float>(v);
+                p.changed = true;
+            }
+        } else if (ImGui::SliderFloat(id.c_str(), &p.value, p.min, p.max, "%.3f")) {
+            p.changed = true;
+        }
     }
     for (DebugGroup& sub : group.groups) {
         const std::string sub_path = path + "/" + sub.label;

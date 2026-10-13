@@ -9,6 +9,7 @@
 #include "api/net_api.hpp"
 #include "api/ui_api.hpp"
 #include "cart/cartridge.hpp"
+#include "core/defaults.hpp"
 #include "core/log.hpp"
 #include "core/surface.hpp"
 #include "core/text.hpp"
@@ -211,24 +212,30 @@ void register_host_api(sol::state& lua, HostContext& host) {
     bind_surface_api(panel, host, /*is_panel=*/true);
 
     // --- phos.debug（把卡带的可调参数交给 `~` 调试台做实时微调） ---
-    // 卡带注册"一个数值 + 怎么读 get + 怎么写 set + 范围"，调试台据此画滑条。
+    // 三个注册入口：number（浮点滑条）/ integer（整数滑条）/ toggle（复选框）。
+    // 参数形状相同：name（可 {zh,en}）+ get + set + opts（min / max / step / group）。
     // 注册随卡带生命周期；未挂卡带（无卡 / 宿主动画脚本）时安全无效
     sol::table debug = phos.create_named("debug");
-    debug["number"] = [&host](sol::object name, sol::protected_function get,
-                              sol::protected_function set, sol::optional<sol::table> opts) {
-        if (!host.cart) return;
-        float min = 0.0f, max = 1.0f, step = 0.01f;
-        std::vector<Localized> group;
-        if (opts) {
-            const sol::table t = *opts;
-            min = static_cast<float>(api::read_number(t, "min", min));
-            max = static_cast<float>(api::read_number(t, "max", max));
-            step = static_cast<float>(api::read_number(t, "step", step));
-            group = read_group_path(t["group"]);
-        }
-        host.cart->debug_register(read_label(name), std::move(group), std::move(get),
-                                  std::move(set), min, max, step);
+    auto bind_debug = [&host](sol::table& t, const char* key, DebugKind kind) {
+        t[key] = [&host, kind](sol::object name, sol::protected_function get,
+                               sol::protected_function set, sol::optional<sol::table> opts) {
+            if (!host.cart) return;
+            float min = 0.0f, max = 1.0f, step = 0.01f;
+            std::vector<Localized> group;
+            if (opts) {
+                const sol::table ot = *opts;
+                min = static_cast<float>(api::read_number(ot, "min", min));
+                max = static_cast<float>(api::read_number(ot, "max", max));
+                step = static_cast<float>(api::read_number(ot, "step", step));
+                group = read_group_path(ot["group"]);
+            }
+            host.cart->debug_register(read_label(name), std::move(group), kind, std::move(get),
+                                      std::move(set), min, max, step);
+        };
     };
+    bind_debug(debug, "number", DebugKind::number);
+    bind_debug(debug, "integer", DebugKind::integer);
+    bind_debug(debug, "toggle", DebugKind::boolean);
 
     // --- phos.text（文本度量） ---
     // 中文一个字占两格，卡带要自己排版（居中、对齐、定宽字段）就得先问宽度，

@@ -670,15 +670,27 @@ cart.desc     -- 简介（按当前界面语言取；英文缺失时回落中文
 不必反复改代码重启。写玩法时（移动速度、生命值、武器半径/威力……）随手一挂即可。
 
 ```lua
--- 注册一个可调数值：get 读当前值、set 写回，range 决定滑条
+-- 浮点（滑条）：get 读当前值、set 写回，range 决定滑条
 local SPEED = 1.0
 phos.debug.number("移动速度", function() return SPEED end,
                   function(v) SPEED = v end, { min = 0.1, max = 3.0, step = 0.05 })
 
--- 嵌套数据也能调（回调自己存取）：武器表里第 1 件的半径
-phos.debug.number("武器1 半径", function() return WEAPONS[1].radius end,
-                  function(v) WEAPONS[1].radius = v end, { min = 1, max = 12, step = 0.5 })
+-- 整数（滑条取整）：弹药 / 弹丸数之类
+phos.debug.integer("弹药", function() return W.ammo end, function(v) W.ammo = v end,
+                   { min = 0, max = 20, step = 1 })
+
+-- 布尔（复选框）
+phos.debug.toggle("无敌", function() return GOD end, function(v) GOD = v end)
+
+-- 嵌套数据也能调（回调自己存取）+ 分组折叠：武器表里第 1 件放在 "武器/<名字>" 下
+phos.debug.number({ zh = "爆炸半径", en = "Blast radius" },
+                  function() return WEAPONS[1].radius end,
+                  function(v) WEAPONS[1].radius = v end,
+                  { group = { { zh = "武器", en = "WEAPONS" }, WEAPONS[1].name },
+                    min = 1, max = 12, step = 0.5 })
 ```
+三个入口形状相同：**浮点** `phos.debug.number`、**整数** `phos.debug.integer`（滑条取整）、**布尔**
+`phos.debug.toggle`（复选框）。分别对应面板里的浮点滑条 / 整数滑条 / 勾选框。
 
 - `get` / `set` 是**卡带自己的函数**，后端存储随意（局部变量、表字段、对象成员都行）——
   这正是它比"声明一个值交给主机保管"更实用的地方。`get` 在**面板打开**、`state.query`、
@@ -696,8 +708,8 @@ phos.debug.number("武器1 半径", function() return WEAPONS[1].radius end,
   `{ {zh="武器",en="WEAPONS"}, weapon.name }`）。分组是**默认关闭**的折叠节点，将来新增的
   组 / 参数自动出现——遍历武器表逐件登记即可，加武器时面板自己会长出来。
 - **文案随语言**：`name` 与组标签都可写成 `{ zh = …, en = … }`；切界面语言时篮子文案跟着变。
-- 面板里还有个开关 **`Pause while panel is open`**：勾上后打开调试台即**冻结卡带**
-  （`update` 不跑、画面仍按当前状态重绘；音频与 `phos.sys.time` 照常），方便对着静止画面细调。
+- 调试台 **HOST** 页里有个开关 **`Pause while panel is open`**：勾上后打开调试台即**冻结整机**
+  （卡带 `update` 不跑、`phos.sys.time` 不走、声音也停；画面仍按当前状态重绘），方便对静止画面细调。
 
 ## phos.sys
 

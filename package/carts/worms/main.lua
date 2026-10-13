@@ -469,16 +469,51 @@ function init()
 	                  function(v) Worms.WALK_SPEED = v end, { min = 2, max = 30, step = 0.5 })
 	phos.debug.number({ zh = "跳跃力", en = "Jump power" }, function() return Worms.JUMP_VY end,
 	                  function(v) Worms.JUMP_VY = v end, { min = -30, max = -3, step = 1 })
-	-- 武器：一个大折叠（"武器"）下、每件武器一个小折叠。**遍历 LIST**，于是将来加武器会自动出现在面板里
-	for _, w in ipairs(Weapons.LIST) do
-		local path = { { zh = "武器", en = "WEAPONS" }, w.name }  -- 大折叠 → 小折叠（武器名取自武器表）
-		if w.damage then
-			phos.debug.number({ zh = "伤害", en = "Damage" }, function() return w.damage end,
-			                  function(v) w.damage = v end, { group = path, min = 0, max = 200, step = 1 })
+	-- 武器：一个大折叠（"武器"）下、每件武器一个小折叠。**遍历武器表、登记它真正有的字段**——
+	-- 每件武器特性不同（机枪的弹丸数/连发间隔、激光的粗度/速度、治疗弹给的是治疗量、
+	-- 天基炮的光柱参数……），于是将来加武器、加字段都会自动出现在面板里，不必改这里
+	local FIELDS = {
+		{ "damage",    "伤害",     "Damage",        0,    200,  1,    true  },
+		{ "radius",    "爆炸半径", "Blast radius",  0,    12,   0.5,  false },
+		{ "wind",      "受风度",   "Wind factor",   0,    2,    0.05, false },
+		{ "ammo",      "弹药",     "Ammo",          -1,   20,   1,    true  },  -- -1 = 无限
+		{ "fuse",      "引信",     "Fuse",          0.5,  6,    0.1,  false },
+		{ "shells",    "弹丸数",   "Pellets",       1,    20,   1,    true  },
+		{ "spread",    "散射角",   "Spread",        0,    40,   0.5,  false },
+		{ "burst",     "连发间隔", "Burst gap",     0.02, 0.5,  0.01, false },
+		{ "supply",    "补给量",   "Supply",        1,    5,    1,    true  },
+		{ "heal",      "治疗量",   "Heal",          0,    200,  5,    false },
+		{ "raise",     "造地高度", "Mound height",  1,    20,   1,    true  },
+		{ "burn",      "燃烧时长", "Burn time",     0,    10,   0.5,  false },
+		{ "speed",     "飞行速度", "Speed",         100,  2000, 10,   true  },
+		{ "width",     "粗度",     "Width",         1,    12,   0.5,  false },
+		{ "turn_rate", "转向速率", "Turn rate",     10,   180,  5,    true  },
+		{ "splits",    "分裂数",   "Split count",   1,    12,   1,    true  },
+	}
+	local register_field = function(owner, path, f)
+		if owner[f[1]] == nil then return end  -- 这件武器没这个字段：不登记
+		local opts = { group = path, min = f[4], max = f[5], step = f[6] }
+		local getter = function() return owner[f[1]] end
+		local setter = function(v) owner[f[1]] = v end
+		if f[7] then
+			phos.debug.integer({ zh = f[2], en = f[3] }, getter, setter, opts)
+		else
+			phos.debug.number({ zh = f[2], en = f[3] }, getter, setter, opts)
 		end
-		if w.radius then
-			phos.debug.number({ zh = "爆炸半径", en = "Blast radius" }, function() return w.radius end,
-			                  function(v) w.radius = v end, { group = path, min = 1, max = 12, step = 0.5 })
+	end
+	local WEAPONS_GROUP = { zh = "武器", en = "WEAPONS" }
+	for _, w in ipairs(Weapons.LIST) do
+		local path = { WEAPONS_GROUP, w.name }
+		for _, f in ipairs(FIELDS) do register_field(w, path, f) end
+		if w.orbital then  -- 天基炮的光柱参数是嵌套表：再套一层小折叠
+			local opath = { WEAPONS_GROUP, w.name, { zh = "光柱", en = "BEAM" } }
+			register_field(w.orbital, opath, { "delay",       "标记延迟",   "Mark delay",      0,    6,   0.1,  false })
+			register_field(w.orbital, opath, { "life",        "光柱时长",   "Beam life",       0.5,  8,   0.1,  false })
+			register_field(w.orbital, opath, { "tick",        "结算间隔",   "Tick interval",   0.1,  2,   0.05, false })
+			register_field(w.orbital, opath, { "damage",      "每次伤害",   "Damage/tick",     0,    100, 1,    true })
+			register_field(w.orbital, opath, { "width",       "光柱宽度",   "Beam width",      2,    16,  1,    true })
+			register_field(w.orbital, opath, { "descend",     "穿空气速度", "Air descend",     10,   300, 5,    true })
+			register_field(w.orbital, opath, { "descend_dig", "入土速度",   "Dig descend",     1,    40,  1,    true })
 		end
 	end
 	-- 分层：天空与地形照旧画**底层**（phos.screen），前景（特效/瞄准/角色/雨雪）一层、

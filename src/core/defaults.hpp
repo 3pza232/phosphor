@@ -4,6 +4,11 @@
 
 namespace phos {
 
+/// 卡带可调参数的类型（`phos.debug.number / integer / toggle`）：控制台据此画浮点滑条 /
+/// 整数滑条 / 复选框。放 core/ 是因为它要同时被 cart/（登记）与 agent/（渲染）用到，
+/// 而两者互不依赖，只能共用一个低层类型
+enum class DebugKind { number, integer, boolean };
+
 /// 跨模块共享的可调常量。任何被两个以上模块使用的数值都应定义在这里，
 /// 避免同一语义在多处重复（这是"不硬编码"的落点）。
 inline constexpr int kContentW = 80;    // 卡带内容区宽（字符格）
