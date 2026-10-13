@@ -5,7 +5,7 @@ local Panel = require("panel")
 
 local Text = {
   zh = {
-    title = "中国象棋", menu_title = "对局设置", side = "执子", level = "电脑",
+    menu_title = "对局设置", side = "执子", level = "电脑",
     red = "红（先行）", black = "黑", lv = { "简单", "老手", "超算" },
     menu_hint = "↑↓ 选择   ←→ 调整   %s 开始",
     your = "你的回合", theirs = "对方回合", check = "将军！",
@@ -13,7 +13,7 @@ local Text = {
     exit = "[ESC] 返回卡带架",
   },
   en = {
-    title = "CHINESE CHESS", menu_title = "MATCH SETUP", side = "SIDE", level = "COMPUTER",
+    menu_title = "MATCH SETUP", side = "SIDE", level = "COMPUTER",
     red = "RED (first)", black = "BLACK", lv = { "EASY", "VETERAN", "SUPER" },
     menu_hint = "↑↓ SELECT   ←→ CHANGE   %s START",
     your = "YOUR TURN", theirs = "OPPONENT", check = "CHECK!",
@@ -81,6 +81,7 @@ local function draw_menu()
   local C, S = phos.color, phos.screen
   local t = phos.lang.dict(Text)
   S.clear()
+  S.print(2, 1, phos.text.fit(cart.name, 24), C.orange)   -- 标题取 manifest 名（随界面语言）
 
   local bw = 34
   local box = phos.ui.modal(bw, 7, t.menu_title)
@@ -230,7 +231,7 @@ local function draw_play()
 
   S.clear()
   draw_board()
-  S.print(px + FILE(2), py, phos.text.fit(t.title, 24), C.orange)
+  S.print(px + FILE(2), py, phos.text.fit(cart.name, 24), C.orange)
 
   local sy = py + ROW(9) + 3
   local st = game:status()

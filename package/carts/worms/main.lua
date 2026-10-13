@@ -73,6 +73,10 @@ local function accel(t, base, top)
 end
 local PANEL_W = 22 -- manifest 里声明的侧栏宽度（菜单/键位浮板时临时收起）
 
+-- 卡带身份（manifest 的 name 等）：标题画面用它，别在 Lua 里再抄一份字符串。
+-- 与调色板同理，init 里取一次——模块顶层 phos 还没装配完
+local Info
+
 -- 调色板在 init 里建：卡带加载时 phos 还没装配完，模块顶层碰它不稳
 local COL = {}
 local function build_palette()
@@ -460,6 +464,7 @@ local function refresh_view()
 end
 
 function init()
+	Info = phos.cart.info()
 	build_palette()
 	-- 可调参数交给 `~` 调试台（phos.debug.number）：常挂心的数挂上，边打边调（中英双语，随界面语言切换）
 	-- 顶层：虫子自己的几个数
@@ -2877,7 +2882,7 @@ local function draw_menu()
 	local t = L()
 	-- 不刷底色：主机每帧已经把内容区填成**当前主题的底色**（还带显像管效果），
 	-- 卡带再刷一层会连主题设置一起盖掉
-	S:print(2, 1, "WORMS", C.yellow)
+	S:print(2, 1, Info.name, C.yellow)   -- 标题取 manifest 名（随界面语言），不写死 "WORMS"
 	S:print(2, 2, t.subtitle, C.gray)
 
 	local px, py, pw, ph_ = phos.screen.playfield()
