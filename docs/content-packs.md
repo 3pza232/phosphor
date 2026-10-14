@@ -154,6 +154,7 @@ return {
 | `ivory-terminal` | 象牙白实验仪器：暖白机身 + 琥珀高亮 |
 | `crimson-arcade` | 红白街机机台：深红机身 + 金色高亮 |
 | `graphite` | 石墨灰工程终端：细线冷灰 |
+| `eva-unit01` | 初号机配色：紫机身 + 荧光绿高亮 + 橙色警戒 |
 
 ### boot（启动动画）
 
@@ -180,8 +181,8 @@ return {
 | `persistence` | PERSISTENCE：写头扫过让字样"显影"，笔画按余辉先亮后暗（两遍扫描 + 就绪报字） |
 | `waveform` | WAVEFORM LOCK：示波器栅格上的噪声波逐渐锁相成稳定波形（半格精度曲线 + 读数） |
 | `bootlog` | BOOT LOG：逐行滚出的 POST 自检（每行一声轻响）→ 全部 OK 后打出产品名 |
-| `spectrum` | SPECTRUM：46 根电平柱各自跳动 → 收平成一条基线 → 锁定音 + 产品名 |
-| `pulse` | PULSE：同心环从中心扩散 → 反向收束 → 产品名在核心处亮起 |
+| `spectrum` | SPECTRUM：电平柱跳动 + 峰值保持 + 倒影 + 扫描光标 → 收平成基线 → 锁定音 + 产品名 |
+| `pulse` | PULSE：同心环扩散/收束 + 雷达扫描线 + 火花 + 同步率 HUD → 产品名在核心处亮起 |
 | `ember` | EMBER：底部一排炉火跳动 + 火星升腾 → 产品名从火中浮出 |
 | `stardust` | STARDUST：星辰向心汇聚成星滴 → 坠落水面溅起涟漪 → 产品名自水面浮起 |
 
@@ -223,6 +224,10 @@ return {
 - 用户选择持久化于 `config.json`，重启后保持
 - 可选 `crt.frag`：完全自定义后处理 shader，高级用户入口 **[未实装]**
 
+随包色板（名字即文件夹名）：`default`（荧光绿）、`amber`（琥珀）、`ice-blue`（冰蓝）、
+`slate`（灰白）、`paper`（纸面深墨）、`crimson`（血橙红，配 `crimson-arcade`）、
+`eva`（初号机紫/绿/橙，配 `eva-unit01`）。
+
 ### sound（音效包）
 
 主机事件音的来源。默认全部为**合成音**（无需二进制素材，契合字符机气质）。
@@ -249,6 +254,10 @@ return {
 | `default` | ARCADE BLIPS：方波短促提示声（出厂默认） |
 | `soft` | SOFT TONES：正弦波、慢起落，深夜友好 |
 | `relay` | RELAY CLACK：噪声与低频咔哒，机电继电器质感 |
+| `chip` | CHIP BEEP：8 位芯片音，方波短促跳脱 |
+| `deep` | DEEP HULL：低频厚重，机箱共振的沉响 |
+| `glass` | GLASS BELL：清脆玻璃钟，正弦高频余音长 |
+| `muted` | MUTED：轻柔极简，正弦极短低音量 |
 | （主机选项） | SILENT：不播放任何主机事件音（卡带的音乐音效不受影响） |
 
 > **卡带的音乐与音效不在这里**——它们随卡带分发（见 `api-reference.md` 的 `phos.audio`），

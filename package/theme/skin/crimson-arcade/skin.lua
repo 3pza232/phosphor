@@ -8,7 +8,7 @@ end
 
 return {
   screen = { x = 2, y = 3 },
-  palette = "default",
+  palette = "crimson",
   left  = "#|",
   right = "|#",
   top = {

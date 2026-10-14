@@ -1,8 +1,9 @@
--- PULSE：从中心扩散的同心环；环收束后，产品名在核心处亮起
+-- PULSE：脉冲校准台（同心环扩散/收束 + 雷达扫描线 + 火花 + 同步率 HUD）
 --
 -- 时间线：
---   0.0~2.0s  每 0.3s 从中心放出一圈正弦环，向外扩散、越远越暗
---   2.0s~     新的环改为向内收束，把注意力压回中心 → 定格打出产品名
+--   0.0~2.0s  每 0.3s 从中心放出一圈正弦环，向外扩散、越远越暗；环上随机蹦出火花
+--   2.0s~     新的环改为向内收束，把注意力压回中心
+--   2.5s~     核心聚光 → 产品名亮起，同步率爬满
 -- 分工：状态只在 update 推进，draw 只按当前状态作画（dt 不进 draw）
 local t = 0
 local W, H = 80, 45
@@ -19,8 +20,11 @@ local CX, CY = W // 2, H // 2 + 1
 local SPAWN = 0.30
 local GATHER_T = 2.0
 local R_MAX = math.max(W, H)
-local rings = {}
+local rings, sparks = {}, {}
 local next_spawn, locked = 0.0, false
+local sync = 0                    -- 假装的"同步率"，随时间爬升
+
+local function rnd() return phos.sys.random(0, 999) / 1000 end
 
 -- 字符格是正方形（kCellPx 等宽等高），所以 x/y 用同一尺度才画得圆
 local function ring(S, cx, cy, r, ch, col)
@@ -35,6 +39,7 @@ end
 
 function update(dt)
   t = t + dt
+  sync = math.min(100, sync + dt * (locked and 60 or 22))
   if t >= next_spawn then
     next_spawn = t + SPAWN
     rings[#rings + 1] = { r = 0.5, grow = (t < GATHER_T) and 26 or -32 }
@@ -43,7 +48,18 @@ function update(dt)
   for i = #rings, 1, -1 do
     local rg = rings[i]
     rg.r = rg.r + rg.grow * dt
+    if rnd() < 0.25 then                       -- 环上随机蹦出火花
+      local a = rnd() * 2 * math.pi
+      sparks[#sparks + 1] = { x = CX + rg.r * math.cos(a), y = CY + rg.r * math.sin(a),
+                              vx = math.cos(a) * 6, vy = math.sin(a) * 6, life = 0.35 }
+    end
     if rg.r < 0.5 or rg.r > R_MAX then table.remove(rings, i) end
+  end
+  for i = #sparks, 1, -1 do
+    local s = sparks[i]
+    s.x, s.y = s.x + s.vx * dt, s.y + s.vy * dt
+    s.life = s.life - dt
+    if s.life <= 0 then table.remove(sparks, i) end
   end
   if not locked and t >= GATHER_T + 0.5 then
     locked = true
@@ -55,14 +71,34 @@ function draw()
   local S, C = phos.screen, phos.color
   S.clear()
   S.print(3, 1, L.title, C.gray)
+  S.print(math.max(3, W - 13), 1, string.format("%s %3d%%", L.sync, math.floor(sync)), C.dark_gray)
+
+  -- 十字准星（比核心更淡，只作背景刻度）
+  for x = 0, W - 1, 4 do S.put(x, CY, ".", C.dark_gray) end
+  for y = 0, H - 1, 2 do S.put(CX, y, ".", C.dark_gray) end
+
+  -- 雷达扫描线：一圈亮点绕核心转，头亮尾暗
+  local rr = math.min(W, H) * 0.42
+  for k = 0, 10 do
+    local a = t * 1.6 + k * 0.06
+    local x = math.floor(CX + rr * math.cos(a) + 0.5)
+    local y = math.floor(CY + rr * math.sin(a) + 0.5)
+    if x >= 0 and x < W and y >= 0 and y < H then
+      S.put(x, y, k == 0 and "#" or "=", k == 0 and C.white or C.dark_gray)
+    end
+  end
 
   for _, rg in ipairs(rings) do
     -- 环越大越暗：外圈是余波，内圈才是当前脉冲
     local col = rg.r > R_MAX * 0.6 and C.dark_gray or (rg.r > R_MAX * 0.3 and C.gray or C.green)
     ring(S, CX, CY, rg.r, ".", col)
   end
-  S.put(CX, CY, "+", C.green)
+  for _, s in ipairs(sparks) do
+    local x, y = math.floor(s.x + 0.5), math.floor(s.y + 0.5)
+    if x >= 0 and x < W and y >= 0 and y < H then S.put(x, y, "+", C.yellow) end
+  end
 
+  S.put(CX, CY, locked and "O" or "+", locked and C.white or C.green)
   if locked then
     S.print(CX - #LOGO // 2, CY - 1, LOGO, C.white)
     S.print(CX - #L.sync // 2, CY + 2, L.sync, C.gray)

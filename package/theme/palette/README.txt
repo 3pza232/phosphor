@@ -11,6 +11,8 @@
   ice-blue   ICE BLUE：冷色冰蓝
   slate      SLATE TERMINAL：去饱和灰白
   paper      PAPER INK：纸面深墨（配浅色机身主题，卡带变"浅底深字"）
+  crimson    CRIMSON PHOSPHOR：血橙红街机显像管（配 crimson-arcade）
+  eva        NERV UNIT-01：初号机色（紫 / 荧光绿 / 橙，配 eva-unit01）
 
 主机内置、不是文件夹：
   NONE (RAW) 不改配色、不加扫描线 —— 卡带自身配色被完整保留（主题未声明色板或找不到时回落它）

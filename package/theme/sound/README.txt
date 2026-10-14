@@ -7,6 +7,10 @@
   default   ARCADE BLIPS：方波电子音，街机厅的短促提示声（出厂默认）
   relay     RELAY CLACK：噪声与低频咔哒，机械继电器质感
   soft      SOFT TONES：正弦波为主，起振与释放都更慢
+  chip      CHIP BEEP：8 位芯片音（方波、短促、跳脱）
+  deep      DEEP HULL：低频厚重（三角/锯齿，机箱共振的沉响）
+  glass     GLASS BELL：清脆玻璃钟（正弦、高频、余音长）
+  muted     MUTED：轻柔极简（正弦、极短、低音量，深夜不吵）
 
 设置里还有一项是主机内置的，不是文件夹：
   SILENT    不放任何主机音效（卡带自己的音乐与音效不受影响）
