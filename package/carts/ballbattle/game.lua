@@ -108,9 +108,11 @@ local function move_blob(b, dx, dy, dt, radius)
   b.vx, b.vy = dx * sp, dy * sp
   b.x = b.x + b.vx * dt
   b.y = b.y + b.vy * dt
-  local m = b.r
-  if b.x < m then b.x = m elseif b.x > radius[1] - m then b.x = radius[1] - m end
-  if b.y < m then b.y = m elseif b.y > radius[2] - m then b.y = radius[2] - m end
+  -- 只把**球心**夹到世界矩形内：身体允许探出边界一部分。以前夹的是"球心 ± r 都不越界"，
+  -- 于是大球永远离墙 ≥ r，够不到角落里的食物/小球——而吞噬判定比的是圆心距，
+  -- 两者一冲突，就出现"看着贴上了却吃不掉"。放开球心后边角也能吃
+  if b.x < 0 then b.x = 0 elseif b.x > radius[1] then b.x = radius[1] end
+  if b.y < 0 then b.y = 0 elseif b.y > radius[2] then b.y = radius[2] end
 end
 
 function Game:update(dt)

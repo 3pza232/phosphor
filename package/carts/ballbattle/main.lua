@@ -5,23 +5,19 @@ local Panel = require("panel")
 
 local Text = {
   zh = { score = "体格", time = "存活", over = "被吞掉啦", won = "你是最大的球！",
-         again = "按 %s 再来一局", pause = "暂停中", me = "你",
-         hint = "方向键 移动    [%s] 暂停" },
+         again = "按 %s 再来一局", me = "你" },
   en = { score = "MASS", time = "TIME", over = "EATEN", won = "YOU ARE THE BIGGEST",
-         again = "press %s to play again", pause = "PAUSED", me = "YOU",
-         hint = "ARROWS move   [%s] PAUSE" },
+         again = "press %s to play again", me = "YOU" },
 }
 
 local game
 local cart = {}
-local paused = false
 local rng          -- 主机种子驱动
 local ai_colors    -- 电脑球配色（从色板取，不含玩家色）
 local view_scale = 1   -- 当前视距倍率（1 屏幕格 = 这么多世界单位），由 draw 更新
 
 local function new_game()
   game = Game.new(rng)
-  paused = false
 end
 
 local best = 0            -- 历史最高分（init 读盘一次，之后常驻内存）
@@ -54,12 +50,6 @@ function init()
 end
 
 function update(dt)
-  if phos.input.pressed("start") then
-    paused = not paused
-    phos.audio.paused(paused)
-  end
-  if paused then return end
-
   settle()   -- 主动退出也算结算：不必等到死亡，分数刷新即记下
 
   if not game.alive then
@@ -130,7 +120,23 @@ function draw()
     if sx >= 0 and sx < pw and sy >= 0 and sy < ph then S.put(px + sx, py + sy, "o", C.green) end
   end
 
-  for _, b in ipairs(game:ranked()) do
+  -- 世界边界：视角贴到墙时沿屏幕边画一道**粗线**，让"墙"清晰可见
+  -- （原来只有稀疏底纹，边界感很弱；本作又允许球身探出边界，更需要看得见墙在哪）
+  local wall = C.gray
+  if cam_x <= 0 then for sy = 0, ph - 1 do S.put(px, py + sy, "\u{2503}", wall) end end
+  if cam_x + vw >= Game.WORLD_W then
+    for sy = 0, ph - 1 do S.put(px + pw - 1, py + sy, "\u{2503}", wall) end
+  end
+  if cam_y <= 0 then for sx = 0, pw - 1 do S.put(px + sx, py, "\u{2501}", wall) end end
+  if cam_y + vh >= Game.WORLD_H then
+    for sx = 0, pw - 1 do S.put(px + sx, py + ph - 1, "\u{2501}", wall) end
+  end
+
+  -- 球按**从小到大**画：大球后画、压在小球之上。原来按"从大到小"画，
+  -- 结果小球盖住大球、玩家还永远在最底层（小球是后画的）
+  local blobs = game:ranked()
+  for i = #blobs, 1, -1 do
+    local b = blobs[i]
     local col = (b.role == "player") and C.cyan or ai_colors[(b.hue - 1) % #ai_colors + 1]
     draw_blob(S, px, py, cam_x, cam_y, scale, pw, ph, b, col)
   end
@@ -160,19 +166,13 @@ function draw()
     r:frame("")
     phos.ui.center_text(by + 1, st.won and t.won or t.over)
     phos.ui.center_text(by + 3, string.format(t.again, phos.input.key_name("a")))
-  elseif paused then
-    phos.ui.center_text(py + math.floor(ph / 2), t.pause)
   end
-
-  S.print(px + 1, py + ph - 1,
-          string.format(t.hint, phos.input.key_name("start")), C.dark_gray)
 
   Panel.draw(game, cart, best_score)
 end
 
 function debug_state()
   local st = game:status()
-  st.paused = paused
   st.view_scale = view_scale
   return st
 end
