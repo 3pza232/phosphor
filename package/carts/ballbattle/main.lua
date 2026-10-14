@@ -24,10 +24,19 @@ local function new_game()
   paused = false
 end
 
-local function best_score() return tonumber(phos.save.read("best") or "0") or 0 end
-local function save_best()
+local best = 0            -- 历史最高分（init 读盘一次，之后常驻内存）
+
+local function best_score() return best end
+
+-- 结算：分数线只增不减（吃的 + 体格峰值）。**当前分一越过历史最高就记下并落盘**，
+-- 于是"主动退出"（拔卡 / 关机）与死亡走同一条路——高手不想玩了退出也不会白打。
+-- 生命期里只在刷新纪录时才写盘（吃一个食物才涨一次分），不会形成每帧 IO
+local function settle()
   local sc = game:status().score
-  if sc > best_score() then phos.save.write("best", tostring(sc)) end
+  if sc > best then
+    best = sc
+    phos.save.write("best", tostring(best))
+  end
 end
 
 function init()
@@ -39,6 +48,7 @@ function init()
   -- 电脑球配色：取色板里除玩家青、黑、白之外的醒目色
   ai_colors = { C.red, C.orange, C.yellow, C.magenta, C.green, C.blue, C.purple }
   cart = phos.cart.info()
+  best = tonumber(phos.save.read("best") or "0") or 0
   new_game()
   phos.audio.music(require("music"))
 end
@@ -50,8 +60,10 @@ function update(dt)
   end
   if paused then return end
 
+  settle()   -- 主动退出也算结算：不必等到死亡，分数刷新即记下
+
   if not game.alive then
-    if phos.input.pressed("a") then save_best(); new_game(); phos.audio.beep(520, 0.06) end
+    if phos.input.pressed("a") then new_game(); phos.audio.beep(520, 0.06) end
     return
   end
 
@@ -64,7 +76,6 @@ function update(dt)
   if ev.kill then phos.audio.beep(680, 0.09, { volume = 0.16, wave = "square" }) end
   if ev.player_died then
     phos.audio.beep(140, 0.5, { sweep = 60, wave = "saw", volume = 0.22 })
-    save_best()
   end
 end
 

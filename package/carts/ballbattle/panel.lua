@@ -39,11 +39,13 @@ function Panel.draw(game, cart, best)
 
   P.print(1, 4, t.rank, C.gray)
   local listed = game:ranked()
+  local top = (listed[1] and listed[1].r) or 1     -- 榜首半径 = 参照
   for i = 1, math.min(RANK_MAX, #listed) do
     local b = listed[i]
     local who = (b.role == "player") and t.you or ("AI" .. (b.hue or 0))
-    local bar = string.rep("*", math.max(1, math.min(pw - 10, math.floor(b.r))))
-    local line = string.format("%d %s %s", i, phos.text.pad(who, 5), bar)
+    -- 星数 = **相对大小**：榜首 9 颗，其余按半径成比例，最少 1 颗（不再按绝对半径）
+    local stars = math.max(1, math.min(9, math.floor(b.r / top * 9 + 0.5)))
+    local line = string.format("%d %s %s", i, phos.text.pad(who, 5), string.rep("*", stars))
     P.print(1, 4 + i, phos.text.fit(line, pw - 2), (b.role == "player") and C.cyan or C.white)
   end
 
