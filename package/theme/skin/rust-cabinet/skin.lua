@@ -1,6 +1,6 @@
--- RUST CABINET：废弃游戏厅的机台
--- 铭牌只用 ASCII：皮肤脚本跑在**内容包沙箱**里（只有 phos.text.width/truncate），
--- 拿不到界面语言，所以正文一律不写中文——与其他两款皮肤保持一致
+-- RUST CABINET：废弃游戏厅的机台（锈蚀斑驳 + 服务铭牌）
+-- 上下用斑驳的 ":..:" 锈迹；底部留一块"维修/退币"铭牌与一段剥落的花纹
+local W = 84
 local function plate(text)
   local inner = 80
   if phos.text.width(text) > inner then text = phos.text.truncate(text, inner) end
@@ -19,8 +19,8 @@ return {
   },
   bottom = {
     "##" .. string.rep(":..:", 20) .. "##",
-    plate("COIN RETURN  [ ]      FAULT  [!]      SERVICE TAG  ------  "),
-    "##" .. string.rep(":..:", 20) .. "##",
+    plate("COIN RETURN [ ]      FAULT [!]      SERVICE  ------"),
+    plate("      . : .   ## .. ##   : . :        ( peeled )     "),   -- 剥落的花纹
   },
   colors = {
     frame  = { 120, 95, 70 },
@@ -28,7 +28,7 @@ return {
     ui_fg  = { 235, 215, 190 },
     ui_bg  = { 8,  6,  4 },
     ui_dim = { 120, 100, 80 },
-    panel  = { 18,  14,  10 },  -- 侧栏：比机身略亮
+    panel  = { 18,  14,  10 },
   },
   lamps = {
     { x = 0,  y = 4,  color = { 255, 170, 60 }, period = 1.2 },

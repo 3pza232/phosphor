@@ -1,10 +1,16 @@
 -- IVORY TERMINAL：象牙白实验仪器（暖白机身 + 琥珀高亮）
--- 铭牌只用 ASCII：皮肤脚本跑在内容包沙箱里（只有 phos.text.width/truncate），
--- 拿不到界面语言，所以正文一律不写中文
+-- 顶上一条刻度标尺，底下一排状态指示灯 [PWR][SIG][REC] 与序列号——实验台的语汇
+local W = 84
 local function plate(text)
   local inner = 80
   if phos.text.width(text) > inner then text = phos.text.truncate(text, inner) end
   return "  " .. text .. string.rep(" ", inner - phos.text.width(text)) .. "  "
+end
+local function scale()                        -- |....|....| 的仪表刻度
+  local s = "|"
+  for _ = 1, 16 do s = s .. "....|" end
+  s = s .. "...."
+  return s:sub(1, W)
 end
 
 return {
@@ -13,14 +19,14 @@ return {
   left  = "|:",
   right = ":|",
   top = {
-    "+" .. string.rep("-", 82) .. "+",
-    plate("IVORY TERMINAL                       MODEL IV-2        [///]"),
-    "+" .. string.rep("-", 82) .. "+",
+    scale(),
+    plate("IVORY TERMINAL                        MODEL IV-2         [///]"),
+    scale(),
   },
   bottom = {
-    "+" .. string.rep("-", 82) .. "+",
-    plate("PWR [o]     SIG [o]     REC [ ]                SER. 0007"),
-    "+" .. string.rep("-", 82) .. "+",
+    scale(),
+    plate("PWR [o]     SIG [o]     REC [ ]     LAMP [o]      SER. 0007"),
+    scale(),
   },
   colors = {
     frame  = { 150, 140, 118 },
@@ -28,7 +34,7 @@ return {
     ui_fg  = { 40,  36,  30 },
     ui_bg  = { 238, 234, 222 },
     ui_dim = { 116, 108, 92 },
-    panel  = { 224, 219, 204 },  -- 侧栏：比机身略深（本主题配浅色色板 paper，字是深墨）
+    panel  = { 224, 219, 204 },
   },
   lamps = {
     { x = 0,  y = 5, color = { 205, 150, 70 }, period = 2.2 },

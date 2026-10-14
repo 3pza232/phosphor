@@ -15,6 +15,9 @@
   pulse         PULSE：同心环从中心扩散收束，产品名在核心处亮起
   ember         EMBER：炉膛火焰跳动、火星升腾，产品名从火中浮出
   stardust      STARDUST：星辰向心汇聚成星滴，坠落水面溅起涟漪，产品名自水面浮起
+  helix         HELIX：双螺旋——两条正弦链缠绕、碱基对逐个点亮，合拢后产品名亮起
+  circuit       CIRCUIT：电路板通电——正交走线逐段点亮、电流亮点沿线流动、焊盘闪烁
+  globe         GLOBE：线框地球——经线随自转流动、陆地扫描、轨道卫星掠过
 
 动画是一段 Lua 脚本（main.lua），用 phos.screen / phos.color / phos.ui 逐帧作画，
 能力与游戏卡带完全相同 —— 想做多夸张都行。

@@ -1,7 +1,5 @@
--- PHOSPHOR P-1：出厂机身（极简工业风）
+-- PHOSPHOR P-1：出厂机身（极简工业风：双实线规矩 + 素壁 + 铭牌）
 local W = 84
-
--- 左右各留 2 列作侧壁，中间 80 列用于铭牌排版
 local function plate(text)
   local inner = 80
   if phos.text.width(text) > inner then text = phos.text.truncate(text, inner) end
@@ -15,12 +13,12 @@ return {
   right = "||",
   top = {
     string.rep("=", W),
-    plate("PHOSPHOR P-1                        CRT DISPLAY UNIT"),
+    plate("PHOSPHOR P-1         CRT DISPLAY UNIT           SER. 0001"),
     string.rep("=", W),
   },
   bottom = {
     string.rep("=", W),
-    plate("MODEL P-1           NO USER SERVICEABLE PARTS INSIDE"),
+    plate("MODEL P-1            NO USER SERVICEABLE PARTS INSIDE"),
     string.rep("=", W),
   },
   colors = {
@@ -29,7 +27,7 @@ return {
     ui_fg  = { 225, 255, 225 },
     ui_bg  = { 0,   0,   0 },
     ui_dim = { 95,  120, 95 },
-    panel  = { 10,  20,  13 },  -- 右侧栏：比机身略亮，给一栏"凹槽"的层次
+    panel  = { 10,  20,  13 },
   },
   lamps = {
     { x = 0,  y = 6,  color = { 80,  255, 120 }, period = 2.4 },

@@ -1,9 +1,17 @@
--- GRAPHITE：石墨灰工程终端（细线、冷灰，像一台仪器面板）
--- 铭牌只用 ASCII（内容包沙箱里没有语言 API）
+-- GRAPHITE TERMINAL：工程仪器（细刻线 + 刻度尺边 + 侧壁点线）
+-- 顶/底用**带刻度的标尺**（每 4 格一个 +），侧壁点线轮换——不再是"一条实线"
+local W = 84
 local function plate(text)
   local inner = 80
   if phos.text.width(text) > inner then text = phos.text.truncate(text, inner) end
   return "  " .. text .. string.rep(" ", inner - phos.text.width(text)) .. "  "
+end
+-- 刻度尺：+ 与 - 交替，4 格一档
+local function ruler()
+  local s = "+"
+  for _ = 1, 20 do s = s .. "----+" end
+  s = s .. "----"
+  return s:sub(1, W)
 end
 
 return {
@@ -12,14 +20,14 @@ return {
   left  = "|.",
   right = ".|",
   top = {
-    "+" .. string.rep(".", 82) .. "+",
-    plate("GRAPHITE  TERMINAL                    REVISION 2.1      +"),
-    "+" .. string.rep(".", 82) .. "+",
+    ruler(),
+    plate("GRAPHITE  TERMINAL          REVISION 2.1        PN 0x2A"),
+    ruler(),
   },
   bottom = {
-    "+" .. string.rep(".", 82) .. "+",
-    plate("- - -  diagnostic bus  - - -          unit 0x2A"),
-    "+" .. string.rep(".", 82) .. "+",
+    ruler(),
+    plate("diagnostic bus  - - -        unit 0x2A        no signal loss"),
+    ruler(),
   },
   colors = {
     frame  = { 120, 126, 132 },
@@ -27,7 +35,7 @@ return {
     ui_fg  = { 214, 220, 226 },
     ui_bg  = { 16,  18,  20 },
     ui_dim = { 95,  100, 108 },
-    panel  = { 26,  29,  32 },  -- 侧栏：比机身略亮
+    panel  = { 26,  29,  32 },
   },
   lamps = {
     { x = 0,  y = 6, color = { 170, 200, 220 }, period = 3.0 },
