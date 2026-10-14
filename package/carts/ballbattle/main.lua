@@ -93,6 +93,7 @@ function update(dt)
   local ev = game:update(dt)
   if ev.eat then phos.audio.beep(900, 0.03, { volume = 0.10 }) end
   if ev.kill then phos.audio.beep(680, 0.09, { volume = 0.16, wave = "square" }) end
+  if ev.spike then phos.audio.beep(520, 0.14, { wave = "square", volume = 0.18, sweep = 900 }) end
   if ev.lost then phos.audio.beep(300, 0.12, { wave = "saw", volume = 0.14 }) end
   if ev.player_died then
     phos.audio.beep(140, 0.5, { sweep = 60, wave = "saw", volume = 0.22 })
@@ -160,6 +161,22 @@ function draw()
     if sx >= 0 and sx < pw and sy >= 0 and sy < ph then S.put(px + sx, py + sy, "o", C.green) end
   end
 
+  -- 刺球：大食物，2x2 星簇、醒目橙色（够大才吃得下，吃下强制分裂）
+  for _, s in ipairs(game.spikes) do
+    local sx, sy = to_sx(s.x), to_sy(s.y)
+    for dx = 0, 1 do
+      for dy = 0, 1 do
+        local x, y = sx + dx, sy + dy
+        if x >= 0 and x < pw and y >= 0 and y < ph then S.put(px + x, py + y, "*", C.orange) end
+      end
+    end
+  end
+  -- 吃刺球/吐食的闪烁余韵（动态）
+  for _, bu in ipairs(game.bursts) do
+    local sx, sy = to_sx(bu.x), to_sy(bu.y)
+    if sx >= 0 and sx < pw and sy >= 0 and sy < ph then S.put(px + sx, py + sy, "+", C.yellow) end
+  end
+
   -- 世界边界：贴到墙时沿**世界边缘**画一道粗线，让"墙"清晰可见
   local wall = C.gray
   local ex = to_sx(0)
@@ -187,10 +204,10 @@ function draw()
     S.print(px + to_sx(big.x) - 1, py + to_sy(big.y - big.r) - 1, t.me, C.white)
   end
 
-  -- 顶部读数：体格（**当前**体型，会随吐食下降）/ 存活 / 名次 / 分身数 / 坐标。
-  -- 注意体格用当前值而非分数：分数记的是峰值（给"最高纪录"用），吐食不会让它掉
-  local rank, total = 1, #blobs
-  for i, b in ipairs(blobs) do if b == big then rank = i break end end
+  -- 顶部读数：体格（当前体型）/ 存活 / 名次（按"家"）/ 分身数 / 坐标
+  local board = game:leaderboard()
+  local rank, total = 1, #board
+  for i, e in ipairs(board) do if e.owner == "p" then rank = i break end end
   S.print(px + 1, py, string.format("%s %d   %s %.1fs   #%d/%d   %s %d   (%d,%d)",
           t.score, math.floor(st.size * 20), t.time, st.time, rank, total,
           t.cells, st.cells, math.floor(st.px), math.floor(st.py)), C.white)
