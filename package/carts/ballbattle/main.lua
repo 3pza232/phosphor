@@ -100,7 +100,10 @@ function update(dt)
   end
 end
 
-local function draw_blob(S, px, py, cam_x, cam_y, scale, pw, ph, b, col)
+-- 画一颗球：填充 + 一圈描边（edge）。描边让**紧挨在一起的分身也能分出彼此的分界**
+local function draw_blob(S, px, py, cam_x, cam_y, scale, pw, ph, b, fill, edge)
+  local ir = edge and math.max(b.r * 0.55, b.r - scale) or b.r   -- 描边厚约 1 屏幕格，但不超半径 45%
+  local ir2 = ir > 0 and ir * ir or -1
   local sx0 = math.max(0, math.floor((b.x - b.r - cam_x) / scale))
   local sx1 = math.min(pw - 1, math.ceil((b.x + b.r - cam_x) / scale))
   local sy0 = math.max(0, math.floor((b.y - b.r - cam_y) / scale))
@@ -110,8 +113,10 @@ local function draw_blob(S, px, py, cam_x, cam_y, scale, pw, ph, b, col)
     for sx = sx0, sx1 do
       local wx = cam_x + (sx + 0.5) * scale
       local dx, dy = wx - b.x, wy - b.y
-      if dx * dx + dy * dy <= b.r * b.r then
-        S.put(px + sx, py + sy, "\u{2588}", col)   -- 全块
+      local d2 = dx * dx + dy * dy
+      if d2 <= b.r * b.r then
+        local ch = (edge and d2 > ir2) and edge or fill
+        S.put(px + sx, py + sy, "\u{2588}", ch)   -- 全块
       end
     end
   end
@@ -158,16 +163,25 @@ function draw()
 
   for _, f in ipairs(game.food) do
     local sx, sy = to_sx(f.x), to_sy(f.y)
-    if sx >= 0 and sx < pw and sy >= 0 and sy < ph then S.put(px + sx, py + sy, "o", C.green) end
+    if sx >= 0 and sx < pw and sy >= 0 and sy < ph then
+      -- 吐出的食物：实心小球（●）；场上的普通食物：空心小圆（o）
+      S.put(px + sx, py + sy, f.ej and "\u{25CF}" or "o", C.green)
+    end
   end
 
-  -- 刺球：大食物，2x2 星簇、醒目橙色（够大才吃得下，吃下强制分裂）
+  -- 刺球：按**自身半径**画成一颗大星（够大才吃得下，吃下强制分裂）
+  local SR = Game.SPIKE_R
   for _, s in ipairs(game.spikes) do
-    local sx, sy = to_sx(s.x), to_sy(s.y)
-    for dx = 0, 1 do
-      for dy = 0, 1 do
-        local x, y = sx + dx, sy + dy
-        if x >= 0 and x < pw and y >= 0 and y < ph then S.put(px + x, py + y, "*", C.orange) end
+    local sx0 = math.max(0, math.floor((s.x - SR - cam_x) / scale))
+    local sx1 = math.min(pw - 1, math.ceil((s.x + SR - cam_x) / scale))
+    local sy0 = math.max(0, math.floor((s.y - SR - cam_y) / scale))
+    local sy1 = math.min(ph - 1, math.ceil((s.y + SR - cam_y) / scale))
+    for sy = sy0, sy1 do
+      local wy = cam_y + (sy + 0.5) * scale
+      for sx = sx0, sx1 do
+        local wx = cam_x + (sx + 0.5) * scale
+        local dx, dy = wx - s.x, wy - s.y
+        if dx * dx + dy * dy <= SR * SR then S.put(px + sx, py + sy, "*", C.orange) end
       end
     end
   end
@@ -188,12 +202,12 @@ function draw()
   ey = to_sy(Game.WORLD_H)
   if ey >= 0 and ey < ph then for sx = 0, pw - 1 do S.put(px + sx, py + ey, "\u{2501}", wall) end end
 
-  -- 球按**从小到大**画：大球后画、压在小球之上
+  -- 球按**从小到大**画：大球后画、压在小球之上；描边让相邻分身看得出分界
   local blobs = game:ranked()
   for i = #blobs, 1, -1 do
     local b = blobs[i]
     local col = (b.role == "player") and C.cyan or ai_colors[(b.hue - 1) % #ai_colors + 1]
-    draw_blob(S, px, py, cam_x, cam_y, scale, pw, ph, b, col)
+    draw_blob(S, px, py, cam_x, cam_y, scale, pw, ph, b, col, C.black)
   end
 
   -- 玩家标记：标在**最大**的那个细胞上方；全灭后立即消失

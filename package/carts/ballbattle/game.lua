@@ -19,11 +19,13 @@ local START_R = 1.8
 Game.SPLIT_MIN = 3.4          -- 半径达到它才能分裂
 Game.MAX_CELLS = 16           -- 单"家"细胞数上限
 Game.MERGE_DELAY = 10         -- 分裂后多久才可合并（秒）
-local SPLIT_BOOST = 30        -- 弹射初速（放慢：向前扑一小段）
-local BOOST_TIME = 0.7        -- 弹射速度衰减时间（之后被"聚拢"拉回）
-local EJECT_COST = 0.4        -- 每次吐食损失的半径平方 = 吐出食物价值（吃回相等）
+local SPLIT_BOOST = 30        -- 弹射初速（放慢）
+local BOOST_TIME = 1.2        -- 滑更久 → 分身飞得**更远**（之后慢慢重新聚拢）
+local EJECT_MASS = 1.2        -- 吐出食物质量 = 3×普通食物（隔空喂球够扎实）
+local EJECT_COST = 1.2        -- 每次吐食损失（与吐出食物相等，吃回正好抵消）
 local EJECT_MIN = 2.4         -- 半径小于它不许吐
 local EJECT_INTERVAL = 0.13
+local FOOD_GAIN = 0.4         -- 吃掉一份普通食物涨的质量
 local FOOD_SPEED = 46
 local FOOD_DECAY = 3.0
 
@@ -35,11 +37,12 @@ local AI_EJECT_CD = 2.5       -- 弃重逃命的冷却
 local AI_EJECT_THREAT = 7     -- 威胁近到这个距离才弃重
 
 -- 刺球：大餐，但要够大才能吃、且吃下强制分裂；数量少、绝不生成在球底下
-local SPIKE_COUNT = 4
-local SPIKE_R = 2.2           -- 吃到它的判定半径
-local SPIKE_MIN = 4.0         -- 半径达到它才吃得下
-local SPIKE_GAIN = 2.5        -- 吃一颗涨的质量（远多于普通食物 0.4）
-local SPIKE_CLEAR = 22        -- 生成时离所有球至少这么远
+local SPIKE_COUNT = 8
+local SPIKE_MIN = 4.1         -- 半径达到它才吃得下
+local SPIKE_R = 3.4           -- 刺球自身：只比"吃得下它的球"小一点（不再是小小一颗）
+local SPIKE_GAIN = 2.5        -- 吃一颗涨的质量（远多于普通食物）
+local SPIKE_CLEAR = 24        -- 生成时离所有球至少这么远
+Game.SPIKE_R = SPIKE_R        -- 暴露给渲染（画成相应大小的大星）
 
 local function hypot(x, y) return math.sqrt(x * x + y * y) end
 local function speed_of(r) return 26.0 / (1 + 0.30 * r) end
@@ -123,7 +126,8 @@ end
 
 function Game:drop_food()
   self.food[#self.food + 1] = { x = self.rand(2, Game.WORLD_W - 2),
-                                y = self.rand(2, Game.WORLD_H - 2), vx = 0, vy = 0 }
+                                y = self.rand(2, Game.WORLD_H - 2),
+                                vx = 0, vy = 0, m = FOOD_GAIN }
 end
 
 -- 刺球生成：**绝不落在任何球（含身体范围）底下**——否则"走着走着被迫分裂"没有策略可言
@@ -158,35 +162,40 @@ function Game:steer(dx, dy)
   self.dirx, self.diry = dx, dy
 end
 
--- 通用：把 owner 的每颗够大的细胞一分为二（玩家按 X、电脑按策略、吃刺球强制都走它）
-function Game:split_owner(owner, ux, uy, forced)
+-- 把**一颗**细胞一分为二：原球留在原地（不受反方向力），新球朝 (ux,uy) 弹射出去
+function Game:split_cell(c, ux, uy)
+  c.r = c.r / math.sqrt(2)                  -- 质量对半 → 半径 /√2
+  c.merge_t = Game.MERGE_DELAY
+  local n = self:new_cell(c.x, c.y, c.r, c.role, c.owner)
+  n.hue = c.hue
+  n.bvx, n.bvy = ux * SPLIT_BOOST, uy * SPLIT_BOOST
+  n.boost_t = BOOST_TIME
+  n.merge_t = Game.MERGE_DELAY
+  self.blobs[#self.blobs + 1] = n
+  return n
+end
+
+-- 把 owner 的每颗够大的细胞都一分为二（玩家按 X / 电脑按策略）；min_r 缺省用 SPLIT_MIN
+function Game:split_owner(owner, ux, uy, min_r)
   if not self.alive then return 0 end
   local cells = self:owner_cells(owner)
   local room = Game.MAX_CELLS - #cells
   if room <= 0 then return 0 end
-  local spawn = {}
+  local made = 0
   for _, c in ipairs(cells) do
-    if room <= 0 then break end
-    if c.r >= (forced and (SPIKE_MIN * 0.6) or Game.SPLIT_MIN) then
-      c.r = c.r / math.sqrt(2)
-      c.merge_t = Game.MERGE_DELAY
-      local n = self:new_cell(c.x, c.y, c.r, c.role, owner)
-      n.hue = c.hue
-      n.bvx, n.bvy = ux * SPLIT_BOOST, uy * SPLIT_BOOST
-      n.boost_t = BOOST_TIME
-      n.merge_t = Game.MERGE_DELAY
-      spawn[#spawn + 1] = n
-      room = room - 1
+    if made >= room then break end
+    if c.r >= (min_r or Game.SPLIT_MIN) then
+      self:split_cell(c, ux, uy)
+      made = made + 1
     end
   end
-  for _, n in ipairs(spawn) do self.blobs[#self.blobs + 1] = n end
-  return #spawn
+  return made
 end
 
 function Game:split()                       -- 玩家 X：朝行进方向
   local dl = hypot(self.dirx, self.diry)
   if dl < 0.01 then return end
-  self:split_owner("p", self.dirx / dl, self.diry / dl, false)
+  self:split_owner("p", self.dirx / dl, self.diry / dl)
 end
 
 -- 通用：owner 从每颗够大的细胞朝 (ux,uy) 吐一颗食物
@@ -200,6 +209,7 @@ function Game:eject_owner(owner, ux, uy, dt)
       self.food[#self.food + 1] = {
         x = c.x + ux * (c.r + 1.1), y = c.y + uy * (c.r + 1.1),
         vx = ux * FOOD_SPEED, vy = uy * FOOD_SPEED,
+        m = EJECT_MASS, ej = true,          -- 3×普通食物、实心小球样式
       }
     end
   end
@@ -259,7 +269,7 @@ function Game:think_ai(b, dt)
        and b.r >= Game.SPLIT_MIN then
       local dx, dy = prey.x - b.x, prey.y - b.y
       local dl = hypot(dx, dy)
-      if dl > 0.01 then self:split_owner(b.owner, dx / dl, dy / dl, false) end
+      if dl > 0.01 then self:split_owner(b.owner, dx / dl, dy / dl) end
       b.atk_cd = AI_SPLIT_CD
     end
   elseif hypot(b.tx - b.x, b.ty - b.y) < 3 then
@@ -294,7 +304,7 @@ local function resolve_pair(a, b, dt)
     a.x = a.x + ux * pull; a.y = a.y + uy * pull
     b.x = b.x - ux * pull; b.y = b.y - uy * pull
   elseif d > sum then
-    local pull = math.min(9 * dt, (d - sum) * 0.5)         -- 迅速聚拢到贴住为止
+    local pull = math.min(6 * dt, (d - sum) * 0.5)         -- 聚拢到贴住为止（慢慢来）
     a.x = a.x + ux * pull; a.y = a.y + uy * pull
     b.x = b.x - ux * pull; b.y = b.y - uy * pull
   else
@@ -360,7 +370,9 @@ function Game:update(dt)
       f.vx, f.vy = f.vx * k, f.vy * k
       if math.abs(f.vx) < 0.5 then f.vx = 0 end
       if math.abs(f.vy) < 0.5 then f.vy = 0 end
-      clamp_center(f, W, H)
+      -- 食物也被"拦"在世界线内：夹的是**食物自身**的范围（不是球心），别贴在边界线上
+      if f.x < FOOD_R then f.x = FOOD_R elseif f.x > W - FOOD_R then f.x = W - FOOD_R end
+      if f.y < FOOD_R then f.y = FOOD_R elseif f.y > H - FOOD_R then f.y = H - FOOD_R end
     end
   end
 
@@ -369,7 +381,7 @@ function Game:update(dt)
     local f = self.food[i]
     for _, b in ipairs(self.blobs) do
       if hypot(f.x - b.x, f.y - b.y) < b.r + FOOD_R then
-        b.r = math.sqrt(b.r * b.r + FOOD_R * FOOD_R * 1.6)
+        b.r = math.sqrt(b.r * b.r + (f.m or FOOD_GAIN))
         table.remove(self.food, i)
         if b.role == "player" then self.eaten = self.eaten + 1; events.eat = true end
         break
@@ -389,7 +401,7 @@ function Game:update(dt)
         local dx, dy = b.vx, b.vy
         local dl = hypot(dx, dy)
         if dl < 0.01 then dx, dy, dl = 1, 0, 1 end
-        self:split_owner(b.owner, dx / dl, dy / dl, true)
+        self:split_cell(b, dx / dl, dy / dl)     -- 只分裂**吃下它的那颗球**，不牵连其它分身
         self.bursts[#self.bursts + 1] = { x = s.x, y = s.y, t = 0.4 }
         if b.role == "player" then events.spike = true end
         break
