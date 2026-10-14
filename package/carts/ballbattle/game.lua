@@ -19,9 +19,9 @@ local START_R = 1.8
 Game.SPLIT_MIN = 3.4          -- 半径达到它才能分裂
 Game.MAX_CELLS = 16           -- 玩家细胞数上限
 Game.MERGE_DELAY = 10         -- 分裂后多久才可合并（秒）
-local SPLIT_BOOST = 62        -- 弹射初速（世界单位/秒）
-local BOOST_TIME = 0.5        -- 弹射速度衰减到 0 的时间（"动态"，不是瞬停）
-local EJECT_COST = 0.55       -- 每次吐食损失的半径平方（略大于吐出的食物：净亏一点）
+local SPLIT_BOOST = 34        -- 弹射初速（世界单位/秒）——放慢，配合更长的滑行
+local BOOST_TIME = 1.0        -- 弹射速度衰减到 0 的时间（滑更久 → 落点更远、不挤成一坨）
+local EJECT_COST = 0.4        -- 每次吐食损失的半径平方 = 吐出的食物价值（吃回去正好相等）
 local EJECT_MIN = 2.4         -- 半径小于它不许吐（防把自己吐饿死）
 local EJECT_INTERVAL = 0.13   -- 每秒最多吐几次
 local FOOD_SPEED = 46         -- 吐出食物的初速
@@ -161,6 +161,8 @@ function Game:eject(dt)
   for _, c in ipairs(self:player_cells()) do
     if c.r >= EJECT_MIN then
       c.r = math.sqrt(math.max(0.01, c.r * c.r - EJECT_COST))
+      -- 吐出的食物与场上食物**同量**（EJECT_COST == 吃掉一份食物涨的质量）：
+      -- 吃回去正好抵消，只有被 AI 抢走才亏
       self.food[#self.food + 1] = {
         x = c.x + ux * (c.r + 1.1), y = c.y + uy * (c.r + 1.1),
         vx = ux * FOOD_SPEED, vy = uy * FOOD_SPEED,

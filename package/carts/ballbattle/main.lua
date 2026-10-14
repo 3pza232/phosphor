@@ -187,11 +187,12 @@ function draw()
     S.print(px + to_sx(big.x) - 1, py + to_sy(big.y - big.r) - 1, t.me, C.white)
   end
 
-  -- 顶部读数：体格 / 存活 / 名次 / 分身数 / 坐标
+  -- 顶部读数：体格（**当前**体型，会随吐食下降）/ 存活 / 名次 / 分身数 / 坐标。
+  -- 注意体格用当前值而非分数：分数记的是峰值（给"最高纪录"用），吐食不会让它掉
   local rank, total = 1, #blobs
   for i, b in ipairs(blobs) do if b == big then rank = i break end end
   S.print(px + 1, py, string.format("%s %d   %s %.1fs   #%d/%d   %s %d   (%d,%d)",
-          t.score, st.score, t.time, st.time, rank, total,
+          t.score, math.floor(st.size * 20), t.time, st.time, rank, total,
           t.cells, st.cells, math.floor(st.px), math.floor(st.py)), C.white)
 
   if not game.alive then
