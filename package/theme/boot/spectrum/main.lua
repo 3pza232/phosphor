@@ -80,3 +80,5 @@ function draw()
     S.print(W // 2 - #LOGO // 2, TOP - 3, LOGO, C.white)
   end
 end
+
+duration = 4.6   -- 本动画自报时长（秒）：由 App 读取，未声明则用出厂 3.2s

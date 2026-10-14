@@ -14,12 +14,12 @@ return {
   right = "|:",
   top = {
     "##" .. string.rep(":..:", 20) .. "##",
-    plate("R U S T   C A B I N E T          ***  OUT OF ORDER  SINCE 1987  ***"),
+    plate("R U S T   C A B I N E T               SERIAL 1987-04     [X]"),
     "##" .. string.rep(":..:", 20) .. "##",
   },
   bottom = {
     "##" .. string.rep(":..:", 20) .. "##",
-    plate("  ( OUT OF ORDER )        COIN SLOT ->          . : ; , ."),
+    plate("COIN RETURN  [ ]      FAULT  [!]      SERVICE TAG  ------  "),
     "##" .. string.rep(":..:", 20) .. "##",
   },
   colors = {

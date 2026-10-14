@@ -111,3 +111,5 @@ function draw()
     S.print(W // 2 - phos.text.width(text.ready) // 2, 38, text.ready, C.gray)
   end
 end
+
+duration = 4.4   -- 本动画自报时长（秒）：由 App 读取，未声明则用出厂 3.2s

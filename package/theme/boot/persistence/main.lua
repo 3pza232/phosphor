@@ -139,3 +139,5 @@ function draw()
   S.print(W - 2 - phos.text.width("v" .. phos.sys.version()), 1,
           "v" .. phos.sys.version(), C.dark_gray)
 end
+
+duration = 5.4   -- 本动画自报时长（秒）：由 App 读取，未声明则用出厂 3.2s

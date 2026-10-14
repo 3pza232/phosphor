@@ -159,6 +159,7 @@ private:
     bool playing_ = false;
     bool in_boot_ = true;
     float boot_elapsed_ = 0.0f;
+    float boot_len_ = kBootDuration;  // 本轮开机时长：动画脚本自己声明（见 Cartridge::declared_seconds），未声明则回退出厂值
     bool quit_ = false;
 
     Config config_;

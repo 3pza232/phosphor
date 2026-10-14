@@ -264,15 +264,19 @@ void App::tick_shell(Renderer* renderer, Window* window) {
     shell_.draw(display_.screen);
     shell_.set_lamps_solid(false);
 
-    // 界面按键音：确认键与普通键区分
-    if (any_key_edge()) play_event(input_.pressed(Key::start) ? "confirm" : "key");
+    // 界面按键音：确认键与普通键区分。**音效行例外**——它的声音由 handle_intent 处理
+    // （切换时放新包、Enter 试听当前），否则会先响一次旧包的键音，听着像没切过来
+    if (any_key_edge() && !shell_.settings_on_sound_row())
+        play_event(input_.pressed(Key::start) ? "confirm" : "key");
 
     handle_intent(intent, renderer, window);
     input_.next_frame();
 }
 
 bool App::boot_should_end() const {
-    return boot_elapsed_ >= kBootDuration || input_.pressed(Key::a);
+    // 时长由**动画自己**决定（脚本顶层 `duration`），未声明则用出厂值 kBootDuration；
+    // 任意键（A）即刻跳过
+    return boot_elapsed_ >= boot_len_ || input_.pressed(Key::a);
 }
 
 /// 按卡带架上的下标插卡（路径来自卡带列表，见 Shell::cart_path_at）
@@ -314,6 +318,9 @@ void App::start_boot_animation() {
             clear_host_cart();
         }
     }
+    // 开机时长：动画脚本可自报（`duration = 秒` 或 `function duration()`）；没写就用出厂值
+    boot_len_ = boot_script_ ? boot_script_->declared_seconds(kBootDuration) : kBootDuration;
+    if (boot_len_ < 0.5f) boot_len_ = 0.5f;   // 兜底：别让脚本声明成 0 秒
     shell_.set_external_boot(boot_script_ != nullptr);
     shell_.to_boot();
 

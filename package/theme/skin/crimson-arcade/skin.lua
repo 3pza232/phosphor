@@ -13,12 +13,12 @@ return {
   right = "|#",
   top = {
     "#" .. string.rep("=", 82) .. "#",
-    plate("CRIMSON ARCADE                             1UP       HIGH"),
+    plate("CRIMSON ARCADE                            CABINET No.7      [ON]"),
     "#" .. string.rep("=", 82) .. "#",
   },
   bottom = {
     "#" .. string.rep("=", 82) .. "#",
-    plate("(C) PZA SOFTWORKS     PLAYER 1     CREDIT 00      > COIN"),
+    plate("FOR AMUSEMENT ONLY . NO CASH VALUE . TILT .      (C) 1984 PZA"),
     "#" .. string.rep("=", 82) .. "#",
   },
   colors = {

@@ -54,6 +54,10 @@ public:
     /// 不存在或不可序列化时返回空串
     std::string global_json(const std::string& path);
 
+    /// 开机动画可声明自己的时长（秒）：脚本顶层写 `duration = <数>` 或 `function duration() ... end`。
+    /// 未声明 / 非法时返回 fallback。用来让"开机播多久"由动画自己决定
+    float declared_seconds(float fallback);
+
     /// 卡带注册的一个可实时调参数（`phos.debug.*`）：get 读当前值、set 写回。
     /// name / group 是**可本地化**的（字符串，或 { zh =, en = } 表）——界面语言切换时篮子文案跟着变。
     /// 带 sol 类型，故留在 cart/；控制台只吃它的纯数据快照（`DebugParamView`）

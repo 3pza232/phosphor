@@ -321,6 +321,18 @@ std::string Cartridge::global_json(const std::string& path) {
     return lua_value_to_json(current, 2);
 }
 
+float Cartridge::declared_seconds(float fallback) {
+    sol::object d = lua_["duration"];
+    if (d.is<double>()) return static_cast<float>(d.as<double>());
+    if (d.is<sol::function>()) {
+        WatchdogScope guard;   // 时长声明也是脚本代码，别让死循环拖死主机
+        sol::protected_function call = d;
+        const sol::protected_function_result r = call();
+        if (r.valid() && r.get_type() == sol::type::number) return r.get<float>();
+    }
+    return fallback;
+}
+
 void Cartridge::apply_palette(const Palette& palette) {
     apply_palette_to(lua_, palette);
 }

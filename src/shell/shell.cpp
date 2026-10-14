@@ -74,6 +74,11 @@ void Shell::open_settings() {
     settings_cursor_ = 0;
 }
 
+bool Shell::settings_on_sound_row() const {
+    return mode_ == ShellMode::settings &&
+           static_cast<SettingId>(settings_cursor_) == SettingId::sound_pack;
+}
+
 void Shell::to_tape() {
     mode_ = ShellMode::tape;
     tape_.open();
@@ -295,9 +300,14 @@ Shell::Intent Shell::update_settings(const Input& input) {
             break;
         }
         case SettingId::sound_pack:
-            if (pick_next(sound_names_, sound_index_)) {
-                intent.sound_changed = true;
-                intent.sound_index = sound_index_;
+            // 左右 = 换音效包（App 会立即用**新**包试听）；Enter = 只试听**当前**包，不切换
+            if (left || right) {
+                if (pick_next(sound_names_, sound_index_)) {
+                    intent.sound_changed = true;
+                    intent.sound_index = sound_index_;
+                }
+            } else if (confirm) {
+                intent.preview_sound = true;
             }
             break;
         case SettingId::music_volume:

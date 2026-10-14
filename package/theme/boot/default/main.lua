@@ -163,3 +163,5 @@ function draw()
     end
   end
 end
+
+duration = 3.8   -- 本动画自报时长（秒）：由 App 读取，未声明则用出厂 3.2s

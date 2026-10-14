@@ -12,12 +12,12 @@ return {
   right = "-+",
   top = {
     "+" .. string.rep("-=", 41) .. "+",
-    plate("  << NEON HUSK >>        ARCADE TERMINAL / NIGHT SHIFT  "),
+    plate("  NEON HUSK                TERMINAL 7 / NIGHT SHIFT          "),
     "+" .. string.rep("-=", 41) .. "+",
   },
   bottom = {
     "+" .. string.rep("-=", 41) .. "+",
-    plate("  INSERT COIN   .   NO REFUNDS   .   OPEN 24H        "),
+    plate("  TOKEN 1  .  NO REFUNDS  .  CLOSING 04:00  .  STAFF ->      "),
     "+" .. string.rep("-=", 41) .. "+",
   },
   colors = {

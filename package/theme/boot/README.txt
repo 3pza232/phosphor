@@ -23,7 +23,8 @@
       所以开机第一秒就有声音）。此外主机还会播放音效包的 boot 事件音
       （在 theme/sound/ 里定义，换音效包即换开机提示音）。
 
-时长与跳过：默认播放约 3.2 秒后进入卡带架，任意键可立即跳过。
+时长与跳过：**时长由动画自己声明**——脚本顶层写 `duration = <秒>`（也可写函数
+      `function duration() ... end`），未声明则用出厂 3.2 秒；任意键可立即跳过。
 
 怎么做：复制 default 文件夹（或 static-rain），改名，编辑 main.lua。
       脚本接口见 docs/content-packs.md 与 docs/api-reference.md。

@@ -6,6 +6,7 @@
 --   2.5s~     核心聚光 → 产品名亮起，同步率爬满
 -- 分工：状态只在 update 推进，draw 只按当前状态作画（dt 不进 draw）
 local t = 0
+duration = 4.8               -- 本动画自报时长（秒）：环扩散 2s + 收束 + 锁定后留白欣赏
 local W, H = 80, 45
 do
   local _, _, pw, ph_ = phos.screen.playfield()
@@ -71,20 +72,25 @@ function draw()
   local S, C = phos.screen, phos.color
   S.clear()
   S.print(3, 1, L.title, C.gray)
-  S.print(math.max(3, W - 13), 1, string.format("%s %3d%%", L.sync, math.floor(sync)), C.dark_gray)
+  if locked then
+    S.print(math.max(3, W - 7), 1, "LOCKED", C.green)
+  else
+    S.print(math.max(3, W - 13), 1, string.format("%s %3d%%", L.sync, math.floor(sync)), C.dark_gray)
+  end
 
-  -- 十字准星（比核心更淡，只作背景刻度）
-  for x = 0, W - 1, 4 do S.put(x, CY, ".", C.dark_gray) end
-  for y = 0, H - 1, 2 do S.put(CX, y, ".", C.dark_gray) end
-
-  -- 雷达扫描线：一圈亮点绕核心转，头亮尾暗
-  local rr = math.min(W, H) * 0.42
-  for k = 0, 10 do
-    local a = t * 1.6 + k * 0.06
-    local x = math.floor(CX + rr * math.cos(a) + 0.5)
-    local y = math.floor(CY + rr * math.sin(a) + 0.5)
-    if x >= 0 and x < W and y >= 0 and y < H then
-      S.put(x, y, k == 0 and "#" or "=", k == 0 and C.white or C.dark_gray)
+  if not locked then
+    -- 十字准星 + 雷达扫描线（锁定后撤掉，免得压住产品名）
+    for x = 0, W - 1, 4 do S.put(x, CY, ".", C.dark_gray) end
+    for y = 0, H - 1, 2 do S.put(CX, y, ".", C.dark_gray) end
+    local rr = math.min(W, H) * 0.42
+    for k = 0, 10 do
+      -- 尾迹跟在亮头**后面**（a 随 k 递减）：原来写成 +k，拖尾跑到头前面去了
+      local a = t * 1.6 - k * 0.06
+      local x = math.floor(CX + rr * math.cos(a) + 0.5)
+      local y = math.floor(CY + rr * math.sin(a) + 0.5)
+      if x >= 0 and x < W and y >= 0 and y < H then
+        S.put(x, y, k == 0 and "#" or "=", k == 0 and C.white or C.dark_gray)
+      end
     end
   end
 
@@ -98,9 +104,13 @@ function draw()
     if x >= 0 and x < W and y >= 0 and y < H then S.put(x, y, "+", C.yellow) end
   end
 
-  S.put(CX, CY, locked and "O" or "+", locked and C.white or C.green)
   if locked then
+    -- 锁定态：杂讯收干净，核心亮一枚白点，产品名居中 + 一道绿色细下划线收尾
+    S.put(CX, CY, "O", C.white)
     S.print(CX - #LOGO // 2, CY - 1, LOGO, C.white)
-    S.print(CX - #L.sync // 2, CY + 2, L.sync, C.gray)
+    local u = #LOGO // 2 + 3
+    for x = CX - u, CX + u do S.put(x, CY + 1, "-", C.green) end
+  else
+    S.put(CX, CY, "+", C.green)
   end
 end

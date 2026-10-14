@@ -95,10 +95,11 @@ void App::handle_intent(const Shell::Intent& intent, Renderer* renderer, Window*
     }
     if (intent.sound_changed) {
         apply_sound(intent.sound_index);
-        play_event("confirm");  // 立即试听新音效包
+        play_event("confirm");  // 立即试听**新**音效包
         log::info("setting sound=" +
                   packs_.sounds[static_cast<size_t>(packs_.sound_index)].id);
     }
+    if (intent.preview_sound) play_event("confirm");  // 音效行 Enter：试听当前音效包
     if (intent.shelf_style_changed) {
         config_.shelf_style = shell_.shelf_style() == ShelfStyle::list ? "list" : "window";
         save_config_now();

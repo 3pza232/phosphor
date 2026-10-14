@@ -56,6 +56,7 @@ public:
         bool tape_import = false;  // 请求导入磁带码
         std::string tape_code;     // 待导入的码（十六进制）
         bool language_changed = false;  // 界面语言已切换（App 读 shell_.language() 落盘）
+        bool preview_sound = false;     // 音效行按 Enter：试听**当前**音效包（不切换）
     };
 
     /// 换皮肤（同时重建几何：格子尺寸与外壳尺寸随主题变）
@@ -128,6 +129,10 @@ public:
     void open_settings();
     /// 切到暂停菜单（游戏画面由卡带自己保持）
     void to_paused();
+
+    /// 设置光标是否停在"音效包"那一行：该行的声音由 App 自己处理
+    /// （切换时放**新**音效包、Enter 试听当前），以免先响一次旧包的键音
+    bool settings_on_sound_row() const;
 
     ShellMode mode() const { return mode_; }
     ShelfStyle shelf_style() const { return shelf_style_; }

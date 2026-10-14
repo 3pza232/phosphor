@@ -163,7 +163,8 @@ return {
 - 文件：只需 `main.lua`
 - 脚本与卡带同构：`update(dt)` / `draw()`，可用 `phos.screen` / `phos.color` /
   `phos.ui` / `phos.sys` / `phos.audio`
-- 播放约 3.2 秒后自动进入卡带架，按 A 或 Esc 跳过
+- **时长由动画自己决定**：脚本顶层可写 `duration = <秒>`（或 `function duration()`），
+  未声明用出厂 3.2 秒；按 A 或 Esc 跳过
 - **动画可以自带音效**：音频设备在开机动画之前就已就绪，
   所以 `phos.audio.beep / note / perc` 从第一帧起就能发声
   （例如 STATIC RAIN 的沙沙噪声、CART LOADER 的读写头咔哒）

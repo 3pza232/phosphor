@@ -109,3 +109,5 @@ function draw()
   end
   S.print(PX + 2 + w + 2, H - 5, string.format("%3d%%", pct), C.gray)
 end
+
+duration = 4.8   -- 本动画自报时长（秒）：由 App 读取，未声明则用出厂 3.2s
