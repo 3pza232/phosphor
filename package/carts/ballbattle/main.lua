@@ -4,9 +4,9 @@ local Game = require("game")
 local Panel = require("panel")
 
 local Text = {
-  zh = { score = "体格", time = "存活", over = "被吞掉啦", won = "你是最大的球！",
+  zh = { score = "体格", time = "存活", cells = "分身", over = "被吞掉啦", won = "你是最大的球！",
          again = "按 %s 再来一局", me = "你" },
-  en = { score = "MASS", time = "TIME", over = "EATEN", won = "YOU ARE THE BIGGEST",
+  en = { score = "MASS", time = "TIME", cells = "CELLS", over = "EATEN", won = "YOU ARE THE BIGGEST",
          again = "press %s to play again", me = "YOU" },
 }
 
@@ -14,7 +14,14 @@ local game
 local cart = {}
 local rng          -- 主机种子驱动
 local ai_colors    -- 电脑球配色（从色板取，不含玩家色）
-local view_scale = 1   -- 当前视距倍率（1 屏幕格 = 这么多世界单位），由 draw 更新
+
+-- 相机的平滑状态：视距与环境都要**渐变**，不能跳变
+local view_scale        -- 当前视距（1 屏幕格 = 这么多世界单位）
+local cam_wx, cam_wy    -- 平滑后的相机中心（世界坐标）
+local frame_dt = 1 / 60
+
+local function clamp(v, lo, hi) return v < lo and lo or (v > hi and hi or v) end
+local function approach(cur, target, k, dt) return cur + (target - cur) * (1 - math.exp(-k * dt)) end
 
 local function new_game()
   game = Game.new(rng)
@@ -43,13 +50,26 @@ function init()
   end
   -- 电脑球配色：取色板里除玩家青、黑、白之外的醒目色
   ai_colors = { C.red, C.orange, C.yellow, C.magenta, C.green, C.blue, C.purple }
+  -- 新玩法的"手感旋钮"交给 `~` 调试台实时微调（随界面语言）
+  local GRP = { zh = "分裂 / 合并", en = "Split / Merge" }
+  phos.debug.number({ zh = "分裂最小半径", en = "Split min r" },
+    function() return Game.SPLIT_MIN end, function(v) Game.SPLIT_MIN = v end,
+    { min = 1, max = 8, step = 0.1, group = GRP })
+  phos.debug.number({ zh = "细胞上限", en = "Max cells" },
+    function() return Game.MAX_CELLS end, function(v) Game.MAX_CELLS = math.floor(v) end,
+    { min = 1, max = 32, step = 1, group = GRP })
+  phos.debug.number({ zh = "合并等待(秒)", en = "Merge delay (s)" },
+    function() return Game.MERGE_DELAY end, function(v) Game.MERGE_DELAY = v end,
+    { min = 0, max = 30, step = 0.5, group = GRP })
   cart = phos.cart.info()
   best = tonumber(phos.save.read("best") or "0") or 0
+  view_scale, cam_wx, cam_wy = nil, nil, nil
   new_game()
   phos.audio.music(require("music"))
 end
 
 function update(dt)
+  frame_dt = dt
   settle()   -- 主动退出也算结算：不必等到死亡，分数刷新即记下
 
   if not game.alive then
@@ -61,9 +81,19 @@ function update(dt)
   local dy = (phos.input.down("down") and 1 or 0) - (phos.input.down("up") and 1 or 0)
   game:steer(dx, dy)
 
+  if phos.input.pressed("x") then                 -- X：分裂（静止时无效）
+    game:split()
+    phos.audio.beep(720, 0.05, { wave = "triangle", volume = 0.16 })
+  end
+  if phos.input.down("z") then                     -- Z：按住吐食
+    game:eject(dt)
+    phos.audio.beep(360, 0.03, { volume = 0.08 })
+  end
+
   local ev = game:update(dt)
   if ev.eat then phos.audio.beep(900, 0.03, { volume = 0.10 }) end
   if ev.kill then phos.audio.beep(680, 0.09, { volume = 0.16, wave = "square" }) end
+  if ev.lost then phos.audio.beep(300, 0.12, { wave = "saw", volume = 0.14 }) end
   if ev.player_died then
     phos.audio.beep(140, 0.5, { sweep = 60, wave = "saw", volume = 0.22 })
   end
@@ -90,27 +120,37 @@ function draw()
   local C, S = phos.color, phos.screen
   local t = phos.lang.dict(Text)
   local px, py, pw, ph = S.playfield()
-  local p = game.player
+  local st = game:status()
 
-  -- 缩放：体型越大看得越远（否则大球糊满整屏）。1 屏幕格 = scale 个世界单位
-  local scale = math.min(4, 1 + math.floor(p.r / 8))
-  view_scale = scale
+  -- 相机的视距由**总质量**（等价半径）决定：分裂成两半时总质量不变 → 视角也不变；
+  -- 只有真正吃大/变小才拉远/拉近，而且用指数逼近做成**平滑**变化
+  local target = clamp(1 + st.size / 8, 1, 4)
+  if not view_scale then view_scale, cam_wx, cam_wy = target, st.px, st.py end
+  view_scale = approach(view_scale, target, 2.5, frame_dt)
+  cam_wx = approach(cam_wx, st.px, 8, frame_dt)
+  cam_wy = approach(cam_wy, st.py, 8, frame_dt)
+  local scale = view_scale
 
   local vw, vh = pw * scale, ph * scale
-  local cam_x = math.max(0, math.min(p.x - vw / 2, Game.WORLD_W - vw))
-  local cam_y = math.max(0, math.min(p.y - vh / 2, Game.WORLD_H - vh))
+  -- 允许相机越过世界边界一段（margin）：球贴墙时能看见自己探出去的那部分身体
+  local margin = vw * 0.35
+  local cam_x = clamp(cam_wx - vw / 2, -margin, Game.WORLD_W - vw + margin)
+  local cam_y = clamp(cam_wy - vh / 2, -margin, Game.WORLD_H - vh + margin)
   local function to_sx(wx) return math.floor((wx - cam_x) / scale) end
   local function to_sy(wy) return math.floor((wy - cam_y) / scale) end
 
   S.clear()   -- 空格 + 色板默认底（随主题）
 
-  -- 底纹：随世界走的稀疏点阵（世界坐标 5 的倍数），衬出移动感
+  -- 底纹：随世界走的稀疏点阵（世界坐标 5 的倍数）。**只画在世界里**——
+  -- 相机可能越界看到"外面"，那里不该有点
   for wy = math.floor(cam_y / 5) * 5, cam_y + vh, 5 do
     local sy = to_sy(wy)
-    if sy >= 0 and sy < ph then
+    if wy >= 0 and wy <= Game.WORLD_H and sy >= 0 and sy < ph then
       for wx = math.floor(cam_x / 5) * 5, cam_x + vw, 5 do
         local sx = to_sx(wx)
-        if sx >= 0 and sx < pw then S.put(px + sx, py + sy, "\u{00B7}", C.dark_gray) end
+        if wx >= 0 and wx <= Game.WORLD_W and sx >= 0 and sx < pw then
+          S.put(px + sx, py + sy, "\u{00B7}", C.dark_gray)
+        end
       end
     end
   end
@@ -120,20 +160,18 @@ function draw()
     if sx >= 0 and sx < pw and sy >= 0 and sy < ph then S.put(px + sx, py + sy, "o", C.green) end
   end
 
-  -- 世界边界：视角贴到墙时沿屏幕边画一道**粗线**，让"墙"清晰可见
-  -- （原来只有稀疏底纹，边界感很弱；本作又允许球身探出边界，更需要看得见墙在哪）
+  -- 世界边界：贴到墙时沿**世界边缘**画一道粗线，让"墙"清晰可见
   local wall = C.gray
-  if cam_x <= 0 then for sy = 0, ph - 1 do S.put(px, py + sy, "\u{2503}", wall) end end
-  if cam_x + vw >= Game.WORLD_W then
-    for sy = 0, ph - 1 do S.put(px + pw - 1, py + sy, "\u{2503}", wall) end
-  end
-  if cam_y <= 0 then for sx = 0, pw - 1 do S.put(px + sx, py, "\u{2501}", wall) end end
-  if cam_y + vh >= Game.WORLD_H then
-    for sx = 0, pw - 1 do S.put(px + sx, py + ph - 1, "\u{2501}", wall) end
-  end
+  local ex = to_sx(0)
+  if ex >= 0 and ex < pw then for sy = 0, ph - 1 do S.put(px + ex, py + sy, "\u{2503}", wall) end end
+  ex = to_sx(Game.WORLD_W)
+  if ex >= 0 and ex < pw then for sy = 0, ph - 1 do S.put(px + ex, py + sy, "\u{2503}", wall) end end
+  local ey = to_sy(0)
+  if ey >= 0 and ey < ph then for sx = 0, pw - 1 do S.put(px + sx, py + ey, "\u{2501}", wall) end end
+  ey = to_sy(Game.WORLD_H)
+  if ey >= 0 and ey < ph then for sx = 0, pw - 1 do S.put(px + sx, py + ey, "\u{2501}", wall) end end
 
-  -- 球按**从小到大**画：大球后画、压在小球之上。原来按"从大到小"画，
-  -- 结果小球盖住大球、玩家还永远在最底层（小球是后画的）
+  -- 球按**从小到大**画：大球后画、压在小球之上
   local blobs = game:ranked()
   for i = #blobs, 1, -1 do
     local b = blobs[i]
@@ -141,23 +179,23 @@ function draw()
     draw_blob(S, px, py, cam_x, cam_y, scale, pw, ph, b, col)
   end
 
-  -- 玩家标记：球上方一个字，免得在一堆球里认不出自己。
-  -- 阵亡后玩家球已从 blobs 移除，这个字也必须立刻消失，别在残影上留个"你"
-  if game.alive then
-    S.print(px + to_sx(p.x) - 1, py + to_sy(p.y - p.r) - 1, t.me, C.white)
+  -- 玩家标记：标在**最大**的那个细胞上方；全灭后立即消失
+  local cells = game:player_cells()
+  local big = nil
+  for _, c in ipairs(cells) do if not big or c.r > big.r then big = c end end
+  if game.alive and big then
+    S.print(px + to_sx(big.x) - 1, py + to_sy(big.y - big.r) - 1, t.me, C.white)
   end
 
-  -- 顶部读数：体格 / 存活 / 名次 / 坐标 / 视距
-  local st = game:status()
-  local rank = 1
-  for i, b in ipairs(game:ranked()) do if b == p then rank = i break end end
-  S.print(px + 1, py, string.format("%s %d   %s %.1fs   #%d/%d   (%d,%d)   x%d",
-          t.score, st.score, t.time, st.time, rank, st.blobs,
-          math.floor(p.x), math.floor(p.y), scale), C.white)
+  -- 顶部读数：体格 / 存活 / 名次 / 分身数 / 坐标
+  local rank, total = 1, #blobs
+  for i, b in ipairs(blobs) do if b == big then rank = i break end end
+  S.print(px + 1, py, string.format("%s %d   %s %.1fs   #%d/%d   %s %d   (%d,%d)",
+          t.score, st.score, t.time, st.time, rank, total,
+          t.cells, st.cells, math.floor(st.px), math.floor(st.py)), C.white)
 
   if not game.alive then
-    -- 阵亡浮窗：整块铺**实底**（取主题色板里的灰，随主题），连边框那圈一起盖住——
-    -- 只填内框的话边框上还压着球，浮窗就成了半透明的，读不清
+    -- 阵亡浮窗：整块铺**实底**（取主题色板里的灰，随主题），连边框那圈一起盖住
     local bw, bh = 22, 5
     local sw, sh = S.size()
     local bx, by = math.floor((sw - bw) / 2), math.floor((sh - bh) / 2)

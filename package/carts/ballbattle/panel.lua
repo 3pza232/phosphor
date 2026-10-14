@@ -6,8 +6,10 @@ local MAP_LABEL_Y = 21  -- "地图"标题所在行（排在排行榜之后）
 local MAP_TOP = 22      -- 小地图起始行
 
 local Text = {
-  zh = { rank = "排行榜", map = "地图", best = "最高纪录", you = "你", keys = "方向键 移动" },
-  en = { rank = "LEADERS", map = "MAP", best = "BEST", you = "YOU", keys = "ARROWS move" },
+  zh = { rank = "排行榜", map = "地图", best = "最高纪录", you = "你",
+         move = "方向键 移动", z = "[%s] 吐食", x = "[%s] 分裂" },
+  en = { rank = "LEADERS", map = "MAP", best = "BEST", you = "YOU",
+         move = "ARROWS move", z = "[%s] EJECT", x = "[%s] SPLIT" },
 }
 
 local function minimap(game, C)
@@ -38,23 +40,27 @@ function Panel.draw(game, cart, best)
   P.print(1, 2, string.rep("-", pw - 2), C.dark_gray)
 
   P.print(1, 4, t.rank, C.gray)
-  local listed = game:ranked()
-  local top = (listed[1] and listed[1].r) or 1     -- 榜首半径 = 参照
+  local listed = game:leaderboard()        -- 玩家的所有细胞已合成一行
+  local top = (listed[1] and listed[1].m) or 1
   for i = 1, math.min(RANK_MAX, #listed) do
-    local b = listed[i]
-    local who = (b.role == "player") and t.you or ("AI" .. (b.hue or 0))
-    -- 星数 = **相对大小**：榜首 9 颗，其余按半径成比例，最少 1 颗（不再按绝对半径）
-    local stars = math.max(1, math.min(9, math.floor(b.r / top * 9 + 0.5)))
+    local e = listed[i]
+    local who = (e.role == "player") and t.you or ("AI" .. (e.hue or 0))
+    -- 星数 = **相对大小**：榜首 9 颗，其余按半径比例（√质量比），上限 9、最少 1
+    local stars = math.max(1, math.min(9, math.floor(math.sqrt(e.m / top) * 9 + 0.5)))
     local line = string.format("%d %s %s", i, phos.text.pad(who, 5), string.rep("*", stars))
-    P.print(1, 4 + i, phos.text.fit(line, pw - 2), (b.role == "player") and C.cyan or C.white)
+    P.print(1, 4 + i, phos.text.fit(line, pw - 2), (e.role == "player") and C.cyan or C.white)
   end
 
   P.print(1, MAP_LABEL_Y, t.map, C.gray)
   minimap(game, C)
 
-  P.print(1, ph - 3, t.best, C.gray)
-  P.print(1, ph - 2, tostring(best()), C.orange)
-  P.print(1, ph - 1, t.keys, C.dark_gray)
+  -- 键位提示（底部那行已去掉，提示统一放这里，用真实键名）
+  local kn = phos.input.key_name
+  P.print(1, ph - 5, t.best, C.gray)
+  P.print(1, ph - 4, tostring(best()), C.orange)
+  P.print(1, ph - 3, t.move, C.dark_gray)
+  P.print(1, ph - 2, string.format(t.z, kn("z")), C.dark_gray)
+  P.print(1, ph - 1, string.format(t.x, kn("x")), C.dark_gray)
 end
 
 return Panel
