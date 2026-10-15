@@ -125,7 +125,7 @@ def main():
         h.set_credits(9000)  # 必须在开始前设：Game.new 时才读这个起始金币
         d = h.step("a")
         # 找一块能建的空地（从光标四邻试），建一座 GUN
-        ORDER = ["GUN", "CANNON", "FROST", "TESLA", "FLAME", "RADAR", "REPAIR", "REACTOR"]
+        ORDER = ["GUN", "CANNON", "FROST", "TESLA", "FLAME", "LASER", "HELL", "SNIPER", "MORTAR", "RADAR", "REPAIR", "REACTOR"]
 
         def select(name):
             dd = h.debug()
@@ -178,9 +178,10 @@ def main():
         lvl2 = d["towers"][0]["level"]
         h.step("a")  # L3
         r3 = rng_from_panel()
+        # GUN 升级档案 up.range=1.0：L2=6.0、L3=7.0（新档位下射程增幅收窄，命中判定随之放宽）
         check("#5 升级射程明显变大 (5.0 -> +)", lvl2 == 2 and r2 and r2 >= 6.0,
               "L2 RNG=%s" % r2)
-        check("#5 L3 射程更大", r3 and r3 >= 7.5, "L3 RNG=%s" % r3)
+        check("#5 L3 射程更大", r3 and r3 >= 7.0, "L3 RNG=%s" % r3)
 
         # ---- #4b 移到空地：射程圈恢复成待建塔型（FLAME=3.0） ----
         h.step("right")  # 移开一格（空地）

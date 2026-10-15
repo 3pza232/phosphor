@@ -82,19 +82,27 @@ function Panel.draw(game, cart, speed, C)
 	local spd = speed or 1
 	P.print(1, 8, string.format("%s x%d", t.speed, spd), (spd > 1) and C.yellow or C.white)
 
-	-- 建造面板：8 项，光标高亮当前选中
+	-- 建造面板：12 型排成**两列各 6 行**（`>名字 造价`），光标高亮当前选中。
+	-- 竖排 12 行会顶到下面的详情区，两列既放得下、又留足了详情与底部提示的行。
 	P.print(1, 10, t.build, C.gray)
+	-- 两个 11 列块（x=0 / x=11）：左块的 > 在 0 列、名字从 1 列起，与标题对齐。
+	local colx, colw = { 0, 11 }, 11
 	for i, name in ipairs(Towers.ORDER) do
 		local d = Towers.TYPES[name]
+		local cost = string.format("%d", d.cost)
+		local labw = colw - 2 - #cost -- 光标位 + 名字 + 空格 + 造价 = colw
 		local mark = (i == game.build_index) and ">" or " "
-		local line = string.format("%s%s$%dp", mark, phos.text.pad(Towers.label(name), 9), d.cost, d.power)
-		P.print(1, 10 + i, phos.text.fit(line, pw - 2), (i == game.build_index) and C.yellow or C.dark_gray)
+		local line = mark .. phos.text.pad(phos.text.fit(Towers.label(name), labw), labw) .. " " .. cost
+		P.print(colx[((i - 1) % 2) + 1], 11 + math.floor((i - 1) / 2), line,
+			(i == game.build_index) and C.yellow or C.dark_gray)
 	end
 
 	-- 光标详情：光标下是塔 → 那座塔（含升级后数值 + HP 条）；否则 → 待建造塔型的完整数据。
+	-- 行号从标题顺延（不再写死），所以塔型多少都不撞行。
 	local tsel = game:tower_at(game.cx, game.cy)
-	P.print(1, 20, t.selected, C.gray)
-	local y = 21
+	local y = 18
+	P.print(1, y, t.selected, C.gray)
+	y = y + 1
 	if tsel then
 		local d = Towers.TYPES[tsel.type]
 		local dmg, range, interval = Towers.stats(tsel, tsel.aura)
@@ -120,6 +128,7 @@ function Panel.draw(game, cart, speed, C)
 			P.print(1, y + 9, t.max, C.gray)
 		end
 		P.print(1, y + 10, string.format("%s $%d", t.refund, Towers.refund(tsel)), C.orange)
+		y = y + 11
 	else
 		local name = game:selected_name()
 		local d = Towers.TYPES[name]
@@ -135,15 +144,16 @@ function Panel.draw(game, cart, speed, C)
 		P.print(1, y + 5, string.format("%s %s", t.dmg, Panel._dmg(d, dmg, t, 1)), C.white)
 		P.print(1, y + 6, string.format("%s %s", t.range, Panel._rng(range)), C.white)
 		P.print(1, y + 7, string.format("%s %s", t.rate, Panel._rate(d, interval, t)), C.white)
+		y = y + 8
 	end
 
-	-- 空袭（放在选中详情之下，避免与其最后一行撞行）
+	-- 空袭 / 难度地图：紧接详情之下顺延（不写死行号，塔型增多也不会被顶掉）
 	local ast = (game.airstrike_cd <= 0) and t.ready
 		or string.format("%.0f%s", game.airstrike_cd, t.sec)
-	P.print(1, 32, string.format("%s %s", t.airstrike, ast),
+	P.print(1, y + 1, string.format("%s %s", t.airstrike, ast),
 		(game.airstrike_cd <= 0) and C.cyan or C.dark_gray)
 
-	P.print(1, 33, phos.text.fit(string.format("%s %s  %s %s", t.diff,
+	P.print(1, y + 2, phos.text.fit(string.format("%s %s  %s %s", t.diff,
 		t.diff_names[game.diff] or game.diff, t.map,
 		t.map_names[game.map_style] or game.map_style), pw - 2), C.dark_gray)
 

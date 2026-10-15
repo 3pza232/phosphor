@@ -13,25 +13,66 @@ local Towers = {}
 -- 每个字段：cost 金币 / power 电力占用 / dmg / rate(攻击间隔秒) / range(格) /
 -- chars 三级字符 / color 槽位 / kind 机制 / ignore_armor 无视护甲 / hp 满血。
 -- hp 让塔也能被拆（敌人 siege 直接扣它）——满值按类型，独立于造价。
+--
+-- up 是每型的**升级档案**：dmg 每级伤害乘子 / rate 每级间隔乘子 / range 每级射程加值。
+-- 默认 1.6 / 0.88 / 1.5；填 1.0 / 1.0 / 0 表示该轴不涨。冰塔不堆伤害、雷达/反应堆
+-- 无伤害档，靠这份档案各自声明"练级练什么"，而不是全场一刀切。
+-- 特殊量随等级的（溅射半径、连锁数、锁定数…）写成按等级数组成员，用 Towers.by 取。
 Towers.TYPES = {
+	-- 机枪：主堆攻速（0.85 比旧的 0.88 更快）与伤害，射程仅小幅跟进。
 	GUN = { cost = 50, power = 1, dmg = 9, rate = 0.35, range = 5.0, hp = 100,
+		up = { dmg = 1.7, rate = 0.85, range = 1.0 },
 		chars = { "g", "G", "G" }, color = "green", kind = "gun",
 		label = { zh = "机枪", en = "GUN" }, desc = { zh = "单体速射，便宜", en = "fast single shot" } },
+	-- 加农炮：溅射半径随级放大是它的身份（否则只是个大枪）。
 	CANNON = { cost = 95, power = 2, dmg = 34, rate = 1.25, range = 6.0, splash = 1.6, hp = 140,
+		up = { dmg = 1.7, rate = 0.92, range = 1.0 }, splash_by = { 1.6, 2.1, 2.7 },
 		chars = { "c", "C", "C" }, color = "orange", kind = "cannon",
 		label = { zh = "加农炮", en = "CANNON" }, desc = { zh = "高伤溅射", en = "high splash dmg" } },
+	-- 冰霜：只堆"控"——减速更狠、更久、目标更多；伤害乘子 1.0（升级不涨伤害）。
 	FROST = { cost = 70, power = 2, dmg = 5, rate = 0.70, range = 5.0, max_targets = 3, hp = 90,
 		slow_factor = 0.55, slow_time = 1.8,
+		up = { dmg = 1.0, rate = 0.92, range = 1.5 },
+		slow_by = { 0.55, 0.42, 0.30 }, slow_time_by = { 1.8, 2.4, 3.2 },
+		max_targets_by = { 3, 4, 6 },
 		chars = { "f", "F", "F" }, color = "cyan", kind = "frost",
 		label = { zh = "冰霜", en = "FROST" }, desc = { zh = "范围减速", en = "slows a group" } },
+	-- 电塔：连锁数与连锁距离随级涨（更多跳、更远跳），伤害中等放大。
 	TESLA = { cost = 130, power = 3, dmg = 24, rate = 1.40, range = 5.5, chain = 3, chain_range = 3.0, hp = 120,
+		up = { dmg = 1.55, rate = 0.9, range = 1.2 },
+		chain_by = { 3, 4, 5 }, chain_range_by = { 3.0, 3.6, 4.4 },
 		chars = { "t", "T", "T" }, color = "purple", kind = "tesla", ignore_armor = true,
 		label = { zh = "电塔", en = "TESLA" }, desc = { zh = "连锁电击，破甲", en = "chain, no armor" } },
+	-- 喷火：伤害/灼烧/溅射都涨，射程几乎不涨（近距武器）；连续伤不占冷却。
 	FLAME = { cost = 115, power = 3, dmg = 13, dps = true, range = 3.0, splash = 2.0, hp = 130,
 		burn_dps = 6, burn_time = 2.0,
+		up = { dmg = 1.7, range = 0.8 },
+		burn_by = { 6, 11, 18 }, splash_by = { 2.0, 2.6, 3.2 },
 		chars = { "l", "L", "L" }, color = "red", kind = "flame", ignore_armor = true,
 		label = { zh = "喷火", en = "FLAME" }, desc = { zh = "近距持续灼烧", en = "short-range burn" } },
+	-- 激光：贯穿一条线上的全部敌人，线宽随级加粗（thickness_by）；伤害中、攻速中。
+	LASER = { cost = 120, power = 3, dmg = 26, rate = 1.0, range = 7.0, thickness = 1, hp = 110,
+		up = { dmg = 1.7, rate = 0.8 }, thickness_by = { 1, 2, 3 },
+		chars = { "n", "N", "N" }, color = "magenta", kind = "laser",
+		label = { zh = "激光炮", en = "LASER" }, desc = { zh = "贯穿整线的光束", en = "pierces a line" } },
+	-- 地狱塔：锁定 N 个目标持续掉血，锁定越久伤害越高（3s 内线性升到 3×）；dmg 存的是 dps。
+	HELL = { cost = 150, power = 4, dmg = 8, dps = true, range = 5.0, lock = 1, hp = 110,
+		up = { dmg = 1.6, range = 1.0 }, lock_by = { 1, 2, 3 },
+		chars = { "y", "Y", "Y" }, color = "red", kind = "hell",
+		label = { zh = "地狱塔", en = "HELL" }, desc = { zh = "锁定灼烧渐增", en = "lock & ramp burn" } },
+	-- 狙击：极远单体、高伤、慢，无视护甲。
+	SNIPER = { cost = 140, power = 3, dmg = 90, rate = 2.4, range = 9.0, hp = 100,
+		up = { dmg = 1.85, range = 2.5, rate = 0.94 },
+		chars = { "s", "S", "S" }, color = "gray", kind = "sniper", ignore_armor = true,
+		label = { zh = "狙击塔", en = "SNIPER" }, desc = { zh = "超远单体高伤", en = "long-range sniper" } },
+	-- 迫击炮：抛射(shell)延迟 ~0.5s 落地，落点范围伤害；溅射半径随级涨。
+	MORTAR = { cost = 135, power = 3, dmg = 40, rate = 1.6, range = 8.0, splash = 2.2, hp = 120,
+		up = { dmg = 1.7, rate = 0.9, range = 1.0 }, splash_by = { 2.2, 2.8, 3.4 },
+		chars = { "m", "M", "M" }, color = "orange", kind = "mortar",
+		label = { zh = "迫击炮", en = "MORTAR" }, desc = { zh = "抛射落点范围伤害", en = "lobbed splash" } },
+	-- 雷达：光环增益随级走 aura_by（L1 {+25%,+15%} → L3 {+55%,+35%}）；自身无伤害档。
 	RADAR = { cost = 100, power = 2, dmg = 0, rate = 0, range = 4.0, aura_range = 0.25, aura_rate = 0.15, hp = 70,
+		up = { range = 1.5 }, aura_by = { { 0.25, 0.15 }, { 0.38, 0.24 }, { 0.55, 0.35 } },
 		chars = { "r", "R", "R" }, color = "yellow", kind = "radar",
 		label = { zh = "雷达", en = "RADAR" }, desc = { zh = "光环：友塔增强", en = "aura: buff allies" } },
 	-- 维修塔：不攻击，周期治疗范围内受损友军（治疗量/频率/目标数随等级走，见 heal）。
@@ -51,11 +92,19 @@ function Towers.label(name) return phos.lang.pick(Towers.TYPES[name].label) end
 function Towers.desc(name) return phos.lang.pick(Towers.TYPES[name].desc) end
 
 -- 建造面板里的循环顺序（含反应堆、维修）。Z/X 键按这个顺序切。
-Towers.ORDER = { "GUN", "CANNON", "FROST", "TESLA", "FLAME", "RADAR", "REPAIR", "REACTOR" }
+Towers.ORDER = { "GUN", "CANNON", "FROST", "TESLA", "FLAME", "LASER", "HELL",
+	"SNIPER", "MORTAR", "RADAR", "REPAIR", "REACTOR" }
 
 Towers.PRIORITIES = { "FIRST", "STRONG", "CLOSE", "AIR" }
 
 local function hypot(x, y) return math.sqrt(x * x + y * y) end
+
+-- 取"按等级数组成员"的第 lvl 项（arr 可能缺项/越界，此时回退 default）。
+-- 特殊升级轴（溅射/连锁/锁定/光环…）都用它读，避免每处写 arr[lvl] or fallback。
+function Towers.by(arr, lvl, default)
+	if arr and arr[lvl] ~= nil then return arr[lvl] end
+	return default
+end
 
 -- 升到下一级要多少金币：L2 = ceil(cost*0.8)，L3 = ceil(cost*1.2)。已满级返回 nil。
 function Towers.upgrade_cost(t)
@@ -73,14 +122,15 @@ end
 -- 塔的**有效**属性（含等级与光环）。aura=true 表示被雷达覆盖：
 -- 加减成取自"覆盖它的那座雷达"（update 时按最强的一座写进 t.aura_range/t.aura_rate），
 -- 而不是从目标塔自己的类型里读（那样 GUN 等没有 aura_* 字段的塔永远吃不到光环）。
+-- 三轴乘子/加值改读每型 up 档案（缺省 1.6 / 0.88 / 1.5）：冰塔 up.dmg=1.0 不再堆伤害，
+-- 雷达 up.rate=1.0/反应堆无攻速也就不会凭空长攻速。签名保持 dmg, range, interval。
 function Towers.stats(t, aura)
 	local d = Towers.TYPES[t.type]
 	local lvl = t.level
-	local dmg = (d.dmg or 0) * (1.6 ^ (lvl - 1))
-	-- 升级射程：每级 +1.5 格（原 +0.6 太温吞，升到 L3 几乎看不出圈变大）。
-	-- 攻速档仍走 0.88 的几何收敛，伤害走 1.6 的几何放大，三者互不干扰。
-	local range = (d.range or 0) + 1.5 * (lvl - 1)
-	local interval = (d.rate or 0) * (0.88 ^ (lvl - 1))
+	local up = d.up or {}
+	local dmg = (d.dmg or 0) * ((up.dmg or 1.6) ^ (lvl - 1))
+	local range = (d.range or 0) + (up.range or 1.5) * (lvl - 1)
+	local interval = (d.rate or 0) * ((up.rate or 0.88) ^ (lvl - 1))
 	if aura then
 		range = range * (1 + (t.aura_range or 0)) -- 雷达光环：射程 +25%
 		if d.rate and d.rate > 0 then
@@ -157,7 +207,7 @@ end
 --   enemies / map / core / overload(欠压攻速系数) / deal_damage(e,dmg,ignore,tower) / add_fx(eff)
 function Towers.update(ts, ctx, dt)
 	-- 1) 先清光环，再由每座雷达点亮它覆盖到的塔。多座雷达覆盖同一塔时**取最强的一个**
-	--    （加成不叠加）；雷达自身等级按 ×1.6 提效（与攻击塔升级同一档）。
+	--    （加成不叠加）；雷达增益随等级走 aura_by（L1 25%/15% → L3 55%/35%）。
 	for _, t in ipairs(ts) do t.aura, t.aura_range, t.aura_rate = false, nil, nil end
 	-- 被拆闪烁计时衰减（game 受击时置 0.12）
 	for _, t in ipairs(ts) do
@@ -168,9 +218,8 @@ function Towers.update(ts, ctx, dt)
 		if rd.kind == "radar" then
 			local _, arange = Towers.stats(r, false)
 			local r2 = arange * arange
-			local gain = 1.6 ^ (r.level - 1)
-			local br = (rd.aura_range or 0) * gain
-			local ba = (rd.aura_rate or 0) * gain
+			local ab = Towers.by(rd.aura_by, r.level, { rd.aura_range or 0, rd.aura_rate or 0 })
+			local br, ba = ab[1], ab[2]
 			for _, t in ipairs(ts) do
 				if t ~= r then
 					local dx, dy = t.x - r.x, t.y - r.y
@@ -202,18 +251,18 @@ function Towers.update(ts, ctx, dt)
 		end
 	end
 
-	-- 3) 火焰是**连续**伤害塔（DESIGN：13/s、连续）：不占冷却，每帧按 dps×dt 结算。
-	--    射程 3.0 里选中一个目标，向它周围 2.0（"半径 2.0 子半径"）溅射，无视护甲 + 挂燃烧。
+	-- 3) 火焰是**连续**伤害塔：不占冷却，每帧按 dps×dt 结算。
+	--    射程内选中一个目标，向它周围 splash_by 溅射，无视护甲 + 挂燃烧（burn_by）。
 	for _, t in ipairs(ts) do
 		local d = Towers.TYPES[t.type]
-		if d.dps then
+		if d.kind == "flame" then
 			local dmg, range = Towers.stats(t, t.aura)
 			dmg = dmg * (1 + (t.aura_rate or 0)) -- 雷达光环的"攻速"对连续塔体现为 dps 提升
 			local ex, ey = t.x + 0.5, t.y + 0.5
 			local tgt = Towers.pick_target(ex, ey, range, ctx.enemies,
 				t.priority or "FIRST", ctx.map, ctx.core)
 			if tgt then
-				local r = d.splash or 0
+				local r = Towers.by(d.splash_by, t.level, d.splash or 0)
 				local r2 = r * r
 				local any = false
 				for _, o in ipairs(ctx.enemies) do
@@ -222,13 +271,62 @@ function Towers.update(ts, ctx, dt)
 						if dx * dx + dy * dy <= r2 then
 							any = true
 							ctx.deal_damage(o, dmg * dt * overload, true, t)
-							Enemies.apply_burn(o, d.burn_dps, d.burn_time)
+							Enemies.apply_burn(o, Towers.by(d.burn_by, t.level, d.burn_dps), d.burn_time)
 						end
 					end
 				end
 				if any then
-					ctx.add_fx({ kind = "flame", x = tgt.x, y = tgt.y, r = r, color = d.color, t = 0.12 })
+					ctx.add_fx({ kind = "flame", x0 = ex, y0 = ey, x = tgt.x, y = tgt.y,
+						r = r, color = d.color, t = 0.12 })
 				end
+			end
+		end
+	end
+
+	-- 3b) 地狱塔：锁定射程内最多 lock_by 个目标，每帧按 dps×dt 持续掉血，且随"热度"
+	--     （锁定秒数）线性升到 3× 封顶；目标死亡或离开射程即解除。锁定表存塔上 t.locked。
+	for _, t in ipairs(ts) do
+		local d = Towers.TYPES[t.type]
+		if d.kind == "hell" then
+			local dmg, range = Towers.stats(t, t.aura)
+			dmg = dmg * (1 + (t.aura_rate or 0))
+			local ex, ey = t.x + 0.5, t.y + 0.5
+			local r2 = range * range
+			local maxn = Towers.by(d.lock_by, t.level, d.lock or 1)
+			local locked = t.locked or {}
+			t.locked = locked
+			-- 清掉已死/已出射程的锁定
+			for i = #locked, 1, -1 do
+				local e = locked[i].e
+				local dx, dy = e.x - ex, e.y - ey
+				if e.dead or dx * dx + dy * dy > r2 then table.remove(locked, i) end
+			end
+			-- 补足名额：从射程内、未被锁的敌人里按优先级挑
+			if #locked < maxn then
+				local used = {}
+				for _, L in ipairs(locked) do used[L.e] = true end
+				local pool = {}
+				for _, e in ipairs(ctx.enemies) do
+					if not e.dead and not used[e] then
+						local dx, dy = e.x - ex, e.y - ey
+						if dx * dx + dy * dy <= r2 then pool[#pool + 1] = e end
+					end
+				end
+				while #locked < maxn and #pool > 0 do
+					local pick = Towers.pick_target(ex, ey, range, pool,
+						t.priority or "FIRST", ctx.map, ctx.core)
+					if not pick then break end
+					locked[#locked + 1] = { e = pick, heat = 0 }
+					for i = #pool, 1, -1 do if pool[i] == pick then table.remove(pool, i) end end
+				end
+			end
+			-- 结算：热度 0→3s 对应倍率 1→3
+			for _, L in ipairs(locked) do
+				L.heat = L.heat + dt
+				local mult = 1 + 2 * math.min(L.heat, 3) / 3
+				ctx.deal_damage(L.e, dmg * mult * dt * overload, false, t)
+				ctx.add_fx({ kind = "hell", x0 = ex, y0 = ey, x1 = L.e.x, y1 = L.e.y,
+					heat = L.heat, color = d.color, t = 0.08 })
 			end
 		end
 	end
@@ -296,8 +394,8 @@ function Towers.fire(t, d, dmg, range, priority, ctx)
 	elseif d.kind == "cannon" then
 		local e = Towers.pick_target(ex, ey, range, ctx.enemies, priority, ctx.map, ctx.core)
 		if not e then return false end
-		local r = d.splash
-		ctx.add_fx({ kind = "boom", x = e.x, y = e.y, r = r, color = d.color, t = 0.25 })
+		local r = Towers.by(d.splash_by, t.level, d.splash)
+		ctx.add_fx({ kind = "boom", x = e.x, y = e.y, r = r, color = d.color, t = 0.25, total = 0.25 })
 		for _, o in ipairs(ctx.enemies) do
 			if not o.dead then
 				local dx, dy = o.x - e.x, o.y - e.y
@@ -311,9 +409,9 @@ function Towers.fire(t, d, dmg, range, priority, ctx)
 		return true
 
 	elseif d.kind == "frost" then
-		-- 命中最多 3 个：逐个挑"离塔最近且没挑过"的。picked 表当临时剔除集。
+		-- 命中最多 max_targets_by 个：逐个挑"离塔最近且没挑过"的。picked 表当临时剔除集。
 		local picked, hits = {}, 0
-		for _ = 1, d.max_targets do
+		for _ = 1, Towers.by(d.max_targets_by, t.level, d.max_targets) do
 			local cand
 			for _, o in ipairs(ctx.enemies) do
 				if not o.dead and not picked[o] then
@@ -333,8 +431,10 @@ function Towers.fire(t, d, dmg, range, priority, ctx)
 			picked[cand] = true
 			hits = hits + 1
 			local dealt = ctx.deal_damage(cand, dmg, false, t)
-			Enemies.apply_slow(cand, d.slow_factor, d.slow_time)
-			ctx.add_fx({ kind = "frost", x = cand.x, y = cand.y, t = 0.3 })
+			Enemies.apply_slow(cand,
+				Towers.by(d.slow_by, t.level, d.slow_factor),
+				Towers.by(d.slow_time_by, t.level, d.slow_time))
+			ctx.add_fx({ kind = "frost", x = cand.x, y = cand.y, t = 0.3, total = 0.3 })
 			ctx.add_fx({ kind = "dmg", x = cand.x, y = cand.y, amount = dealt, t = 0.7 })
 		end
 		return hits > 0
@@ -345,15 +445,58 @@ function Towers.fire(t, d, dmg, range, priority, ctx)
 		local used = {}
 		local pts = { { x = ex, y = ey } }
 		local cur = first
-		for i = 1, d.chain do
+		local chain_range = Towers.by(d.chain_range_by, t.level, d.chain_range)
+		for i = 1, Towers.by(d.chain_by, t.level, d.chain) do
 			if not cur then break end
 			used[cur] = true
 			local dealt = ctx.deal_damage(cur, dmg * (0.7 ^ (i - 1)), true, t)
 			ctx.add_fx({ kind = "dmg", x = cur.x, y = cur.y, amount = dealt, t = 0.7 })
 			pts[#pts + 1] = { x = cur.x, y = cur.y }
-			cur = nearest_to(cur.x, cur.y, ctx.enemies, used, d.chain_range)
+			cur = nearest_to(cur.x, cur.y, ctx.enemies, used, chain_range)
 		end
 		ctx.add_fx({ kind = "chain", pts = pts, color = d.color, t = 0.18 })
+		return true
+
+	elseif d.kind == "laser" then
+		-- 朝目标方向的射线：命中射程内、在射线前方、离射线 ≤ 半宽的所有敌人（贯穿）。
+		local e = Towers.pick_target(ex, ey, range, ctx.enemies, priority, ctx.map, ctx.core)
+		if not e then return false end
+		local dx, dy = e.x - ex, e.y - ey
+		local len = hypot(dx, dy)
+		if len < 1e-6 then return false end
+		local ux, uy = dx / len, dy / len
+		local half = Towers.by(d.thickness_by, t.level, d.thickness or 1)
+		local hits = 0
+		for _, o in ipairs(ctx.enemies) do
+			if not o.dead then
+				local vx, vy = o.x - ex, o.y - ey
+				local proj = vx * ux + vy * uy
+				if proj >= 0 and proj <= range and math.abs(vx * uy - vy * ux) <= half then
+					local dealt = ctx.deal_damage(o, dmg, false, t)
+					ctx.add_fx({ kind = "dmg", x = o.x, y = o.y, amount = dealt, t = 0.7 })
+					hits = hits + 1
+				end
+			end
+		end
+		ctx.add_fx({ kind = "laser", x0 = ex, y0 = ey, x1 = ex + ux * range, y1 = ey + uy * range,
+			thickness = half, color = d.color, t = 0.16 })
+		return hits > 0
+
+	elseif d.kind == "sniper" then
+		local e = Towers.pick_target(ex, ey, range, ctx.enemies, priority, ctx.map, ctx.core)
+		if not e then return false end
+		local dealt = ctx.deal_damage(e, dmg, true, t) -- 无视护甲
+		ctx.add_fx({ kind = "sniper", x0 = ex, y0 = ey, x1 = e.x, y1 = e.y, color = d.color, t = 0.14 })
+		ctx.add_fx({ kind = "dmg", x = e.x, y = e.y, amount = dealt, t = 0.8 })
+		return true
+
+	elseif d.kind == "mortar" then
+		-- 抛射：只落一枚 shell fx，落地结算交给 game.fx_tick（延迟 ~0.5s + 范围伤害）。
+		local e = Towers.pick_target(ex, ey, range, ctx.enemies, priority, ctx.map, ctx.core)
+		if not e then return false end
+		local r = Towers.by(d.splash_by, t.level, d.splash or 0)
+		ctx.add_fx({ kind = "shell", x0 = ex, y0 = ey, x1 = e.x, y1 = e.y, total = 0.5,
+			dmg = dmg, r = r, tower = t, color = d.color, t = 0.5 })
 		return true
 	end
 	return false

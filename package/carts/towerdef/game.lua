@@ -362,7 +362,29 @@ function Game:fx_tick(dt)
 	for i = #self.fx, 1, -1 do
 		local f = self.fx[i]
 		f.t = f.t - dt
-		if f.t <= 0 then table.remove(self.fx, i) end
+		if f.t <= 0 then
+			-- 迫击炮弹到期落地：这里才是"结算时刻"（发射时只记落点与伤害）
+			if f.kind == "shell" then self:resolve_shell(f) end
+			table.remove(self.fx, i)
+		end
+	end
+end
+
+-- 迫击炮弹落地：落点范围伤害 + 一个 boom。塔归属沿用发射它的那座塔（击杀计数）。
+-- 落点固定为发射时瞄准的 (x1,y1)，不追踪移动目标——抛射武器本就打提前量。
+function Game:resolve_shell(f)
+	local x, y, r = f.x1, f.y1, f.r or 0
+	self:add_fx({ kind = "boom", x = x, y = y, r = r, color = f.color or "orange",
+		t = 0.28, total = 0.28 })
+	local r2 = r * r
+	for _, e in ipairs(self.enemies) do
+		if not e.dead then
+			local dx, dy = e.x - x, e.y - y
+			if dx * dx + dy * dy <= r2 then
+				local dealt = self:deal_damage(e, f.dmg, false, f.tower)
+				self:add_fx({ kind = "dmg", x = e.x, y = e.y, amount = dealt, t = 0.7 })
+			end
+		end
 	end
 end
 

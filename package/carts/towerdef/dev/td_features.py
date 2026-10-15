@@ -128,12 +128,53 @@ def test_reactor_priority(seed):
         g.close()
 
 
+# ── E：新增塔型（LASER / HELL / SNIPER / MORTAR）────────────────────
+def test_new_towers(seed):
+    g = Game(seed, diff="EASY", style="OPEN", credits=9000)
+    try:
+        # 建造列表应含全部 12 型（X 循环一圈不重样）
+        seen = set()
+        for _ in range(12):
+            seen.add(g.debug()["selected_type"])
+            g.h.step("x")
+        check("E: 建造列表含 12 型", len(seen) == 12, "seen=%d" % len(seen))
+
+        # 四种新塔都能建出来（放在刷怪口前方，敌人会路过它们的射程）
+        new_types = ["LASER", "HELL", "SNIPER", "MORTAR"]
+        spots = [(5, g.mh // 2 - 2), (7, g.mh // 2 - 2), (5, g.mh // 2 + 2), (7, g.mh // 2 + 2)]
+        placed = {}
+        for typ, (cx, cy) in zip(new_types, spots):
+            got = False
+            for dx in range(0, 5):
+                for dy in range(-3, 4):
+                    g.move_to(max(1, min(g.mw - 2, cx + dx)), max(1, min(g.mh - 2, cy + dy)))
+                    if g.build_here(typ):
+                        got = True
+                        break
+                if got:
+                    break
+            placed[typ] = got
+        check("E: 四种新塔都能建造", all(placed.values()), str(placed))
+
+        types = {t["type"] for t in g.debug()["towers"]}
+        check("E: 新塔已进入场上", all(nt in types for nt in new_types), str(sorted(types)))
+
+        # 放一波，验证新塔真能开火并结算击杀（血条/连续/抛射各有各的结算路径）
+        g.h.step("space")
+        g.h.step(None, frames=3600)
+        d = g.debug()
+        kills = sum(t["kills"] for t in d["towers"] if t["type"] in new_types)
+        check("E: 新塔能开火并击杀", kills > 0, "kills=%d" % kills)
+    finally:
+        g.close()
+
+
 def main():
     base = int(sys.argv[1]) if len(sys.argv) > 1 else 1400
-    print("== towerdef 新功能验收 (A/B/C/D) ==")
+    print("== towerdef 新功能验收 (A/B/C/D/E) ==")
     for fn, off in [(test_tower_hp, 1), (test_repair, 2),
                     (test_reactor_priority, 3), (test_endless, 4),
-                    (test_endless_repro, 5)]:
+                    (test_endless_repro, 5), (test_new_towers, 6)]:
         print("-- %s --" % fn.__name__)
         try:
             fn(base + off)
