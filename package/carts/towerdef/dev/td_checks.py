@@ -285,6 +285,24 @@ def test_radar_aura(seed):
         g.close()
 
 
+def test_priority_panel(seed):
+    """任务 A：切目标优先级要看得见——侧栏"已选"详情里显示 PRIORITY 行。"""
+    g = Game(seed, credits=2000)
+    try:
+        check("priority: 建出 GUN", g.build_near("GUN"))
+        txt = g.screen()
+        ok = ("PRIORITY" in txt and "FIRST" in txt)
+        check("priority: 侧栏显示优先级行（PRIORITY FIRST）", ok,
+              "" if ok else "screen 无 PRIORITY/FIRST")
+        g.h.step("p")  # FIRST -> STRONG
+        txt = g.screen()
+        ok = ("STRONG" in txt and "FIRST" not in txt)
+        check("priority: P 后显示切到的 STRONG", ok,
+              "" if ok else "screen 未反映 STRONG")
+    finally:
+        g.close()
+
+
 def _snapshot(seed, style="MAZE", frames=1500):
     g = Game(seed, style=style)
     try:
@@ -314,7 +332,7 @@ def main():
     for fn, off in [(test_pause, 1), (test_wall, 2), (test_power, 3),
                     (test_upgrade_refund, 4), (test_airstrike, 5),
                     (test_menu_and_fields, 6), (test_radar_aura, 7),
-                    (test_determinism, 8)]:
+                    (test_determinism, 8), (test_priority_panel, 9)]:
         print("-- %s --" % fn.__name__)
         try:
             fn(base + off)

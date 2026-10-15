@@ -21,6 +21,9 @@ Enemies.TYPES = {
 	boss = { char = "B", color = "red", hp = 2600, armor = 8, speed = 0.8, leak = 10, bounty = 170, siege = 12, boss = true },
 }
 
+-- 类型定序（存档只存下标，别把类型名塞进快照——省字节）。加类型时在末尾追加即可。
+Enemies.ORDER = { "grunt", "runner", "swarm", "armor", "shield", "flyer", "boss" }
+
 local function hypot(x, y) return math.sqrt(x * x + y * y) end
 
 -- 造一个敌人。x/y 是**格中心浮点**（格 (cx,cy) 的中心是 cx+0.5, cy+0.5）。

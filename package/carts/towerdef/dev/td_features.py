@@ -267,14 +267,91 @@ def test_overload(seed):
         g.close()
 
 
+# ── I：存档 → 继续（完整对局快照）────────────────────────────────────
+def test_save_continue(seed):
+    g = Game(seed, diff="EASY", style="OPEN", credits=9000)
+    try:
+        # 先形成一个"值得还原"的局面：两种塔 + 进战斗走一会
+        g.build_near("GUN")
+        g.move("right")
+        g.build_near("CANNON")
+        g.h.step("space")
+        g.h.step(None, frames=300)
+        d0 = g.debug()
+        check("I: 存档前已有进度（wave>=1 且有塔）",
+              d0["wave"] >= 1 and len(d0["towers"]) >= 1,
+              "wave=%d towers=%d" % (d0["wave"], len(d0["towers"])))
+        t0 = sorted((t["type"], t["x"], t["y"], t["level"]) for t in d0["towers"])
+
+        # S：存档并回菜单（菜单态没有 cursor_x，读原始 debug 而非 Game.debug 封装）
+        g.h.step("s")
+        dm = g.h.debug()
+        check("I: S 后回到菜单", dm["phase"] == "menu", dm["phase"])
+        s0 = g._saved("save", "")
+        check("I: save 已写入且非空", bool(s0), "len=%d" % len(s0))
+        check("I: save_used=0（可继续）", g._saved("save_used", "") == "0")
+        check("I: 菜单出现继续行", g.h.debug().get("has_save") is True)
+
+        # 导航到"继续"行（menu_rows.CONTINUE = 5）并按 A 载入
+        for _ in range(12):
+            if g.h.debug().get("menu_row") == 5:
+                break
+            g.h.step("down")
+        check("I: 选中继续行", g.h.debug().get("menu_row") == 5)
+        g.h.step("a")
+        d1 = g.debug()  # 载入那一帧 update 提前 return：这里读到的就是原始恢复态
+
+        check("I: 继续后回到对局", d1["phase"] in ("build", "combat"), d1["phase"])
+        check("I: credits 与存档前一致", d1["credits"] == d0["credits"],
+              "%s vs %s" % (d1["credits"], d0["credits"]))
+        check("I: wave 与存档前一致", d1["wave"] == d0["wave"],
+              "%s vs %s" % (d1["wave"], d0["wave"]))
+        check("I: 核心血与存档前一致", d1["core_hp"] == d0["core_hp"],
+              "%s vs %s" % (d1["core_hp"], d0["core_hp"]))
+        t1 = sorted((t["type"], t["x"], t["y"], t["level"]) for t in d1["towers"])
+        check("I: 塔数量与类型一致", t0 == t1, "%s vs %s" % (t0, t1))
+        check("I: 载入后 save_used=1（已消耗）", g._saved("save_used", "") == "1")
+
+        # 往返一致性：载入后立刻再 S（此帧 game:update 不跑），重存应是同一串
+        g.h.step("s")
+        s1 = g._saved("save", "")
+        check("I: 快照往返逐字一致（snapshot→restore→snapshot）", s0 == s1,
+              "len %d vs %d" % (len(s0), len(s1)))
+    finally:
+        g.close()
+
+
+# ── J：一局结束消耗存档（save_used=1）────────────────────────────────
+def test_end_consumes(seed):
+    g = Game(seed, diff="HARD", style="OPEN")
+    try:
+        g.h.step("period")
+        g.h.step("period")
+        over = False
+        for _ in range(600):
+            d = g.debug()
+            if d["phase"] == "over":
+                over = True
+                break
+            if d["phase"] == "build":
+                g.h.step("space")
+            g.h.step(None, frames=200)
+        check("J: 一局打到结束（over）", over, "phase=%s" % g.debug()["phase"])
+        check("J: 结束后 save_used=1", g._saved("save_used", "") == "1",
+              "save_used=%s" % g._saved("save_used", ""))
+    finally:
+        g.close()
+
+
 def main():
     base = int(sys.argv[1]) if len(sys.argv) > 1 else 1400
-    print("== towerdef 新功能验收 (A–H) ==")
+    print("== towerdef 新功能验收 (A–J) ==")
     for fn, off in [(test_tower_hp, 1), (test_repair, 2),
                     (test_reactor_priority, 3), (test_miner_priority, 11),
                     (test_endless, 4), (test_endless_repro, 5),
                     (test_new_towers, 6), (test_miner, 7),
-                    (test_early_wave, 8), (test_overload, 9)]:
+                    (test_early_wave, 8), (test_overload, 9),
+                    (test_save_continue, 12), (test_end_consumes, 13)]:
         print("-- %s --" % fn.__name__)
         try:
             fn(base + off)

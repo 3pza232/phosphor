@@ -17,13 +17,13 @@ local PANEL_W = 22
 
 -- 菜单行号登记表：每一项都是一个可选行（漏登记 = 那一行永远选不到，DESIGN §5.0）。
 -- 用命名常量而不是裸数字，改行序时只改这里。
-menu_rows = { DIFF = 1, MAP = 2, ENDLESS = 3, START = 4 }
+menu_rows = { DIFF = 1, MAP = 2, ENDLESS = 3, START = 4, CONTINUE = 5 }
 
 local Text = {
 	zh = {
 		title = "磁芯防线",
 		subtitle = "砌塔成迷宫 · 拉电供能 · 挡住 20 波",
-		diff = "难度", map = "地图", start = "开始",
+		diff = "难度", map = "地图", start = "开始", cont = "继续",
 		endless = "无尽模式", on = "开", off = "关",
 		hint = "上下选择   左右调整   A/回车 开始",
 		over = "磁芯失守", won = "防线守住！",
@@ -40,7 +40,8 @@ local Text = {
 			{ { "c" }, "空袭（冷却 40s）" },
 			{ { "space" }, "提前放波（战斗中也能，场上最多两波）" },
 			{ { "comma", "period" }, "减速 / 加速" },
-			{ { "p" }, "切目标优先级" },
+			{ { "p" }, "切换选中塔的目标优先级" },
+			{ { "s" }, "存档并回菜单（可再继续一次）" },
 			{ { "k" }, "本帮助（同时暂停）" },
 			{ { "start" }, "暂停 / 继续" },
 			{ { "backspace" }, "返回选择菜单（结算）" },
@@ -52,7 +53,7 @@ local Text = {
 	en = {
 		title = "CORE LINE",
 		subtitle = "Build towers into a maze, power them, survive 20 waves",
-		diff = "DIFFICULTY", map = "MAP", start = "START",
+		diff = "DIFFICULTY", map = "MAP", start = "START", cont = "CONTINUE",
 		endless = "ENDLESS", on = "ON", off = "OFF",
 		hint = "UP/DOWN select   LEFT/RIGHT change   A/ENTER start",
 		over = "CORE DESTROYED", won = "LINE HELD!",
@@ -68,7 +69,8 @@ local Text = {
 			{ { "c" }, "airstrike (40s cd)" },
 			{ { "space" }, "early wave (also mid-fight; max 2 waves)" },
 			{ { "comma", "period" }, "slower / faster" },
-			{ { "p" }, "cycle target priority" },
+			{ { "p" }, "cycle a tower's target priority" },
+			{ { "s" }, "save & menu (continue once)" },
 			{ { "k" }, "this help (pauses too)" },
 			{ { "start" }, "pause / resume" },
 			{ { "backspace" }, "back to menu (settles)" },
@@ -91,6 +93,20 @@ local SPEED_MAX = 3 -- 速度档位：1× / 2× / 3×（DESIGN §7）
 local speed = 1
 -- 存档纪录（init 读一次，常驻内存；只在刷新时写盘）
 local best_wave, wins, best_score
+-- 继续存档：menu_save 非 nil = 有档可续；menu_save_used = 本次已用过（变灰）
+local menu_save, menu_save_used = nil, false
+
+-- 菜单显示的"继续"状态从存档现读（每次回菜单都刷新，别缓存过期状态）
+local function refresh_menu_save()
+	menu_save = phos.save.read("save")
+	if menu_save == "" then menu_save = nil end
+	menu_save_used = (phos.save.read("save_used") == "1")
+end
+
+-- 消耗存档：一局结束 / 主动结算 / 载入时调用（写失败无所谓，只是不让"继续"再亮）
+local function mark_save_used()
+	if phos.save.available() then phos.save.write("save_used", "1") end
+end
 
 local function clamp(v, lo, hi) return v < lo and lo or (v > hi and hi or v) end
 
@@ -121,6 +137,39 @@ local function to_menu()
 	help_open = false
 	game = nil
 	phos.panel.resize(0) -- 菜单不需要侧栏
+	refresh_menu_save()  -- 回菜单即重读：新存的档要立刻能"继续"，用过的档要立刻变灰
+end
+
+-- S：把当前对局打成单行快照写进 save，回菜单（一次存档一次继续，见 DESIGN §9）。
+-- 写失败（无存档权限）也照常回菜单——不写就等于没有档，"继续"不会亮。
+local function save_and_menu()
+	local snap = game:snapshot()
+	if phos.save.available() then
+		phos.save.write("save", snap)
+		phos.save.write("save_used", "0") -- 新档未消费：菜单里"继续"可点
+	end
+	phos.audio.beep(880, 0.08, { wave = "triangle", volume = 0.16 })
+	settle_score()
+	to_menu()
+end
+
+-- 菜单"继续"：从 save 重建那一局。载入即写 save_used="1"（消耗掉，一次机会）。
+local function load_save()
+	local str = phos.save.read("save")
+	if not str or str == "" then return end
+	phos.panel.resize(PANEL_W) -- 先定侧栏，playfield() 才是对局尺寸（restore 靠它取 MW/MH）
+	local g = Game.restore(str)
+	if not g then
+		phos.panel.resize(0)
+		phos.audio.beep(120, 0.06, { wave = "square", volume = 0.14 })
+		return
+	end
+	game = g
+	mode = "play"
+	paused = false
+	help_open = false
+	mark_save_used()
+	phos.audio.music(Music)
 end
 
 local function new_game()
@@ -151,6 +200,7 @@ function init()
 	local endless = (phos.save.read("endless") == "1")
 
 	menu = { row = menu_rows.DIFF, diff = diff, map = map, endless = endless }
+	refresh_menu_save() -- "继续"行是否出现 / 是否变灰，由存档现况决定
 
 	-- 把几个关键旋钮挂到 `~` 调试台（DESIGN §12 第三刀）：边打边调
 	local PACING = { zh = "节奏", en = "PACING" }
@@ -250,7 +300,10 @@ local function game_input(dt)
 		g.build_index = ((g.build_index - 2) % #Towers.ORDER) + 1
 	end
 	if phos.input.pressed("p") then
-		g:cycle_priority(g.cx, g.cy)
+		-- 切成功给一声极轻的反馈（塔上才切得动）；侧栏 PRIORITY 行同步显示切成了什么
+		if g:cycle_priority(g.cx, g.cy) then
+			phos.audio.beep(640, 0.03, { wave = "square", volume = 0.08 })
+		end
 	end
 	if phos.input.pressed("c") then
 		g:airstrike()
@@ -266,8 +319,14 @@ end
 
 local function menu_input(dt)
 	local DIFFS = { "EASY", "NORMAL", "HARD" }
+	-- 行序 = 登记常量序；只有存在存档时才把"继续"挂到 START 下面（未存档 = 不出现）
 	local MENU_ROWS = { menu_rows.DIFF, menu_rows.MAP, menu_rows.ENDLESS, menu_rows.START }
+	if menu_save then MENU_ROWS[#MENU_ROWS + 1] = menu_rows.CONTINUE end
 	local n = #MENU_ROWS
+	-- 存档可能在上次菜单后被消耗/删除：当前行若已不存在，退回难度行，别卡在空气上
+	local valid = false
+	for _, r in ipairs(MENU_ROWS) do if r == menu.row then valid = true end end
+	if not valid then menu.row = menu_rows.DIFF end
 	-- 上下在**登记的**行之间循环
 	local at = 1
 	for i, r in ipairs(MENU_ROWS) do if r == menu.row then at = i end end
@@ -295,7 +354,15 @@ local function menu_input(dt)
 	end
 
 	if phos.input.pressed("a") or phos.input.pressed("start") then
-		new_game()
+		if menu.row == menu_rows.CONTINUE then
+			if menu_save and not menu_save_used then
+				load_save()
+			else
+				phos.audio.beep(120, 0.06, { wave = "square", volume = 0.14 }) -- 已用：拒绝音，不载入
+			end
+		else
+			new_game() -- 其余行按 A/回车照旧开局
+		end
 	end
 end
 
@@ -308,9 +375,17 @@ function update(dt)
 	-- 每帧结算当前分：拔卡退出的一局也算数（见 settle_score），与暂停/结束态无关
 	settle_score()
 
-	-- 退格：回选择菜单（直接结算）。放在最前，暂停/帮助/结束态下都能用
+	-- 退格：回选择菜单（直接结算）。放在最前，暂停/帮助/结束态下都能用。
+	-- 主动结算 = 放弃这局 → 存档一并消耗（"继续"变灰），不再有一次机会
 	if phos.input.pressed("backspace") then
+		mark_save_used()
 		to_menu()
+		return
+	end
+
+	-- S：存档并回菜单（不消耗，写 save_used="0"）。结束态没有存档意义，不响应
+	if phos.input.pressed("s") and game.phase ~= "won" and game.phase ~= "over" then
+		save_and_menu()
 		return
 	end
 
@@ -350,6 +425,8 @@ function update(dt)
 		bump_best_wave(game.wave_total)
 	end
 	if ev.over then bump_best_wave(game.wave) end
+	-- 一局结束（阵亡 / 通关）→ 存档作废：不能"继续"回一局已经输了的对局
+	if ev.over or ev.won then mark_save_used() end
 end
 
 -- ── 绘制 ─────────────────────────────────────────────────────────────
@@ -369,22 +446,29 @@ local function draw_menu(C)
 	center(6, t.title, C.yellow, 3)
 	center(10, t.subtitle, C.gray)
 
+	-- 每行带 key（= menu_rows 常量，用于判定高亮）；big = 居中大字（开始/继续）。
+	-- "继续"仅在存在存档时出现；save_used=1 → disabled（灰、不可选）
 	local rows = {
-		{ t.diff, t.diff_names[menu.diff] or menu.diff },
-		{ t.map, t.map_names[menu.map] or menu.map },
-		{ t.endless, menu.endless and t.on or t.off },
-		{ t.start, "" },
+		{ key = menu_rows.DIFF, label = t.diff, value = t.diff_names[menu.diff] or menu.diff },
+		{ key = menu_rows.MAP, label = t.map, value = t.map_names[menu.map] or menu.map },
+		{ key = menu_rows.ENDLESS, label = t.endless, value = menu.endless and t.on or t.off },
+		{ key = menu_rows.START, label = t.start, big = true },
 	}
+	if menu_save then
+		rows[#rows + 1] = { key = menu_rows.CONTINUE, label = t.cont, big = true,
+			disabled = menu_save_used }
+	end
 	local top = 16
 	for i, r in ipairs(rows) do
 		local y = top + (i - 1) * 3
-		local mark = (i == menu.row) and ">" or " "
-		local label = string.format("%s %s", mark, phos.text.pad(r[1], 12))
-		if i == #rows then
-			center(y, r[1], (i == menu.row) and C.yellow or C.white, 2)
+		local sel = (r.key == menu.row)
+		if r.big then
+			local col = r.disabled and C.dark_gray or (sel and C.yellow or C.white)
+			center(y, r.label, col, 2)
 		else
-			S.print(mid - 14, y, label, (i == menu.row) and C.yellow or C.white)
-			S.print(mid + 2, y, r[2], (i == menu.row) and C.cyan or C.gray)
+			local label = string.format("%s %s", sel and ">" or " ", phos.text.pad(r.label, 12))
+			S.print(mid - 14, y, label, sel and C.yellow or C.white)
+			S.print(mid + 2, y, r.value, sel and C.cyan or C.gray)
 		end
 	end
 	center(h - 4, t.hint, C.dark_gray)
@@ -467,7 +551,9 @@ end
 function debug_state()
 	if mode == "menu" or not game then
 		return { phase = "menu", best_wave = best_wave, wins = wins, best_score = best_score,
-			speed = speed, endless = menu.endless }
+			speed = speed, endless = menu.endless,
+			-- 菜单可观测：当前高亮行（menu_rows 常量）/ 是否出现"继续" / 是否已用
+			menu_row = menu.row, has_save = (menu_save ~= nil), save_used = menu_save_used }
 	end
 	local g = game
 	local towers = {}

@@ -98,6 +98,22 @@ function Map.new(w, h, style)
 	return m
 end
 
+-- 从存档重建一张地图：**不走 generate**（generate 会消耗 phos.sys.random，
+-- 毁掉"续局随机可复现"）。直接接管格数组/刷怪口/磁芯，再算一次寻路场。
+function Map.from_snapshot(w, h, style, core, gates, cells, version)
+	local m = setmetatable({}, Map)
+	m.w, m.h = w, h
+	m.rand = ri
+	m.style = style
+	m.core = { x = core.x, y = core.y }
+	m.gates = gates
+	m.cells = cells
+	m.version = version or 0
+	m.af_cache, m.af_ver = {}, -1 -- 攻击寻路场缓存作废（version 已变）
+	m:compute_field()
+	return m
+end
+
 function Map:get(x, y)
 	if x < 0 or x >= self.w or y < 0 or y >= self.h then return nil end
 	return self.cells[y * self.w + x]

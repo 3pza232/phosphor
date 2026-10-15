@@ -15,6 +15,8 @@ local Text = {
 		rate = "攻速", kills = "击杀", upgrade = "升级", refund = "返还",
 		cost = "造价", persec = "/秒", speed = "速度", hp = "血量",
 		lvl = "级", airstrike = "空袭", ready = "就绪", sec = "秒", cont = "连续",
+		priority = "优先",
+		priority_names = { FIRST = "先攻", STRONG = "最强", CLOSE = "最近", AIR = "对空" },
 		diff = "难度", map = "地图", max = "满级", combat = "交战", buildp = "布防",
 		overload = "电力超限！设施降载",
 		hint_k = "键位表",
@@ -29,6 +31,8 @@ local Text = {
 		rate = "RATE", kills = "KILLS", upgrade = "UP", refund = "SELL",
 		cost = "COST", persec = "/s", speed = "SPEED", hp = "HP",
 		lvl = "Lv", airstrike = "AIRSTRIKE", ready = "READY", sec = "s", cont = "CONT",
+		priority = "PRIORITY",
+		priority_names = { FIRST = "FIRST", STRONG = "STRONG", CLOSE = "CLOSE", AIR = "AIR" },
 		diff = "DIFF", map = "MAP", max = "MAX", combat = "COMBAT", buildp = "BUILD",
 		overload = "POWER OVER - derated",
 		hint_k = "CONTROLS",
@@ -145,14 +149,16 @@ function Panel.draw(game, cart, speed, C)
 			or tostring(Towers.power_use(tsel))
 		P.print(1, y + 7, kv(t.power, out), C.white)
 		P.print(1, y + 8, kv(t.kills, tostring(tsel.kills)), C.white)
+		-- 目标优先级（P 键切换）：让"按了 P 变成什么"看得见，而不是只在内部悄悄改
+		P.print(1, y + 9, kv(t.priority, t.priority_names[tsel.priority] or tsel.priority), C.cyan)
 		local uc = Towers.upgrade_cost(tsel)
 		if uc then
-			P.print(1, y + 9, kv(t.upgrade, "$" .. uc), C.green)
+			P.print(1, y + 10, kv(t.upgrade, "$" .. uc), C.green)
 		else
-			P.print(1, y + 9, kv(t.upgrade, t.max), C.gray)
+			P.print(1, y + 10, kv(t.upgrade, t.max), C.gray)
 		end
-		P.print(1, y + 10, kv(t.refund, "$" .. Towers.refund(tsel)), C.orange)
-		y = y + 11
+		P.print(1, y + 11, kv(t.refund, "$" .. Towers.refund(tsel)), C.orange)
+		y = y + 12
 	else
 		local name = game:selected_name()
 		local d = Towers.TYPES[name]
