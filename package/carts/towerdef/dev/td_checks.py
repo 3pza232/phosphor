@@ -158,7 +158,7 @@ def test_wall(seed):
 
 
 def test_power(seed):
-    g = Game(seed)
+    g = Game(seed, credits=2000)   # 给足钱：这条测电力机制，不该被"起始金币"绑住
     try:
         d = g.debug()
         base = d["power_cap"]
@@ -189,7 +189,7 @@ def test_power(seed):
 
 
 def test_upgrade_refund(seed):
-    g = Game(seed)
+    g = Game(seed, credits=2000)   # 给足钱：这条测升级/返还数值，不该被"起始金币"绑住
     try:
         c0 = g.debug()["credits"]
         check("build: 建出 GUN", g.build_near("GUN"))

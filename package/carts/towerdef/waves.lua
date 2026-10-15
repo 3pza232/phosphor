@@ -41,9 +41,9 @@ local BOSS_CAP = 2 -- 每波首领上限
 
 -- 难度（开局菜单选）：起始金币 / 磁芯血 / 敌人 hp 乘数 / 敌人速度乘数。
 Waves.DIFF = {
-	EASY = { credits = 300, core = 25, hp = 0.80, speed = 0.90 },
-	NORMAL = { credits = 200, core = 20, hp = 1.00, speed = 1.00 },
-	HARD = { credits = 150, core = 15, hp = 1.25, speed = 1.08 },
+	EASY = { credits = 150, core = 25, hp = 0.80, speed = 0.90 },
+	NORMAL = { credits = 120, core = 20, hp = 1.00, speed = 1.00 },
+	HARD = { credits = 80, core = 15, hp = 1.25, speed = 1.08 },
 }
 Waves.DIFF_ORDER = { "EASY", "NORMAL", "HARD" }
 

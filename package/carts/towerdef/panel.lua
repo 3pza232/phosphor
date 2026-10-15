@@ -99,39 +99,42 @@ function Panel.draw(game, cart, speed, C)
 		local d = Towers.TYPES[tsel.type]
 		local dmg, range, interval = Towers.stats(tsel, tsel.aura)
 		P.print(1, y, string.format("%s %s%d", Towers.label(tsel.type), t.lvl, tsel.level), C[sel_color(d, tsel)])
+		-- 名字下面一行：一句话功能简介（"它是干嘛的"）
+		P.print(1, y + 1, phos.text.fit(Towers.desc(tsel.type), pw - 2), C.gray)
 		-- HP：数字 + 血条（色随血量档）——选中的塔一眼看得出还撑不撑得住
 		local hf = (tsel.max_hp > 0) and (tsel.hp / tsel.max_hp) or 0
 		local hcol = (hf > 0.5) and C.green or (hf > 0.25 and C.yellow or C.red)
-		P.print(1, y + 1, string.format("%s %d/%d", t.hp, math.max(0, math.floor(tsel.hp)), tsel.max_hp), hcol)
-		region:bar(1, y + 2, pw - 2, math.max(0, math.min(1, hf)))
-		P.print(1, y + 3, string.format("%s %s", t.dmg, Panel._dmg(d, dmg, t, tsel.level)), C.white)
-		P.print(1, y + 4, string.format("%s %s", t.range, Panel._rng(range)), C.white)
-		P.print(1, y + 5, string.format("%s %s", t.rate, Panel._rate(d, interval, t)), C.white)
+		P.print(1, y + 2, string.format("%s %d/%d", t.hp, math.max(0, math.floor(tsel.hp)), tsel.max_hp), hcol)
+		region:bar(1, y + 3, pw - 2, math.max(0, math.min(1, hf)))
+		P.print(1, y + 4, string.format("%s %s", t.dmg, Panel._dmg(d, dmg, t, tsel.level)), C.white)
+		P.print(1, y + 5, string.format("%s %s", t.range, Panel._rng(range)), C.white)
+		P.print(1, y + 6, string.format("%s %s", t.rate, Panel._rate(d, interval, t)), C.white)
 		local out = (d.kind == "reactor") and string.format("+%d", Towers.power_out(tsel))
 			or tostring(Towers.power_use(tsel))
-		P.print(1, y + 6, string.format("%s %s", t.power, out), C.white)
-		P.print(1, y + 7, string.format("%s %d", t.kills, tsel.kills), C.white)
+		P.print(1, y + 7, string.format("%s %s", t.power, out), C.white)
+		P.print(1, y + 8, string.format("%s %d", t.kills, tsel.kills), C.white)
 		local uc = Towers.upgrade_cost(tsel)
 		if uc then
-			P.print(1, y + 8, string.format("%s $%d", t.upgrade, uc), C.green)
+			P.print(1, y + 9, string.format("%s $%d", t.upgrade, uc), C.green)
 		else
-			P.print(1, y + 8, t.max, C.gray)
+			P.print(1, y + 9, t.max, C.gray)
 		end
-		P.print(1, y + 9, string.format("%s $%d", t.refund, Towers.refund(tsel)), C.orange)
+		P.print(1, y + 10, string.format("%s $%d", t.refund, Towers.refund(tsel)), C.orange)
 	else
 		local name = game:selected_name()
 		local d = Towers.TYPES[name]
 		local dmg, range, interval = Towers.stats({ type = name, level = 1 }, false)
 		P.print(1, y, Towers.label(name), C[d.color])
-		P.print(1, y + 1, string.format("%s $%d", t.cost, d.cost), C.yellow)
+		P.print(1, y + 1, phos.text.fit(Towers.desc(name), pw - 2), C.gray)
+		P.print(1, y + 2, string.format("%s $%d", t.cost, d.cost), C.yellow)
 		local out = (d.kind == "reactor") and string.format("+%d", d.cap[1]) or tostring(d.power or 0)
-		P.print(1, y + 2, string.format("%s %s", t.power, out), C.white)
+		P.print(1, y + 3, string.format("%s %s", t.power, out), C.white)
 		-- 建造前也报塔的血量（这一型的总血量）：建好后侧栏改显"当前/总"，
 		-- 于是不管光标在塔上还是空地，血量都看得见。
-		P.print(1, y + 3, string.format("%s %d", t.hp, d.hp or 0), C.white)
-		P.print(1, y + 4, string.format("%s %s", t.dmg, Panel._dmg(d, dmg, t, 1)), C.white)
-		P.print(1, y + 5, string.format("%s %s", t.range, Panel._rng(range)), C.white)
-		P.print(1, y + 6, string.format("%s %s", t.rate, Panel._rate(d, interval, t)), C.white)
+		P.print(1, y + 4, string.format("%s %d", t.hp, d.hp or 0), C.white)
+		P.print(1, y + 5, string.format("%s %s", t.dmg, Panel._dmg(d, dmg, t, 1)), C.white)
+		P.print(1, y + 6, string.format("%s %s", t.range, Panel._rng(range)), C.white)
+		P.print(1, y + 7, string.format("%s %s", t.rate, Panel._rate(d, interval, t)), C.white)
 	end
 
 	-- 空袭（放在选中详情之下，避免与其最后一行撞行）

@@ -153,7 +153,10 @@ function Map:generate(style)
 		for dx = -2, 2 do
 			if math.abs(dx) + math.abs(dy) <= 3 then
 				local cx, cy = self.core.x + dx, self.core.y + dy
-				if self:get(cx, cy) == Map.ROCK or self:get(cx, cy) == Map.WATER then
+				-- 别动外围岩壁：磁芯贴着右缘，清空区会够到 x=w-1 那面墙；
+				-- 一旦把墙清成空地，磁芯右侧的边框就"漏一段"（看着像缺了块围墙）。
+				local on_border = (cx == 0 or cx == w - 1 or cy == 0 or cy == h - 1)
+				if not on_border and (self:get(cx, cy) == Map.ROCK or self:get(cx, cy) == Map.WATER) then
 					self:set(cx, cy, Map.GRASS)
 				end
 			end

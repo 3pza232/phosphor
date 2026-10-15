@@ -2,7 +2,7 @@
 -- 规则全在 game.lua（它不读键、不画、不出声）；这里只做三件事。
 --
 -- 操作（DESIGN §7）：方向键移光标 / A 建或升级 / B 取消 / Z X 上·下一个塔型 /
--- C 空袭 / D 拆除 / 退格 切优先级 / 空格 提前放波 / , . 调速 / Enter 暂停。
+-- C 空袭 / D 拆除 / P 切优先级 / 空格 提前放波 / , . 调速 / 退格 回菜单 / Enter 暂停。
 -- 所有提示用 phos.input.key_name 求真键名，不写死手柄叫法。
 
 local Game = require("game")
@@ -40,9 +40,10 @@ local Text = {
 			{ { "c" }, "空袭（冷却 40s）" },
 			{ { "space" }, "提前放波（拿奖金）" },
 			{ { "comma", "period" }, "减速 / 加速" },
-			{ { "backspace" }, "切目标优先级" },
+			{ { "p" }, "切目标优先级" },
 			{ { "k" }, "本帮助（同时暂停）" },
 			{ { "start" }, "暂停 / 继续" },
+			{ { "backspace" }, "返回选择菜单（结算）" },
 			{ { "escape" }, "返回卡带架" },
 		},
 		diff_names = { EASY = "简单", NORMAL = "普通", HARD = "困难" },
@@ -67,9 +68,10 @@ local Text = {
 			{ { "c" }, "airstrike (40s cd)" },
 			{ { "space" }, "early wave (+bonus)" },
 			{ { "comma", "period" }, "slower / faster" },
-			{ { "backspace" }, "cycle target priority" },
+			{ { "p" }, "cycle target priority" },
 			{ { "k" }, "this help (pauses too)" },
 			{ { "start" }, "pause / resume" },
+			{ { "backspace" }, "back to menu (settles)" },
 			{ { "escape" }, "back to shelf" },
 		},
 		diff_names = { EASY = "EASY", NORMAL = "NORMAL", HARD = "HARD" },
@@ -109,6 +111,16 @@ local function settle_score()
 		best_score = sc
 		phos.save.write("best_score", tostring(best_score))
 	end
+end
+
+-- 退格：回选择菜单（"直接结算"）。settle_score 每帧都在跑，分数已经记下，这里只切模式。
+-- 与"拔卡退出"同一条路——半途回菜单的一局也照算最高分。
+local function to_menu()
+	mode = "menu"
+	paused = false
+	help_open = false
+	game = nil
+	phos.panel.resize(0) -- 菜单不需要侧栏
 end
 
 local function new_game()
@@ -237,7 +249,7 @@ local function game_input(dt)
 	if phos.input.pressed("z") then
 		g.build_index = ((g.build_index - 2) % #Towers.ORDER) + 1
 	end
-	if phos.input.pressed("backspace") then
+	if phos.input.pressed("p") then
 		g:cycle_priority(g.cx, g.cy)
 	end
 	if phos.input.pressed("c") then
@@ -293,6 +305,12 @@ function update(dt)
 
 	-- 每帧结算当前分：拔卡退出的一局也算数（见 settle_score），与暂停/结束态无关
 	settle_score()
+
+	-- 退格：回选择菜单（直接结算）。放在最前，暂停/帮助/结束态下都能用
+	if phos.input.pressed("backspace") then
+		to_menu()
+		return
+	end
 
 	-- 结束态：按 A 以新 seed 重开（DESIGN §3）
 	if game.phase == "won" or game.phase == "over" then

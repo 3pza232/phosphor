@@ -16,36 +16,39 @@ local Towers = {}
 Towers.TYPES = {
 	GUN = { cost = 50, power = 1, dmg = 9, rate = 0.35, range = 5.0, hp = 100,
 		chars = { "g", "G", "G" }, color = "green", kind = "gun",
-		label = { zh = "机枪", en = "GUN" } },
+		label = { zh = "机枪", en = "GUN" }, desc = { zh = "单体速射，便宜", en = "fast single shot" } },
 	CANNON = { cost = 95, power = 2, dmg = 34, rate = 1.25, range = 6.0, splash = 1.6, hp = 140,
 		chars = { "c", "C", "C" }, color = "orange", kind = "cannon",
-		label = { zh = "加农炮", en = "CANNON" } },
+		label = { zh = "加农炮", en = "CANNON" }, desc = { zh = "高伤溅射", en = "high splash dmg" } },
 	FROST = { cost = 70, power = 2, dmg = 5, rate = 0.70, range = 5.0, max_targets = 3, hp = 90,
 		slow_factor = 0.55, slow_time = 1.8,
 		chars = { "f", "F", "F" }, color = "cyan", kind = "frost",
-		label = { zh = "冰霜", en = "FROST" } },
+		label = { zh = "冰霜", en = "FROST" }, desc = { zh = "范围减速", en = "slows a group" } },
 	TESLA = { cost = 130, power = 3, dmg = 24, rate = 1.40, range = 5.5, chain = 3, chain_range = 3.0, hp = 120,
 		chars = { "t", "T", "T" }, color = "purple", kind = "tesla", ignore_armor = true,
-		label = { zh = "电塔", en = "TESLA" } },
+		label = { zh = "电塔", en = "TESLA" }, desc = { zh = "连锁电击，破甲", en = "chain, no armor" } },
 	FLAME = { cost = 115, power = 3, dmg = 13, dps = true, range = 3.0, splash = 2.0, hp = 130,
 		burn_dps = 6, burn_time = 2.0,
 		chars = { "l", "L", "L" }, color = "red", kind = "flame", ignore_armor = true,
-		label = { zh = "喷火", en = "FLAME" } },
+		label = { zh = "喷火", en = "FLAME" }, desc = { zh = "近距持续灼烧", en = "short-range burn" } },
 	RADAR = { cost = 100, power = 2, dmg = 0, rate = 0, range = 4.0, aura_range = 0.25, aura_rate = 0.15, hp = 70,
 		chars = { "r", "R", "R" }, color = "yellow", kind = "radar",
-		label = { zh = "雷达", en = "RADAR" } },
+		label = { zh = "雷达", en = "RADAR" }, desc = { zh = "光环：友塔增强", en = "aura: buff allies" } },
 	-- 维修塔：不攻击，周期治疗范围内受损友军（治疗量/频率/目标数随等级走，见 heal）。
 	REPAIR = { cost = 90, power = 2, dmg = 0, range = 4.0, hp = 80,
 		heal = { time = { 4, 3, 2 }, count = { 1, 2, 3 }, amount = { 10, 14, 18 } },
 		chars = { "h", "H", "H" }, color = "green", kind = "repair",
-		label = { zh = "维修", en = "REPAIR" } },
+		label = { zh = "维修", en = "REPAIR" }, desc = { zh = "治疗受损友塔", en = "heals allies" } },
 	REACTOR = { cost = 60, power = 0, dmg = 0, rate = 0, range = 0, cap = { 10, 16, 24 }, hp = 80,
 		chars = { "R", "R", "R" }, color = "blue", kind = "reactor",
-		label = { zh = "反应堆", en = "REACTOR" } },
+		label = { zh = "反应堆", en = "REACTOR" }, desc = { zh = "供电，抬电力上限", en = "power: raises cap" } },
 }
 
 -- 塔的显示名（随界面语言）。UI 一律用它，别直接印 type 这个内部键。
 function Towers.label(name) return phos.lang.pick(Towers.TYPES[name].label) end
+
+-- 塔的一句话功能简介（随界面语言）——侧栏显示在名字下面。
+function Towers.desc(name) return phos.lang.pick(Towers.TYPES[name].desc) end
 
 -- 建造面板里的循环顺序（含反应堆、维修）。Z/X 键按这个顺序切。
 Towers.ORDER = { "GUN", "CANNON", "FROST", "TESLA", "FLAME", "RADAR", "REPAIR", "REACTOR" }
