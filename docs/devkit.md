@@ -275,6 +275,29 @@ phosphor --cart carts/mygame --headless --frames 120 --screenshot shots/f120.png
 能用文字就用文字：`screen.read` / `--dump-screen` 是零误差的文本画面，
 PNG 留给"给人看"与像素级回归。
 
+## 工程习惯：卡带自带自己的工具与痕迹
+
+运行目录（`build/`）就是**发行包的形态**，它该是干净的。写卡带时的开发产物——测试脚本、
+日志、截图、报告、临时存档——**放进这张卡带自己的文件夹里**（`carts/mygame/dev/`），
+不要散在运行目录根下：
+
+    carts/mygame/
+    ├── manifest.lua  main.lua  game.lua  panel.lua …    # 卡带本体
+    └── dev/                                             # 开发产物（不随卡带分发）
+        ├── play.py      # 控制通道测试脚本
+        ├── run.log      # 运行日志
+        └── shots/       # 截图
+
+- 主机运行时**只认 `.lua`**（`manifest.lua` + `entry` 与它们 `require` 的模块），
+  `dev/` 之类的额外文件被忽略，不影响加载与运行。
+- 但 **`--pack` 会把卡带目录整个打进 `.phos`**（只跳过嵌套的 `.phos`），所以**打包前把
+  `dev/` 移走或删掉**。
+- 测试用 `--save-dir` / `--config` 指到 `dev/` 下的临时目录，别写进运行目录的 `saves/`，
+  也别覆盖运行目录的 `config.json`。
+
+一句话：**一张卡带 = 一个自洽的文件夹**——代码、工具、痕迹都在里面；运行目录里除了卡带与
+出厂内容，不该多出别的。
+
 ## 保持注解不漂移
 
 `devkit/phos.lua` 与实装会各自过时，一条命令就能查出漂移：

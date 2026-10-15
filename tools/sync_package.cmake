@@ -44,6 +44,10 @@ foreach(dir IN ITEMS "${SRC}/carts" "${SRC}/devkit" "${SRC}/theme" "${SRC}/mods"
         if(sub STREQUAL "docs" AND rel MATCHES "^engine(/|$)")
             continue()
         endif()
+        # 卡带的开发产物（carts/<id>/dev/）不进发行包：测试脚本、日志、临时存档一律在这里
+        if(sub STREQUAL "carts" AND rel MATCHES "(^|/)dev(/|$)")
+            continue()
+        endif()
         if(IS_DIRECTORY "${dir}/${rel}")
             file(MAKE_DIRECTORY "${DEST}/${sub}/${rel}")
             continue()
