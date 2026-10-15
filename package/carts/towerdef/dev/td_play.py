@@ -11,11 +11,13 @@
 """
 import json, os, socket, subprocess, sys, time, math
 
+from _paths import run_root
+
 HOST = "127.0.0.1"
-# 脚本住在 build/carts/towerdef/dev，运行根（phosphor.exe / carts / config）在上溯三层。
-# 子进程 cwd 必须是 build 根：字体与主题按运行目录找，不能是 dev。
+# 子进程 cwd 必须是运行根（build/）：字体/主题按运行目录找，不能是 dev。
+# 运行根由 _paths 解析——脚本住 package/carts/<id>/dev 或 build/carts/<id>/dev 都对。
 WORK = os.path.dirname(os.path.abspath(__file__))
-ROOT = os.path.abspath(os.path.join(WORK, "..", "..", ".."))
+ROOT = run_root()
 EXE = os.path.join(ROOT, "phosphor.exe")
 CART = os.path.join(ROOT, "carts", "towerdef")
 SAVES = os.path.join(WORK, "saves")

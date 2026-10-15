@@ -22,10 +22,12 @@ import os
 import hashlib
 import random
 
+from _paths import run_root
 HOST = "127.0.0.1"
-WORK = os.path.dirname(os.path.abspath(__file__))
-EXE = os.path.join(WORK, "phosphor.exe")
-CART = os.path.join(WORK, "carts", "crawl")
+WORK = os.path.dirname(os.path.abspath(__file__))   # dev 目录：临时存档/日志放这
+ROOT = run_root()                                    # 运行根：phosphor.exe 与 carts/ 在这
+EXE = os.path.join(ROOT, "phosphor.exe")
+CART = os.path.join(ROOT, "carts", "crawl")
 
 DELTA = {"up": (0, -1), "down": (0, 1), "left": (-1, 0), "right": (1, 0)}
 ORDER = ("up", "down", "left", "right")
@@ -42,7 +44,7 @@ class Host:
             # 英文界面让 phos.debug 参数名变成 ASCII，便于走 debug.set 调难度
             args += ["--config", os.path.join(WORK, "crawl_test_config.json")]
         self.proc = subprocess.Popen(
-            args, cwd=WORK, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            args, cwd=ROOT, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
         )
         self.sock = None
         self.buf = b""

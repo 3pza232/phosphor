@@ -9,9 +9,10 @@ import sys
 import time
 from collections import deque
 
+from _paths import run_root
 HOST = "127.0.0.1"
 DEV = os.path.dirname(os.path.abspath(__file__))
-BUILD = os.path.abspath(os.path.join(DEV, "..", "..", ".."))
+BUILD = run_root()
 EXE = os.path.join(BUILD, "phosphor.exe")
 CART = os.path.abspath(os.path.join(DEV, ".."))
 CONFIG = os.path.join(DEV, "crawl_test_config.json")

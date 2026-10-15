@@ -53,9 +53,12 @@ ninja -j8
 依赖已随仓库放在 `extern/`（glfw / lua / miniz / sol2 / imgui / stb / miniaudio），
 不需要额外安装。构建后 `build/` 就是可直接分发的运行包。
 
-构建默认**也会**产出 `phosphor_tests`（`unit` 门禁用的纯逻辑单元测试）——它是运行目录里唯一的
-"非发行"产物。要一个纯净的发行目录：跑 `python tools/clean.py` 扫掉它（连同日志/截图），
-或加 `-DPHOSPHOR_BUILD_TESTS=OFF` 从一开始就不构建。
+构建**默认不产出** `phosphor_tests`（纯逻辑单元测试）——`build/` 同时当发行目录用，
+不该混进测试产物。要跑单元门禁就显式打开（`run_checks.py` 的 `unit` 项会用到它）：
+
+```bash
+cmake -G Ninja -DPHOSPHOR_BUILD_TESTS=ON ..    # 打开后重新构建，才有 phosphor_tests
+```
 
 **内容改哪里**：改卡带/主题/文档改 `package/` 与 `docs/` 下的源文件，构建时同步进 `build/`。
 若运行目录里的同一份文件在上次同步之后被就地改过，构建会**跳过它并告警**（不会静默覆盖）——
@@ -73,7 +76,7 @@ cmake -G Ninja -DPHOSPHOR_SANITY=ON ../    # 自检构建：慢，只用于排�
 | 脚本 | 用途 | 跑法 |
 |---|---|---|
 | `run_checks.py` | **一键跑全部门禁并汇总**：默认无头门禁（unit/control/draw/layer/cart/net），`--gui` 再加开窗门禁。测试逻辑仍在各自脚本里，它只管调度与汇总 | `python ../tools/run_checks.py [--gui]` |
-| `unit_smoke.py` | 纯逻辑单元测试：跑 `phosphor_tests`（C++，源码在 `tests/`），覆盖颜色/文本/配置/色板/主题等不依赖 GL·Lua 的核心——无窗口无显卡即可跑 | `python ../tools/unit_smoke.py` |
+| `unit_smoke.py` | 纯逻辑单元测试：跑 `phosphor_tests`（C++，源码在 `tests/`），覆盖颜色/文本/配置/色板/主题等不依赖 GL·Lua 的核心——无窗口无显卡即可跑（需构建时 `-DPHOSPHOR_BUILD_TESTS=ON`；未启用则**跳过**，不算失败） | `python ../tools/unit_smoke.py` |
 | `control_test.py` | 控制通道契约：握手 / 单步精确 / 读屏 / 注入 / 热重载 / 退出 | `python ../tools/control_test.py` |
 | `window_smoke.py` | 窗口路径冒烟：菜单→开局→按键→单步 →**实时浸泡**→干净退出（确定性部分全走单步，只有最后几秒实时；需要图形环境） | `python ../tools/window_smoke.py [--seconds 3] [--cart carts/x]` |
 | `cart_smoke.py` | 卡带冒烟：出厂卡带各跑一段，断言跑得完 / 不出错 / 有画面 / **同种子跑两遍逐字节一致**；不比对像素——画面本来就该随内容变 | `python ../tools/cart_smoke.py [--frames 3000] [--cart worms]` |

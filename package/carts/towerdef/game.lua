@@ -413,7 +413,7 @@ function Game:check_end()
 	end
 	if self:all_spawned() and #self.enemies == 0 and self.phase == "combat" then
 		-- 波清空：发奖金；第 20 波清完即通关（无尽模式不判通关，继续下一波）
-		self.credits = self.credits + 25 + 4 * self.wave
+		self.credits = self.credits + 15 + 2 * self.wave
 		self.ev.wave_clear = true
 		if self.wave >= self.wave_total and not self.endless then
 			self.phase = "won"

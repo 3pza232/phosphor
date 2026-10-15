@@ -7,18 +7,24 @@ local Waves = {}
 
 Waves.TOTAL = 20
 
--- 成长系数：随波号线性放大。公式写在这里，别散到 enemies/game 里。
-function Waves.hp_growth(w) return 1 + 0.06 * (w - 1) end
-function Waves.speed_growth(w) return math.min(1.20, 1 + 0.01 * (w - 1)) end
-function Waves.reward_growth(w) return 1 + 0.02 * (w - 1) end
+-- 成长系数：随波号增长，公式写在这里，别散到 enemies/game 里。
+-- 血量 = 线性 + **每 5 波一个台阶**（阶段性变强，不是一条平滑直线慢慢爬）；
+-- 速度封顶；赏金增长刻意放缓（钱是稀缺资源，别一波一波滚雪球）。
+Waves.STAGE_WAVES = 5
+function Waves.hp_growth(w)
+	local stage = math.floor((w - 1) / Waves.STAGE_WAVES)
+	return 1 + 0.07 * (w - 1) + 0.15 * stage
+end
+function Waves.speed_growth(w) return math.min(1.25, 1 + 0.012 * (w - 1)) end
+function Waves.reward_growth(w) return 1 + 0.012 * (w - 1) end
 
 -- ── 无尽模式（w > TOTAL）──────────────────────────────────────────────
--- 第 20 波血量作基准，之后每波 +9%；速度/赏金仍走上面那两条公式（速度本就封顶）。
+-- 第 20 波血量作基准，之后每波 +12%（比常规更陡：越往后越该顶不住）。
 function Waves.hp_growth_endless(w)
-	return Waves.hp_growth(Waves.TOTAL) * (1 + 0.09 * (w - Waves.TOTAL))
+	return Waves.hp_growth(Waves.TOTAL) * (1 + 0.12 * (w - Waves.TOTAL))
 end
 
--- 无尽波按"威胁预算"花掉：B(w) = B20 + 6·(w-20)，B20 取第 20 波模板的近似总量。
+-- 无尽波按"威胁预算"花掉：B(w) = B20 + 9·(w-20)，B20 取第 20 波模板的近似总量。
 Waves.B20 = 86
 
 -- 敌人威胁点 + 出怪间隔（沿用现有量级的代表值）。顺序固定 = 同种子可复现。
@@ -77,7 +83,7 @@ end
 -- 无尽波：反复从"买得起的类型"里随机挑一个花预算，花不动就停（剩余不足最小项）。
 -- 用 phos.sys.random —— 同种子同波次生成同一批怪（可复现）。
 function Waves.endless_groups(w)
-	local budget = Waves.B20 + 6 * (w - Waves.TOTAL)
+	local budget = Waves.B20 + 9 * (w - Waves.TOTAL)
 	local counts, bosses = {}, 0
 	while true do
 		-- 买得起、且没到首领上限的类型

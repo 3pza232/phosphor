@@ -110,8 +110,11 @@ endif()
 
 # --- 纯逻辑单元测试：不依赖 GL / GLFW / Lua，可无窗口、无显卡运行 ---
 # 只编译"纯逻辑"那一批源文件（颜色/文本/配置/色板/主题/表面…），直接编进测试可执行文件；
-# 与主机共享同一份源码，所以测的就是真代码。默认开启，tools/run_checks.py 会调用它
-option(PHOSPHOR_BUILD_TESTS "构建纯逻辑单元测试" ON)
+# 与主机共享同一份源码，所以测的就是真代码。
+# **默认关闭**：build/ 同时充当发行目录，不该混进测试产物（做卡带也用它不上下面的东西）。
+# 改 src/ 要跑单元门禁（run_checks 的 unit 项）时显式打开：
+#   cmake -DPHOSPHOR_BUILD_TESTS=ON ..
+option(PHOSPHOR_BUILD_TESTS "构建纯逻辑单元测试（默认关：build/ 当发行目录用）" OFF)
 if(PHOSPHOR_BUILD_TESTS)
     add_executable(phosphor_tests
         tests/main.cpp

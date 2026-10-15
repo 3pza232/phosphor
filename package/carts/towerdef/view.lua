@@ -69,7 +69,7 @@ function View.draw(game, C)
 	if tsel then
 		local _, r = Towers.stats(tsel, tsel.aura)
 		range = r
-		ring_col = (tsel.level >= 3) and C.white or C[Towers.TYPES[tsel.type].color]
+		ring_col = (tsel.level >= 3) and C[Towers.TYPES[tsel.type].color] or C.white
 	else
 		local _, r = Towers.stats({ type = game:selected_name(), level = 1 }, false)
 		range = r
@@ -104,7 +104,7 @@ function View.draw(game, C)
 	for _, t in ipairs(game.towers) do
 		local d = Towers.TYPES[t.type]
 		local ch = d.chars[t.level] or d.chars[1]
-		local fg = (t.level >= 3) and C.white or C[d.color]
+		local fg = (t.level >= 3) and C[d.color] or C.white
 		-- 正在被拆：闪红（hit_t 由 game 在受击时刷新，towers.update 里衰减）
 		if t.hit_t and t.hit_t > 0 and (math.floor(phos.sys.time() * 20) % 2 == 0) then
 			fg = C.red

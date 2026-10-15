@@ -5,8 +5,9 @@
 """
 import json, os, socket, subprocess, sys, time
 
+from _paths import run_root
 DEV = os.path.dirname(os.path.abspath(__file__))
-ROOT = os.path.abspath(os.path.join(DEV, "..", "..", ".."))
+ROOT = run_root()
 EXE = os.path.join(ROOT, "phosphor.exe")
 CART = os.path.join(ROOT, "carts", "towerdef")
 SHOTS = os.path.join(DEV, "shots")

@@ -37,9 +37,9 @@ local Text = {
 	},
 }
 
--- 选中塔的类型色（与场上一致，L3 用白）。定义在 draw 之前，避免前向引用到全局。
+-- 选中塔的颜色（与场上一致）：未满级用白（朴素），满级用类型色（各显本色，标出"练满"的独特）。
 local function sel_color(d, tsel)
-	return (tsel.level >= 3) and "white" or d.color
+	return (tsel.level >= 3) and d.color or "white"
 end
 
 function Panel.draw(game, cart, speed, C)
