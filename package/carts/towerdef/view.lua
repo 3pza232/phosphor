@@ -44,14 +44,6 @@ local function trace(S, px, py, x0, y0, x1, y1, ch, alt, color)
 	end
 end
 
--- 给方向 (ux,uy) 选一个"像直线"的字符，并给出它的垂直字符（激光加粗时用）。
-local function dir_chars(ux, uy)
-	if math.abs(ux) >= 0.9 then return "-", "|" end
-	if math.abs(uy) >= 0.9 then return "|", "-" end
-	if ux * uy >= 0 then return "\\", "/" end
-	return "/", "\\"
-end
-
 function View.draw(game, C)
 	local S = phos.screen
 	local px, py = S.playfield()
@@ -232,23 +224,23 @@ function View.draw(game, C)
 				end
 			end
 		elseif f.kind == "laser" then
-			-- 直线光柱：按方向取 | - / \，thickness 越大越粗（垂直方向加笔）；亮头暗尾
+			-- 细密**光点束**：沿直线一串小点 `·`（与电塔的 / \ 锯齿闪电刻意区分）。
+			-- thickness 越大点越多条并行（更粗），亮头收尾。
 			local dx, dy = f.x1 - f.x0, f.y1 - f.y0
 			local dist = math.sqrt(dx * dx + dy * dy)
 			if dist > 1e-6 then
 				local ux, uy = dx / dist, dy / dist
-				local ch, uch = dir_chars(ux, uy)
 				local nx, ny = -uy, ux
 				local half = math.max(0, (f.thickness or 1) - 1)
-				local steps = math.max(1, math.floor(dist + 0.5))
+				local steps = math.max(1, math.floor(dist * 2 + 0.5)) -- 采样加密 = 点更小、更连贯
 				for i = 0, steps do
 					local k = i / steps
 					local x, y = f.x0 + dx * k, f.y0 + dy * k
 					S.blend(px + math.floor(x + 0.5), py + math.floor(y + 0.5),
-						ch, (i >= steps - 1) and C.white or col)
+						"\u{00B7}", (i >= steps - 1) and C.white or col)
 					for j = 1, half do
-						S.blend(px + math.floor(x + nx * j + 0.5), py + math.floor(y + ny * j + 0.5), uch, col)
-						S.blend(px + math.floor(x - nx * j + 0.5), py + math.floor(y - ny * j + 0.5), uch, col)
+						S.blend(px + math.floor(x + nx * j * 0.6 + 0.5), py + math.floor(y + ny * j * 0.6 + 0.5), "\u{00B7}", col)
+						S.blend(px + math.floor(x - nx * j * 0.6 + 0.5), py + math.floor(y - ny * j * 0.6 + 0.5), "\u{00B7}", col)
 					end
 				end
 			end

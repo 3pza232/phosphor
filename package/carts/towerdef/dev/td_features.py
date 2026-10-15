@@ -1,4 +1,5 @@
-"""td_features.py —— A/B/C/D 新功能定点验收（无尽 / 塔血量破墙 / 维修塔 / AI 优先级）。
+"""td_features.py —— 新功能定点验收（无尽 / 塔血量破墙 / 维修塔 / AI 优先级 /
+13 型建造列表 / 采矿机产金 / 战斗中提前放波 / 欠压降载）。
 
 每个用例起一局干净进程，走控制通道真玩，读 debug_state 断言。
 用法: python td_features.py [base_seed]
@@ -132,12 +133,12 @@ def test_reactor_priority(seed):
 def test_new_towers(seed):
     g = Game(seed, diff="EASY", style="OPEN", credits=9000)
     try:
-        # 建造列表应含全部 12 型（X 循环一圈不重样）
+        # 建造列表应含全部 13 型（X 循环一圈不重样）
         seen = set()
-        for _ in range(12):
+        for _ in range(13):
             seen.add(g.debug()["selected_type"])
             g.h.step("x")
-        check("E: 建造列表含 12 型", len(seen) == 12, "seen=%d" % len(seen))
+        check("E: 建造列表含 13 型", len(seen) == 13, "seen=%d" % len(seen))
 
         # 四种新塔都能建出来（放在刷怪口前方，敌人会路过它们的射程）
         new_types = ["LASER", "HELL", "SNIPER", "MORTAR"]
@@ -169,12 +170,111 @@ def test_new_towers(seed):
         g.close()
 
 
+# ── D2：敌人也拆采矿机（与反应堆同一套 P1）──────────────────────────
+def test_miner_priority(seed):
+    g = Game(seed, diff="EASY", style="OPEN", credits=9000)
+    try:
+        # 采矿机放在刷怪口正前方：敌人一出场就在侦察圈内，会把它当"值钱目标"拆
+        g.move_to(4, g.mh // 2)
+        ok = g.build_here("MINER")
+        check("D2: 建出采矿机", ok)
+        if not ok:
+            return
+        g.h.step("space")
+        found = False
+        for _ in range(240):
+            if any(e.get("reason") == "reactor" for e in g.debug()["enemies"]):
+                found = True
+                break
+            g.h.step(None, frames=15)
+        check("D2: 敌人把采矿机当 P1 目标拆（reason=reactor 类）", found)
+    finally:
+        g.close()
+
+
+# ── F：采矿机（周期产金 / 吃电）──────────────────────────────────────
+def test_miner(seed):
+    g = Game(seed, diff="EASY", style="OPEN")
+    try:
+        ok = False
+        for dx in range(0, 6):
+            g.move_to(min(g.mw - 2, g.mw // 2 + dx), g.mh // 2)
+            if g.build_here("MINER"):
+                ok = True
+                break
+        check("F: 建出采矿机", ok)
+        if not ok:
+            return
+        d0 = g.debug()
+        check("F: 采矿机占 8 电（L1）", d0["power_used"] == 8, "used=%d" % d0["power_used"])
+        # 布防期无敌人 → 金币上涨只可能来自采矿机（L1 = 每 6s +5）
+        g.h.step(None, frames=400)
+        d1 = g.debug()
+        check("F: 布防期采矿机产金（≥ +5）",
+              d1["credits"] >= d0["credits"] + 5,
+              "credits %d -> %d" % (d0["credits"], d1["credits"]))
+    finally:
+        g.close()
+
+
+# ── G：战斗中提前放波（场上最多两拨）────────────────────────────────
+def test_early_wave(seed):
+    g = Game(seed, diff="EASY", style="OPEN")
+    try:
+        g.h.step("space")            # 布防期提前放第 1 波
+        d = g.debug()
+        check("G: 布防期 space 开第 1 波", d["wave"] == 1 and d["phase"] == "combat",
+              "wave=%d phase=%s" % (d["wave"], d["phase"]))
+        g.h.step(None, frames=600)   # 让第 1 波出怪
+        check("G: 场上只有一拨", g.debug()["active_waves"] == 1,
+              "active=%d" % g.debug()["active_waves"])
+        g.h.step("space")            # 战斗中提前招第 2 波
+        d = g.debug()
+        check("G: 战斗中能招下一波（wave 2 / 两拨）",
+              d["wave"] == 2 and d["active_waves"] == 2,
+              "wave=%d active=%d" % (d["wave"], d["active_waves"]))
+        g.h.step("space")            # 再按：两拨在手 → 应被拒
+        d = g.debug()
+        check("G: 已有两拨时再招被拒（wave 不变）",
+              d["wave"] == 2 and d["active_waves"] == 2,
+              "wave=%d active=%d" % (d["wave"], d["active_waves"]))
+    finally:
+        g.close()
+
+
+# ── H：欠压（按超出比例降载）────────────────────────────────────────
+def test_overload(seed):
+    g = Game(seed, diff="EASY", style="OPEN", credits=9000)
+    try:
+        # 基础电力上限 8；不建反应堆，纯堆塔把它顶过去（GUN 每座 1 电）
+        for i in range(40):
+            g.move_to(min(g.mw - 2, 3 + i % 12), min(g.mh - 2, 3 + (i // 12) * 2))
+            g.build_here("GUN")
+            if g.debug()["overload"]:
+                break
+        d = g.debug()
+        check("H: 堆塔触发欠压", d["overload"], "used=%d cap=%d" % (d["power_used"], d["power_cap"]))
+        if not d["overload"]:
+            return
+        over = (d["power_used"] - d["power_cap"]) / max(1, d["power_cap"])
+        check("H: 降载比例 = 超出比例（overload_over）",
+              abs(d["overload_over"] - over) < 1e-6,
+              "over=%.3f reported=%.3f" % (over, d["overload_over"]))
+        check("H: 降载系数 = max(0.2, 1-超出)（overload_rate）",
+              abs(d["overload_rate"] - max(0.2, 1 - over)) < 1e-6,
+              "rate=%.3f" % d["overload_rate"])
+    finally:
+        g.close()
+
+
 def main():
     base = int(sys.argv[1]) if len(sys.argv) > 1 else 1400
-    print("== towerdef 新功能验收 (A/B/C/D/E) ==")
+    print("== towerdef 新功能验收 (A–H) ==")
     for fn, off in [(test_tower_hp, 1), (test_repair, 2),
-                    (test_reactor_priority, 3), (test_endless, 4),
-                    (test_endless_repro, 5), (test_new_towers, 6)]:
+                    (test_reactor_priority, 3), (test_miner_priority, 11),
+                    (test_endless, 4), (test_endless_repro, 5),
+                    (test_new_towers, 6), (test_miner, 7),
+                    (test_early_wave, 8), (test_overload, 9)]:
         print("-- %s --" % fn.__name__)
         try:
             fn(base + off)

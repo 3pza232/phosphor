@@ -125,7 +125,7 @@ def main():
         h.set_credits(9000)  # 必须在开始前设：Game.new 时才读这个起始金币
         d = h.step("a")
         # 找一块能建的空地（从光标四邻试），建一座 GUN
-        ORDER = ["GUN", "CANNON", "FROST", "TESLA", "FLAME", "LASER", "HELL", "SNIPER", "MORTAR", "RADAR", "REPAIR", "REACTOR"]
+        ORDER = ["GUN", "CANNON", "FROST", "TESLA", "FLAME", "LASER", "HELL", "SNIPER", "MORTAR", "RADAR", "REPAIR", "REACTOR", "MINER"]
 
         def select(name):
             dd = h.debug()

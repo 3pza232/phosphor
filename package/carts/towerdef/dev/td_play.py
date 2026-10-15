@@ -214,7 +214,7 @@ class Bot:
     # ── 建造/升级 ──
     def select_type(self, name):
         # X 下一个塔型（Z 上一个）；按 Towers.ORDER 正向走
-        ORDER = ["GUN", "CANNON", "FROST", "TESLA", "FLAME", "LASER", "HELL", "SNIPER", "MORTAR", "RADAR", "REPAIR", "REACTOR"]
+        ORDER = ["GUN", "CANNON", "FROST", "TESLA", "FLAME", "LASER", "HELL", "SNIPER", "MORTAR", "RADAR", "REPAIR", "REACTOR", "MINER"]
         d = self.h.debug()
         cur = d["selected_type"]
         for _ in range((ORDER.index(name) - ORDER.index(cur)) % len(ORDER)):

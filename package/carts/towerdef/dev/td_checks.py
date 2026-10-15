@@ -76,7 +76,7 @@ class Game:
             self.move("down" if self.cur[1] < ty else "up")
 
     def cycle_to(self, name):
-        ORDER = ["GUN", "CANNON", "FROST", "TESLA", "FLAME", "LASER", "HELL", "SNIPER", "MORTAR", "RADAR", "REPAIR", "REACTOR"]
+        ORDER = ["GUN", "CANNON", "FROST", "TESLA", "FLAME", "LASER", "HELL", "SNIPER", "MORTAR", "RADAR", "REPAIR", "REACTOR", "MINER"]
         d = self.debug()
         for _ in range((ORDER.index(name) - ORDER.index(d["selected_type"])) % len(ORDER)):
             self.h.step("x")

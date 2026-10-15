@@ -38,7 +38,7 @@ function Enemies.new(kind, x, y, factors)
 		shield = 0, shield_max = 0, shield_cd = 0,
 		slow_t = 0, slow_factor = 1,
 		burn_dps = 0, burn_t = 0,
-		-- AI：mode="core" 冲磁芯；mode="tower" 拆 target（reason="wall"/"reactor"）。
+		-- AI：mode="core" 冲磁芯；mode="tower" 拆 target（reason="wall"（挡路）/ "reactor"（值钱建筑：反应堆/采矿机））。
 		mode = "core", target = nil, reason = nil, retarget_t = 0,
 	}
 	if d.shield then
@@ -118,13 +118,17 @@ end
 -- 每 RETARGET 秒或状态变化时重选；"正在拆某座塔"时不切换（直到它倒塌或不再挡路）。
 -- 优先级自上而下，首个成立者胜：
 --   1) 破墙 P0：到磁芯不可达，或 path_dist > 3×曼哈顿 → 拆就近的挡路塔
---   2) 反应堆 P1：8 格侦察半径内有 REACTOR → 拆最近的反应堆
+--   2) 有价值建筑 P1：8 格侦察半径内有反应堆/采矿机 → 拆最近的那座（断你的电/钱）
 --   3) 磁芯 P2：沿 BFS 寻路场冲击磁芯（默认）
 -- 飞行单位不做 P0（飞越地形），但做 P1；否则直冲磁芯。
 local RETARGET = 0.5
 local SCOUT_R2 = 64 -- 8 格
 local WALL_R2 = 16 -- "就近塔" 4 格
 local SLOPE = 3 -- path_dist > SLOPE × 曼哈顿 → 视为被逼绕
+
+-- P1 的"有价值建筑"：打掉它们对玩家打击最大——反应堆断你的电、采矿机断你的钱。
+-- 走查表（而不是每个敌人只认 REACTOR）：以后再加"值钱的目标"只改这一行。
+local SABOTAGE = { REACTOR = true, MINER = true }
 
 -- 朝格中心 (tx,ty) 直线插值（飞行、拆塔走位、P0 兜底都用它）。
 local function straight_move(e, tx, ty, dt)
@@ -146,11 +150,11 @@ local function walled_off(e, ctx)
 	return pd < 0 or pd > SLOPE * md
 end
 
--- 侦察半径内最近的反应堆（r2 为平方半径）。
-local function nearest_reactor(e, ctx, r2)
+-- 侦察半径内最近的"有价值建筑"（r2 为平方半径）。
+local function nearest_sabotage(e, ctx, r2)
 	local best, bestd
 	for _, t in ipairs(ctx.towers) do
-		if not t.dead and t.type == "REACTOR" then
+		if not t.dead and SABOTAGE[t.type] then
 			local dx, dy = t.x + 0.5 - e.x, t.y + 0.5 - e.y
 			local d2 = dx * dx + dy * dy
 			if d2 <= r2 and (bestd == nil or d2 < bestd) then best, bestd = t, d2 end
@@ -184,7 +188,7 @@ local function choose(e, ctx)
 		local t = pick_wall(e, ctx)
 		if t then return "wall", t end
 	end
-	local r = nearest_reactor(e, ctx, SCOUT_R2)
+	local r = nearest_sabotage(e, ctx, SCOUT_R2)
 	if r then return "reactor", r end
 	return "core", nil
 end

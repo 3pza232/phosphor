@@ -39,6 +39,9 @@ local Text = {
 	},
 }
 
+-- 面板"标签 值"两列对齐用的标签宽度（中/英都用它 pad，数值列才齐）。
+local KVW = 6
+
 -- 选中塔的颜色（与场上一致）：未满级用白（朴素），满级用类型色（各显本色，标出"练满"的独特）。
 local function sel_color(d, tsel)
 	return (tsel.level >= 3) and d.color or "white"
@@ -50,6 +53,8 @@ function Panel.draw(game, cart, speed, C)
 	if pw == 0 then return end
 	local t = phos.lang.dict(Text)
 	local region = phos.ui.region(0, 0, pw, ph, { surface = "panel" })
+	-- 两列对齐的"标签 + 值"（标签 pad 到 KVW，中/英数值列都对齐）
+	local function kv(label, val) return phos.text.pad(label, KVW) .. val end
 
 	P.clear()
 	P.print(1, 0, phos.text.fit(cart.name, pw - 2), C.yellow)
@@ -92,15 +97,18 @@ function Panel.draw(game, cart, speed, C)
 	local spd = speed or 1
 	P.print(1, 8, string.format("%s x%d", t.speed, spd), (spd > 1) and C.yellow or C.white)
 
-	-- 建造面板：**竖排一列**（`>名字 造价`），光标高亮当前选中；Z/X 就按这一列上下切。
+	-- 分隔线：把上面的状态区与下面的建造/详情区分开，读起来更清爽
+	P.print(1, 9, string.rep("-", pw - 2), C.dark_gray)
+
+	-- 建造面板：**竖排一列**（`>名字 造价`，造价右对齐成一列），光标高亮当前选中；Z/X 按这一列上下切。
 	P.print(1, 10, t.build, C.gray)
-	local labw = pw - 12 -- 光标位 + 名字 + 空格 + 造价（≤3 位）；别把造价顶到最右边太散
+	local namew = pw - 6 -- 光标位 + 名字 + 右对齐的 3 位造价 = pw-2
 	local list_y = 11
 	for i, name in ipairs(Towers.ORDER) do
 		local d = Towers.TYPES[name]
-		local cost = string.format("%d", d.cost)
 		local mark = (i == game.build_index) and ">" or " "
-		local line = mark .. phos.text.pad(phos.text.fit(Towers.label(name), labw), labw) .. " " .. cost
+		local line = mark .. phos.text.pad(phos.text.fit(Towers.label(name), namew), namew)
+			.. string.format("%3d", d.cost)
 		P.print(1, list_y + i - 1, line, (i == game.build_index) and C.yellow or C.dark_gray)
 	end
 
@@ -125,7 +133,7 @@ function Panel.draw(game, cart, speed, C)
 		-- HP：数字 + 血条（色随血量档）——选中的塔一眼看得出还撑不撑得住
 		local hf = (tsel.max_hp > 0) and (tsel.hp / tsel.max_hp) or 0
 		local hcol = (hf > 0.5) and C.green or (hf > 0.25 and C.yellow or C.red)
-		P.print(1, y + 2, string.format("%s %d/%d", t.hp, math.max(0, math.floor(tsel.hp)), tsel.max_hp), hcol)
+		P.print(1, y + 2, kv(t.hp, string.format("%d/%d", math.max(0, math.floor(tsel.hp)), tsel.max_hp)), hcol)
 		region:bar(1, y + 3, pw - 2, math.max(0, math.min(1, hf)))
 		P.print(1, y + 4, phos.text.fit(Panel._line(t.dmg,
 			Panel._dmg(d, dmg, t, tsel.level), dmg2 and Panel._dmg(d, dmg2, t, tsel.level + 1)), pw - 2), C.white)
@@ -135,15 +143,15 @@ function Panel.draw(game, cart, speed, C)
 			Panel._rate(d, interval, t), interval2 and Panel._rate(d, interval2, t)), pw - 2), C.white)
 		local out = (d.kind == "reactor") and string.format("+%d", Towers.power_out(tsel))
 			or tostring(Towers.power_use(tsel))
-		P.print(1, y + 7, string.format("%s %s", t.power, out), C.white)
-		P.print(1, y + 8, string.format("%s %d", t.kills, tsel.kills), C.white)
+		P.print(1, y + 7, kv(t.power, out), C.white)
+		P.print(1, y + 8, kv(t.kills, tostring(tsel.kills)), C.white)
 		local uc = Towers.upgrade_cost(tsel)
 		if uc then
-			P.print(1, y + 9, string.format("%s $%d", t.upgrade, uc), C.green)
+			P.print(1, y + 9, kv(t.upgrade, "$" .. uc), C.green)
 		else
-			P.print(1, y + 9, t.max, C.gray)
+			P.print(1, y + 9, kv(t.upgrade, t.max), C.gray)
 		end
-		P.print(1, y + 10, string.format("%s $%d", t.refund, Towers.refund(tsel)), C.orange)
+		P.print(1, y + 10, kv(t.refund, "$" .. Towers.refund(tsel)), C.orange)
 		y = y + 11
 	else
 		local name = game:selected_name()
@@ -151,22 +159,22 @@ function Panel.draw(game, cart, speed, C)
 		local dmg, range, interval = Towers.stats({ type = name, level = 1 }, false)
 		P.print(1, y, Towers.label(name), C[d.color])
 		P.print(1, y + 1, phos.text.fit(Towers.desc(name), pw - 2), C.gray)
-		P.print(1, y + 2, string.format("%s $%d", t.cost, d.cost), C.yellow)
+		P.print(1, y + 2, kv(t.cost, "$" .. d.cost), C.yellow)
 		local out = (d.kind == "reactor") and string.format("+%d", d.cap[1]) or tostring(d.power or 0)
-		P.print(1, y + 3, string.format("%s %s", t.power, out), C.white)
+		P.print(1, y + 3, kv(t.power, out), C.white)
 		-- 建造前也报塔的血量（这一型的总血量）：建好后侧栏改显"当前/总"，
 		-- 于是不管光标在塔上还是空地，血量都看得见。
-		P.print(1, y + 4, string.format("%s %d", t.hp, d.hp or 0), C.white)
-		P.print(1, y + 5, string.format("%s %s", t.dmg, Panel._dmg(d, dmg, t, 1)), C.white)
-		P.print(1, y + 6, string.format("%s %s", t.range, Panel._rng(range)), C.white)
-		P.print(1, y + 7, string.format("%s %s", t.rate, Panel._rate(d, interval, t)), C.white)
+		P.print(1, y + 4, kv(t.hp, tostring(d.hp or 0)), C.white)
+		P.print(1, y + 5, Panel._line(t.dmg, Panel._dmg(d, dmg, t, 1)), C.white)
+		P.print(1, y + 6, Panel._line(t.range, Panel._rng(range)), C.white)
+		P.print(1, y + 7, Panel._line(t.rate, Panel._rate(d, interval, t)), C.white)
 		y = y + 8
 	end
 
 	-- 空袭 / 难度地图：紧接详情之下顺延（不写死行号，塔型增多也不会被顶掉）
 	local ast = (game.airstrike_cd <= 0) and t.ready
 		or string.format("%.0f%s", game.airstrike_cd, t.sec)
-	P.print(1, y + 1, string.format("%s %s", t.airstrike, ast),
+	P.print(1, y + 1, kv(t.airstrike, ast),
 		(game.airstrike_cd <= 0) and C.cyan or C.dark_gray)
 
 	P.print(1, y + 2, phos.text.fit(string.format("%s %s  %s %s", t.diff,
@@ -186,8 +194,9 @@ end
 
 -- 一行"标签 当前值"；给了下一级值且确实变了，就带 ->下一级 预览练级收益（不涨的轴不啰嗦）。
 function Panel._line(label, cur, nxt)
-	if nxt and nxt ~= cur then return string.format("%s %s ->%s", label, cur, nxt) end
-	return string.format("%s %s", label, cur)
+	local head = phos.text.pad(label, KVW) .. cur
+	if nxt and nxt ~= cur then return head .. " ->" .. nxt end
+	return head
 end
 
 -- 伤害字段：连续塔（dps）标 /s，普通塔给整数；无伤害（雷达/反应堆）给 "-"。
