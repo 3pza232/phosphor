@@ -126,9 +126,12 @@ function Panel.draw(game, cart, speed, C)
 		P.print(1, y + 1, string.format("%s $%d", t.cost, d.cost), C.yellow)
 		local out = (d.kind == "reactor") and string.format("+%d", d.cap[1]) or tostring(d.power or 0)
 		P.print(1, y + 2, string.format("%s %s", t.power, out), C.white)
-		P.print(1, y + 3, string.format("%s %s", t.dmg, Panel._dmg(d, dmg, t, 1)), C.white)
-		P.print(1, y + 4, string.format("%s %s", t.range, Panel._rng(range)), C.white)
-		P.print(1, y + 5, string.format("%s %s", t.rate, Panel._rate(d, interval, t)), C.white)
+		-- 建造前也报塔的血量（这一型的总血量）：建好后侧栏改显"当前/总"，
+		-- 于是不管光标在塔上还是空地，血量都看得见。
+		P.print(1, y + 3, string.format("%s %d", t.hp, d.hp or 0), C.white)
+		P.print(1, y + 4, string.format("%s %s", t.dmg, Panel._dmg(d, dmg, t, 1)), C.white)
+		P.print(1, y + 5, string.format("%s %s", t.range, Panel._rng(range)), C.white)
+		P.print(1, y + 6, string.format("%s %s", t.rate, Panel._rate(d, interval, t)), C.white)
 	end
 
 	-- 空袭（放在选中详情之下，避免与其最后一行撞行）

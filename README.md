@@ -53,6 +53,10 @@ ninja -j8
 依赖已随仓库放在 `extern/`（glfw / lua / miniz / sol2 / imgui / stb / miniaudio），
 不需要额外安装。构建后 `build/` 就是可直接分发的运行包。
 
+构建默认**也会**产出 `phosphor_tests`（`unit` 门禁用的纯逻辑单元测试）——它是运行目录里唯一的
+"非发行"产物。要一个纯净的发行目录：跑 `python tools/clean.py` 扫掉它（连同日志/截图），
+或加 `-DPHOSPHOR_BUILD_TESTS=OFF` 从一开始就不构建。
+
 **内容改哪里**：改卡带/主题/文档改 `package/` 与 `docs/` 下的源文件，构建时同步进 `build/`。
 若运行目录里的同一份文件在上次同步之后被就地改过，构建会**跳过它并告警**（不会静默覆盖）——
 要么把它拷回 `package/`，要么直接改 `package/` 再构建。

@@ -8,16 +8,17 @@
 local Enemies = {}
 
 -- 基础值（未乘成长/难度系数）。armor = 每击固定减伤；leak = 走到磁芯扣的磁芯血。
--- fly = 无视地形与塔、直线扑磁芯。siege = 拆塔 DPS（走到塔相邻格后按它扣塔 hp）。
+-- fly = 无视地形与塔、直线扑磁芯。siege = 拆塔 DPS（走到塔相邻格后按它扣塔 hp）；
+-- **刻意压低**：被围攻时塔也能撑住数秒，给出"挡住"的顿感，不至于一触即碎。
 Enemies.TYPES = {
-	grunt = { char = "o", color = "red", hp = 60, armor = 0, speed = 1.6, leak = 1, bounty = 6, siege = 8 },
-	runner = { char = "r", color = "yellow", hp = 40, armor = 0, speed = 3.2, leak = 1, bounty = 7, siege = 6 },
-	swarm = { char = ".", color = "magenta", hp = 25, armor = 0, speed = 2.4, leak = 1, bounty = 3, siege = 4 },
-	armor = { char = "A", color = "gray", hp = 220, armor = 5, speed = 1.0, leak = 2, bounty = 15, siege = 20 },
-	shield = { char = "D", color = "cyan", hp = 140, armor = 0, speed = 1.4, leak = 2, bounty = 18, siege = 12,
+	grunt = { char = "o", color = "red", hp = 60, armor = 0, speed = 1.6, leak = 1, bounty = 6, siege = 3 },
+	runner = { char = "r", color = "yellow", hp = 40, armor = 0, speed = 3.2, leak = 1, bounty = 7, siege = 2 },
+	swarm = { char = ".", color = "magenta", hp = 25, armor = 0, speed = 2.4, leak = 1, bounty = 3, siege = 1.5 },
+	armor = { char = "A", color = "gray", hp = 220, armor = 5, speed = 1.0, leak = 2, bounty = 15, siege = 6 },
+	shield = { char = "D", color = "cyan", hp = 140, armor = 0, speed = 1.4, leak = 2, bounty = 18, siege = 4,
 		shield = 40, shield_regen = 6, shield_delay = 2.0 },
-	flyer = { char = "v", color = "green", hp = 90, armor = 0, speed = 2.0, leak = 2, bounty = 12, siege = 10, fly = true },
-	boss = { char = "B", color = "red", hp = 2600, armor = 8, speed = 0.8, leak = 10, bounty = 200, siege = 50, boss = true },
+	flyer = { char = "v", color = "green", hp = 90, armor = 0, speed = 2.0, leak = 2, bounty = 12, siege = 3, fly = true },
+	boss = { char = "B", color = "red", hp = 2600, armor = 8, speed = 0.8, leak = 10, bounty = 200, siege = 12, boss = true },
 }
 
 local function hypot(x, y) return math.sqrt(x * x + y * y) end
