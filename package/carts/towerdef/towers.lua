@@ -80,9 +80,18 @@ Towers.TYPES = {
 		heal = { time = { 4, 3, 2 }, count = { 1, 2, 3 }, amount = { 10, 14, 18 } },
 		chars = { "h", "H", "H" }, color = "green", kind = "repair",
 		label = { zh = "维修", en = "REPAIR" }, desc = { zh = "治疗受损友塔", en = "heals allies" } },
+	-- 反应堆：不攻击，只供电；射程对它无意义（up.range=0 免得练级凭空长出射程）。
 	REACTOR = { cost = 60, power = 0, dmg = 0, rate = 0, range = 0, cap = { 10, 16, 24 }, hp = 80,
+		up = { range = 0 },
 		chars = { "R", "R", "R" }, color = "blue", kind = "reactor",
 		label = { zh = "反应堆", en = "REACTOR" }, desc = { zh = "供电，抬电力上限", en = "power: raises cap" } },
+	-- 采矿机：不攻击，周期把金币"挖"出来（小幅、**不随波次膨胀**）；代价是吃电很凶
+	-- （8 电起步、每级 +2），逼你为它配反应堆——纯经济塔的取舍就在这。产出时冒 +N（view 的 gold）。
+	MINER = { cost = 100, power = 8, power_growth = 2, dmg = 0, range = 0, hp = 90,
+		up = { range = 0 },
+		mine = { time = { 6, 6, 6 }, amount = { 5, 9, 14 } },
+		chars = { "$", "$", "$" }, color = "yellow", kind = "miner",
+		label = { zh = "采矿机", en = "MINER" }, desc = { zh = "周期产金，吃电", en = "generates gold" } },
 }
 
 -- 塔的显示名（随界面语言）。UI 一律用它，别直接印 type 这个内部键。
@@ -93,7 +102,7 @@ function Towers.desc(name) return phos.lang.pick(Towers.TYPES[name].desc) end
 
 -- 建造面板里的循环顺序（含反应堆、维修）。Z/X 键按这个顺序切。
 Towers.ORDER = { "GUN", "CANNON", "FROST", "TESLA", "FLAME", "LASER", "HELL",
-	"SNIPER", "MORTAR", "RADAR", "REPAIR", "REACTOR" }
+	"SNIPER", "MORTAR", "RADAR", "REPAIR", "REACTOR", "MINER" }
 
 Towers.PRIORITIES = { "FIRST", "STRONG", "CLOSE", "AIR" }
 
@@ -140,11 +149,11 @@ function Towers.stats(t, aura)
 	return dmg, range, interval
 end
 
--- 电力占用（升级每级 +1；反应堆不占电，它产电）。
+-- 电力占用（**每级成长按类型**：多数塔每级 +1，采矿机 +2；反应堆不占电、产电）。
 function Towers.power_use(t)
 	local d = Towers.TYPES[t.type]
 	if d.kind == "reactor" then return 0 end
-	return (d.power or 0) + (t.level - 1)
+	return (d.power or 0) + (t.level - 1) * (d.power_growth or 1)
 end
 
 -- 反应堆产能（按等级）。
@@ -213,13 +222,16 @@ function Towers.update(ts, ctx, dt)
 	for _, t in ipairs(ts) do
 		if t.hit_t and t.hit_t > 0 then t.hit_t = math.max(0, t.hit_t - dt) end
 	end
+	-- 欠压系数：按"超出电力上限的比例"降载（超出多少、削多少）。攻速/射程/连续伤/
+	-- 雷达光环一起乘它——所有设施低负载运作（见 game.compute_power）。
+	local overload = ctx.overload or 1
 	for _, r in ipairs(ts) do
 		local rd = Towers.TYPES[r.type]
 		if rd.kind == "radar" then
 			local _, arange = Towers.stats(r, false)
 			local r2 = arange * arange
 			local ab = Towers.by(rd.aura_by, r.level, { rd.aura_range or 0, rd.aura_rate or 0 })
-			local br, ba = ab[1], ab[2]
+			local br, ba = ab[1] * overload, ab[2] * overload
 			for _, t in ipairs(ts) do
 				if t ~= r then
 					local dx, dy = t.x - r.x, t.y - r.y
@@ -235,13 +247,13 @@ function Towers.update(ts, ctx, dt)
 	end
 
 	-- 2) 逐塔开火。欠压时冷却走得慢 = 有效攻速降（DESIGN §6.4）
-	local overload = ctx.overload or 1
 	for _, t in ipairs(ts) do
 		local d = Towers.TYPES[t.type]
 		if d.rate and d.rate > 0 then
 			t.cd = (t.cd or 0) - dt * overload
 			if t.cd <= 0 then
 				local dmg, range, interval = Towers.stats(t, t.aura)
+				range = range * overload -- 欠压：射程也一起缩（超出多少、缩多少）
 				if Towers.fire(t, d, dmg, range, t.priority or "FIRST", ctx) then
 					t.cd = interval
 				else
@@ -258,6 +270,7 @@ function Towers.update(ts, ctx, dt)
 		if d.kind == "flame" then
 			local dmg, range = Towers.stats(t, t.aura)
 			dmg = dmg * (1 + (t.aura_rate or 0)) -- 雷达光环的"攻速"对连续塔体现为 dps 提升
+			range = range * overload -- 欠压：连续塔同样缩射程
 			local ex, ey = t.x + 0.5, t.y + 0.5
 			local tgt = Towers.pick_target(ex, ey, range, ctx.enemies,
 				t.priority or "FIRST", ctx.map, ctx.core)
@@ -290,6 +303,7 @@ function Towers.update(ts, ctx, dt)
 		if d.kind == "hell" then
 			local dmg, range = Towers.stats(t, t.aura)
 			dmg = dmg * (1 + (t.aura_rate or 0))
+			range = range * overload -- 欠压：射程也缩
 			local ex, ey = t.x + 0.5, t.y + 0.5
 			local r2 = range * range
 			local maxn = Towers.by(d.lock_by, t.level, d.lock or 1)
@@ -374,6 +388,21 @@ function Towers.update(ts, ctx, dt)
 				else
 					t.cd = 0 -- 没伤员不空转：一有人受伤就能立刻开治
 				end
+			end
+		end
+	end
+
+	-- 5) 采矿机：周期进账（小幅、不随波次膨胀）。不受欠压影响——它是经济设施，不是火力。
+	for _, t in ipairs(ts) do
+		local d = Towers.TYPES[t.type]
+		if d.kind == "miner" then
+			t.cd = (t.cd or 0) - dt
+			if t.cd <= 0 then
+				local lvl = t.level
+				local amount = Towers.by(d.mine.amount, lvl, d.mine.amount[1])
+				ctx.earn(amount)
+				ctx.add_fx({ kind = "gold", x = t.x + 0.5, y = t.y + 0.5, amount = amount, t = 0.9 })
+				t.cd = Towers.by(d.mine.time, lvl, d.mine.time[1])
 			end
 		end
 	end

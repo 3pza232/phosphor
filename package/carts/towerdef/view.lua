@@ -89,26 +89,35 @@ function View.draw(game, C)
 		range = r
 		ring_col = C.dark_gray
 	end
-	if range and range > 0 then
-		local x0 = math.max(0, math.floor(cx - range - 1))
-		local x1 = math.min(game.MW - 1, math.ceil(cx + range + 1))
-		local y0 = math.max(0, math.floor(cy - range - 1))
-		local y1 = math.min(game.MH - 1, math.ceil(cy + range + 1))
+	-- 画一圈射程点（同一段代码画"当前圈"与"下一级虚圈"）
+	local function range_ring(rr, ch, col)
+		if not (rr and rr > 0) then return end
+		local x0 = math.max(0, math.floor(cx - rr - 1))
+		local x1 = math.min(game.MW - 1, math.ceil(cx + rr + 1))
+		local y0 = math.max(0, math.floor(cy - rr - 1))
+		local y1 = math.min(game.MH - 1, math.ceil(cy + rr + 1))
 		for y = y0, y1 do
 			for x = x0, x1 do
 				local d = math.sqrt((x - cx) ^ 2 + (y - cy) ^ 2)
-				if math.abs(d - range) < 0.5 then
-					S.blend(px + x, py + y, "\u{00B7}", ring_col)
+				if math.abs(d - rr) < 0.5 then
+					S.blend(px + x, py + y, ch, col)
 				end
 			end
 		end
 	end
-	-- 光标框：用 blend 叠加，不覆盖格子里的塔/敌人字形
+	range_ring(range, "\u{00B7}", ring_col)
+	-- 未满级：再叠一圈"下一级射程"的虚圈（更淡的 +），升级能涨多少一目了然
+	if tsel and tsel.level < 3 then
+		local _, nr = Towers.stats({ type = tsel.type, level = tsel.level + 1,
+			aura_range = tsel.aura_range, aura_rate = tsel.aura_rate }, tsel.aura)
+		if nr and nr > range then range_ring(nr, "+", C.dark_gray) end
+	end
+	-- 光标框：亮色（旧版 dark_gray 太不显眼），用 blend 叠加，不覆盖格子里的塔/敌人字形
 	local box = { { -1, -1, "+" }, { 0, -1, "-" }, { 1, -1, "+" },
 		{ -1, 0, "|" }, { 1, 0, "|" },
 		{ -1, 1, "+" }, { 0, 1, "-" }, { 1, 1, "+" } }
 	for _, b in ipairs(box) do
-		S.blend(px + cx + b[1], py + cy + b[2], b[3], C.dark_gray)
+		S.blend(px + cx + b[1], py + cy + b[2], b[3], C.white)
 	end
 	if not game:can_build(cx, cy) and not game:tower_at(cx, cy) then
 		S.blend(px + cx, py + cy, "x", C.red)
@@ -301,6 +310,13 @@ function View.draw(game, C)
 			for _, b in ipairs({ { 0.7, "\u{00B7}" }, { 2.8, "+" }, { 4.9, "\u{00B7}" } }) do
 				S.blend(px + cx0 + math.floor(math.cos(b[1]) * f.r * 0.6 + 0.5),
 					py + cy0 + math.floor(math.sin(b[1]) * f.r * 0.6 + 0.5), b[2], col)
+			end
+		elseif f.kind == "gold" then
+			-- 采矿机产出：塔上冒一个黄色的 +N（钱落袋），底下点一枚 $
+			S.blend(px + math.floor(f.x), py + math.floor(f.y), "$", C.yellow)
+			if f.amount and f.amount >= 1 then
+				S.print(px + math.floor(f.x), py + math.floor(f.y) - 1,
+					"+" .. math.floor(f.amount), C.yellow)
 			end
 		end
 	end

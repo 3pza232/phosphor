@@ -16,6 +16,7 @@ local Text = {
 		cost = "造价", persec = "/秒", speed = "速度", hp = "血量",
 		lvl = "级", airstrike = "空袭", ready = "就绪", sec = "秒", cont = "连续",
 		diff = "难度", map = "地图", max = "满级", combat = "交战", buildp = "布防",
+		overload = "电力超限！设施降载",
 		hint_k = "键位表",
 		h_build = "建造/升级", h_sell = "拆除", h_type = "塔型",
 		h_strike = "空袭", h_speed = "调速", h_keys = "键位",
@@ -29,6 +30,7 @@ local Text = {
 		cost = "COST", persec = "/s", speed = "SPEED", hp = "HP",
 		lvl = "Lv", airstrike = "AIRSTRIKE", ready = "READY", sec = "s", cont = "CONT",
 		diff = "DIFF", map = "MAP", max = "MAX", combat = "COMBAT", buildp = "BUILD",
+		overload = "POWER OVER - derated",
 		hint_k = "CONTROLS",
 		h_build = "BUILD", h_sell = "SELL", h_type = "TYPE",
 		h_strike = "STRIKE", h_speed = "SPEED", h_keys = "KEYS",
@@ -67,45 +69,56 @@ function Panel.draw(game, cart, speed, C)
 	region:bar(1, 4, pw - 2, frac)
 
 	P.print(1, 5, string.format("%s %d", t.credits, game.credits), C.yellow)
-	local pcol = game.overload and C.orange or C.white
-	P.print(1, 6, string.format("%s %d/%d", t.power, game.power_used, game.power_cap), pcol)
+	-- 电力：超限时行文变红并闪烁、后缀 -NN%（超出比例），下一行盖过状态读数给"降载"警示。
+	local blink = (math.floor(phos.sys.time() * 3) % 2 == 0)
+	local pcol = game.overload and (blink and C.white or C.red) or C.white
+	local pstr = string.format("%s %d/%d", t.power, game.power_used, game.power_cap)
+	if game.overload then pstr = pstr .. string.format(" -%d%%", math.floor(game.overload_over * 100 + 0.5)) end
+	P.print(1, 6, phos.text.fit(pstr, pw - 2), pcol)
 
-	local state
-	if game.phase == "combat" or game.phase == "won" or game.phase == "over" then
-		state = string.format("%s %.0f", t.combat, game.next_in)
+	if game.overload then
+		P.print(1, 7, phos.text.fit(t.overload, pw - 2), pcol)
 	else
-		state = string.format("%s %.0f", t.buildp, game.build_timer)
+		local state
+		if game.phase == "combat" or game.phase == "won" or game.phase == "over" then
+			state = string.format("%s %.0f", t.combat, game.next_in)
+		else
+			state = string.format("%s %.0f", t.buildp, game.build_timer)
+		end
+		P.print(1, 7, phos.text.fit(state, pw - 2), C.gray)
 	end
-	P.print(1, 7, phos.text.fit(state, pw - 2), C.gray)
 
 	-- 速度读数：x1/x2/x3 常显，>1 时高亮——切速必须肉眼可辨（否则像按键没生效）。
 	local spd = speed or 1
 	P.print(1, 8, string.format("%s x%d", t.speed, spd), (spd > 1) and C.yellow or C.white)
 
-	-- 建造面板：12 型排成**两列各 6 行**（`>名字 造价`），光标高亮当前选中。
-	-- 竖排 12 行会顶到下面的详情区，两列既放得下、又留足了详情与底部提示的行。
+	-- 建造面板：**竖排一列**（`>名字 造价`），光标高亮当前选中；Z/X 就按这一列上下切。
 	P.print(1, 10, t.build, C.gray)
-	-- 两个 11 列块（x=0 / x=11）：左块的 > 在 0 列、名字从 1 列起，与标题对齐。
-	local colx, colw = { 0, 11 }, 11
+	local labw = pw - 12 -- 光标位 + 名字 + 空格 + 造价（≤3 位）；别把造价顶到最右边太散
+	local list_y = 11
 	for i, name in ipairs(Towers.ORDER) do
 		local d = Towers.TYPES[name]
 		local cost = string.format("%d", d.cost)
-		local labw = colw - 2 - #cost -- 光标位 + 名字 + 空格 + 造价 = colw
 		local mark = (i == game.build_index) and ">" or " "
 		local line = mark .. phos.text.pad(phos.text.fit(Towers.label(name), labw), labw) .. " " .. cost
-		P.print(colx[((i - 1) % 2) + 1], 11 + math.floor((i - 1) / 2), line,
-			(i == game.build_index) and C.yellow or C.dark_gray)
+		P.print(1, list_y + i - 1, line, (i == game.build_index) and C.yellow or C.dark_gray)
 	end
 
 	-- 光标详情：光标下是塔 → 那座塔（含升级后数值 + HP 条）；否则 → 待建造塔型的完整数据。
-	-- 行号从标题顺延（不再写死），所以塔型多少都不撞行。
+	-- 行号从列表末尾顺延（不再写死），所以塔型多少都不撞行。
 	local tsel = game:tower_at(game.cx, game.cy)
-	local y = 18
+	local y = list_y + #Towers.ORDER
 	P.print(1, y, t.selected, C.gray)
 	y = y + 1
 	if tsel then
 		local d = Towers.TYPES[tsel.type]
 		local dmg, range, interval = Towers.stats(tsel, tsel.aura)
+		-- 升级预览：非满级时也算出"下一级"的三项，末尾用 ->下一级 标出练级收益
+		local dmg2, range2, interval2
+		if tsel.level < 3 then
+			dmg2, range2, interval2 = Towers.stats({ type = tsel.type, level = tsel.level + 1,
+				aura_range = tsel.aura_range, aura_rate = tsel.aura_rate }, tsel.aura)
+		end
 		P.print(1, y, string.format("%s %s%d", Towers.label(tsel.type), t.lvl, tsel.level), C[sel_color(d, tsel)])
 		-- 名字下面一行：一句话功能简介（"它是干嘛的"）
 		P.print(1, y + 1, phos.text.fit(Towers.desc(tsel.type), pw - 2), C.gray)
@@ -114,9 +127,12 @@ function Panel.draw(game, cart, speed, C)
 		local hcol = (hf > 0.5) and C.green or (hf > 0.25 and C.yellow or C.red)
 		P.print(1, y + 2, string.format("%s %d/%d", t.hp, math.max(0, math.floor(tsel.hp)), tsel.max_hp), hcol)
 		region:bar(1, y + 3, pw - 2, math.max(0, math.min(1, hf)))
-		P.print(1, y + 4, string.format("%s %s", t.dmg, Panel._dmg(d, dmg, t, tsel.level)), C.white)
-		P.print(1, y + 5, string.format("%s %s", t.range, Panel._rng(range)), C.white)
-		P.print(1, y + 6, string.format("%s %s", t.rate, Panel._rate(d, interval, t)), C.white)
+		P.print(1, y + 4, phos.text.fit(Panel._line(t.dmg,
+			Panel._dmg(d, dmg, t, tsel.level), dmg2 and Panel._dmg(d, dmg2, t, tsel.level + 1)), pw - 2), C.white)
+		P.print(1, y + 5, phos.text.fit(Panel._line(t.range,
+			Panel._rng(range), range2 and Panel._rng(range2)), pw - 2), C.white)
+		P.print(1, y + 6, phos.text.fit(Panel._line(t.rate,
+			Panel._rate(d, interval, t), interval2 and Panel._rate(d, interval2, t)), pw - 2), C.white)
 		local out = (d.kind == "reactor") and string.format("+%d", Towers.power_out(tsel))
 			or tostring(Towers.power_use(tsel))
 		P.print(1, y + 7, string.format("%s %s", t.power, out), C.white)
@@ -166,6 +182,12 @@ function Panel.draw(game, cart, speed, C)
 	P.print(1, ph - 2, phos.text.fit(string.format("%s %s %s",
 		kn("comma"), kn("period"), t.h_speed), pw - 2), C.dark_gray)
 	P.print(1, ph - 1, string.format("%s %s", kn("k"), t.h_keys), C.dark_gray)
+end
+
+-- 一行"标签 当前值"；给了下一级值且确实变了，就带 ->下一级 预览练级收益（不涨的轴不啰嗦）。
+function Panel._line(label, cur, nxt)
+	if nxt and nxt ~= cur then return string.format("%s %s ->%s", label, cur, nxt) end
+	return string.format("%s %s", label, cur)
 end
 
 -- 伤害字段：连续塔（dps）标 /s，普通塔给整数；无伤害（雷达/反应堆）给 "-"。

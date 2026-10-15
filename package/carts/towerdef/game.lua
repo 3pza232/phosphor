@@ -50,7 +50,7 @@ function Game.new(diff, style, endless)
 
 	self.towers = {}
 	self.enemies = {}
-	self.groups = {}
+	self.schedules = {} -- 同时在场的出怪表（最多两拨，见 early_wave）
 	self.strikes = {}
 	self.fx = {}
 
@@ -65,6 +65,7 @@ function Game.new(diff, style, endless)
 	self.power_used = 0
 	self.power_cap = POWER_BASE
 	self.overload = false
+	self.overload_over = 0 -- 超出上限的比例（0 = 不超）
 	self.overload_rate = 1
 	self.ev = {}
 	self:compute_power()
@@ -224,6 +225,14 @@ function Game:add_fx(eff)
 	self.fx[#self.fx + 1] = eff
 end
 
+-- 采矿机等"主动进账"：直接加钱并记一个事件（供音效）。
+function Game:earn(amount)
+	if amount and amount > 0 then
+		self.credits = self.credits + amount
+		self.ev.earn = true
+	end
+end
+
 -- ── 电力 ─────────────────────────────────────────────────────────────
 
 function Game:compute_power()
@@ -235,8 +244,10 @@ function Game:compute_power()
 	self.power_used = used
 	self.power_cap = cap
 	self.overload = used > cap
-	-- 欠压：全场有效攻速乘 max(0.25, cap/used)。塔冷却按这个系数走（见 towers.update）。
-	self.overload_rate = self.overload and math.max(0.25, cap / used) or 1
+	-- 欠压：按"超出上限的比例"降载——攻速/射程/连续伤/雷达光环都乘它（见 towers.update）。
+	-- 例：12/8 → 超出 50% → 系数 0.5；下限 0.2 保底，不至于全场停摆。
+	self.overload_over = self.overload and (used - cap) / cap or 0
+	self.overload_rate = self.overload and math.max(0.2, 1 - self.overload_over) or 1
 end
 
 -- ── 波次 ─────────────────────────────────────────────────────────────
@@ -244,66 +255,101 @@ end
 function Game:start_wave()
 	self.wave = self.wave + 1
 	self.phase = "combat"
-	local groups = Waves.groups(self.wave, self.endless)
+	local groups_def = Waves.groups(self.wave, self.endless)
 	local f = Waves.factors(self.wave, self.diff, self.endless)
 	f.hp = f.hp * Game.ENEMY_HP_MULT
-	self.spawn_factors = f
-	self.groups = {}
-	for _, g in ipairs(groups) do
-		self.groups[#self.groups + 1] = {
+	local groups = {}
+	for _, g in ipairs(groups_def) do
+		groups[#groups + 1] = {
 			type = g[1], count = g[2], interval = math.max(0.05, g[3]),
 			gate = g[4], spawned = 0, timer = 0,
 		}
 	end
+	-- 每波一份**独立的出怪表**：于是允许两波同时在场上（战斗中提前招下一波，见 early_wave）
+	self.schedules[#self.schedules + 1] = { wave = self.wave, groups = groups, factors = f }
 	self.banner = 1.8
 	self.ev.wave_start = self.wave
 end
 
--- build 期按 space：提前放波，拿按剩余秒数算的奖金。
-function Game:early_wave()
-	if self.phase ~= "build" then return false end
-	local bonus = math.floor(math.max(0, self.build_timer)) * 2
-	self.credits = self.credits + bonus
-	self.ev.early_bonus = bonus
-	self:start_wave()
+-- 一份出怪表是否已把怪出完。
+local function schedule_done(s)
+	for _, g in ipairs(s.groups) do
+		if g.spawned < g.count then return false end
+	end
 	return true
 end
 
-function Game:spawn_enemy(g)
+-- 提前放波：build 期随时可放（按剩余秒数给奖金）；combat 期也能放，但场上**最多同时两拨**——
+-- 两拨都还在（有活口或还没出完）就不能再招，直到某一拨被清干净。贪快有代价，也有上限。
+function Game:early_wave()
+	if self.phase == "build" then
+		local bonus = math.floor(math.max(0, self.build_timer)) * 2
+		self.credits = self.credits + bonus
+		self.ev.early_bonus = bonus
+		self:start_wave()
+		return true
+	elseif self.phase == "combat" then
+		if self:active_waves() >= 2 then return false end
+		self:start_wave()
+		return true
+	end
+	return false
+end
+
+-- 场上"还算数"的波有几拨：活着的敌军各带的 wave ∪ 还没出完的出怪表。
+-- 一拨被清干净（怪全灭且出完）就从这个计数里退出——这正是"清掉一拨才能再招"的判据。
+function Game:active_waves()
+	local seen, n = {}, 0
+	local function add(w) if w and not seen[w] then seen[w] = true; n = n + 1 end end
+	for _, e in ipairs(self.enemies) do
+		if not e.dead and not e.leaked then add(e.wave) end
+	end
+	for _, s in ipairs(self.schedules) do
+		if not schedule_done(s) then add(s.wave) end
+	end
+	return n
+end
+
+function Game:spawn_enemy(g, factors, wave)
 	local gates = self.map.gates
 	if #gates == 0 then return end
 	local gate
 	if g.gate then gate = gates[g.gate] else gate = gates[phos.sys.random(1, #gates)] end
-	local e = Enemies.new(g.type, gate.x + 0.5, gate.y + 0.5, self.spawn_factors)
+	local e = Enemies.new(g.type, gate.x + 0.5, gate.y + 0.5, factors)
+	e.wave = wave -- 记下"这只来自第几波"，供 active_waves 判定能不能再招
 	self.enemies[#self.enemies + 1] = e
 end
 
 function Game:spawn_tick(dt)
-	for _, g in ipairs(self.groups) do
-		if g.spawned < g.count then
-			g.timer = g.timer - dt
-			while g.timer <= 0 and g.spawned < g.count do
-				self:spawn_enemy(g)
-				g.spawned = g.spawned + 1
-				g.timer = g.timer + g.interval
+	for _, s in ipairs(self.schedules) do
+		for _, g in ipairs(s.groups) do
+			if g.spawned < g.count then
+				g.timer = g.timer - dt
+				while g.timer <= 0 and g.spawned < g.count do
+					self:spawn_enemy(g, s.factors, s.wave)
+					g.spawned = g.spawned + 1
+					g.timer = g.timer + g.interval
+				end
 			end
 		end
 	end
 end
 
 function Game:all_spawned()
-	for _, g in ipairs(self.groups) do
-		if g.spawned < g.count then return false end
+	for _, s in ipairs(self.schedules) do
+		if not schedule_done(s) then return false end
 	end
 	return true
 end
 
 function Game:remaining_spawn()
 	local rem = 0
-	for _, g in ipairs(self.groups) do
-		if g.spawned < g.count then
-			local r = g.timer + (g.count - g.spawned - 1) * g.interval
-			if r > rem then rem = r end
+	for _, s in ipairs(self.schedules) do
+		for _, g in ipairs(s.groups) do
+			if g.spawned < g.count then
+				local r = g.timer + (g.count - g.spawned - 1) * g.interval
+				if r > rem then rem = r end
+			end
 		end
 	end
 	return math.max(0, rem)
@@ -334,20 +380,22 @@ function Game:update(dt)
 
 	self:compute_power()
 
+	-- 塔每帧都跑（布防期也跑）：采矿机在布防期照产钱；无敌人时开火逻辑自然空转。
+	local ctx = {
+		enemies = self.enemies, map = self.map, core = self.map.core,
+		overload = self.overload_rate,
+		deal_damage = function(e, dmg, ig, tower) return self:deal_damage(e, dmg, ig, tower) end,
+		add_fx = function(eff) self:add_fx(eff) end,
+		earn = function(n) self:earn(n) end,
+	}
+	Towers.update(self.towers, ctx, dt)
+
 	if self.phase == "build" then
 		self.build_timer = self.build_timer - dt
 		self.next_in = math.max(0, self.build_timer)
 		if self.build_timer <= 0 then self:start_wave() end
 	elseif self.phase == "combat" then
 		self:spawn_tick(dt)
-		-- ctx：把"塔需要知道的"打包给它（towers.lua 不持有 game）
-		local ctx = {
-			enemies = self.enemies, map = self.map, core = self.map.core,
-			overload = self.overload_rate,
-			deal_damage = function(e, dmg, ig, tower) return self:deal_damage(e, dmg, ig, tower) end,
-			add_fx = function(eff) self:add_fx(eff) end,
-		}
-		Towers.update(self.towers, ctx, dt)
 		self:move_enemies(dt)
 		self:sweep()
 		self.next_in = self:remaining_spawn()
@@ -444,7 +492,7 @@ function Game:check_end()
 			self.phase = "build"
 			self.build_timer = Game.BUILD_TIME
 			self.next_in = Game.BUILD_TIME
-			self.groups = {}
+			self.schedules = {}
 		end
 	end
 end

@@ -38,7 +38,7 @@ local Text = {
 			{ { "x" }, "下一个塔型" },
 			{ { "d" }, "拆除（返还 60%）" },
 			{ { "c" }, "空袭（冷却 40s）" },
-			{ { "space" }, "提前放波（拿奖金）" },
+			{ { "space" }, "提前放波（战斗中也能，场上最多两波）" },
 			{ { "comma", "period" }, "减速 / 加速" },
 			{ { "p" }, "切目标优先级" },
 			{ { "k" }, "本帮助（同时暂停）" },
@@ -66,7 +66,7 @@ local Text = {
 			{ { "x" }, "next tower type" },
 			{ { "d" }, "sell (refund 60%)" },
 			{ { "c" }, "airstrike (40s cd)" },
-			{ { "space" }, "early wave (+bonus)" },
+			{ { "space" }, "early wave (also mid-fight; max 2 waves)" },
 			{ { "comma", "period" }, "slower / faster" },
 			{ { "p" }, "cycle target priority" },
 			{ { "k" }, "this help (pauses too)" },
@@ -256,7 +256,9 @@ local function game_input(dt)
 		g:airstrike()
 	end
 	if phos.input.pressed("space") then
-		g:early_wave()
+		-- 提前放波：布防期拿奖金；战斗中也行（场上最多两拨，超了会被拒绝）。给一声反馈音。
+		local ok = g:early_wave()
+		phos.audio.beep(ok and 760 or 180, 0.06, { wave = ok and "square" or "saw", volume = 0.12 })
 	end
 	if phos.input.pressed("comma") then set_speed(speed - 1) end
 	if phos.input.pressed("period") then set_speed(speed + 1) end
@@ -489,6 +491,7 @@ function debug_state()
 		credits = g.credits,
 		power_used = g.power_used, power_cap = g.power_cap,
 		overload = (g.power_used > g.power_cap),
+		overload_over = g.overload_over, active_waves = g:active_waves(),
 		speed = speed, next_in = g.next_in,
 		enemies_alive = #g.enemies,
 		selected_type = g:selected_name(),
