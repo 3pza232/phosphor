@@ -2,6 +2,10 @@
 #
 #   cmake -DSRC=<package> -DDOCS=<docs，可选> -DDEST=<构建目录> -P tools/sync_package.cmake
 #
+# 只同步**面向用户/作者的**内容与文档：package/（卡带/主题/模板/mods）与 docs/。
+# **引擎开发文档（仓库根的 design/）永远不进发行包**——它只给读 src/ 的人看。
+# 这里还留了一道防线：万一哪天有人把 design/ 嵌进了 docs/，也照样跳过。
+#
 # build/ 是可直接发出去的发行目录，所以用"合并式复制"：真实文件（不用目录联接，
 # 否则拷到别人机器就是死链）、只补不删（`--new` 就地建的卡带不会被抹掉）、逐文件
 # （好让"就地改过的那一份"能单独跳过）。
@@ -37,6 +41,10 @@ foreach(dir IN ITEMS "${SRC}/carts" "${SRC}/devkit" "${SRC}/theme" "${SRC}/mods"
     # 少了这一步就直接失败在"没有那个目录"；空目录也照建，保持"合并式复制"的原样
     file(GLOB_RECURSE rel_entries RELATIVE "${dir}" "${dir}/*")
     foreach(rel IN LISTS rel_entries)
+        # 引擎开发文档不进发行包：即便被嵌进 docs/ 也跳过
+        if(sub STREQUAL "docs" AND rel MATCHES "^design(/|$)")
+            continue()
+        endif()
         if(IS_DIRECTORY "${dir}/${rel}")
             file(MAKE_DIRECTORY "${DEST}/${sub}/${rel}")
             continue()

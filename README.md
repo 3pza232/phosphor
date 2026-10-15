@@ -98,6 +98,10 @@ cmake -G Ninja -DPHOSPHOR_SANITY=ON ../    # 自检构建：慢，只用于排�
 
 ## 文档
 
+文档分**两层**：`docs/` 随发行包发布（给玩家与作者），`design/` 只在开发仓库里（给引擎开发者）。
+
+### 使用文档（随发行包发布）
+
 | 你想 | 去看 |
 |---|---|
 | 玩：启动、操作、设置、存档与磁带码 | [`docs/playing.md`](docs/playing.md) |
@@ -107,4 +111,17 @@ cmake -G Ninja -DPHOSPHOR_SANITY=ON ../    # 自检构建：慢，只用于排�
 | 主题 / 皮肤 / 语言 / Mod | [`docs/content-packs.md`](docs/content-packs.md) |
 | 脚本与 agent 接口 | [`docs/agent-interface.md`](docs/agent-interface.md) |
 
-全部文档的入口：[`docs/README.md`](docs/README.md)。
+入口：[`docs/README.md`](docs/README.md)。
+
+### 引擎开发文档（不随发行包发布，只有改 `src/` 时才需要）
+
+| 你想 | 去看 |
+|---|---|
+| 分层、目录职责、依赖方向 | [`design/architecture.md`](design/architecture.md) |
+| 代码风格与命名约定 | [`design/code-style.md`](design/code-style.md) |
+| 绘制 API 底层（格 / 子格 / 笔） | [`design/draw-api.md`](design/draw-api.md) |
+| 图层与 API 分层设计 | [`design/layers-and-api.md`](design/layers-and-api.md) |
+| 联机实现（拓扑 / 协议 / 线程） | [`design/networking.md`](design/networking.md) |
+| 路线图与产品设想 | [`design/roadmap.md`](design/roadmap.md) · [`design/vision.md`](design/vision.md) |
+
+入口：[`design/README.md`](design/README.md)。
