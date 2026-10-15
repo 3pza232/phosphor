@@ -281,10 +281,13 @@ PNG 用于"给人看"与像素级回归。
     carts/mygame/
     ├── manifest.lua  main.lua  game.lua  panel.lua …    # 卡带本体
     └── dev/                                             # 开发产物（不随卡带分发）
+        ├── DESIGN.md    # 设计规格：数值与规则的唯一来源
         ├── play.py      # 控制通道测试脚本
         ├── run.log      # 运行日志
         └── shots/       # 截图
 
+- **设计规格 `DESIGN.md` 也放这里**（不放在卡带根）：它是给作者看的规则与数值来源，
+  不是玩家内容，自然归于"不随卡带分发"的 `dev/`。
 - 主机运行时**只认 `.lua`**（`manifest.lua` + `entry` 与它们 `require` 的模块），
   `dev/` 之类的额外文件被忽略，不影响加载与运行。
 - 但 **`--pack` 会把卡带目录整个打进 `.phos`**（只跳过嵌套的 `.phos`），`dev/` 也在其中，

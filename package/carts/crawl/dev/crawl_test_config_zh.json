@@ -1,0 +1,15 @@
+{
+  "theme": {
+    "skin": "graphite",
+    "boot": "persistence",
+    "sound": "chip",
+    "font": "default",
+    "font_size": 18,
+    "language": "zh"
+  },
+  "shelf_style": "window",
+  "crt_level": 3,
+  "fps": 60,
+  "music_volume": 0,
+  "sfx_volume": 0
+}

@@ -92,4 +92,4 @@
 - 层合成把下层字形压成笔迹：同一格里"下层的字 + 上层的字"是叠加，不是顶替。
 - 门禁 `tools/draw_smoke.py`（八项，含叠画上限）；样板卡带 `package/devkit/examples/inks/`。
 - `carts/worms` 用这套原语画天空、降水、地形：**位序与字形表只有引擎一份**。
-  光柱仍按整字符格画，因为它的伤害判据就是整字符格（见 `carts/worms/DESIGN.md`）。
+  光柱仍按整字符格画，因为它的伤害判据就是整字符格（见 `carts/worms/dev/DESIGN.md`）。

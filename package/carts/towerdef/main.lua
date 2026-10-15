@@ -100,6 +100,17 @@ local function bump_best_wave(w)
 	end
 end
 
+-- 结算当前分数（峰值金币 + 波数×100）：**每帧算一遍**，只在刷新纪录时落盘。
+-- 这样"拔出卡带"（主机直接销毁卡带、不再调用 update）与阵亡走同一条路——
+-- 半途退出的一局也照算进最高分，不必等某一波清完（DESIGN §9）。
+local function settle_score()
+	local sc = game.peak_credits + game.wave * 100
+	if sc > best_score then
+		best_score = sc
+		phos.save.write("best_score", tostring(best_score))
+	end
+end
+
 local function new_game()
 	phos.panel.resize(PANEL_W) -- 对局需要侧栏
 	-- 开局即把"上次难度/地图"写盘（DESIGN §9：菜单确认时写）
@@ -280,6 +291,9 @@ function update(dt)
 		return
 	end
 
+	-- 每帧结算当前分：拔卡退出的一局也算数（见 settle_score），与暂停/结束态无关
+	settle_score()
+
 	-- 结束态：按 A 以新 seed 重开（DESIGN §3）
 	if game.phase == "won" or game.phase == "over" then
 		if phos.input.pressed("a") then
@@ -308,11 +322,6 @@ function update(dt)
 	-- 事件 → 存档（只在刷新时写盘）
 	if ev.wave_start then bump_best_wave(game.wave) end
 	if ev.wave_clear then
-		local sc = game.peak_credits + game.wave * 100
-		if sc > best_score then
-			best_score = sc
-			phos.save.write("best_score", tostring(best_score))
-		end
 		bump_best_wave(game.wave)
 	end
 	if ev.won then

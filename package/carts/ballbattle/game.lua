@@ -474,7 +474,8 @@ function Game:status()
     size = math.sqrt(self:mass()), cells = #self:player_cells(),
     px = cx, py = cy, world_w = Game.WORLD_W, world_h = Game.WORLD_H,
     blobs = #self.blobs, food = #self.food, spikes = #self.spikes,
-    score = math.floor(self.eaten * 10 + math.sqrt(self.best_m) * 20),
+    -- 分数 = **体格大小的数值**（峰值体型的 ×20 刻度，与顶部"体格"读数同单位）
+    score = math.floor(math.sqrt(self.best_m) * 20),
   }
 end
 
