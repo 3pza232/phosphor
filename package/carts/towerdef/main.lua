@@ -1,8 +1,8 @@
 -- main.lua —— 入口：装配模块、把输入翻成"意图"、把状态画出来。
 -- 规则全在 game.lua（它不读键、不画、不出声）；这里只做三件事。
 --
--- 操作（DESIGN §7）：方向键移光标 / A 建或升级 / B 取消 / X 拆除 / Y 换塔型 /
--- Z 空袭 / 退格 切优先级 / 空格 提前放波 / , . 调速 / Enter 暂停。
+-- 操作（DESIGN §7）：方向键移光标 / A 建或升级 / B 取消 / Z X 上·下一个塔型 /
+-- C 空袭 / D 拆除 / 退格 切优先级 / 空格 提前放波 / , . 调速 / Enter 暂停。
 -- 所有提示用 phos.input.key_name 求真键名，不写死手柄叫法。
 
 local Game = require("game")
@@ -29,18 +29,20 @@ local Text = {
 		again = "按 %s 重开（新地图）",
 		paused = "暂停", footer = "最高波次 %d   胜场 %d   最高分 %d",
 		help_title = "键位", help_close = "按 %s 关闭", hint_k = "键位表",
+		-- 每行：键组（虚拟键名，渲染时才经 phos.input.key_name 求真键名）+ 说明。
 		help = {
-			{ "方向键", "移动光标" },
-			{ "A", "建造 / 升级（塔上）" },
-			{ "X", "拆除（返还 60%）" },
-			{ "Y", "切换塔型" },
-			{ "Z", "空袭（冷却 40s）" },
-			{ "空格", "提前放波（拿奖金）" },
-			{ ",  .", "减速 / 加速" },
-			{ "退格", "切目标优先级" },
-			{ "K", "本帮助（同时暂停）" },
-			{ "回车", "暂停 / 继续" },
-			{ "Esc", "返回卡带架" },
+			{ { "left", "right", "up", "down" }, "移动光标" },
+			{ { "a" }, "建造 / 升级（塔上）" },
+			{ { "z" }, "上一个塔型" },
+			{ { "x" }, "下一个塔型" },
+			{ { "d" }, "拆除（返还 60%）" },
+			{ { "c" }, "空袭（冷却 40s）" },
+			{ { "space" }, "提前放波（拿奖金）" },
+			{ { "comma", "period" }, "减速 / 加速" },
+			{ { "backspace" }, "切目标优先级" },
+			{ { "k" }, "本帮助（同时暂停）" },
+			{ { "start" }, "暂停 / 继续" },
+			{ { "escape" }, "返回卡带架" },
 		},
 		diff_names = { EASY = "简单", NORMAL = "普通", HARD = "困难" },
 		map_names = { OPEN = "开阔", CANALS = "水道", MAZE = "迷宫", RANDOM = "随机" },
@@ -55,17 +57,18 @@ local Text = {
 		paused = "PAUSED", footer = "BEST WAVE %d   WINS %d   SCORE %d",
 		help_title = "CONTROLS", help_close = "press %s to close", hint_k = "CONTROLS",
 		help = {
-			{ "ARROWS", "move cursor" },
-			{ "A", "build / upgrade (on tower)" },
-			{ "X", "sell (refund 60%)" },
-			{ "Y", "cycle tower type" },
-			{ "Z", "airstrike (40s cd)" },
-			{ "SPACE", "early wave (+bonus)" },
-			{ ",  .", "slower / faster" },
-			{ "BKSP", "cycle target priority" },
-			{ "K", "this help (pauses too)" },
-			{ "ENTER", "pause / resume" },
-			{ "Esc", "back to shelf" },
+			{ { "left", "right", "up", "down" }, "move cursor" },
+			{ { "a" }, "build / upgrade (on tower)" },
+			{ { "z" }, "previous tower type" },
+			{ { "x" }, "next tower type" },
+			{ { "d" }, "sell (refund 60%)" },
+			{ { "c" }, "airstrike (40s cd)" },
+			{ { "space" }, "early wave (+bonus)" },
+			{ { "comma", "period" }, "slower / faster" },
+			{ { "backspace" }, "cycle target priority" },
+			{ { "k" }, "this help (pauses too)" },
+			{ { "start" }, "pause / resume" },
+			{ { "escape" }, "back to shelf" },
 		},
 		diff_names = { EASY = "EASY", NORMAL = "NORMAL", HARD = "HARD" },
 		map_names = { OPEN = "OPEN", CANALS = "CANALS", MAZE = "MAZE", RANDOM = "RANDOM" },
@@ -80,6 +83,7 @@ local game
 local mode = "menu" -- menu / play
 local paused = false
 local help_open = false -- K 键位表（开着时整局冻结）
+local SPEED_MAX = 3 -- 速度档位：1× / 2× / 3×（DESIGN §7）
 local speed = 1
 -- 存档纪录（init 读一次，常驻内存；只在刷新时写盘）
 local best_wave, wins, best_score
@@ -112,7 +116,7 @@ function init()
 	best_wave = tonumber(phos.save.read("best_wave") or "0") or 0
 	wins = tonumber(phos.save.read("wins") or "0") or 0
 	best_score = tonumber(phos.save.read("best_score") or "0") or 0
-	speed = clamp(tonumber(phos.save.read("speed") or "1") or 1, 1, 3)
+	speed = clamp(tonumber(phos.save.read("speed") or "1") or 1, 1, SPEED_MAX)
 	local diff = phos.save.read("diff") or "NORMAL"
 	if not ({ EASY = true, NORMAL = true, HARD = true })[diff] then diff = "NORMAL" end
 	local map = phos.save.read("map") or "RANDOM"
@@ -183,9 +187,12 @@ local function cursor_input(dt, x0, y0, x1, y1)
 	end
 end
 
+-- 调速：循环而非夹紧（DESIGN §7）。夹紧时"到顶后再按 ."会静默无效，玩家以为按键坏了；
+-- 循环让每次按键都有反馈，再配一声短促提示音把"手感"落到实处。
 local function set_speed(v)
-	speed = clamp(v, 1, 3)
+	speed = ((v - 1) % SPEED_MAX) + 1
 	phos.save.write("speed", tostring(speed))
+	phos.audio.beep(520 + speed * 140, 0.05, { wave = "square", volume = 0.14 })
 end
 
 local function game_input(dt)
@@ -204,16 +211,20 @@ local function game_input(dt)
 		end
 		if not ok then g.ev.denied = true end -- 金币不足 / 会堵死路：给个"拒绝"反馈
 	end
-	if phos.input.pressed("x") then
+	if phos.input.pressed("d") then
 		if g:sell(g.cx, g.cy) then g.ev.sold = true end
 	end
-	if phos.input.pressed("y") then
+	-- X 下一个 / Z 上一个：只切"待建造"塔型，不动光标下的塔。
+	if phos.input.pressed("x") then
 		g.build_index = (g.build_index % #Towers.ORDER) + 1
+	end
+	if phos.input.pressed("z") then
+		g.build_index = ((g.build_index - 2) % #Towers.ORDER) + 1
 	end
 	if phos.input.pressed("backspace") then
 		g:cycle_priority(g.cx, g.cy)
 	end
-	if phos.input.pressed("z") then
+	if phos.input.pressed("c") then
 		g:airstrike()
 	end
 	if phos.input.pressed("space") then
@@ -367,16 +378,19 @@ local function draw_help(C)
 	local S = phos.screen
 	local t = phos.lang.dict(Text)
 	local px, py, pw, ph = S.playfield()
-	local bw = 46
+	local bw = 56
 	local bh = #t.help + 4
 	local bx = px + math.floor((pw - bw) / 2)
 	local by = py + math.floor((ph - bh) / 2)
 	local r = phos.ui.region(bx, by, bw, bh)
 	r:clear(C.white, C.dark_gray)
 	r:frame(t.help_title)
-	local KEYW = 8
+	local KEYW = 20
 	for i, line in ipairs(t.help) do
-		r:print(2, 1 + i, phos.text.pad(line[1], KEYW), C.yellow)
+		-- 键组：每个虚拟键名现求真键名，再拼成一列（左右方向键等成组显示）。
+		local keys = {}
+		for _, k in ipairs(line[1]) do keys[#keys + 1] = phos.input.key_name(k) end
+		r:print(2, 1 + i, phos.text.pad(table.concat(keys, "/"), KEYW), C.yellow)
 		r:print(2 + KEYW, 1 + i, phos.text.fit(line[2], bw - KEYW - 4), C.white)
 	end
 	r:print(2, bh - 2, string.format(t.help_close, phos.input.key_name("k")), C.gray)
@@ -388,7 +402,7 @@ local function draw_play(C)
 	if not game:tower_at(game.cx, game.cy) then
 		Hud.cursor_hint(game, C) -- 塔上时侧栏已给详情，不重复压提示
 	end
-	Panel.draw(game, cart, C)
+	Panel.draw(game, cart, speed, C)
 
 	local t = phos.lang.dict(Text)
 	if help_open then

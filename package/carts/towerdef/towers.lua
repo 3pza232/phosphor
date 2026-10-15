@@ -68,7 +68,9 @@ function Towers.stats(t, aura)
 	local d = Towers.TYPES[t.type]
 	local lvl = t.level
 	local dmg = (d.dmg or 0) * (1.6 ^ (lvl - 1))
-	local range = (d.range or 0) + 0.6 * (lvl - 1)
+	-- 升级射程：每级 +1.5 格（原 +0.6 太温吞，升到 L3 几乎看不出圈变大）。
+	-- 攻速档仍走 0.88 的几何收敛，伤害走 1.6 的几何放大，三者互不干扰。
+	local range = (d.range or 0) + 1.5 * (lvl - 1)
 	local interval = (d.rate or 0) * (0.88 ^ (lvl - 1))
 	if aura then
 		range = range * (1 + (t.aura_range or 0)) -- 雷达光环：射程 +25%

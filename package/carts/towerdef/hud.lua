@@ -12,16 +12,12 @@ local Text = {
 		credits = "金币", power = "电力", core = "磁芯",
 		overload = "电力超载", airstrike_ready = "空袭就绪", airstrike = "空袭",
 		early = "空格 提前放波", banner = "第 %d 波",
-		hint_build = "A 建造  X 拆除  Y 换塔  Z 空袭",
-		hint_combat = "A 升级  X 拆除  Z 空袭  退格 优先级",
 	},
 	en = {
 		wave = "WAVE", combat = "COMBAT", build = "BUILD", combo = "FIGHT",
 		credits = "CREDITS", power = "POWER", core = "CORE",
 		overload = "POWER OVERLOAD", airstrike_ready = "AIRSTRIKE RDY", airstrike = "AIRSTRIKE",
 		early = "SPACE: early wave", banner = "WAVE %d",
-		hint_build = "A build  X sell  Y type  Z strike",
-		hint_combat = "A upgrade  X sell  Z strike  BKSP prio",
 	},
 }
 

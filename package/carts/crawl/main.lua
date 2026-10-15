@@ -29,6 +29,9 @@ local Text = {
       { "Esc", "返回卡带架（主机保留）" },
     },
     close = "[%s] 关闭",
+    info_type = "类型", info_w = "武器", info_a = "护甲", info_c = "消耗品", info_r = "道具",
+    info_depth = "深度 %d 起", info_gear = "装备", info_equipped = "已装备", info_unequipped = "未装备",
+    info_once = "使用后消耗",
   },
   en = {
     over = "YOU HAVE FALLEN.", won = "You claimed the Phosphor Heart; the dungeon crumbles.",
@@ -46,6 +49,9 @@ local Text = {
       { "Esc", "back to shelf (host)" },
     },
     close = "[%s] close",
+    info_type = "TYPE", info_w = "WEAPON", info_a = "ARMOR", info_c = "CONSUMABLE", info_r = "RELIC",
+    info_depth = "FROM DEPTH %d", info_gear = "GEAR", info_equipped = "EQUIPPED", info_unequipped = "NOT EQUIPPED",
+    info_once = "CONSUMED ON USE",
   },
 }
 local function L() return phos.lang.dict(Text) end
@@ -232,29 +238,93 @@ local function centered(bw, bh)
   return math.floor((pw - bw) / 2), math.floor((ph - bh) / 2)
 end
 
+-- 物品种类的中文/英文标签（信息窗第一行用）
+local function item_type_label(t, kind)
+  if kind == "weapon" then return t.info_w
+  elseif kind == "armor" then return t.info_a
+  elseif kind == "heart" then return t.info_r
+  else return t.info_c end
+end
+
+-- 物品信息浮窗：把 items.lua 的字段翻译成"人话"。装备讲加成与适用深度，
+-- 消耗品讲效果；数据一律从 spec 派生，信息窗不持有任何数值。
+local function draw_item_info(C, spec, p, x, y, w, h)
+  local t = L()
+  local title = spec.glyph .. " " .. phos.lang.pick(spec.name)
+  local r = Hud.plate(x, y, w, h, title)
+  local iw = w - 4
+  local ry = 2
+  local function line(text, color)
+    r:print(2, ry, phos.text.fit(text, iw), C[color] or C.white)
+    ry = ry + 1
+  end
+
+  line(t.info_type .. " " .. item_type_label(t, spec.kind), "gray")
+  local is_gear = (spec.kind == "weapon" or spec.kind == "armor")
+  if is_gear then
+    -- 加成用对应槽位的标签：武器给"攻击"、护甲给"防御"（与侧栏口径一致）
+    local stat = (spec.kind == "weapon") and t.atk or t.def
+    line(stat .. " +" .. tostring(spec.bonus or 0), "green")
+    line(string.format(t.info_depth, spec.depth or 1), "white")
+  end
+
+  -- 效果/用途说明：折行正文。装备从第 6 行起，消耗品从第 3 行起，
+  -- 都留到底部状态行之前（max_lines 由高度算出，绝不越界）。
+  if spec.desc then
+    local dy = is_gear and 6 or 3
+    r:body(2, dy, iw, phos.lang.pick(spec.desc), h - 3 - dy)
+  end
+
+  -- 状态行：装备看是否已装备，消耗品注明一次性。
+  local status, col
+  if is_gear then
+    local equipped = (p.weapon == spec) or (p.armor == spec)
+    status = t.info_gear .. " " .. (equipped and t.info_equipped or t.info_unequipped)
+    col = equipped and "green" or "dark_gray"
+  else
+    status, col = t.info_once, "dark_gray"
+  end
+  r:print(2, h - 2, phos.text.fit(status, iw), C[col] or C.white)
+end
+
 local function draw_inventory(S, C)
   local t = L()
-  local bw, bh = 34, 14
-  local bx, by = centered(bw, bh)
-  local r = Hud.plate(bx, by, bw, bh, t.inv_title)
+  local _, _, pw, ph = phos.screen.playfield()
+  local inv_w, inv_h = 34, 14
+  local info_w, info_h, gap = 22, 13, 1
+
+  -- 信息窗贴在背包窗右侧：两块一起在游戏区里居中，保证信息窗右缘不越过右侧栏。
+  -- 无选中物品（空背包 / 光标停在空格）时不画信息窗。
+  local spec = world.p.inv[inv_sel + 1]
+  local total_w = inv_w + (spec and (gap + info_w) or 0)
+  local bx = math.max(0, math.floor((pw - total_w) / 2))
+  local by = math.floor((ph - inv_h) / 2)
+
+  local r = Hud.plate(bx, by, inv_w, inv_h, t.inv_title)
   local letters = "abcdefgh"
   if #world.p.inv == 0 then
     r:print(2, 3, t.inv_empty, C.dark_gray)
   end
   for i = 0, 7 do
-    local spec = world.p.inv[i + 1]
+    local s = world.p.inv[i + 1]
     local y = 2 + i
     local marker = (i == inv_sel) and ">" or " "
-    if spec then
-      local name = phos.lang.pick(spec.name)
-      local line = string.format("%s %s) %s %s", marker, letters:sub(i + 1, i + 1), spec.glyph, name)
-      r:print(2, y, phos.text.fit(line, bw - 4), C[spec.color] or C.white)
+    if s then
+      local name = phos.lang.pick(s.name)
+      local line = string.format("%s %s) %s %s", marker, letters:sub(i + 1, i + 1), s.glyph, name)
+      r:print(2, y, phos.text.fit(line, inv_w - 4), C[s.color] or C.white)
     else
       r:print(2, y, string.format("%s %s) -", marker, letters:sub(i + 1, i + 1)), C.dark_gray)
     end
   end
   local kn = phos.input.key_name
-  r:print(2, bh - 2, phos.text.fit(string.format(t.inv_hint, kn("a"), kn("b")), bw - 4), C.dark_gray)
+  r:print(2, inv_h - 2, phos.text.fit(string.format(t.inv_hint, kn("a"), kn("b")), inv_w - 4), C.dark_gray)
+
+  if spec then
+    local ix = bx + inv_w + gap
+    local iy = by + math.floor((inv_h - info_h) / 2)
+    draw_item_info(C, spec, world.p, ix, iy, info_w, info_h)
+  end
 end
 
 local function draw_help(S, C)
@@ -317,6 +387,7 @@ end
 function debug_state()
   local d = world:debug()
   d.modal = modal
+  d.inv_sel = inv_sel              -- 背包光标（0 基）；信息窗跟随它，agent 可据此自检
   d.best_score = best_score
   d.best_depth = best_depth
   d.runs = runs

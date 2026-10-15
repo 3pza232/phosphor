@@ -61,9 +61,20 @@ function View.draw(game, C)
 	end
 
 	-- ── 建造光标：空心框 + 射程轮廓 + 非法标记 ──
+	-- 射程圈的半径随光标下的内容走：塔上 = 那座塔的**实际**射程（含升级/光环），
+	-- 空地 = 当前待建造塔型的射程。圈色也跟着，一眼分清自己在看谁的射程。
 	local cx, cy = game.cx, game.cy
-	local build = Towers.TYPES[game:selected_name()]
-	local _, range = Towers.stats({ type = game:selected_name(), level = 1 }, false)
+	local tsel = game:tower_at(cx, cy)
+	local range, ring_col
+	if tsel then
+		local _, r = Towers.stats(tsel, tsel.aura)
+		range = r
+		ring_col = (tsel.level >= 3) and C.white or C[Towers.TYPES[tsel.type].color]
+	else
+		local _, r = Towers.stats({ type = game:selected_name(), level = 1 }, false)
+		range = r
+		ring_col = C.dark_gray
+	end
 	if range and range > 0 then
 		local x0 = math.max(0, math.floor(cx - range - 1))
 		local x1 = math.min(game.MW - 1, math.ceil(cx + range + 1))
@@ -73,7 +84,7 @@ function View.draw(game, C)
 			for x = x0, x1 do
 				local d = math.sqrt((x - cx) ^ 2 + (y - cy) ^ 2)
 				if math.abs(d - range) < 0.5 then
-					S.blend(px + x, py + y, "\u{00B7}", C.dark_gray)
+					S.blend(px + x, py + y, "\u{00B7}", ring_col)
 				end
 			end
 		end
