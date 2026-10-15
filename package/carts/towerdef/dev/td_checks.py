@@ -121,7 +121,7 @@ def test_pause(seed):
 
 
 def test_wall(seed):
-    """B 项：can_build 放宽（允许把磁芯围死），敌人改由 P0 破墙开路。"""
+    """B 项：can_build 放宽（允许把磁芯围死），敌人改由 P0 拆塔开路（拆的是塔，不是地形）。"""
     g = Game(seed, credits=9000)
     try:
         # 在磁芯左侧建一整列，尽量把刷怪口与磁芯隔开（OPEN 图岩石少，列基本可封死）
@@ -150,7 +150,7 @@ def test_wall(seed):
         d = g.debug()
         hp1 = sum(t["hp"] for t in d["towers"]) if d["towers"] else 0
         n1 = len(d["towers"])
-        check("wall: 敌人破墙（塔血下降/塔数减少/路已通）",
+        check("block: 敌人拆塔（塔血下降/塔数减少/路已通）",
               hp1 < hp0 or n1 < n0 or d["path_ok"] is True,
               "hp %d->%d towers %d->%d path_ok=%s" % (hp0, hp1, n0, n1, d["path_ok"]))
     finally:

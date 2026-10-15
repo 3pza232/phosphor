@@ -38,7 +38,7 @@ function Enemies.new(kind, x, y, factors)
 		shield = 0, shield_max = 0, shield_cd = 0,
 		slow_t = 0, slow_factor = 1,
 		burn_dps = 0, burn_t = 0,
-		-- AI：mode="core" 冲磁芯；mode="tower" 拆 target（reason="wall"（挡路）/ "reactor"（值钱建筑：反应堆/采矿机））。
+		-- AI：mode="core" 冲磁芯；mode="tower" 拆 target（reason="block"（挡路的塔）/ "reactor"（值钱建筑：反应堆/采矿机））。只拆建筑，不拆地形。
 		mode = "core", target = nil, reason = nil, retarget_t = 0,
 	}
 	if d.shield then
@@ -117,13 +117,14 @@ end
 -- ── AI：目标优先级（每个敌人独立）────────────────────────────────────
 -- 每 RETARGET 秒或状态变化时重选；"正在拆某座塔"时不切换（直到它倒塌或不再挡路）。
 -- 优先级自上而下，首个成立者胜：
---   1) 破墙 P0：到磁芯不可达，或 path_dist > 3×曼哈顿 → 拆就近的挡路塔
+--   1) 拆塔 P0：到磁芯不可达，或 path_dist > 3×曼哈顿 → 拆就近的**挡路塔**
 --   2) 有价值建筑 P1：8 格侦察半径内有反应堆/采矿机 → 拆最近的那座（断你的电/钱）
 --   3) 磁芯 P2：沿 BFS 寻路场冲击磁芯（默认）
+-- **敌人只会拆"建筑"（玩家建的塔/反应堆/采矿机）；地形（# 岩石 / ~ 水）永远拆不掉。**
 -- 飞行单位不做 P0（飞越地形），但做 P1；否则直冲磁芯。
 local RETARGET = 0.5
 local SCOUT_R2 = 64 -- 8 格
-local WALL_R2 = 16 -- "就近塔" 4 格
+local BLOCK_R2 = 16 -- "就近挡路塔" 4 格
 local SLOPE = 3 -- path_dist > SLOPE × 曼哈顿 → 视为被逼绕
 
 -- P1 的"有价值建筑"：打掉它们对玩家打击最大——反应堆断你的电、采矿机断你的钱。
@@ -142,8 +143,9 @@ local function straight_move(e, tx, ty, dt)
 	end
 end
 
--- 是否被玩家的墙逼到"不走直线就太绕"：不可达，或寻路步数 > 3×曼哈顿距离。
-local function walled_off(e, ctx)
+-- 是否被玩家**用塔堵到**"不走直线就太绕"：到磁芯不可达，或寻路步数 > 3×曼哈顿距离。
+-- 堵路的只会是塔/反应堆（地形固若金汤，不参与）。
+local function path_blocked(e, ctx)
 	local ex, ey = math.floor(e.x), math.floor(e.y)
 	local pd = ctx.map:dist_at(ex, ey)
 	local md = math.abs(ex - ctx.core.x) + math.abs(ey - ctx.core.y)
@@ -164,13 +166,13 @@ local function nearest_sabotage(e, ctx, r2)
 end
 
 -- P0 的"拆掉能开路的挡路塔"：先看 4 格内最近的塔；一格都没有就退取全局最近的塔。
--- （简化：不强求严格最短路，够用即可——见 DESIGN §AI）
-local function pick_wall(e, ctx)
+-- 目标一律是**塔**（建筑），永远不会是岩石/水（地形不可破坏）。
+local function pick_blocker(e, ctx)
 	local best, bestd
 	for _, t in ipairs(ctx.towers) do
 		if not t.dead then
 			local d2 = (t.x + 0.5 - e.x) ^ 2 + (t.y + 0.5 - e.y) ^ 2
-			if d2 <= WALL_R2 and (bestd == nil or d2 < bestd) then best, bestd = t, d2 end
+			if d2 <= BLOCK_R2 and (bestd == nil or d2 < bestd) then best, bestd = t, d2 end
 		end
 	end
 	if best then return best end
@@ -184,9 +186,9 @@ local function pick_wall(e, ctx)
 end
 
 local function choose(e, ctx)
-	if not e.fly and walled_off(e, ctx) then
-		local t = pick_wall(e, ctx)
-		if t then return "wall", t end
+	if not e.fly and path_blocked(e, ctx) then
+		local t = pick_blocker(e, ctx)
+		if t then return "block", t end
 	end
 	local r = nearest_sabotage(e, ctx, SCOUT_R2)
 	if r then return "reactor", r end
@@ -196,8 +198,8 @@ end
 function Enemies.retarget(e, ctx)
 	local t = e.target
 	local keep = (e.mode == "tower") and t and not t.dead
-	if keep and e.reason == "wall" then
-		keep = (not e.fly) and walled_off(e, ctx) -- 路通了就不再拆
+	if keep and e.reason == "block" then
+		keep = (not e.fly) and path_blocked(e, ctx) -- 路通了就不再拆
 	elseif keep and e.reason == "reactor" then
 		local dx, dy = t.x + 0.5 - e.x, t.y + 0.5 - e.y
 		keep = (dx * dx + dy * dy) <= SCOUT_R2 -- 离开侦察圈就重评
