@@ -17,13 +17,14 @@ local PANEL_W = 22
 
 -- 菜单行号登记表：每一项都是一个可选行（漏登记 = 那一行永远选不到，DESIGN §5.0）。
 -- 用命名常量而不是裸数字，改行序时只改这里。
-menu_rows = { DIFF = 1, MAP = 2, START = 3 }
+menu_rows = { DIFF = 1, MAP = 2, ENDLESS = 3, START = 4 }
 
 local Text = {
 	zh = {
 		title = "磁芯防线",
 		subtitle = "砌塔成迷宫 · 拉电供能 · 挡住 20 波",
 		diff = "难度", map = "地图", start = "开始",
+		endless = "无尽模式", on = "开", off = "关",
 		hint = "上下选择   左右调整   A/回车 开始",
 		over = "磁芯失守", won = "防线守住！",
 		again = "按 %s 重开（新地图）",
@@ -51,6 +52,7 @@ local Text = {
 		title = "CORE LINE",
 		subtitle = "Build towers into a maze, power them, survive 20 waves",
 		diff = "DIFFICULTY", map = "MAP", start = "START",
+		endless = "ENDLESS", on = "ON", off = "OFF",
 		hint = "UP/DOWN select   LEFT/RIGHT change   A/ENTER start",
 		over = "CORE DESTROYED", won = "LINE HELD!",
 		again = "press %s to restart (new map)",
@@ -103,7 +105,8 @@ local function new_game()
 	-- 开局即把"上次难度/地图"写盘（DESIGN §9：菜单确认时写）
 	phos.save.write("diff", menu.diff)
 	phos.save.write("map", menu.map)
-	game = Game.new(menu.diff, menu.map)
+	phos.save.write("endless", menu.endless and "1" or "0")
+	game = Game.new(menu.diff, menu.map, menu.endless)
 	mode = "play"
 	paused = false
 	help_open = false
@@ -121,8 +124,10 @@ function init()
 	if not ({ EASY = true, NORMAL = true, HARD = true })[diff] then diff = "NORMAL" end
 	local map = phos.save.read("map") or "RANDOM"
 	if not ({ OPEN = true, CANALS = true, MAZE = true, RANDOM = true })[map] then map = "RANDOM" end
+	-- 无尽模式沿用上次选择（"1"/"0"）；与 best_wave/best_score 共用一格纪录，不另开键
+	local endless = (phos.save.read("endless") == "1")
 
-	menu = { row = menu_rows.DIFF, diff = diff, map = map }
+	menu = { row = menu_rows.DIFF, diff = diff, map = map, endless = endless }
 
 	-- 把几个关键旋钮挂到 `~` 调试台（DESIGN §12 第三刀）：边打边调
 	local PACING = { zh = "节奏", en = "PACING" }
@@ -236,7 +241,7 @@ end
 
 local function menu_input(dt)
 	local DIFFS = { "EASY", "NORMAL", "HARD" }
-	local MENU_ROWS = { menu_rows.DIFF, menu_rows.MAP, menu_rows.START }
+	local MENU_ROWS = { menu_rows.DIFF, menu_rows.MAP, menu_rows.ENDLESS, menu_rows.START }
 	local n = #MENU_ROWS
 	-- 上下在**登记的**行之间循环
 	local at = 1
@@ -258,6 +263,9 @@ local function menu_input(dt)
 			for k, m in ipairs(MAPS) do if m == menu.map then i = k end end
 			menu.map = MAPS[((i - 1 + step) % #MAPS) + 1]
 			phos.save.write("map", menu.map)
+		elseif menu.row == menu_rows.ENDLESS then
+			menu.endless = not menu.endless
+			phos.save.write("endless", menu.endless and "1" or "0")
 		end
 	end
 
@@ -335,6 +343,7 @@ local function draw_menu(C)
 	local rows = {
 		{ t.diff, t.diff_names[menu.diff] or menu.diff },
 		{ t.map, t.map_names[menu.map] or menu.map },
+		{ t.endless, menu.endless and t.on or t.off },
 		{ t.start, "" },
 	}
 	local top = 16
@@ -342,7 +351,7 @@ local function draw_menu(C)
 		local y = top + (i - 1) * 3
 		local mark = (i == menu.row) and ">" or " "
 		local label = string.format("%s %s", mark, phos.text.pad(r[1], 12))
-		if i == 3 then
+		if i == #rows then
 			center(y, r[1], (i == menu.row) and C.yellow or C.white, 2)
 		else
 			S.print(mid - 14, y, label, (i == menu.row) and C.yellow or C.white)
@@ -428,23 +437,26 @@ end
 
 function debug_state()
 	if mode == "menu" or not game then
-		return { phase = "menu", best_wave = best_wave, wins = wins, best_score = best_score, speed = speed }
+		return { phase = "menu", best_wave = best_wave, wins = wins, best_score = best_score,
+			speed = speed, endless = menu.endless }
 	end
 	local g = game
 	local towers = {}
 	for _, t in ipairs(g.towers) do
 		towers[#towers + 1] = { x = t.x, y = t.y, type = t.type, level = t.level,
-			kills = t.kills, priority = t.priority }
+			kills = t.kills, priority = t.priority, hp = t.hp, max_hp = t.max_hp }
 	end
 	local enemies = {}
 	for _, e in ipairs(g.enemies) do
 		local d = g.map:dist_at(math.floor(e.x), math.floor(e.y))
+		local tg = e.target
 		enemies[#enemies + 1] = { x = e.x, y = e.y, type = e.type, hp = e.hp,
-			max_hp = e.max_hp, fly = e.fly, dist = d }
+			max_hp = e.max_hp, fly = e.fly, dist = d, mode = e.mode, reason = e.reason,
+			tx = tg and tg.x or nil, ty = tg and tg.y or nil }
 	end
 	return {
 		phase = g.phase,
-		wave = g.wave, wave_total = g.wave_total,
+		wave = g.wave, wave_total = g.wave_total, endless = g.endless,
 		diff = g.diff, map_style = g.map_style,
 		core_hp = g.core_hp, core_max = g.core_max,
 		credits = g.credits,
@@ -456,6 +468,7 @@ function debug_state()
 		cursor_x = g.cx, cursor_y = g.cy,
 		airstrike_cd = g.airstrike_cd,
 		buildable = g:can_build(g.cx, g.cy),
+		heals = g.heal_count, towers_lost = g.towers_lost,
 		towers = towers,
 		enemies = enemies,
 		path_ok = g.map:ground_path_exists(),

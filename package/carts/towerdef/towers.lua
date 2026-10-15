@@ -11,29 +11,35 @@ local Enemies = require("enemies") -- 冰塔/火焰要往敌人身上挂 slow / 
 local Towers = {}
 
 -- 每个字段：cost 金币 / power 电力占用 / dmg / rate(攻击间隔秒) / range(格) /
--- chars 三级字符 / color 槽位 / kind 机制 / ignore_armor 无视护甲。
+-- chars 三级字符 / color 槽位 / kind 机制 / ignore_armor 无视护甲 / hp 满血。
+-- hp 让塔也能被拆（敌人 siege 直接扣它）——满值按类型，独立于造价。
 Towers.TYPES = {
-	GUN = { cost = 50, power = 1, dmg = 9, rate = 0.35, range = 5.0,
+	GUN = { cost = 50, power = 1, dmg = 9, rate = 0.35, range = 5.0, hp = 100,
 		chars = { "g", "G", "G" }, color = "green", kind = "gun",
 		label = { zh = "机枪", en = "GUN" } },
-	CANNON = { cost = 95, power = 2, dmg = 34, rate = 1.25, range = 6.0, splash = 1.6,
+	CANNON = { cost = 95, power = 2, dmg = 34, rate = 1.25, range = 6.0, splash = 1.6, hp = 140,
 		chars = { "c", "C", "C" }, color = "orange", kind = "cannon",
 		label = { zh = "加农炮", en = "CANNON" } },
-	FROST = { cost = 70, power = 2, dmg = 5, rate = 0.70, range = 5.0, max_targets = 3,
+	FROST = { cost = 70, power = 2, dmg = 5, rate = 0.70, range = 5.0, max_targets = 3, hp = 90,
 		slow_factor = 0.55, slow_time = 1.8,
 		chars = { "f", "F", "F" }, color = "cyan", kind = "frost",
 		label = { zh = "冰霜", en = "FROST" } },
-	TESLA = { cost = 130, power = 3, dmg = 24, rate = 1.40, range = 5.5, chain = 3, chain_range = 3.0,
+	TESLA = { cost = 130, power = 3, dmg = 24, rate = 1.40, range = 5.5, chain = 3, chain_range = 3.0, hp = 120,
 		chars = { "t", "T", "T" }, color = "purple", kind = "tesla", ignore_armor = true,
 		label = { zh = "电塔", en = "TESLA" } },
-	FLAME = { cost = 115, power = 3, dmg = 13, dps = true, range = 3.0, splash = 2.0,
+	FLAME = { cost = 115, power = 3, dmg = 13, dps = true, range = 3.0, splash = 2.0, hp = 130,
 		burn_dps = 6, burn_time = 2.0,
 		chars = { "l", "L", "L" }, color = "red", kind = "flame", ignore_armor = true,
 		label = { zh = "喷火", en = "FLAME" } },
-	RADAR = { cost = 100, power = 2, dmg = 0, rate = 0, range = 4.0, aura_range = 0.25, aura_rate = 0.15,
+	RADAR = { cost = 100, power = 2, dmg = 0, rate = 0, range = 4.0, aura_range = 0.25, aura_rate = 0.15, hp = 70,
 		chars = { "r", "R", "R" }, color = "yellow", kind = "radar",
 		label = { zh = "雷达", en = "RADAR" } },
-	REACTOR = { cost = 60, power = 0, dmg = 0, rate = 0, range = 0, cap = { 10, 16, 24 },
+	-- 维修塔：不攻击，周期治疗范围内受损友军（治疗量/频率/目标数随等级走，见 heal）。
+	REPAIR = { cost = 90, power = 2, dmg = 0, range = 4.0, hp = 80,
+		heal = { time = { 4, 3, 2 }, count = { 1, 2, 3 }, amount = { 10, 14, 18 } },
+		chars = { "h", "H", "H" }, color = "green", kind = "repair",
+		label = { zh = "维修", en = "REPAIR" } },
+	REACTOR = { cost = 60, power = 0, dmg = 0, rate = 0, range = 0, cap = { 10, 16, 24 }, hp = 80,
 		chars = { "R", "R", "R" }, color = "blue", kind = "reactor",
 		label = { zh = "反应堆", en = "REACTOR" } },
 }
@@ -41,8 +47,8 @@ Towers.TYPES = {
 -- 塔的显示名（随界面语言）。UI 一律用它，别直接印 type 这个内部键。
 function Towers.label(name) return phos.lang.pick(Towers.TYPES[name].label) end
 
--- 建造面板里的循环顺序（含反应堆）。Y 键按这个顺序切。
-Towers.ORDER = { "GUN", "CANNON", "FROST", "TESLA", "FLAME", "RADAR", "REACTOR" }
+-- 建造面板里的循环顺序（含反应堆、维修）。Z/X 键按这个顺序切。
+Towers.ORDER = { "GUN", "CANNON", "FROST", "TESLA", "FLAME", "RADAR", "REPAIR", "REACTOR" }
 
 Towers.PRIORITIES = { "FIRST", "STRONG", "CLOSE", "AIR" }
 
@@ -150,6 +156,10 @@ function Towers.update(ts, ctx, dt)
 	-- 1) 先清光环，再由每座雷达点亮它覆盖到的塔。多座雷达覆盖同一塔时**取最强的一个**
 	--    （加成不叠加）；雷达自身等级按 ×1.6 提效（与攻击塔升级同一档）。
 	for _, t in ipairs(ts) do t.aura, t.aura_range, t.aura_rate = false, nil, nil end
+	-- 被拆闪烁计时衰减（game 受击时置 0.12）
+	for _, t in ipairs(ts) do
+		if t.hit_t and t.hit_t > 0 then t.hit_t = math.max(0, t.hit_t - dt) end
+	end
 	for _, r in ipairs(ts) do
 		local rd = Towers.TYPES[r.type]
 		if rd.kind == "radar" then
@@ -215,6 +225,53 @@ function Towers.update(ts, ctx, dt)
 				end
 				if any then
 					ctx.add_fx({ kind = "flame", x = tgt.x, y = tgt.y, r = r, color = d.color, t = 0.12 })
+				end
+			end
+		end
+	end
+
+	-- 4) 维修塔：周期治疗范围内"血量缺口最大"的 N 座友军（不超 max_hp）。
+	--    治疗不受欠压影响（它不是火力）；目标数/治疗量/间隔随等级取自 d.heal。
+	for _, t in ipairs(ts) do
+		local d = Towers.TYPES[t.type]
+		if d.kind == "repair" then
+			t.cd = (t.cd or 0) - dt
+			if t.cd <= 0 then
+				local lvl = t.level
+				local _, range = Towers.stats(t, t.aura)
+				local ex, ey = t.x + 0.5, t.y + 0.5
+				local r2 = range * range
+				local cands = {}
+				for _, o in ipairs(ts) do
+					if o ~= t and not o.dead and o.hp < o.max_hp then
+						local dx, dy = o.x - t.x, o.y - t.y
+						if dx * dx + dy * dy <= r2 then cands[#cands + 1] = o end
+					end
+				end
+				if #cands > 0 then
+					-- 缺口大的优先；同缺口按坐标定序，保证确定性
+					table.sort(cands, function(a, b)
+						local da, db = a.max_hp - a.hp, b.max_hp - b.hp
+						if da ~= db then return da > db end
+						if a.y ~= b.y then return a.y < b.y end
+						return a.x < b.x
+					end)
+					local n, amount = d.heal.count[lvl], d.heal.amount[lvl]
+					local healed_any = false
+					for i = 1, math.min(n, #cands) do
+						local o = cands[i]
+						local before = o.hp
+						o.hp = math.min(o.max_hp, o.hp + amount)
+						local healed = o.hp - before
+						if healed > 0 then
+							healed_any = true
+							ctx.add_fx({ kind = "heal", x0 = ex, y0 = ey, x1 = o.x + 0.5, y1 = o.y + 0.5,
+								amount = healed, t = 0.5 })
+						end
+					end
+					t.cd = healed_any and d.heal.time[lvl] or 0
+				else
+					t.cd = 0 -- 没伤员不空转：一有人受伤就能立刻开治
 				end
 			end
 		end

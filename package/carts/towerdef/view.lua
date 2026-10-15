@@ -105,6 +105,10 @@ function View.draw(game, C)
 		local d = Towers.TYPES[t.type]
 		local ch = d.chars[t.level] or d.chars[1]
 		local fg = (t.level >= 3) and C.white or C[d.color]
+		-- 正在被拆：闪红（hit_t 由 game 在受击时刷新，towers.update 里衰减）
+		if t.hit_t and t.hit_t > 0 and (math.floor(phos.sys.time() * 20) % 2 == 0) then
+			fg = C.red
+		end
 		S.put(px + t.x, py + t.y, ch, fg)
 	end
 
@@ -135,6 +139,22 @@ function View.draw(game, C)
 			end
 		elseif f.kind == "flame" then
 			ring(S, px, py, f.x, f.y, f.r, "*", C[f.color or "red"])
+		elseif f.kind == "heal" then
+			-- 维修光束：从塔到被治塔画一条绿色脉冲，末点冒 +N（DESIGN §C）
+			local n = 8
+			for i = 0, n do
+				local k = i / n
+				local hx = f.x0 + (f.x1 - f.x0) * k
+				local hy = f.y0 + (f.y1 - f.y0) * k
+				S.blend(px + math.floor(hx), py + math.floor(hy),
+					(i % 2 == 0) and "+" or "\u{00B7}", C.green)
+			end
+			if f.amount and f.amount >= 1 then
+				S.print(px + math.floor(f.x1), py + math.floor(f.y1) - 1,
+					"+" .. math.floor(f.amount), C.green)
+			end
+		elseif f.kind == "collapse" then
+			ring(S, px, py, f.x, f.y, f.r, "x", C[f.color or "gray"])
 		end
 	end
 

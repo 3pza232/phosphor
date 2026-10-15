@@ -8,16 +8,16 @@
 local Enemies = {}
 
 -- 基础值（未乘成长/难度系数）。armor = 每击固定减伤；leak = 走到磁芯扣的磁芯血。
--- fly = 无视地形与塔、直线扑磁芯。
+-- fly = 无视地形与塔、直线扑磁芯。siege = 拆塔 DPS（走到塔相邻格后按它扣塔 hp）。
 Enemies.TYPES = {
-	grunt = { char = "o", color = "red", hp = 60, armor = 0, speed = 1.6, leak = 1, bounty = 6 },
-	runner = { char = "r", color = "yellow", hp = 40, armor = 0, speed = 3.2, leak = 1, bounty = 7 },
-	swarm = { char = ".", color = "magenta", hp = 25, armor = 0, speed = 2.4, leak = 1, bounty = 3 },
-	armor = { char = "A", color = "gray", hp = 220, armor = 5, speed = 1.0, leak = 2, bounty = 15 },
-	shield = { char = "D", color = "cyan", hp = 140, armor = 0, speed = 1.4, leak = 2, bounty = 18,
+	grunt = { char = "o", color = "red", hp = 60, armor = 0, speed = 1.6, leak = 1, bounty = 6, siege = 8 },
+	runner = { char = "r", color = "yellow", hp = 40, armor = 0, speed = 3.2, leak = 1, bounty = 7, siege = 6 },
+	swarm = { char = ".", color = "magenta", hp = 25, armor = 0, speed = 2.4, leak = 1, bounty = 3, siege = 4 },
+	armor = { char = "A", color = "gray", hp = 220, armor = 5, speed = 1.0, leak = 2, bounty = 15, siege = 20 },
+	shield = { char = "D", color = "cyan", hp = 140, armor = 0, speed = 1.4, leak = 2, bounty = 18, siege = 12,
 		shield = 40, shield_regen = 6, shield_delay = 2.0 },
-	flyer = { char = "v", color = "green", hp = 90, armor = 0, speed = 2.0, leak = 2, bounty = 12, fly = true },
-	boss = { char = "B", color = "red", hp = 2600, armor = 8, speed = 0.8, leak = 10, bounty = 200, boss = true },
+	flyer = { char = "v", color = "green", hp = 90, armor = 0, speed = 2.0, leak = 2, bounty = 12, siege = 10, fly = true },
+	boss = { char = "B", color = "red", hp = 2600, armor = 8, speed = 0.8, leak = 10, bounty = 200, siege = 50, boss = true },
 }
 
 local function hypot(x, y) return math.sqrt(x * x + y * y) end
@@ -32,10 +32,13 @@ function Enemies.new(kind, x, y, factors)
 		max_hp = math.floor(d.hp * factors.hp + 0.5),
 		armor = d.armor, speed = d.speed * factors.speed,
 		leak = d.leak, bounty = math.floor(d.bounty * factors.reward + 0.5),
+		siege = d.siege,
 		fly = d.fly or false, boss = d.boss or false,
 		shield = 0, shield_max = 0, shield_cd = 0,
 		slow_t = 0, slow_factor = 1,
 		burn_dps = 0, burn_t = 0,
+		-- AI：mode="core" 冲磁芯；mode="tower" 拆 target（reason="wall"/"reactor"）。
+		mode = "core", target = nil, reason = nil, retarget_t = 0,
 	}
 	if d.shield then
 		e.shield = d.shield
@@ -110,27 +113,20 @@ function Enemies.tick_effects(e, dt)
 	return burn
 end
 
--- 地面移动：沿 BFS 梯度走。目标是"当前格里 dist 最小的邻居"的格中心，
--- 走到格中心附近就自然换下一个。浮点坐标让移动是平滑的（不是逐格跳）。
-function Enemies.move_ground(e, map, dt)
-	local cx, cy = math.floor(e.x), math.floor(e.y)
-	local tgt = map:step_target(cx, cy)
-	if not tgt then
-		-- 被玩家建塔关进死路（本格四周都到不了磁芯）：直接朝磁芯直线逃。
-		-- 纯 BFS 寻路在这里会永久卡住一波怪、让波次永远清不掉（软锁）。
-		-- 直线逃让"被自己堵住"变成"漏几个怪"，比死锁好——且这本来也只发生在玩家自找的角落。
-		local tx, ty = map.core.x + 0.5, map.core.y + 0.5
-		local dx, dy = tx - e.x, ty - e.y
-		local d = hypot(dx, dy)
-		local sp = Enemies.speed_of(e) * dt
-		if d <= sp or d < 1e-6 then
-			e.x, e.y = tx, ty
-		else
-			e.x, e.y = e.x + dx / d * sp, e.y + dy / d * sp
-		end
-		return
-	end
-	local tx, ty = tgt.x + 0.5, tgt.y + 0.5
+-- ── AI：目标优先级（每个敌人独立）────────────────────────────────────
+-- 每 RETARGET 秒或状态变化时重选；"正在拆某座塔"时不切换（直到它倒塌或不再挡路）。
+-- 优先级自上而下，首个成立者胜：
+--   1) 破墙 P0：到磁芯不可达，或 path_dist > 3×曼哈顿 → 拆就近的挡路塔
+--   2) 反应堆 P1：8 格侦察半径内有 REACTOR → 拆最近的反应堆
+--   3) 磁芯 P2：沿 BFS 寻路场冲击磁芯（默认）
+-- 飞行单位不做 P0（飞越地形），但做 P1；否则直冲磁芯。
+local RETARGET = 0.5
+local SCOUT_R2 = 64 -- 8 格
+local WALL_R2 = 16 -- "就近塔" 4 格
+local SLOPE = 3 -- path_dist > SLOPE × 曼哈顿 → 视为被逼绕
+
+-- 朝格中心 (tx,ty) 直线插值（飞行、拆塔走位、P0 兜底都用它）。
+local function straight_move(e, tx, ty, dt)
 	local dx, dy = tx - e.x, ty - e.y
 	local d = hypot(dx, dy)
 	local sp = Enemies.speed_of(e) * dt
@@ -141,16 +137,120 @@ function Enemies.move_ground(e, map, dt)
 	end
 end
 
--- 飞行移动：无视地形，直线插值扑向磁芯格中心。
-function Enemies.move_fly(e, core, dt)
-	local tx, ty = core.x + 0.5, core.y + 0.5
-	local dx, dy = tx - e.x, ty - e.y
-	local d = hypot(dx, dy)
-	local sp = Enemies.speed_of(e) * dt
-	if d <= sp or d < 1e-6 then
-		e.x, e.y = tx, ty
+-- 是否被玩家的墙逼到"不走直线就太绕"：不可达，或寻路步数 > 3×曼哈顿距离。
+local function walled_off(e, ctx)
+	local ex, ey = math.floor(e.x), math.floor(e.y)
+	local pd = ctx.map:dist_at(ex, ey)
+	local md = math.abs(ex - ctx.core.x) + math.abs(ey - ctx.core.y)
+	return pd < 0 or pd > SLOPE * md
+end
+
+-- 侦察半径内最近的反应堆（r2 为平方半径）。
+local function nearest_reactor(e, ctx, r2)
+	local best, bestd
+	for _, t in ipairs(ctx.towers) do
+		if not t.dead and t.type == "REACTOR" then
+			local dx, dy = t.x + 0.5 - e.x, t.y + 0.5 - e.y
+			local d2 = dx * dx + dy * dy
+			if d2 <= r2 and (bestd == nil or d2 < bestd) then best, bestd = t, d2 end
+		end
+	end
+	return best
+end
+
+-- P0 的"拆掉能开路的挡路塔"：先看 4 格内最近的塔；一格都没有就退取全局最近的塔。
+-- （简化：不强求严格最短路，够用即可——见 DESIGN §AI）
+local function pick_wall(e, ctx)
+	local best, bestd
+	for _, t in ipairs(ctx.towers) do
+		if not t.dead then
+			local d2 = (t.x + 0.5 - e.x) ^ 2 + (t.y + 0.5 - e.y) ^ 2
+			if d2 <= WALL_R2 and (bestd == nil or d2 < bestd) then best, bestd = t, d2 end
+		end
+	end
+	if best then return best end
+	for _, t in ipairs(ctx.towers) do
+		if not t.dead then
+			local d2 = (t.x + 0.5 - e.x) ^ 2 + (t.y + 0.5 - e.y) ^ 2
+			if bestd == nil or d2 < bestd then best, bestd = t, d2 end
+		end
+	end
+	return best
+end
+
+local function choose(e, ctx)
+	if not e.fly and walled_off(e, ctx) then
+		local t = pick_wall(e, ctx)
+		if t then return "wall", t end
+	end
+	local r = nearest_reactor(e, ctx, SCOUT_R2)
+	if r then return "reactor", r end
+	return "core", nil
+end
+
+function Enemies.retarget(e, ctx)
+	local t = e.target
+	local keep = (e.mode == "tower") and t and not t.dead
+	if keep and e.reason == "wall" then
+		keep = (not e.fly) and walled_off(e, ctx) -- 路通了就不再拆
+	elseif keep and e.reason == "reactor" then
+		local dx, dy = t.x + 0.5 - e.x, t.y + 0.5 - e.y
+		keep = (dx * dx + dy * dy) <= SCOUT_R2 -- 离开侦察圈就重评
+	end
+	if not keep then
+		local reason, nt = choose(e, ctx)
+		if reason == "core" then
+			e.mode, e.target, e.reason = "core", nil, nil
+		else
+			e.mode, e.target, e.reason = "tower", nt, reason
+		end
+	end
+	e.retarget_t = RETARGET
+end
+
+-- 拆塔：走到目标塔相邻格，然后按 siege×dt 扣它的 hp（倒塌由 game 结算）。
+local function assault(e, t, ctx, dt)
+	local ex, ey = math.floor(e.x), math.floor(e.y)
+	if e.fly then
+		if math.abs(ex - t.x) + math.abs(ey - t.y) <= 1 then
+			ctx.siege(t, e.siege * dt, e)
+		else
+			straight_move(e, t.x + 0.5, t.y + 0.5, dt)
+		end
+		return
+	end
+	local f = ctx.map:assault_field(t.x, t.y)
+	local fd = f[ey * ctx.map.w + ex]
+	if fd == 1 then -- BFS 距塔 1 步 = 正交相邻：开拆
+		ctx.siege(t, e.siege * dt, e)
+		return
+	end
+	local nxt = (fd and fd > 0) and ctx.map:step_field(f, ex, ey) or nil
+	if nxt then
+		straight_move(e, nxt.x + 0.5, nxt.y + 0.5, dt)
 	else
-		e.x, e.y = e.x + dx / d * sp, e.y + dy / d * sp
+		straight_move(e, t.x + 0.5, t.y + 0.5, dt) -- 极端地貌兜底：硬走，别原地卡死
+	end
+end
+
+-- 每帧 AI 推进：重选目标 + 移动/拆塔。ctx 由 game 每帧现搭：
+--   map / core / towers / siege(t, amount, enemy) / add_fx(eff)
+function Enemies.update(e, ctx, dt)
+	local stale = (e.mode == "tower") and (not e.target or e.target.dead)
+	e.retarget_t = e.retarget_t - dt
+	if e.retarget_t <= 0 or stale then Enemies.retarget(e, ctx) end
+
+	if e.mode == "tower" and e.target and not e.target.dead then
+		assault(e, e.target, ctx, dt)
+		return
+	end
+
+	-- P2：地面沿寻路场走，飞行直线扑磁芯
+	if e.fly then
+		straight_move(e, ctx.core.x + 0.5, ctx.core.y + 0.5, dt)
+	else
+		local tgt = ctx.map:step_target(math.floor(e.x), math.floor(e.y))
+		if tgt then straight_move(e, tgt.x + 0.5, tgt.y + 0.5, dt) end
 	end
 end
 

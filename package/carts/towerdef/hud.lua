@@ -29,8 +29,12 @@ function Hud.draw(game, C)
 	-- ── 顶部读数（第 0 行）──
 	local phase = (game.phase == "combat") and t.combat or t.build
 	local timer = string.format("%02d", math.floor(game.next_in + 0.5))
-	local line = string.format("%s %d/%d  %s %s  %s %d  %s %d/%d  %s %d/%d",
-		t.wave, game.wave, game.wave_total, phase, timer,
+	-- 无尽超过 20 波后不再显示 /20
+	local wave_str = (game.endless and game.wave > game.wave_total)
+		and string.format("%d+", game.wave)
+		or string.format("%d/%d", game.wave, game.wave_total)
+	local line = string.format("%s %s  %s %s  %s %d  %s %d/%d  %s %d/%d",
+		t.wave, wave_str, phase, timer,
 		t.credits, game.credits, t.power, game.power_used, game.power_cap,
 		t.core, game.core_hp, game.core_max)
 	S.print(px + 1, py, line, C.white)

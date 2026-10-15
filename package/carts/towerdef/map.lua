@@ -51,6 +51,36 @@ local function bfs(m, block_index)
 	return dist
 end
 
+-- 从任意格做一次 BFS（用于敌人"进攻某座塔"的寻路场）。起点可以是墙（塔），
+-- 直接以它为 0 播撒，于是它四周的可走格得到 1——敌人走到 dist==1 即贴到塔边。
+local function bfs_from(m, sx, sy)
+	local w, h = m.w, m.h
+	local dist = {}
+	for i = 0, w * h - 1 do dist[i] = -1 end
+	local start = sy * w + sx
+	dist[start] = 0
+	local q = { start }
+	local head = 1
+	while head <= #q do
+		local cur = q[head]
+		head = head + 1
+		local cxx = cur % w
+		local cyy = (cur - cxx) / w
+		local d = dist[cur]
+		for k = 1, 4 do
+			local nx, ny = cxx + DIRS[k][1], cyy + DIRS[k][2]
+			if nx >= 0 and nx < w and ny >= 0 and ny < h then
+				local ni = ny * w + nx
+				if dist[ni] == -1 and PASSABLE[m.cells[ni]] then
+					dist[ni] = d + 1
+					q[#q + 1] = ni
+				end
+			end
+		end
+	end
+	return dist
+end
+
 function Map.new(w, h, style)
 	local m = setmetatable({}, Map)
 	m.w, m.h = w, h
@@ -60,6 +90,9 @@ function Map.new(w, h, style)
 	m.core = { x = w - 3, y = math.floor(h / 2) }
 	m.cells = {}
 	for i = 0, w * h - 1 do m.cells[i] = Map.GRASS end
+	-- 地形/塔每次变动就 version+1：敌人拆塔用的"进攻寻路场"据此失效重算（见 assault_field）。
+	m.version = 0
+	m.af_cache, m.af_ver = {}, -1
 	m:generate(style)
 	m:compute_field()
 	return m
@@ -73,6 +106,7 @@ end
 function Map:set(x, y, v)
 	if x < 0 or x >= self.w or y < 0 or y >= self.h then return end
 	self.cells[y * self.w + x] = v
+	self.version = self.version + 1
 end
 
 -- 某格到磁芯的步数（-1 = 走不到）。给敌人寻路与 HUD 观测用。
@@ -260,16 +294,10 @@ function Map:ground_path_exists()
 	return self:all_gates_reachable()
 end
 
--- 能不能在这格建（只看地形 + 连通性；"有没有敌人站着"由 game.lua 叠加）：
--- 空地 + 试占之后所有刷怪口仍能到磁芯。
+-- 能不能在这格建（只看地形：空地即可；"有没有敌人站着"由 game.lua 叠加）。
+-- 不再做连通性试占——玩家允许把磁芯整个围死，由怪物自己拆墙开路（DESIGN §AI/§B）。
 function Map:can_build(x, y)
-	if self:get(x, y) ~= Map.GRASS then return false end
-	local i = y * self.w + x
-	local saved = self.cells[i]
-	self.cells[i] = Map.TOWER
-	local ok = self:all_gates_reachable()
-	self.cells[i] = saved
-	return ok
+	return self:get(x, y) == Map.GRASS
 end
 
 -- 敌人寻路：在当前格 (cx,cy) 的四个邻居里挑 dist 最小的那个（平局按 DIRS 顺序）。
@@ -287,6 +315,38 @@ function Map:step_target(cx, cy)
 		end
 	end
 	return best
+end
+
+-- 沿任意寻路场走一步（进攻寻路场用；与 step_target 同构，只是场是传入的）。
+function Map:step_field(field, cx, cy)
+	local best, bestd = nil, nil
+	for k = 1, 4 do
+		local nx, ny = cx + DIRS[k][1], cy + DIRS[k][2]
+		local v = self:get(nx, ny)
+		if v and PASSABLE[v] then
+			local d = field[ny * self.w + nx]
+			if d and d >= 0 and (bestd == nil or d < bestd) then
+				bestd, best = d, { x = nx, y = ny }
+			end
+		end
+	end
+	return best
+end
+
+-- 从某座塔出发的"进攻寻路场"（敌人据此走到塔相邻格）。按地图 version 缓存：
+-- 塔在被拆/新建前不重算，多只敌人打同一座塔共享一场。地形一变（version+1）即失效。
+function Map:assault_field(tx, ty)
+	if self.af_ver ~= self.version then
+		self.af_cache = {}
+		self.af_ver = self.version
+	end
+	local key = ty * self.w + tx
+	local f = self.af_cache[key]
+	if not f then
+		f = bfs_from(self, tx, ty)
+		self.af_cache[key] = f
+	end
+	return f
 end
 
 return Map

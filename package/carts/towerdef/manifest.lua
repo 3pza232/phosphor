@@ -11,8 +11,8 @@ return {
   author = "PZA",
   version = "0.1.0",
   desc = {
-    zh = "在网格上砌塔成迷宫、拉电供能，挡住 20 波扑向磁芯的敌人；塔会挡路，电力超载全场降速。",
-    en = "Build towers into a maze and power them to hold off 20 waves from the core. Towers block paths; overload cuts your fire rate.",
+    zh = "在网格上砌塔成迷宫、拉电供能，挡住 20 波扑向磁芯的敌人（可开无尽模式）；塔会挡路、也会被拆，电力超载全场降速。",
+    en = "Build towers into a maze and power them to hold off 20 waves (endless mode optional). Towers block paths and can be torn down; overload cuts your fire rate.",
   },
 
   -- ─── 按需打开 ───────────────────────────────────────────

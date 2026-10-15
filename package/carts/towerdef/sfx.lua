@@ -13,6 +13,7 @@ function Sfx.play(ev)
 	if ev.kill then beep(720, 0.03, { volume = 0.06 }) end
 	if ev.boss_kill then beep(200, 0.30, { wave = "saw", volume = 0.22 }) end
 	if ev.leak then beep(180, 0.18, { wave = "saw", volume = 0.20 }) end
+	if ev.tower_down then beep(150, 0.24, { wave = "saw", sweep = 70, volume = 0.22 }) end
 	if ev.boom then beep(90, 0.40, { wave = "noise", volume = 0.30, release = 0.3 }) end
 	if ev.airstrike then beep(420, 0.10, { wave = "square", sweep = 760, volume = 0.20 }) end
 	if ev.wave_start then beep(520, 0.12, { wave = "square", volume = 0.20 }) end

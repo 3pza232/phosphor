@@ -27,9 +27,10 @@ local AIRSTRIKE_WARN = 0.6
 
 local function hypot(x, y) return math.sqrt(x * x + y * y) end
 
-function Game.new(diff, style)
+function Game.new(diff, style, endless)
 	local self = setmetatable({}, Game)
 	self.diff = diff
+	self.endless = endless or false -- 无尽模式：第 20 波不判通关，继续 21、22…
 	local _, _, pw, ph = phos.screen.playfield()
 	self.MW, self.MH = pw, ph
 	self.map = Map.new(pw, ph, style)
@@ -54,6 +55,8 @@ function Game.new(diff, style)
 	self.fx = {}
 
 	self.airstrike_cd = 0
+	self.heal_count = 0 -- 维修塔累计治疗次数（观测/自测用）
+	self.towers_lost = 0 -- 被敌人拆倒的塔数（观测/自测用）
 	self.build_index = 1 -- 建造面板当前塔型（Towers.ORDER 的下标）
 	self.cx = math.floor(pw / 2)
 	self.cy = math.floor(ph / 2)
@@ -102,7 +105,8 @@ function Game:build(x, y)
 	self.map:set(x, y, Map.TOWER)
 	self.map:compute_field() -- 墙变了：全局寻路场立刻重算（核心博弈点）
 	local t = { type = name, x = x, y = y, level = 1, cd = 0, kills = 0,
-		priority = "FIRST", spent = d.cost }
+		priority = "FIRST", spent = d.cost,
+		hp = d.hp, max_hp = d.hp, hit_t = 0 }
 	self.towers[#self.towers + 1] = t
 	return true
 end
@@ -143,6 +147,35 @@ function Game:cycle_priority(x, y)
 		end
 	end
 	return false
+end
+
+-- ── 塔被拆（敌人 siege）──────────────────────────────────────────────
+-- 敌人站到塔相邻格后每帧按 siege×dt 扣它 hp；归零即倒塌：还地、重算寻路场、
+-- 移出 towers、**无返还**，并给一个倒塌特效与事件（DESIGN §B）。
+function Game:siege_tower(t, amount, e)
+	if t.dead then return end
+	t.hp = t.hp - amount
+	t.hit_t = 0.12 -- 让 view 把这座塔闪红，表现"正在被拆"
+	if t.hp <= 0 then self:collapse_tower(t) end
+end
+
+function Game:collapse_tower(t)
+	t.dead = true
+	t.hp = 0
+	self.towers_lost = self.towers_lost + 1
+	self.map:set(t.x, t.y, Map.GRASS) -- 还地（塔倒墙倒）
+	self.map:compute_field() -- 路可能通了：立即重算，其他人改道
+	self:add_fx({ kind = "collapse", x = t.x + 0.5, y = t.y + 0.5, r = 1.2, color = "gray", t = 0.5 })
+	self.ev.tower_down = true
+end
+
+-- 本帧结束后把倒塌的塔从列表移除（迭代敌人时不宜就地删）。
+function Game:sweep_towers()
+	local kept = {}
+	for _, t in ipairs(self.towers) do
+		if not t.dead then kept[#kept + 1] = t end
+	end
+	self.towers = kept
 end
 
 -- ── 空袭 ─────────────────────────────────────────────────────────────
@@ -187,6 +220,7 @@ end
 
 function Game:add_fx(eff)
 	eff.t = eff.t or 0.2
+	if eff.kind == "heal" then self.heal_count = self.heal_count + 1 end
 	self.fx[#self.fx + 1] = eff
 end
 
@@ -210,8 +244,8 @@ end
 function Game:start_wave()
 	self.wave = self.wave + 1
 	self.phase = "combat"
-	local groups = Waves.groups(self.wave)
-	local f = Waves.factors(self.wave, self.diff)
+	local groups = Waves.groups(self.wave, self.endless)
+	local f = Waves.factors(self.wave, self.diff, self.endless)
 	f.hp = f.hp * Game.ENEMY_HP_MULT
 	self.spawn_factors = f
 	self.groups = {}
@@ -334,6 +368,12 @@ end
 
 function Game:move_enemies(dt)
 	local core = self.map.core
+	-- ctx：把敌人 AI 需要的东西打包（enemies.lua 不持有 game，与 towers 同一套约定）。
+	local ctx = {
+		map = self.map, core = core, towers = self.towers,
+		siege = function(t, amt, e) self:siege_tower(t, amt, e) end,
+		add_fx = function(eff) self:add_fx(eff) end,
+	}
 	for _, e in ipairs(self.enemies) do
 		if not e.dead then
 			local burn = Enemies.tick_effects(e, dt)
@@ -343,12 +383,9 @@ function Game:move_enemies(dt)
 				self.ev.kill = true
 			end
 			if not e.dead then
-				if e.fly then
-					Enemies.move_fly(e, core, dt)
-				else
-					Enemies.move_ground(e, self.map, dt)
-				end
-				if Enemies.at_core(e, core) then
+				Enemies.update(e, ctx, dt)
+				-- 拆塔中的敌人路过磁芯格不算漏（它的目标不是磁芯）
+				if e.mode ~= "tower" and Enemies.at_core(e, core) then
 					e.leaked = true
 					self.core_hp = self.core_hp - e.leak
 					self.ev.leak = true
@@ -356,6 +393,7 @@ function Game:move_enemies(dt)
 			end
 		end
 	end
+	self:sweep_towers() -- 本帧被拆倒的塔在这之后才从列表移除
 end
 
 function Game:sweep()
@@ -374,10 +412,10 @@ function Game:check_end()
 		return
 	end
 	if self:all_spawned() and #self.enemies == 0 and self.phase == "combat" then
-		-- 波清空：发奖金；第 20 波清完即通关
+		-- 波清空：发奖金；第 20 波清完即通关（无尽模式不判通关，继续下一波）
 		self.credits = self.credits + 25 + 4 * self.wave
 		self.ev.wave_clear = true
-		if self.wave >= self.wave_total then
+		if self.wave >= self.wave_total and not self.endless then
 			self.phase = "won"
 			self.ev.won = true
 		else
