@@ -267,7 +267,7 @@ phos.audio.stop_sample(hit)
 配色取自当前主题声明的色板（与 `phos.color` 同源）。
 
 **约定**：坐标为内容区局部坐标（0-based）；`phos.ui` 的**菜单索引同样 0-based**
-（与屏幕坐标一致，避免 C++/Lua 两端基准错位）。
+（与屏幕坐标一致，菜单索引也 0-based）。
 `items` 表本身仍是普通 Lua 数组——两者互不影响。
 
 ```lua
@@ -275,8 +275,8 @@ phos.audio.stop_sample(hit)
 phos.ui.frame(x, y, w, h, "INVENTORY")
 ```
 
-> **`frame` 只画边框，不铺底**。卡带侧的界面样式默认**保留背景**（见 `core/ui.cpp` 的
-> cart style）——卡带的浮窗/边框压在游戏画面上时，不该把底下糊成一块黑板。
+> **`frame` 只画边框，不铺底**。卡带侧的界面样式默认**保留背景**——
+> 卡带的浮窗/边框压在游戏画面上时，不该把底下糊成一块黑板。
 > 因此要一块**不透明浮窗**（挡住世界），得自己先铺底板：
 > `region:clear(fg, bg)`（或 `fill`）铺满，再往上画边框与文字。
 > 这与层的透明规则是同一件事的两面：**只写字形 = 透出世界，给了底色 = 盖住世界**
@@ -462,7 +462,7 @@ end
 - 运行在后台线程，主线程只入队/取队（与外设、音频同一套"主线程不阻塞"的心智）。
 - **房间可广播"是否还接受加入"**：主机开局前 `open = true`，开局后 `phos.net.set_room({ open = false })`；
   搜索方在 `discover()` 结果里读到 `open`，据此提示"游戏中、无法加入"。
-- 设计细节（拓扑、协议、线程、确定性注意）见 `design/networking.md`（开发文档）。
+- 设计细节（拓扑、协议、线程、确定性注意）属引擎内部设计，不随发行包发布。
 
 ```lua
 -- 开房 / 加入
@@ -738,7 +738,7 @@ local r   = phos.sys.random(1, 100) -- 区间随机整数（确定性模式下�
 phos.sys.seed(42)                   -- 重置随机种子
 
 phos.sys.log("debug info")          -- 写主机日志（开发期利器）
-phos.sys.version()                  -- 主机版本（唯一权威来源：core/version.hpp）
+phos.sys.version()                  -- 主机版本（唯一权威来源）
 phos.sys.product()                  -- 产品名 "PHOSPHOR"
 phos.sys.language()                 -- 界面语言 "zh" / "en"（见下）
 phos.sys.capture_escape(true)       -- 接管 Esc：此后 Esc 是普通键（phos.input "escape"），

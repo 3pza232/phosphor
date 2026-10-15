@@ -47,9 +47,8 @@ phosphor --cart carts/mygame                                    # 开窗口试�
 phosphor --cart carts/mygame --headless --frames 300 --dump-screen   # 无头看一眼画面文本
 ```
 
-**改卡带不需要重新构建**：卡带就在 `carts/` 里，存盘再跑就是新的——卡带是 Lua 脚本，
-主机从不编译它。只有两种情况才需要跑 `cmake --build`：改了主机 C++，
-或者改了 `package/` 里的内容（主题 / 模板 / 文档，构建会把它们同步到发行目录）。
+**改卡带不需要"构建"**：卡带是 Lua 脚本，主机不编译它——直接在 `carts/` 里改，存盘再跑就是新的。
+（在开发仓库里，主题 / 模板 / 文档这类内容目录由构建时同步到运行目录；发行包里直接改即可。）
 
 **5. 打包分发**
 
@@ -203,7 +202,7 @@ local Panel = require("ui.panel")  -- ui/panel.lua
 想读**分层**写法，看 `carts/tetris/`（井 / 下落块 / 特效 / 浮窗四层）与
 `carts/worms/`（按**类别**分六层：特效 / 瞄准线 / 角色 / 雨雪天气 / 读数 / 浮窗 ——
 一张大卡带怎么把每类东西放进各自那一层）；
-`devkit/examples/inks/`（同一格叠两笔、只写底色、子位落笔、叠画上限 —— 见 `design/draw-api.md`）。
+`devkit/examples/inks/`（同一格叠两笔、只写底色、子位落笔、叠画上限）。
 
 ## 编辑器补全
 
