@@ -9,7 +9,7 @@
 
 | 对象 | 风格 | 示例 |
 |------|------|------|
-| 类型（class/struct/enum） | `PascalCase` | `ScreenGrid`, `CartLoader` |
+| 类型（class/struct/enum） | `PascalCase` | `Screen`, `Cartridge` |
 | 函数 / 局部变量 | `snake_case` | `load_manifest`, `frame_count` |
 | 成员变量 | `snake_case` 尾部下划线 | `screen_`, `cart_path_` |
 | 常量 / 编译期值 | `kPascalCase` | `kDefaultFps`, `kMaxCarts` |

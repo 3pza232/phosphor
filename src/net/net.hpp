@@ -10,7 +10,7 @@ namespace phos {
 ///
 /// 只做**传输**：连接生命周期、房间（对端列表）、收发消息、发现、可观测。
 /// **不定义同步模型**——锁步 / 行动中继 / 主机权威由卡带自己在 `send`/`poll` 上实现
-/// （见 design/networking.md）。未调用 host/join 时完全休眠（不占端口、不起线程）。
+/// （见 docs/engine/networking.md）。未调用 host/join 时完全休眠（不占端口、不起线程）。
 ///
 /// 线程模型：主线程只把消息压进/取出队列；网络 I/O 全在后台线程（`platform/socket` 的
 /// select 循环）。与 core/audio、agent/control_channel 同一套"主线程不阻塞"的心智。

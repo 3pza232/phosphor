@@ -6,7 +6,7 @@
 local C = phos.color
 
 -- 场景表：x / y 是内容区格坐标，front 是**文本视图**该格应有的字形
--- （文本一格只有一个字形槽，取最前面那一笔；画面里两笔都在，见 design/draw-api.md）
+-- （文本一格只有一个字形槽，取最前面那一笔；画面里两笔都在，见 docs/engine/drawing.md）
 local SCENES = {
   { x = 4, y = 4, front = "|", note = "同格两笔" },
   { x = 10, y = 4, front = "@", note = "底色独立" },

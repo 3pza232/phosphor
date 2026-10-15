@@ -148,8 +148,7 @@ net / input / host / control 多个协作者、且依赖 `HostContext`（api 层
 | `render/screen_image.cpp`（CPU） | 逐格临场光栅化（同样的字体链） | 截图 |
 
 > **画面模型**：字符网格 80×45 格 × 16px（= 1280×720），每格一个字形 + 真彩前景/背景
-> （颜色不是瓶颈，分辨率与字形才是）；CRT 后处理作用于整帧。若要"比字符更细"的颗粒
-> （瓦片/像素层），设计草案与工作量见 `roadmap.md` 第六节。
+> （颜色不是瓶颈，分辨率与字形才是）；CRT 后处理作用于整帧。
 
 ### core/log —— 主机日志
 
@@ -227,8 +226,8 @@ miniaudio 封装：软件混音（波形 / 包络 / 扫频 / 噪声）、采样�
 phosphor/
 ├── CMakeLists.txt
 ├── .gitignore             # 忽略构建产物与运行期生成物
-├── design/                # 设计文档（你正在读的这些）
-├── docs/                  # 使用文档（玩家 / 卡带作者 / API 参考）
+├── docs/                  # 文档：根级 = 发行文档（玩家 / 卡带作者 / API 参考）；
+│                          #        engine/ = 引擎实现文档（你正在读的这些，不随发行包）
 ├── extern/                # 全部第三方依赖（glfw/glad/imgui/lua/sol2/stb/miniaudio/miniz）
 ├── src/                   # 主机源码
 │   ├── main.cpp

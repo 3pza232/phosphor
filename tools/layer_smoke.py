@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""图层冒烟：核对**可选图层**的合成契约（见 design/layers-and-api.md）。
+"""图层冒烟：核对**可选图层**的合成契约（见 docs/engine/layers.md）。
 
 分层是"想用才取用"的新能力，所以这里同时钉住两端：
 

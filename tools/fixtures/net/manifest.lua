@@ -1,6 +1,6 @@
 -- manifest.lua —— 局域网联机的**测试夹具卡带**，供 tools/net_smoke.py 驱动。
 -- 放在 tools/fixtures（**开发目录，不随发行包**）：它测的是引擎的 `phos.net`，
--- 不是给玩家玩的出厂卡带。设计见 design/networking.md。
+-- 不是给玩家玩的出厂卡带。设计见 docs/engine/networking.md。
 return {
   id = "net-demo",
   name = "NET DEMO",

@@ -727,7 +727,7 @@ function phos.debug.toggle(name, get, set) end
 -- phos.net —— 局域网联机（第四代接口）
 --
 -- 只做**传输**：开房 / 加入 / 收发消息 / 局域网发现。同步模型（锁步 / 行动中继 /
--- 主机权威）由卡带自己在 send / poll 上实现。见 design/networking.md。
+-- 主机权威）由卡带自己在 send / poll 上实现。见 docs/engine/networking.md。
 -- 未调用 host / join 时完全休眠（不占端口、不起线程）。
 -- ─────────────────────────────────────────────────────────────────────────
 

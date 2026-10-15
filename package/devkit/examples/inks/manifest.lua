@@ -1,4 +1,4 @@
--- manifest.lua —— 叠加与半格示例卡带（见 design/draw-api.md）。放在 devkit 里而不是出厂列表：
+-- manifest.lua —— 叠加与半格示例卡带（见 docs/engine/drawing.md）。放在 devkit 里而不是出厂列表：
 -- 它是"同一格要放两样东西时怎么用"的样板，也是 tools/draw_smoke.py 的被测对象
 return {
   id = "inks-demo",

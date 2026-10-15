@@ -90,15 +90,15 @@ cmake -G Ninja -DPHOSPHOR_SANITY=ON ../    # 自检构建：慢，只用于排�
 |---|---|
 | `src/` | 主机源码（C++17） |
 | `package/` | 随包分发的内容：`carts/` 出厂卡带、`devkit/` 工具链与模板、`theme/` 内容包、`mods/` 覆盖层 |
-| `docs/` | **使用文档**：玩家手册 / 卡带作者手册 / API 参考 / 格式与内容包 / agent 接口 |
-| `design/` | 开发期设计文档与计划（不随发行包发布） |
+| `docs/` | **文档**：根级 = 发行文档（玩家手册 / 卡带作者手册 / API 参考 / 格式与内容包 / agent 接口）；`docs/engine/` = 引擎实现文档 |
+| `docs/engine/` | 引擎实现文档：分层 / 代码规范 / 绘制模型 / 图层 / 联机（**不随发行包发布**） |
 | `tools/` | 开发脚本（自测、演示、构建期同步） |
 | `tests/` | C++ 纯逻辑单元测试（`phosphor_tests` 目标；由 `run_checks.py` 的 unit 门禁调用） |
 | `build/` | 构建产物，**同时就是可直接分发/试玩的运行目录**：`carts/ devkit/ theme/ mods/ saves/ docs/` 与 exe 同级，全部是真实文件（不含任何路径联接） |
 
 ## 文档
 
-文档分**两层**：`docs/` 随发行包发布（给玩家与作者），`design/` 只在开发仓库里（给引擎开发者）。
+文档分**两层**：`docs/` 根级随发行包发布（给玩家与作者），`docs/engine/` 是引擎实现文档、只在开发仓库里（给引擎开发者）。
 
 ### 使用文档（随发行包发布）
 
@@ -117,11 +117,10 @@ cmake -G Ninja -DPHOSPHOR_SANITY=ON ../    # 自检构建：慢，只用于排�
 
 | 你想 | 去看 |
 |---|---|
-| 分层、目录职责、依赖方向 | [`design/architecture.md`](design/architecture.md) |
-| 代码风格与命名约定 | [`design/code-style.md`](design/code-style.md) |
-| 绘制 API 底层（格 / 子格 / 笔） | [`design/draw-api.md`](design/draw-api.md) |
-| 图层与 API 分层设计 | [`design/layers-and-api.md`](design/layers-and-api.md) |
-| 联机实现（拓扑 / 协议 / 线程） | [`design/networking.md`](design/networking.md) |
-| 路线图与产品设想 | [`design/roadmap.md`](design/roadmap.md) · [`design/vision.md`](design/vision.md) |
+| 分层、目录职责、依赖方向 | [`docs/engine/architecture.md`](docs/engine/architecture.md) |
+| 代码风格与命名约定 | [`docs/engine/code-style.md`](docs/engine/code-style.md) |
+| 绘制模型（格 / 半格 / 叠加 / 底色） | [`docs/engine/drawing.md`](docs/engine/drawing.md) |
+| 图层系统（合成 / 排序 / 按层读） | [`docs/engine/layers.md`](docs/engine/layers.md) |
+| 联机实现（传输 / 发现 / 线程） | [`docs/engine/networking.md`](docs/engine/networking.md) |
 
-入口：[`design/README.md`](design/README.md)。
+入口：[`docs/engine/README.md`](docs/engine/README.md)。

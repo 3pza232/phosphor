@@ -1,4 +1,4 @@
--- manifest.lua —— 图层示例卡带（见 design/layers-and-api.md）。放在 devkit 里而不是出厂列表：
+-- manifest.lua —— 图层示例卡带（见 docs/engine/layers.md）。放在 devkit 里而不是出厂列表：
 -- 它是"新卡带想用分层时怎么用"的样板，出厂卡带一律不改成这种写法
 return {
   id = "layers-demo",

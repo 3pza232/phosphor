@@ -146,7 +146,7 @@ endif()
 
 # --- 程序包组装：exe + package/ 骨架 ---
 # 每次构建都把**面向用户/作者**的内容同步到构建目录：package/（卡带 / devkit / 主题 /
-# mods / saves）与 docs/（发行文档）。引擎开发文档（仓库根的 design/）不进发行包。
+# mods / saves）与 docs/（发行文档）。引擎实现文档（docs/engine/）不进发行包。
 # 合并式复制的规则与告警见 tools/sync_package.cmake
 add_custom_target(assemble_package ALL
     COMMAND ${CMAKE_COMMAND}
