@@ -255,7 +255,7 @@ return {
 | 文件夹 | 风格 |
 |--------|------|
 | `default` | ARCADE BLIPS：方波短促提示声（出厂默认） |
-| `soft` | SOFT TONES：正弦波、慢起落，深夜友好 |
+| `soft` | SOFT TONES：正弦波，起振 / 释放较慢，音量较低 |
 | `relay` | RELAY CLACK：噪声与低频咔哒，机电继电器质感 |
 | `chip` | CHIP BEEP：8 位芯片音，方波短促跳脱 |
 | `deep` | DEEP HULL：低频厚重，机箱共振的沉响 |

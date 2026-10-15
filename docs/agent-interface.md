@@ -136,6 +136,8 @@ phosphor --pack carts/snake --json
 ### `state.query` 字段表
 
 `state.query` 的响应是一个扁平对象，按下表读；`id` / `ok` 之外全部同级展开。
+其中 `debug` 字段是卡带 `debug_state()` 返回结果的**完整** JSON 序列化（大小随该表增长）；
+`debug_params` 同理（逐项调用各参数的 `get`）。
 
 | 字段 | 含义 |
 |------|------|

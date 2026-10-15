@@ -74,7 +74,7 @@ phos.screen.plot(x2, y2, fg)           -- 在**子位**上落一笔：(x2,y2) �
 phos.screen.quadrant(bits)             -- 位掩码 → 象限字形（1 左上 / 2 右上 / 4 左下 / 8 右下）
 phos.screen.cell_of(x2, y2)            -- 子格坐标 → 格坐标 + 子位（引擎唯一的这套换算）
 
--- 读取（调试/AI 友好，性能开销由主机吸收） --
+-- 读取（调试与 agent 用；性能开销由主机承担） --
 ch, fg, bg = phos.screen.get(x, y)
 ```
 
