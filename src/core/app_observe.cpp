@@ -53,7 +53,7 @@ void App::fill_debug_info(DebugInfo& info) {
     info.boot_name = packs_.boots.empty()
                          ? "(built-in)"
                          : packs_.boots[static_cast<size_t>(packs_.boot_index)].name;
-    info.shelf_style = shell_.shelf_style() == ShelfStyle::list ? "list" : "window";
+    info.shelf_style = config_.shelf_style;  // list / window / 某个 shelf 包 id（apply_shelf 维护）
     info.crt_level_name = crt_level_name(config_.crt_level);
     info.music_volume = shell_.music_volume();
     info.sfx_volume = shell_.sfx_volume();

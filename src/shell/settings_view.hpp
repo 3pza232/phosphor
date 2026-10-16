@@ -34,7 +34,10 @@ struct SettingsContext {
     int crt_level = kDefaultCrtLevel;
     int fps = kDefaultFps;
     int music_volume = kDefaultMusicVolume, sfx_volume = kDefaultSfxVolume;
-    bool window_style = true;
+    /// 卡带架样式候选项与当前项：`[LIST, WINDOW, <shelf 包名…>]`，
+    /// index 0 = list、1 = window、2+i = 第 i 个 shelf 包
+    std::vector<std::string> shelves;
+    int shelf_index = 1;
     int font_px = kDefaultFontPx;  // 当前生效字号（= 单元格边长）
     Lang lang = Lang::zh;  // 界面语言：设置界面自己的文案也要跟着切
     int lang_index = 0;    // 语言在可选列表里的下标（0 = 中文，1 = 英文）

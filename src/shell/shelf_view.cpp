@@ -111,8 +111,8 @@ std::string display_name(const CartInfo& cart, Lang lang) {
     return cart.error.empty() ? name : name + tr(lang, Msg::shelf_broken);
 }
 
-void draw(Screen& screen, const ui::Rect& content, const ShelfView& view,
-          const ui::Style& style) {
+void draw_builtin(Screen& screen, const ui::Rect& content, const ShelfView& view,
+                  const ui::Style& style) {
     if (!view.carts || view.carts->empty()) {
         draw_empty(screen, content, style, view.lang);
         return;
@@ -121,6 +121,22 @@ void draw(Screen& screen, const ui::Rect& content, const ShelfView& view,
         draw_list(screen, content, view, style);
     else
         draw_window(screen, content, view, style);
+}
+
+void draw(Screen& screen, const ui::Rect& content, const ShelfView& view, const ui::Style& style,
+          const Painter& painter) {
+    // 空列表：主机自己画提示，绝不调用内容包（包不负责"没有内容"这件事）
+    if (!view.carts || view.carts->empty()) {
+        draw_empty(screen, content, style, view.lang);
+        return;
+    }
+    // 内容包接管内容区：仅当视图标记为外部且画家确实存在。画家缺失即回退内置——
+    // 包损坏/被删时内容区仍画得出来
+    if (view.external && painter) {
+        painter(screen, content, view, style);
+        return;
+    }
+    draw_builtin(screen, content, view, style);
 }
 
 } // namespace phos::shelf

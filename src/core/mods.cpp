@@ -16,7 +16,7 @@ namespace fs = std::filesystem;
 struct Registry {
     bool built = false;
     std::vector<std::string> names;
-    std::map<std::string, std::string> overrides;  // "<目标id>/<路径>" → 落盘路径（后到者胜）
+    std::map<std::string, std::string> overrides;  // "<目标id>/<路径>" → 落盘路径
 };
 
 Registry& registry() {
@@ -29,22 +29,27 @@ void build(Registry& r) {
     std::error_code ec;
     if (!fs::is_directory("mods", ec)) return;
 
-    for (fs::directory_iterator it("mods", ec), end; it != end && !ec; it.increment(ec)) {
-        if (it->is_directory(ec)) r.names.push_back(it->path().filename().string());
+    // 扁平规则：`mods/` 下的相对路径**本身就是覆盖键** `<目标id>/<目标内路径>`，
+    // 不再有 `overrides/` 与"随意命名的 mod 外层"。例：
+    //   mods/snake/panel.lua      → 覆盖 snake 的 panel.lua
+    //   mods/default/font.lua     → 覆盖 default 字体方案
+    //   mods/graphite/skin.lua    → 覆盖 graphite 主题
+    // 一个键在一个文件系统里只有一份 → 不再有"多 mod 叠层"，也就没有"谁盖谁"的歧义。
+    std::vector<std::string> tops;
+    for (fs::recursive_directory_iterator it("mods", ec), end; it != end && !ec; it.increment(ec)) {
+        if (!it->is_regular_file(ec)) continue;
+        const fs::path rel = fs::relative(it->path(), "mods", ec);
+        if (rel.empty()) continue;
+        // 键必须形如 "<目标id>/<路径>"：根目录下的裸文件（只有一段）定位不到目标，忽略
+        const std::string key = rel.generic_string();
+        if (key.find('/') == std::string::npos) continue;
+        std::string top = rel.begin()->string();  // 顶层第一段 = 目标 id；日志按它归类
+        if (std::find(tops.begin(), tops.end(), top) == tops.end()) tops.push_back(top);
+        r.overrides[key] = it->path().generic_string();
     }
-    std::sort(r.names.begin(), r.names.end());  // 目录名排序 = 应用顺序（后者覆盖前者）
 
-    for (const std::string& name : r.names) {
-        const fs::path over = fs::path("mods") / name / "overrides";
-        if (!fs::is_directory(over, ec)) continue;
-        for (fs::recursive_directory_iterator it(over, ec), end; it != end && !ec; it.increment(ec)) {
-            if (!it->is_regular_file(ec)) continue;
-            // 键 = 相对 overrides/ 的路径（即 "<目标id>/<目标内路径>"）
-            const std::string key = fs::relative(it->path(), over, ec).generic_string();
-            if (!key.empty()) r.overrides[key] = it->path().generic_string();  // 后到者胜
-        }
-    }
-
+    std::sort(tops.begin(), tops.end());
+    r.names = std::move(tops);
     if (!r.names.empty()) {
         std::string list;
         for (const std::string& n : r.names) list += (list.empty() ? "" : ", ") + n;

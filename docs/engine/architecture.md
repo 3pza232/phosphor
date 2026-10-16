@@ -177,13 +177,18 @@ net / input / host / control 多个协作者、且依赖 `HostContext`（api 层
 开机动画播放、待机画面、卡带架、系统菜单（Esc 呼出）、机身装饰渲染。
 shell 与卡带**地位平等**——它是主机自带的"系统卡带"，通过同一套 Screen/API 能力工作。
 
+卡带架样式可由内容包（`shelf` 包）接管内容区绘制：`Shell` 持有一个可选的
+painter 回调（`shelf::Painter`），`ShelfView.external` 标记"内容区由外部画家接管"；
+App 在激活内容包时挂上回调、页面模式下每帧跑包的 Lua（组件上下文来自 `ShelfView`
++ 内容区配色），画家为空即回退内置样式。输入仍全归主机——包只画，不处理输入。
+
 为保持文件职责单一，外壳按视图拆分：
 
 | 文件 | 职责 |
 |------|------|
 | `shell.cpp` | 外壳状态、各模式的输入意图、机身与公共装饰（标题栏 / 页脚） |
 | `shell/layout.hpp` | 全机统一的外壳布局常量（`ShellLayout`）：各模块共用一套边距，谁也不另写一份 |
-| `shell/shelf_view.cpp` | 卡带架两种样式的渲染（列表 / 视窗轮播） |
+| `shell/shelf_view.cpp` | 卡带架两种内置样式的渲染（列表 / 视窗轮播）；也可把内容区交给画家回调 |
 | `shell/settings_view.cpp` | 设置项的布局、分区与取值显示 |
 | `shell/tape_view.cpp` | 磁带码界面：状态、输入、滚动与绘制（`tape::ScreenState`），外壳只给它数据与画外框 |
 | `shell/boot_view.cpp` | 没有启动动画包时的内置自检屏 |
@@ -234,7 +239,7 @@ phosphor/
 │   ├── agent/  api/  cart/  core/  devkit/  pack/  platform/  render/  shell/
 ├── package/               # 程序包内容源（构建时整份复制到输出目录）
 │   ├── carts/             # 出厂卡带（snake / bricks / life / chomp / runner / tetris / worms）
-│   ├── theme/             # 出厂内容包：skin / boot / palette / sound / font，另有 icon 窗口图标
+│   ├── theme/             # 出厂内容包：skin / boot / shelf / palette / sound / font，另有 icon 窗口图标
 │   ├── devkit/            # 模板卡带 / phos.lua 注解 / 说明
 │   └── mods/  saves/      # 覆盖层与存档目录（各带 README 引导）
 ├── tools/                 # 主机侧验证与演示脚本（Python）
@@ -272,6 +277,7 @@ PHOSPHOR/
 ├── theme/                 # 内容区（出厂默认包随发行版提供），每个子文件夹有 README.txt 引导
 │   ├── skin/     外壳皮肤
 │   ├── boot/     启动动画
+│   ├── shelf/    卡带架样式（内容区绘制脚本）
 │   ├── palette/  显像管配色与 CRT 参数
 │   ├── sound/    音效包
 │   ├── font/     字体方案（default 方案含中文思源黑体）

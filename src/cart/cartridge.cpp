@@ -195,6 +195,96 @@ bool Cartridge::load_entry(const std::string& pack_dir, const std::string& entry
     return assemble(entry, host);
 }
 
+bool Cartridge::load_shelf(const std::string& pack_dir, HostContext& host) {
+    files_ = CartFiles::open(pack_dir);
+    if (!files_.valid()) {
+        error_ = "shelf pack path not found: " + pack_dir;
+        return false;
+    }
+    info_.id = "host-shelf";
+    info_.name.zh = "shelf.lua";
+    host.save = nullptr;  // 卡带架样式包与存档无关
+    if (!assemble("shelf.lua", host)) return false;
+    // draw(ctx) 是这类包的契约本身：缺了它整包不可用，由调用方回退内置样式。
+    // （不像卡带/动画那样"没有 draw 就什么都不画"——那会留一块空白内容区）
+    if (!draw_fn_.valid()) {
+        error_ = "shelf.lua must define draw(ctx)";
+        return false;
+    }
+    return true;
+}
+
+bool Cartridge::shelf_draw(const ShelfDrawContext& c) {
+    if (!draw_fn_.valid()) return false;
+
+    // 组装只读 ctx：carts 按当前搜索过滤后的顺序给，cursor 转 1 基（Lua 习惯）。
+    // 颜色也走表，包用 phos.color.rgb 还原——引擎不替内容定色
+    sol::table ctx = lua_.create_table();
+    sol::table carts = lua_.create_table();
+    if (c.carts) {
+        int index = 1;
+        for (const CartInfo& cart : *c.carts) {
+            sol::table entry = lua_.create_table();
+            entry["name"] = cart.name.get(c.english);
+            entry["desc"] = cart.desc.get(c.english);
+            sol::table rows = lua_.create_table();
+            for (size_t i = 0; i < cart.icon_rows.size(); ++i)
+                rows[i + 1] = cart.icon_rows[i];
+            entry["icon_rows"] = rows;
+            sol::table colors = lua_.create_table();
+            for (const auto& kv : cart.icon_colors) {
+                sol::table rgb = lua_.create_table();
+                rgb["r"] = kv.second.r;
+                rgb["g"] = kv.second.g;
+                rgb["b"] = kv.second.b;
+                colors[std::string(1, kv.first)] = rgb;
+            }
+            entry["icon_colors"] = colors;
+            entry["broken"] = !cart.error.empty();
+            carts[index++] = entry;
+        }
+    }
+    ctx["carts"] = carts;
+    ctx["cursor"] = c.cursor + 1;
+    ctx["count"] = c.carts ? static_cast<int>(c.carts->size()) : 0;
+
+    sol::table content = lua_.create_table();
+    content["x"] = c.content_x;
+    content["y"] = c.content_y;
+    content["w"] = c.content_w;
+    content["h"] = c.content_h;
+    ctx["content"] = content;
+
+    ctx["lang"] = c.english ? "en" : "zh";
+
+    sol::table colors = lua_.create_table();
+    const auto put_color = [this, &colors](const char* key, const Color& color) {
+        sol::table rgb = lua_.create_table();
+        rgb["r"] = color.r;
+        rgb["g"] = color.g;
+        rgb["b"] = color.b;
+        colors[key] = rgb;
+    };
+    put_color("fg", c.fg);
+    put_color("accent", c.accent);
+    put_color("frame", c.frame);
+    put_color("dim", c.dim);
+    put_color("bg", c.bg);
+    put_color("panel", c.panel);
+    ctx["colors"] = colors;
+
+    ctx["time"] = c.time;
+
+    WatchdogScope guard;  // 包脚本每帧都跑，看门狗与卡带同一道闸
+    const sol::protected_function_result result = draw_fn_(ctx);
+    if (!result.valid()) {
+        sol::error err = result;
+        error_ = std::string("shelf error in draw: ") + err.what();
+        return false;
+    }
+    return true;
+}
+
 bool Cartridge::assemble(const std::string& entry, HostContext& host) {
     host.cart_files = &files_;  // 包内资源（音频等）对本卡带开放
     host.cart_info = &info_;    // 身份也要在脚本之前就位：init() 里往往就要用（phos.cart）

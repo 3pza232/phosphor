@@ -48,6 +48,7 @@ public:
         bool sound_changed = false;
         int sound_index = -1;
         bool shelf_style_changed = false;
+        int shelf_index = -1;  // 卡带架样式候选项下标：0=list、1=window、2+i=第 i 个 shelf 包
         bool crt_changed = false;
         bool fps_changed = false;   // 画面刷新率已改（节流在主循环里，界面自己不改硬件）
         bool music_volume_changed = false;
@@ -89,8 +90,12 @@ public:
     void set_tape_result(TapeResult result) { tape_.set_result(result); }
     /// 切到磁带码界面（从暂停菜单进入）
     void to_tape();
-    /// 卡带架样式：列表 / 橱窗
-    void set_shelf_style(ShelfStyle style);
+    /// 告知可选的卡带架样式包名与当前项。候选项是 `[LIST, WINDOW, <包名…>]`，
+    /// `active` = 0（list）/ 1（window）/ 2+i（第 i 个包）
+    void set_shelves(std::vector<std::string> names, int active);
+    /// 设置卡带架内容区的绘制回调。非空 = 内容区由内容包接管（ShelfView 标记 external）；
+    /// 清空即回退内置样式 —— 包加载失败时 App 就是这样兜底的
+    void set_shelf_painter(shelf::Painter painter) { shelf_painter_ = std::move(painter); }
     /// 当前菜单光标位置（-1 = 当前模式没有"可选项列表"）。供 agent 驱动界面时读回，
     /// 免得靠"按几下"去猜——菜单项一增减，猜的次数就全错。
     int cursor() const {
@@ -135,7 +140,8 @@ public:
     bool settings_on_sound_row() const;
 
     ShellMode mode() const { return mode_; }
-    ShelfStyle shelf_style() const { return shelf_style_; }
+    /// 当前卡带架样式候选项下标（0=list、1=window、2+i=第 i 个包）
+    int shelf_index() const { return shelf_index_; }
     /// 当前主题（外壳）：转场特效等系统绘制取它的配色
     const Skin& skin() const { return skin_; }
     int crt_level() const { return crt_level_; }
@@ -197,7 +203,12 @@ private:
     std::vector<CartInfo> carts_;
     int shelf_cursor_ = 0;
     float shelf_pos_ = 0.0f;
-    ShelfStyle shelf_style_ = ShelfStyle::window;
+    /// 卡带架样式候选项 `[LIST, WINDOW, <shelf 包名…>]` 与当前下标。
+    /// 默认 1 = window（与出厂配置一致）
+    std::vector<std::string> shelf_names_;
+    int shelf_index_ = 1;
+    /// 内容区绘制回调（内容包接管时非空；见 shelf::Painter）
+    shelf::Painter shelf_painter_;
     ShelfSearch shelf_search_;
     int settings_cursor_ = 0;
     int fps_ = kDefaultFps;

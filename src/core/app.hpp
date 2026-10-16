@@ -87,6 +87,14 @@ private:
     void apply_font_scheme(int index, class Renderer* renderer, class Window* window);
     void apply_boot(int index);
     void apply_sound(int index);
+    /// 应用卡带架样式候选项（0=list、1=window、2+i=第 i 个 shelf 包）：
+    /// 切到包时加载其 shelf.lua 并把内容区交给它绘制；切回内置或加载失败则清掉包脚本。
+    /// 找不到包 / 包坏了 → 安静回退 window + 日志告警
+    void apply_shelf(int select);
+    /// 内容包绘制回调：把架子状态翻成 ctx 交给当前 shelf 包的 draw(ctx)；
+    /// 包缺失或本帧报错则当帧回退内置样式
+    void draw_shelf_content(Screen& screen, const ui::Rect& content, const ShelfView& view,
+                            const ui::Style& style);
     void apply_crt(int level, class Renderer* renderer);
     void start_boot_animation();
     void save_config_now();
@@ -155,6 +163,11 @@ private:
     Shell shell_;
     std::unique_ptr<Cartridge> cart_;
     std::unique_ptr<Cartridge> boot_script_;
+    /// 当前卡带架样式包脚本（`theme/shelf/<id>/shelf.lua`）；无包时为 nullptr
+    std::unique_ptr<Cartridge> shelf_script_;
+    /// 卡带架自己的时钟（秒）：供内容包做动画。与 host_.time 分开——
+    /// 架子不是卡带，不该借用卡带的时间线
+    float shelf_time_ = 0.0f;
 
     bool playing_ = false;
     bool in_boot_ = true;

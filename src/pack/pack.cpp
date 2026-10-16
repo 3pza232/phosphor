@@ -243,6 +243,23 @@ std::vector<BootPack> scan_boots(const std::string& dir) {
     });
 }
 
+std::vector<ShelfPack> scan_shelves(const std::string& dir) {
+    return scan_pack_dirs<ShelfPack>(dir, [](const std::filesystem::path& path, ShelfPack& out) {
+        namespace fs = std::filesystem;
+        std::error_code ec;
+        // 主脚本固定为 shelf.lua（与 boot 的 main.lua 同一约定：入口名写死，不看目录内容猜）
+        const std::string shelf_path = pack_script_path(path.string(), "shelf.lua");
+        if (!fs::is_regular_file(shelf_path, ec)) {
+            log::warn("shelf pack skipped (no shelf.lua): " + path.string());
+            return false;
+        }
+        out.id = path.filename().string();
+        out.name = out.id;  // 显示名 = 文件夹名
+        out.dir = path.string();
+        return true;
+    });
+}
+
 std::vector<SoundPack> scan_sounds(const std::string& dir) {
     return scan_pack_dirs<SoundPack>(dir, [](const std::filesystem::path& path, SoundPack& out) {
         namespace fs = std::filesystem;

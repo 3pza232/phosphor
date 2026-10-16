@@ -171,6 +171,9 @@ std::string App::control_state_json() const {
         << ",\"boot_ids\":" << pack_json(packs_.boots, by_id)
         << ",\"sound\":" << pack_json(packs_.sounds, by_name)
         << ",\"sound_ids\":" << pack_json(packs_.sounds, by_id)
+        // 卡带架样式包：与其它内容包同一份清单（显示名 + 稳定 id），当前选中项见 config.shelf_style
+        << ",\"shelf\":" << pack_json(packs_.shelves, by_name)
+        << ",\"shelf_ids\":" << pack_json(packs_.shelves, by_id)
         << ",\"font\":[";
     for (size_t i = 0; i < font_schemes_.size(); ++i)
         out << (i ? "," : "") << json::quote(font_schemes_[i]);

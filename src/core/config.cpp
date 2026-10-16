@@ -76,8 +76,9 @@ Config load_config(const std::string& path) {
                               ? kMinFontPx
                               : (font_size > kMaxFontPxCeiling ? kMaxFontPxCeiling : font_size));
 
-    const std::string shelf_style = pick(&root, "shelf_style", cfg.shelf_style);
-    if (shelf_style == "list" || shelf_style == "window") cfg.shelf_style = shelf_style;
+    // 卡带架样式：`list` / `window` / 某个 shelf 包 id。这里不判"包是否存在"——
+    // 加载配置时还没扫内容包，是否有对应包由内容库在扫描后裁决（找不到回退 window）
+    cfg.shelf_style = pick(&root, "shelf_style", cfg.shelf_style);
 
     const int level = pick_int(&root, "crt_level", kDefaultCrtLevel);
     cfg.crt_level = level < 0 ? 0 : (level >= kCrtLevelCount ? kCrtLevelCount - 1 : level);

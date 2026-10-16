@@ -560,7 +560,9 @@ TEST(config_clamps_and_validates) {
     CHECK_EQ(c.music_volume, 100);                    // 越界钳到 0..100
     CHECK_EQ(c.sfx_volume, 0);
     CHECK_EQ(c.fps, 60);                              // 90 落到最近档（|60-90| 与 |120-90| 并列，取更小）
-    CHECK_EQ(c.shelf_style, std::string("window"));   // 未知样式忽略、保持默认
+    // 卡带架样式名原样保留：它可以是 list / window，也可以是某个 shelf 包 id。
+    // "有没有对应包"由内容库在扫描后裁决（找不到回退 window），配置层不替它判断
+    CHECK_EQ(c.shelf_style, std::string("bogus"));
     std::error_code ec;
     std::filesystem::remove(path, ec);
 }

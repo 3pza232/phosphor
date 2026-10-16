@@ -64,7 +64,11 @@ void Shell::set_sounds(std::vector<std::string> names, int active) {
         sound_index_ = active;
 }
 
-void Shell::set_shelf_style(ShelfStyle style) { shelf_style_ = style; }
+void Shell::set_shelves(std::vector<std::string> names, int active) {
+    shelf_names_ = std::move(names);
+    const int count = 2 + static_cast<int>(shelf_names_.size());
+    shelf_index_ = (active >= 0 && active < count) ? active : 1;  // 越界回退 window
+}
 
 void Shell::open_settings() {
     // 设置只在**卡带架**（主机主界面）唤起。暂停/磁带码等是在运行中的卡带之上开的浮层，
@@ -211,8 +215,8 @@ Shell::Intent Shell::update_shelf(const Input& input) {
         };
         if (input.pressed(Key::left))  move(-1);
         if (input.pressed(Key::right)) move(1);
-        if (shelf_style_ == ShelfStyle::list) {
-            // 列表样式下用上下键更符合直觉
+        if (shelf_index_ == 0) {
+            // 列表样式下用上下键更符合直觉（内容包挂接不改变主机按键语义）
             if (input.pressed(Key::up))   move(-1);
             if (input.pressed(Key::down)) move(1);
         }
@@ -322,13 +326,17 @@ Shell::Intent Shell::update_settings(const Input& input) {
                 intent.boot_index = boot_index_;
             }
             break;
-        case SettingId::shelf_view:
-            if (adjust) {
-                shelf_style_ =
-                    shelf_style_ == ShelfStyle::list ? ShelfStyle::window : ShelfStyle::list;
-                intent.shelf_style_changed = true;
-            }
+        case SettingId::shelf_view: {
+            if (!adjust) break;
+            // 候选项 = [LIST, WINDOW, <shelf 包名…>]：左右键（或 Enter）在整份列表上循环。
+            // 选中包时把下标交给 App，由它加载对应的 shelf.lua 并把内容区交给它绘制
+            const int count = 2 + static_cast<int>(shelf_names_.size());
+            const int step = right ? 1 : count - 1;
+            shelf_index_ = (shelf_index_ + step) % count;
+            intent.shelf_style_changed = true;
+            intent.shelf_index = shelf_index_;
             break;
+        }
         case SettingId::language:
             if (adjust) {
                 lang_ = lang_ == Lang::zh ? Lang::en : Lang::zh;  // 两选一，直接翻面
@@ -379,7 +387,9 @@ ShelfView Shell::shelf_view(const std::vector<CartInfo>& shown, int cursor) cons
     // 搜索生效时不做滑动动效：那个动效状态是按**整表**下标攒的，过滤后下标含义变了，
     // 混用会让图标来回窜。瞬时定位更好——搜东西时没人想等动画
     const float position = shelf_search_.visible() ? static_cast<float>(cursor) : shelf_pos_;
-    return ShelfView{&shown, shelf_style_, cursor, position, lang_};
+    // 内置样式只区分 list / window；有画家 = 内容区由内容包接管（external 标记）
+    const ShelfStyle style = shelf_index_ == 0 ? ShelfStyle::list : ShelfStyle::window;
+    return ShelfView{&shown, style, cursor, position, lang_, static_cast<bool>(shelf_painter_)};
 }
 
 // ---------------------------------------------------------------- 绘制
@@ -488,7 +498,7 @@ void Shell::draw_shelf(Screen& screen) const {
     draw_chrome(screen, tr(lang_, Msg::shelf_title), counter);
 
     const ui::Rect content = content_rect();
-    shelf::draw(screen, content, shelf_view(shown, shown_cursor), style_);
+    shelf::draw(screen, content, shelf_view(shown, shown_cursor), style_, shelf_painter_);
 
     if (shelf_search_.visible()) {
         // 搜索框压在上栏区域的居中位置：盖住标题与计数是有意的——正在搜索时，
@@ -527,7 +537,8 @@ void Shell::draw_settings(Screen& screen) const {
     ctx.fps = fps_;
     ctx.music_volume = music_volume_;
     ctx.sfx_volume = sfx_volume_;
-    ctx.window_style = shelf_style_ == ShelfStyle::window;
+    ctx.shelves = shelf_names_;
+    ctx.shelf_index = shelf_index_;
     ctx.font_px = font_px_;
     ctx.lang = lang_;
     ctx.lang_index = lang_ == Lang::en ? 1 : 0;

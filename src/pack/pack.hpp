@@ -31,6 +31,16 @@ struct BootPack {
 /// 扫描 theme/boot/ 下全部启动动画包
 std::vector<BootPack> scan_boots(const std::string& dir);
 
+/// 卡带架样式包（只需 shelf.lua：可选 update(dt)，必须有 draw(ctx)）
+struct ShelfPack {
+    std::string id;
+    std::string name;
+    std::string dir;
+};
+
+/// 扫描 theme/shelf/ 下全部卡带架样式包
+std::vector<ShelfPack> scan_shelves(const std::string& dir);
+
 /// 音效包：主机事件 → 合成参数（或包内音频文件）
 struct SoundPack {
     std::string id;

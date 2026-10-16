@@ -101,8 +101,7 @@ void App::handle_intent(const Shell::Intent& intent, Renderer* renderer, Window*
     }
     if (intent.preview_sound) play_event("confirm");  // 音效行 Enter：试听当前音效包
     if (intent.shelf_style_changed) {
-        config_.shelf_style = shell_.shelf_style() == ShelfStyle::list ? "list" : "window";
-        save_config_now();
+        apply_shelf(intent.shelf_index);  // 选中包时加载脚本并把内容区交给它；否则用内置样式
         log::info("setting shelf_style=" + config_.shelf_style);
     }
     if (intent.music_volume_changed) {

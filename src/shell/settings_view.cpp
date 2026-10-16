@@ -97,9 +97,17 @@ std::string row_text(SettingId id, const SettingsContext& ctx) {
         case SettingId::boot:
             return label(lang, Msg::row_boot) + "< " +
                    pick(ctx.boots, ctx.boot_index, tr(lang, Msg::value_builtin)) + " >";
-        case SettingId::shelf_view:
-            return label(lang, Msg::row_shelf_view) + "< " +
-                   tr(lang, ctx.window_style ? Msg::value_window : Msg::value_list) + " >";
+        case SettingId::shelf_view: {
+            std::string name;
+            if (ctx.shelf_index == 0)
+                name = tr(lang, Msg::value_list);
+            else if (ctx.shelf_index >= 2 &&
+                     ctx.shelf_index - 2 < static_cast<int>(ctx.shelves.size()))
+                name = ctx.shelves[static_cast<size_t>(ctx.shelf_index - 2)];  // 内容包名 = 文件夹名
+            else
+                name = tr(lang, Msg::value_window);
+            return label(lang, Msg::row_shelf_view) + "< " + name + " >";
+        }
         case SettingId::language:
             return label(lang, Msg::row_language) + "< " +
                    tr(lang, ctx.lang_index == 0 ? Msg::language_zh : Msg::language_en) + " >";

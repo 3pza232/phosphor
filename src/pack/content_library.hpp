@@ -24,11 +24,15 @@ struct ContentLibrary {
     std::vector<Palette> palettes;
     std::vector<BootPack> boots;
     std::vector<SoundPack> sounds;
+    std::vector<ShelfPack> shelves;
 
     int skin_index = 0;
     int palette_index = 0;  // 由当前主题的 skin.palette 解析得出
     int boot_index = 0;
     int sound_index = 0;
+    /// 当前卡带架样式包的下标；`-1` = 用主机内置样式（`list` / `window`）。
+    /// 与其它列表不同：内置样式不是包，所以没有"索引 0 恒有效"的保证
+    int shelf_index = -1;
 
     /// 扫描用户区 + 出厂区并按配置里的选择定位各索引。
     /// 目录缺失 / 包损坏只是少几项，绝不抛（回退见文件头的不变量）。

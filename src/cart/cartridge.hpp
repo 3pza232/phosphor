@@ -22,6 +22,20 @@ namespace phos {
 /// 失败时填充 info.error。
 CartInfo parse_manifest(const std::string& manifest_text, const std::string& cart_path);
 
+/// 卡带架样式包的绘制上下文：App 每帧组装，Cartridge 翻成只读 Lua 表交给 `draw(ctx)`。
+/// 纯数据、不含 sol 类型——调用方（App）不必接触 Lua，就能把架子状态喂给内容包。
+struct ShelfDrawContext {
+    const std::vector<CartInfo>* carts = nullptr;  // 已按搜索过滤的卡带（1 基 cursor 与它配套）
+    int cursor = 0;                                // 选中项（0 基）
+    int content_x = 0, content_y = 0;              // 内容区（相对整屏网格）
+    int content_w = 0, content_h = 0;
+    bool english = false;                          // ctx.lang（"en" / "zh"）
+    // 界面配色（取自卡带架所用的 ui::Style + 主题面板色）：包照搬上色，不写死 rgb
+    Color fg{0, 0, 0}, accent{0, 0, 0}, frame{0, 0, 0};
+    Color dim{0, 0, 0}, bg{0, 0, 0}, panel{0, 0, 0};
+    float time = 0.0f;  // 供动画（卡带架自己的时钟，不掺墙钟）
+};
+
 /// 一张已加载的卡带（或主机自带的 Lua 动画脚本，如皮肤的开机动画）：
 /// 独立 Lua 沙箱 + 生命周期。主机永不因卡带而死：一切 Lua 错误被捕获。
 class Cartridge {
@@ -31,6 +45,13 @@ public:
 
     /// 加载包内任意入口脚本（用于 skin 的 boot.lua 等主机脚本，不要求 manifest）
     bool load_entry(const std::string& pack_dir, const std::string& entry, HostContext& host);
+
+    /// 加载卡带架样式包（`theme/shelf/<id>/shelf.lua`）。契约：必须有 `draw(ctx)`，
+    /// `update(dt)` 可选；不满足则整包判为不可用（回退内置样式由调用方处理）
+    bool load_shelf(const std::string& pack_dir, HostContext& host);
+
+    /// 组装只读 ctx 表并调用包的 `draw(ctx)`。返回 false = 脚本报错（调用方回退内置）
+    bool shelf_draw(const ShelfDrawContext& ctx);
 
     /// 每逻辑帧调用。Lua 错误返回 false（此后卡带不可再用）。
     bool update(float dt);

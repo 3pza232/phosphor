@@ -174,6 +174,88 @@ void App::apply_sound(int index) {
 }
 
 
+void App::apply_shelf(int select) {
+    const int count = 2 + static_cast<int>(packs_.shelves.size());
+    if (select < 0 || select >= count) return;
+
+    // 先卸下旧包脚本（连同它留下的 host 指针），并收回画家：新选择可能是内置样式，
+    // 也可能加载失败——两种情况下内容区都必须能立即回退
+    if (shelf_script_) {
+        shelf_script_.reset();
+        clear_host_cart();
+    }
+    shell_.set_shelf_painter({});
+    shelf_time_ = 0.0f;
+
+    if (select == 0) {
+        config_.shelf_style = "list";
+    } else if (select == 1) {
+        config_.shelf_style = "window";
+    } else {
+        const ShelfPack& pack = packs_.shelves[static_cast<size_t>(select - 2)];
+        auto script = std::make_unique<Cartridge>();
+        if (script->load_shelf(pack.dir, host_)) {
+            shelf_script_ = std::move(script);
+            config_.shelf_style = pack.id;
+            // 画家只在脚本可用时挂上：外部标记与它同步（见 Shell::shelf_view），
+            // 于是"包在不在"与"内容区交给谁画"永远一致
+            shell_.set_shelf_painter([this](Screen& screen, const ui::Rect& content,
+                                            const ShelfView& view, const ui::Style& style) {
+                draw_shelf_content(screen, content, view, style);
+            });
+        } else {
+            // 包不可用（缺 shelf.lua / 缺 draw(ctx) / 语法错）：安静回退内置视窗样式并留痕
+            log::warn("shelf pack unusable, falling back to window: " + script->error());
+            select = 1;
+            config_.shelf_style = "window";
+        }
+    }
+
+    std::vector<std::string> names;
+    names.reserve(packs_.shelves.size());
+    for (const auto& shelf : packs_.shelves) names.push_back(shelf.name);  // 显示名 = 文件夹名
+    shell_.set_shelves(std::move(names), select);
+    packs_.shelf_index = select >= 2 ? select - 2 : -1;
+    save_config_now();
+}
+
+
+void App::draw_shelf_content(Screen& screen, const ui::Rect& content, const ShelfView& view,
+                             const ui::Style& style) {
+    if (!shelf_script_) {  // 脚本已在别处卸下：本帧直接回退内置样式
+        shelf::draw_builtin(screen, content, view, style);
+        return;
+    }
+
+    // 把架子状态翻成只读 ctx：颜色取自卡带架所用的 ui::Style + 主题面板色，
+    // 内容包照搬上色，引擎不替内容定色
+    ShelfDrawContext ctx;
+    ctx.carts = view.carts;
+    ctx.cursor = view.cursor;
+    ctx.content_x = content.x;
+    ctx.content_y = content.y;
+    ctx.content_w = content.w;
+    ctx.content_h = content.h;
+    ctx.english = view.lang == Lang::en;
+    ctx.fg = style.fg;
+    ctx.accent = style.accent;
+    ctx.frame = style.frame;
+    ctx.dim = style.dim;
+    ctx.bg = style.bg;
+    ctx.panel = packs_.skin().panel;
+    ctx.time = shelf_time_;
+
+    if (shelf_script_->shelf_draw(ctx)) return;
+
+    // 本帧报错：收回脚本、清画家，并**当帧**回退内置样式（不留半张脸）
+    log::warn("shelf script draw failed, falling back to built-in: " + shelf_script_->error());
+    shelf_script_.reset();
+    clear_host_cart();
+    shell_.set_shelf_painter({});
+    shelf::draw_builtin(screen, content, view, style);
+}
+
+
 int App::sample_handle_for(const std::string& event, const std::string& path) {
     const SoundPack& sound_pack = packs_.sounds[static_cast<size_t>(packs_.sound_index)];
     const std::string key = sound_pack.id + ":" + event;

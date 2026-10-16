@@ -17,6 +17,7 @@
 |------|------|-----------|
 | `skin` | `theme/skin/<名称>/` | 机台外壳：边框字符画、屏幕区位置、灯珠与装饰锚点 |
 | `boot` | `theme/boot/<名称>/` | 启动动画（一段每帧作画的 Lua 脚本，能力等同卡带） |
+| `shelf` | `theme/shelf/<名称>/` | 卡带架**内容区**的绘制（一段每帧作画的 Lua 脚本：`draw(ctx)`；不处理输入） |
 | `palette` | `theme/palette/<名称>/` | 内容色板：卡带与开机动画的 `phos.color.*`（由主题的 `palette` 字段引用，见下） |
 | `sound` | `theme/sound/<名称>/` | 系统音效：按键声、插卡声、电流声、环境底噪 |
 | `font` | `theme/font/<名称>/` | 字体文件（`.ttf` / `.otf` / `.ttc`），见下节"字体链" |
@@ -41,7 +42,8 @@ theme/skin/rust-cabinet/
 ```
 
 各类型的主脚本文件名固定：`skin.lua`（skin）、`main.lua`（boot）、
-`palette.lua`（palette）、`sounds.lua`（sound）、`font.lua`（font，可选声明）。
+`shelf.lua`（shelf）、`palette.lua`（palette）、`sounds.lua`（sound）、
+`font.lua`（font，可选声明）。
 
 **没有 manifest，也没有第二套身份**：
 
@@ -96,7 +98,8 @@ theme/skin/rust-cabinet/
   （实现为逐行扫描线 + 孔径格栅 + 辉光）
 - `fps`：画面刷新率档位（30 / 60 / 120 / 180）。只改刷新率与 CPU 占用，**不改游戏速度**
 - `music_volume` / `sfx_volume`：两路音量各 0~100（界面里分开调）
-- `shelf_style`：卡带架样式（`list` 列表 / `window` 视窗轮播）
+- `shelf_style`：卡带架样式（`list` 列表 / `window` 视窗轮播 / 某个 `shelf` 包 id）。
+  指向的包不存在时安静回退 `window` 并留日志
 - `font`：字体方案（`theme/font/<方案>/` 的目录名；缺字由回退字体兜底）
 - `font_size`：字号 = 单元格像素边长（`12`~`24`；`0` = 跟随字体方案声明的 `size`，缺省即 16）。
   整机字符与行距随之缩放（窗口也随格尺寸变大变小）
@@ -205,6 +208,44 @@ return {
 > **皮肤（skin）里的字不参与本地化**：那是机台装饰（铭牌、贴纸、铭文），
 > 写成 **ASCII 字符画**。
 > 皮肤脚本也拿不到语言 API（内容包沙箱只有 `phos.text.width` / `truncate`）。
+
+### shelf（卡带架样式）
+
+决定**卡带架内容区长什么样**：选中哪张卡带、卡片怎么排、怎么高亮。设置界面"卡带架样式"
+一行可随时切换，选择持久化。内置两种样式（`list` 列表 / `window` 视窗轮播）之外，
+这里每多一个文件夹，设置里的候选就多一项。
+
+- 文件：只需 `shelf.lua`（文件夹名 = 设置里显示的名字）
+- 脚本与开机动画同构的一段 Lua：**必须有 `function draw(ctx)`**，`update(dt)` 可选
+  （每逻辑帧先调 `update`、再调 `draw`）
+- **只读绘制，不处理输入**：上下移动光标、搜索、Enter 插卡、Esc 一律仍归主机。
+  包只负责把内容区画出来——它拿不到输入，也不该有交互逻辑
+- 画布是 `phos.screen`（内容区局部坐标，80x45，见 `ctx.content`），
+  可用 `phos.screen` / `phos.ui` / `phos.color` / `phos.text` / `phos.lang` / `phos.sys`
+- **空列表**（一张卡带都没有）由主机自己画"无卡带"提示，不会调用包
+
+`draw(ctx)` 收到的 `ctx` 是一张**只读表**：
+
+| 字段 | 含义 |
+|------|------|
+| `ctx.carts` | 当前架上的卡带（**已按搜索过滤**）。每项：`name`（本地化名）、`desc`（本地化简介）、`icon_rows`（字符画行）、`icon_colors`（`["#"]={r,g,b}`）、`broken`（损坏标记） |
+| `ctx.cursor` | 当前选中项（**1 基**，对应 `carts` 下标） |
+| `ctx.count` | 卡带数量（= `#ctx.carts`） |
+| `ctx.content` | 内容区矩形 `{x, y, w=80, h=45}`（相对整屏；`phos.screen` 用的是它的局部坐标） |
+| `ctx.lang` | 当前界面语言 `"zh"` / `"en"` |
+| `ctx.colors` | 界面配色 `{fg, accent, frame, dim, bg, panel}`，每项 `{r,g,b}`——随主题/色板走，**别写死 rgb** |
+| `ctx.time` | 卡带架自己的时钟（秒），供动画用 |
+
+- 找包 / 回退顺序与其它内容包一致（见"三、列表来源与回退顺序"）：`theme/shelf/` 优先，
+  其次 `system/shelf/`；`config.json` 里的 `shelf_style` 指向的包不存在 → 回退 `window`
+- **包脚本加载失败 / 运行报错 → 安静回退内置样式 + 日志告警**，绝不因此开不了机或卡住
+  （与开机动画同一道看门狗）
+
+随包样式（名字即文件夹名）：
+
+| 文件夹 | 构图 |
+|--------|------|
+| `grid` | GRID（卡带墙）：网格排布卡带图标，当前项 accent 高亮、其余变暗，底部一行名称 + 简介 |
 
 ### palette（内容色板）
 
@@ -323,24 +364,25 @@ theme/font/default/
 
 ### 覆盖层 Mod（Resource Override）——已实装
 
-**Mod 就是 `mods/` 下的一个文件夹**，自由命名、**放进 mods/ 即自动生效**（没有开关、
-没有"方案"之分）。一个 mod 可以覆盖多个目标，覆盖项放在 `overrides/` 下、按目标的 id 分目录：
+**`mods/` 下的相对路径本身就是覆盖键** `<目标id>/<目标内路径>`——放进 `mods/` 即自动生效
+（没有开关、没有"方案"、没有多余层级）：
 
 ```
-mods/<任意名>/overrides/<目标id>/<目标内路径>
+mods/<目标id>/<目标内路径>
 
-例：mods/big-font/overrides/default/font.lua     → 抬高大字号上限（覆盖 default 字体方案）
-    mods/my-tweaks/overrides/snake/panel.lua     → 改贪吃蛇侧栏
-    mods/my-tweaks/overrides/snake/game.lua      → 改贪吃蛇玩法数值
-    mods/my-tweaks/overrides/snake/assets/map.txt→ 改关卡数据（经 phos.assets 读到的是覆盖后的）
-    mods/dark/overrides/graphite/skin.lua        → 改某个主题的外观
-    mods/dark/overrides/static-rain/main.lua     → 改开机动画
-    mods/loud/overrides/relay/sounds.lua         → 改主机音效
+例：mods/default/font.lua      → 抬高大字号上限（覆盖 default 字体方案）
+    mods/snake/panel.lua       → 改贪吃蛇侧栏
+    mods/snake/game.lua        → 改贪吃蛇玩法数值
+    mods/snake/assets/map.txt  → 改关卡数据（经 phos.assets 读到的是覆盖后的）
+    mods/graphite/skin.lua     → 改某个主题的外观
+    mods/static-rain/main.lua  → 改开机动画
+    mods/relay/sounds.lua      → 改主机音效
 ```
 
 - 目标 id：内容包的文件夹名、字体方案名，或卡带 id（目录名；`.phos` 单文件取文件名去后缀）
-- 覆盖项与包内路径一致（`font.lua` / `skin.lua` / `panel.lua` / `assets/…`）；一个 mod 可放多条
-- **多个 mod 改同一文件**：按 mod **目录名排序**，后者覆盖前者（可预测、与文件系统顺序无关）
+- 覆盖项与包内路径一致（`font.lua` / `skin.lua` / `panel.lua` / `assets/…`）；一个目标下可放多条
+- **一个键（`<目标id>/<路径>`）在文件系统里只有一份**——不再有"多个 mod 叠层、谁盖谁"的问题；
+  根目录下的裸文件（只有一段、定位不到目标）会被忽略
 - 查找顺序：命中的 mod 覆盖优先，否则包内本体兜底；**mods 无需修改原包**，删除即还原
 - 覆盖层只替换"内容"，不改变"身份"
 
@@ -361,6 +403,7 @@ mods/<任意名>/overrides/<目标id>/<目标内路径>
 
 1. 想换机器外观 → 做 `skin` 包，放 `theme/skin/`
 2. 想改开机仪式感 → 做 `boot` 包，写 Lua 动画
-3. 想换卡带配色 → 改主题的 `palette`（或新做一个 `palette` 包、让主题的 `palette` 字段指名它）
-4. 想改某张卡带 → 不动原卡带，在 `mods/` 里做覆盖层
-5. 包损坏或缺失 → 删掉它，机器自动回退默认
+3. 想换卡带架样式 → 做 `shelf` 包，放 `theme/shelf/`，实现 `draw(ctx)`
+4. 想换卡带配色 → 改主题的 `palette`（或新做一个 `palette` 包、让主题的 `palette` 字段指名它）
+5. 想改某张卡带 → 不动原卡带，在 `mods/` 里做覆盖层
+6. 包损坏或缺失 → 删掉它，机器自动回退默认

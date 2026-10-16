@@ -14,7 +14,7 @@ struct Config {
     std::string sound = "default";       // 音效包 id
     std::string font = "default";        // 字体方案（theme/font/<名称>/）
     std::string language = "zh";         // 界面语言（"zh" / "en"，见 shell/messages.hpp）
-    std::string shelf_style = "window";  // 卡带架样式：list / window
+    std::string shelf_style = "window";  // 卡带架样式：list / window / 某个 shelf 包 id
     /// 字号 = 单元格像素边长（整机字符与行距随之缩放）：0 = 跟随字体方案声明的字号
     /// （方案没声明则用 kDefaultFontPx）；正数 = 用户显式选择（钳到 [kMinFontPx, kMaxFontPx]）
     int font_size = 0;
