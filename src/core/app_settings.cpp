@@ -211,10 +211,17 @@ void App::apply_shelf(int select) {
         }
     }
 
-    std::vector<std::string> names;
-    names.reserve(packs_.shelves.size());
-    for (const auto& shelf : packs_.shelves) names.push_back(shelf.name);  // 显示名 = 文件夹名
-    shell_.set_shelves(std::move(names), select);
+    // 把包声明翻成 shell 的候选项：本地化名（缺 en 回落 zh，两者都缺回落文件夹名）+ 二维列数
+    std::vector<ShelfOption> options;
+    options.reserve(packs_.shelves.size());
+    for (const ShelfPack& shelf : packs_.shelves) {
+        ShelfOption option;
+        option.zh = shelf.name_zh.empty() ? shelf.name : shelf.name_zh;
+        option.en = shelf.name_en.empty() ? option.zh : shelf.name_en;
+        option.cols = shelf.cols;
+        options.push_back(std::move(option));
+    }
+    shell_.set_shelves(std::move(options), select);
     packs_.shelf_index = select >= 2 ? select - 2 : -1;
     save_config_now();
 }

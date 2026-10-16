@@ -64,9 +64,9 @@ void Shell::set_sounds(std::vector<std::string> names, int active) {
         sound_index_ = active;
 }
 
-void Shell::set_shelves(std::vector<std::string> names, int active) {
-    shelf_names_ = std::move(names);
-    const int count = 2 + static_cast<int>(shelf_names_.size());
+void Shell::set_shelves(std::vector<ShelfOption> options, int active) {
+    shelf_options_ = std::move(options);
+    const int count = 2 + static_cast<int>(shelf_options_.size());
     shelf_index_ = (active >= 0 && active < count) ? active : 1;  // 越界回退 window
 }
 
@@ -204,21 +204,42 @@ Shell::Intent Shell::update_shelf(const Input& input) {
     shelf_sync_cursor();
     const std::vector<int> matches = shelf_matches();
     if (!matches.empty()) {
+        const int n = static_cast<int>(matches.size());
         // 光标在**命中集**里走，不是在整表里走：搜出三只就该一下一只，
         // 而不是跳过十几个不匹配的
-        auto move = [&matches, this](int delta) {
-            const int n = static_cast<int>(matches.size());
-            int at = 0;
-            for (int i = 0; i < n; ++i)
-                if (matches[static_cast<std::size_t>(i)] == shelf_cursor_) at = i;
-            shelf_cursor_ = matches[static_cast<std::size_t>((at + delta + n) % n)];
+        auto at_of = [&matches, this]() {
+            for (int i = 0; i < static_cast<int>(matches.size()); ++i)
+                if (matches[static_cast<std::size_t>(i)] == shelf_cursor_) return i;
+            return 0;
         };
-        if (input.pressed(Key::left))  move(-1);
-        if (input.pressed(Key::right)) move(1);
-        if (shelf_index_ == 0) {
-            // 列表样式下用上下键更符合直觉（内容包挂接不改变主机按键语义）
-            if (input.pressed(Key::up))   move(-1);
-            if (input.pressed(Key::down)) move(1);
+        // 内置样式：环绕（列表上下、视窗左右），行为与从前逐字节一致
+        auto move = [&, this](int delta) {
+            shelf_cursor_ =
+                matches[static_cast<std::size_t>((at_of() + delta + n) % n)];
+        };
+        // 内容包样式：夹在 [0, count)，不环绕——二维网格里"到头停住"比"绕回另一头"更符合直觉
+        auto step = [&, this](int delta) {
+            int at = at_of() + delta;
+            if (at < 0) at = 0;
+            if (at >= n) at = n - 1;
+            shelf_cursor_ = matches[static_cast<std::size_t>(at)];
+        };
+
+        const bool external = shelf_index_ >= 2;  // 内容包接管时的二维导航
+        const int cols = shelf_cols();            // 0 = 包未声明列数
+        if (input.pressed(Key::left))  { if (external) step(-1); else move(-1); }
+        if (input.pressed(Key::right)) { if (external) step(1);  else move(1);  }
+        if (input.pressed(Key::up)) {
+            if (external)
+                step(-(cols > 0 ? cols : 1));  // 逐行上移；无列数声明也至少动一格
+            else if (shelf_index_ == 0)
+                move(-1);  // 列表样式下用上下键更符合直觉（内置行为不变）
+        }
+        if (input.pressed(Key::down)) {
+            if (external)
+                step(cols > 0 ? cols : 1);
+            else if (shelf_index_ == 0)
+                move(1);
         }
     }
 
@@ -328,9 +349,9 @@ Shell::Intent Shell::update_settings(const Input& input) {
             break;
         case SettingId::shelf_view: {
             if (!adjust) break;
-            // 候选项 = [LIST, WINDOW, <shelf 包名…>]：左右键（或 Enter）在整份列表上循环。
+            // 候选项 = [LIST, WINDOW, <shelf 包…>]：左右键（或 Enter）在整份列表上循环。
             // 选中包时把下标交给 App，由它加载对应的 shelf.lua 并把内容区交给它绘制
-            const int count = 2 + static_cast<int>(shelf_names_.size());
+            const int count = 2 + static_cast<int>(shelf_options_.size());
             const int step = right ? 1 : count - 1;
             shelf_index_ = (shelf_index_ + step) % count;
             intent.shelf_style_changed = true;
@@ -537,7 +558,10 @@ void Shell::draw_settings(Screen& screen) const {
     ctx.fps = fps_;
     ctx.music_volume = music_volume_;
     ctx.sfx_volume = sfx_volume_;
-    ctx.shelves = shelf_names_;
+    // 内容包显示名按**当前界面语言**解析：语言一切换，同一帧的设置行就跟着变
+    ctx.shelves.clear();
+    for (const ShelfOption& option : shelf_options_)
+        ctx.shelves.push_back(lang_ == Lang::en ? option.en : option.zh);
     ctx.shelf_index = shelf_index_;
     ctx.font_px = font_px_;
     ctx.lang = lang_;

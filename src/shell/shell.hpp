@@ -27,6 +27,15 @@ enum class ShellMode {
     cart_error
 };
 
+/// 卡带架样式候选项里的一个内容包：本地化显示名 + 顶层声明的二维列数。
+/// 内置 LIST/WINDOW 不是包，不在这里——Shell 的候选项 = [LIST, WINDOW, ...这些]。
+/// `zh`/`en` 由调用方补好文件夹名兜底，故按界面语言直接取用即可，不会空
+struct ShelfOption {
+    std::string zh;
+    std::string en;
+    int cols = 0;  // 0 = 包未声明列数：上下键按一维（∓1）处理
+};
+
 /// 外壳界面：机身装饰 + 开机动画 + 卡带架 + 设置 + 暂停 + 错误画面。
 /// 界面绘制全部经由 core/ui 原语，与卡带可用的 phos.ui 同源，风格天然统一。
 class Shell {
@@ -90,9 +99,9 @@ public:
     void set_tape_result(TapeResult result) { tape_.set_result(result); }
     /// 切到磁带码界面（从暂停菜单进入）
     void to_tape();
-    /// 告知可选的卡带架样式包名与当前项。候选项是 `[LIST, WINDOW, <包名…>]`，
+    /// 告知可选的卡带架样式包与当前项。候选项是 `[LIST, WINDOW, <包…>]`，
     /// `active` = 0（list）/ 1（window）/ 2+i（第 i 个包）
-    void set_shelves(std::vector<std::string> names, int active);
+    void set_shelves(std::vector<ShelfOption> options, int active);
     /// 设置卡带架内容区的绘制回调。非空 = 内容区由内容包接管（ShelfView 标记 external）；
     /// 清空即回退内置样式 —— 包加载失败时 App 就是这样兜底的
     void set_shelf_painter(shelf::Painter painter) { shelf_painter_ = std::move(painter); }
@@ -203,10 +212,14 @@ private:
     std::vector<CartInfo> carts_;
     int shelf_cursor_ = 0;
     float shelf_pos_ = 0.0f;
-    /// 卡带架样式候选项 `[LIST, WINDOW, <shelf 包名…>]` 与当前下标。
+    /// 卡带架样式候选项 `[LIST, WINDOW, <shelf 包…>]` 与当前下标。
     /// 默认 1 = window（与出厂配置一致）
-    std::vector<std::string> shelf_names_;
+    std::vector<ShelfOption> shelf_options_;
     int shelf_index_ = 1;
+    /// 当前选中包声明的列数（<2 的内置样式返回 0）。供上下键逐行移动
+    int shelf_cols() const {
+        return shelf_index_ >= 2 ? shelf_options_[static_cast<size_t>(shelf_index_ - 2)].cols : 0;
+    }
     /// 内容区绘制回调（内容包接管时非空；见 shelf::Painter）
     shelf::Painter shelf_painter_;
     ShelfSearch shelf_search_;

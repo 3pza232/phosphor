@@ -34,7 +34,13 @@ std::vector<BootPack> scan_boots(const std::string& dir);
 /// 卡带架样式包（只需 shelf.lua：可选 update(dt)，必须有 draw(ctx)）
 struct ShelfPack {
     std::string id;
-    std::string name;
+    std::string name;  // 显示名回退 = 文件夹名（设置里没声明本地化名时用它）
+    /// 顶层声明的本地化显示名：`name = "GRID"` 或 `name = { zh = "卡片墙", en = "GRID" }`。
+    /// 读不到（坏包 / 没声明）时留空，由调用方回落到 `name`
+    std::string name_zh;
+    std::string name_en;
+    /// 顶层声明的二维列数：`cols = 4`。主机据它把上下键映射为逐行移动（0 = 未声明）
+    int cols = 0;
     std::string dir;
 };
 

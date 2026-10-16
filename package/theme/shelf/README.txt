@@ -14,6 +14,10 @@ shelf.lua 的契约（与开机动画同构的一段 Lua）：
   * 可用 phos.screen / phos.ui / phos.color / phos.text / phos.lang / phos.sys
     在 ctx.content 划定的内容区（内容区局部坐标，80x45）内作画
 
+顶层还可声明（扫描时被主机读走，不进入 ctx）：
+  * name = { zh = "卡片墙", en = "GRID" }  设置里显示的名字（也可是字符串）
+  * cols = 4                                每行个数：上/下键按行移动（∓cols），左/右键逐格
+
 空列表（一张卡带都没有）由主机自己画提示，不会调用包。
 包缺失/脚本出错时，主机安静回退内置的 list / window 样式并留下日志。
 

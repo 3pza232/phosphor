@@ -5,6 +5,13 @@
 -- Enter 插卡 / Esc）仍归主机。画布是 phos.screen（内容区局部坐标，80x45）。
 -- 上下文 ctx 见 docs/content-packs.md 的「shelf（卡带架样式）」一节。
 
+-- 顶层声明（主机在扫描时读它们，不进入 draw 的 ctx）：
+--   name 本地化显示名（设置里"卡带架样式"一行显示它；缺 en 回落 zh，没声明回落文件夹名）
+--   cols 每行个数（主机据此把上下键映射为逐行移动）
+name = { zh = "卡片墙", en = "GRID" }
+local COLS = 4
+cols = COLS
+
 local S, C, T = phos.screen, phos.color, phos.text
 
 -- 本包自己的文案：缺 en 由 phos.lang.dict 回落中文，两者都缺也不至于空串
@@ -86,8 +93,8 @@ function draw(ctx)
   local grid_h = h - top - footer - info_h
   local cell_w = 20
   local cell_h = 12
-  local cols = math.max(1, math.floor(w / cell_w))
-  if cols > count then cols = count end
+  -- 列数用声明的 COLS（与主机导航一致）；卡带不足一行时收窄到实际数量
+  local cols = math.min(COLS, count)
   local rows_visible = math.max(1, math.floor(grid_h / cell_h))
   local total_rows = math.ceil(count / cols)
 
@@ -155,6 +162,22 @@ function draw(ctx)
       local name = cart.name or ""
       if cart.broken then name = name .. t.broken end
       center_text(x + 1, y + cell_h - 2, inner_w, name, fg)
+    end
+  end
+
+  -- 右侧一列小刻度：行数多于一屏时画一条滚动条，让"还有下一页"看得出来。
+  -- 它压在最后一列的右边框上（网格正好铺满内容区，不额外占位）：暗色是轨道，亮色是滑块
+  if total_rows > rows_visible then
+    local track_x = w - 1
+    local span = rows_visible * cell_h
+    local thumb_h = math.max(1, math.floor(span * rows_visible / total_rows))
+    local denom = total_rows - rows_visible
+    local thumb_y = grid_top + (denom > 0 and math.floor((span - thumb_h) * first_row / denom) or 0)
+    for y = grid_top, grid_top + span - 1 do
+      S.put(track_x, y, "|", col(pal.dim, 0.5))
+    end
+    for y = thumb_y, math.min(thumb_y + thumb_h - 1, grid_top + span - 1) do
+      S.put(track_x, y, "#", col(pal.accent))
     end
   end
 

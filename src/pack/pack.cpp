@@ -254,8 +254,34 @@ std::vector<ShelfPack> scan_shelves(const std::string& dir) {
             return false;
         }
         out.id = path.filename().string();
-        out.name = out.id;  // 显示名 = 文件夹名
+        out.name = out.id;  // 显示名回退 = 文件夹名
         out.dir = path.string();
+
+        // 读顶层声明（name / cols）。**只为读这两个值**跑一次脚本：与 skin/palette 的
+        // pack 扫描同一成本量级（包很少）。脚本坏掉、或顶层就撞空 API（如直接调
+        // phos.screen）都只是**读不到声明**——静默回落文件夹名/无列数，绝不因此不列出这个包
+        sol::state lua;
+        open_pack_api(lua);
+        auto r = lua.safe_script_file(shelf_path, &sol::script_pass_on_error);
+        if (!r.valid()) {
+            log::warn("shelf pack declarations unreadable (using folder name): " + out.dir);
+            return true;  // 包仍在列表里（设置可见、可选中），只是用回退值
+        }
+        sol::object declared = lua["name"];
+        if (declared.is<std::string>()) {
+            out.name_zh = out.name_en = declared.as<std::string>();
+        } else if (declared.is<sol::table>()) {
+            sol::table map = declared.as<sol::table>();
+            sol::object zh = map["zh"], en = map["en"];
+            if (zh.is<std::string>()) out.name_zh = zh.as<std::string>();
+            if (en.is<std::string>()) out.name_en = en.as<std::string>();
+            if (out.name_zh.empty()) out.name_zh = out.name_en;  // 只写一种也不至于空着
+        }
+        sol::object cols = lua["cols"];
+        if (cols.is<double>() || cols.is<int>()) {
+            const int value = cols.as<int>();
+            out.cols = value > 0 ? value : 0;  // 负数/0 = 未声明，主机按一维处理
+        }
         return true;
     });
 }
