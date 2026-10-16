@@ -9,7 +9,10 @@ namespace phos {
 /// 0.8.0：同屏多字号——`phos.screen/panel/ui` 的 `put`/`print` 增加可选 `scale`
 ///         （更大的字成块占位）；字体方案可显式声明字号与回退顺序。卡带 API 进世代 6
 /// 0.8.1：小补——`phos.input` 增键盘专属键 `backspace`（退格）；字体方案可声明可调字号范围（Mod 可改）
-inline constexpr const char* kVersion = "0.8.1";
+/// 0.8.2：内容包扩容——卡带架样式成为内容包（`theme/shelf/<名>/shelf.lua`：可注册绘制、二维导航、
+///         本地化样式名）；Mod 改命名化（`mods/<id>/` + 可选 `mod.lua` 清单，游戏内 `M` 键开关、
+///         改动后重启生效）；新增三个开机动画 + 主题（深海声呐 / 东方翰墨 / 黄铜机械）
+inline constexpr const char* kVersion = "0.8.2";
 /// 产品名
 inline constexpr const char* kProductName = "PHOSPHOR";
 /// 卡带 API 世代：manifest 声明 `phos_api` 高于它就拒绝加载，

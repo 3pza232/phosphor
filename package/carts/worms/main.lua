@@ -224,7 +224,7 @@ local Text = {
 			{ ", .", "镜头左右平移" },
 			{ "' /", "镜头上下平移" },
 			{ "K", "开关这张表（暂停）" },
-			{ "回车", "结算后回菜单" },
+			{ "退格", "回选择模式菜单" },
 			{ "Esc", "返回卡带架" },
 		},
 		map_title = "地图总览",
@@ -232,7 +232,7 @@ local Text = {
 		side = { "红队", "蓝队" },
 		flying = "弹药飞行中",
 		win = { "红队胜利", "蓝队胜利" },
-		win_hint = "按 ENTER 回菜单",
+		win_hint = "按退格 回选择菜单",
 		no_ammo = "没弹药了",
 		no_tp = "无法传送",
 		drowned = "落海",
@@ -285,7 +285,7 @@ local Text = {
 			{ ", .", "pan camera left / right" },
 			{ "' /", "pan camera up / down" },
 			{ "K", "toggle this panel (pauses)" },
-			{ "ENTER", "back to menu once settled" },
+			{ "BACKSPACE", "back to mode menu" },
 			{ "Esc", "eject to cartridge shelf" },
 		},
 		map_title = "MAP OVERVIEW",
@@ -293,7 +293,7 @@ local Text = {
 		side = { "RED", "BLUE" },
 		flying = "SHELL IN FLIGHT",
 		win = { "RED WINS", "BLUE WINS" },
-		win_hint = "PRESS ENTER FOR MENU",
+		win_hint = "PRESS BACKSPACE FOR MENU",
 		no_ammo = "NO AMMO",
 		no_tp = "CANNOT TELEPORT",
 		drowned = "DROWNED",
@@ -1745,6 +1745,21 @@ function update(dt)
 		return
 	end
 
+	-- 退格：随时回"选择模式"菜单（放弃当前这局，含已分出胜负时）。联机对局走自己的
+	-- Esc 浮层（见上 "退出房间"），不在此列；键位表开着时也一并收起，免得回菜单后
+	-- 还留着一张浮层。
+	if not mnet and phos.input.pressed("backspace") then
+		screen = "menu"
+		menu_flash = 0
+		phos.panel.resize(0)
+		phos.audio.stop_music()
+		if help_open then
+			help_open = false
+			phos.audio.paused(false)
+		end
+		return
+	end
+
 	-- 天气与补给：只在**对局中**推进（菜单态还没有 terrain / turn，放在上面会当场崩）。
 	-- 回合推进的**唯一钩子**也在这里：天气与补给都跟着"第几回合"走，
 	-- 比对上一帧的回合数即可——换手有好几条路（结算、超时、AI 弃权），
@@ -1758,16 +1773,12 @@ function update(dt)
 	supply:update(dt, turn.round, terrain, worms, on_supply_pickup)
 
 	if winner then
-		-- 分出胜负就停乐：回到菜单后应当安静（重开一局时 start_match 会再起）
+		-- 分出胜负就停乐：回到菜单后应当安静（重开一局时 start_match 会再起）。
+		-- 回菜单走上面的"退格"那条总入口，这里只负责收尾。
 		phos.audio.stop_music()
 		if mnet then
 			lan_match_over() -- 联机：分出胜负后留在房间里，房间重新开放
 			return
-		end
-		if phos.input.pressed("start") then
-			screen = "menu"
-			menu_flash = 0
-			phos.panel.resize(0)
 		end
 		return
 	end
