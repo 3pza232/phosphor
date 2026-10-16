@@ -184,7 +184,8 @@ App 在激活内容包时挂上回调、页面模式下每帧跑包的 Lua（组
 
 外壳模式由 `ShellMode` 枚举（`shell.hpp`）表达：`boot` / `shelf` / `settings` /
 `paused` / `mods` / `tape` / `cart_error`。其中 **`mods`** 是卡带架按 `M` 打开的
-覆盖层 Mod 管理器：单列勾选、确认后把禁用集合交回 App 写盘并（窗口路径）重启。
+覆盖层 Mod 管理器：单列勾选、**每行显示该 Mod 在 `mod.lua` 里的显示名**（缺省文件夹名），
+确认后把禁用集合交回 App 写盘并（窗口路径）重启。
 它的输入与绘制收在 `shell.cpp`（`update_mods` / `draw_mods`），画家式内容包与它无关。
 
 为保持文件职责单一，外壳按视图拆分：

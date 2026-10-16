@@ -42,6 +42,23 @@ void open_pack_api(sol::state& lua) {
     text["truncate"] = [](const std::string& s, int cols) { return text::truncate(s, cols); };
 }
 
+/// 读一个本地化字段：`"字体放大"` = 中英同值；`{ zh = "…", en = "…" }` 各取一列。
+/// 只写一种语言时互补（缺 en 回落 zh，反之亦然）；都不给则留空，由调用方补文件夹名
+void read_localized(sol::table t, const char* key, std::string& zh, std::string& en) {
+    sol::object value = t[key];
+    if (value.is<std::string>()) {
+        zh = en = value.as<std::string>();
+        return;
+    }
+    if (!value.is<sol::table>()) return;
+    sol::table map = value.as<sol::table>();
+    sol::object z = map["zh"], e = map["en"];
+    if (z.is<std::string>()) zh = z.as<std::string>();
+    if (e.is<std::string>()) en = e.as<std::string>();
+    if (zh.empty()) zh = en;
+    if (en.empty()) en = zh;
+}
+
 } // namespace
 
 bool load_palette(const std::string& dir, Palette& out, std::string& err) {
@@ -284,6 +301,41 @@ std::vector<ShelfPack> scan_shelves(const std::string& dir) {
         }
         return true;
     });
+}
+
+std::vector<ModManifest> scan_mods() {
+    namespace fs = std::filesystem;
+    std::vector<ModManifest> out;
+    // id 权威来自 core（它同时决定排序与覆盖），这里只按同一份 id 补元信息
+    for (const std::string& id : mod_names()) {
+        ModManifest m;
+        m.id = id;
+        m.name_zh = m.name_en = id;  // 缺省显示名 = 文件夹名
+        std::error_code ec;
+        const fs::path manifest = fs::path("mods") / id / "mod.lua";
+        if (!fs::is_regular_file(manifest, ec)) {
+            out.push_back(std::move(m));
+            continue;
+        }
+        // mod.lua 是"纯返回一个表"的声明（不调用任何 API）：给一个最小沙箱跑一次即可。
+        // 读不到（坏脚本 / 不返回表）只是**没声明**——显示名回落文件夹名，mod 照常列出
+        sol::state lua;
+        open_pack_api(lua);
+        auto r = lua.safe_script_file(manifest.string(), &sol::script_pass_on_error);
+        if (!r.valid() || !r.get<sol::object>().is<sol::table>()) {
+            log::warn("mod manifest unreadable (using folder name): " + manifest.string());
+            out.push_back(std::move(m));
+            continue;
+        }
+        sol::table t = r.get<sol::object>().as<sol::table>();
+        read_localized(t, "name", m.name_zh, m.name_en);
+        read_localized(t, "desc", m.desc_zh, m.desc_en);
+        if (m.name_zh.empty() && m.name_en.empty()) m.name_zh = m.name_en = id;
+        if (m.desc_zh.empty()) m.desc_zh = m.desc_en;
+        if (m.desc_en.empty()) m.desc_en = m.desc_zh;
+        out.push_back(std::move(m));
+    }
+    return out;
 }
 
 std::vector<SoundPack> scan_sounds(const std::string& dir) {

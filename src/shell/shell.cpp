@@ -19,6 +19,8 @@ namespace {
 
 constexpr float kBootLineInterval = 0.4f;       // 内置兜底自检动画的逐行间隔
 constexpr Color kFaultColor{255, 80, 80};       // 故障红：界面语义色，非主题色
+constexpr int kModsMinWidth = 24;               // MODS 浮窗最小宽度（短名字也别太窄）
+constexpr int kModsPad = 6;                     // 列表左右留白：'>' 光标 + 文本起点 + 右边距
 
 } // namespace
 
@@ -71,8 +73,8 @@ void Shell::set_shelves(std::vector<ShelfOption> options, int active) {
     shelf_index_ = (active >= 0 && active < count) ? active : 1;  // 越界回退 window
 }
 
-void Shell::set_mods(std::vector<std::string> names, std::vector<std::string> disabled) {
-    mod_names_ = std::move(names);
+void Shell::set_mods(std::vector<ModOption> mods, std::vector<std::string> disabled) {
+    mods_ = std::move(mods);
     mods_disabled_ = std::move(disabled);
 }
 
@@ -157,12 +159,12 @@ void Shell::to_paused() {
 }
 
 void Shell::open_mods() {
-    if (mod_names_.empty()) return;   // 没有 mod 就没有可管理的东西
+    if (mods_.empty()) return;   // 没有 mod 就没有可管理的东西
     mode_ = ShellMode::mods;
     // 勾选态按当前启用集初始化；快照存下来，"关掉又开回"才不会误判成变化
-    mods_checked_.assign(mod_names_.size(), true);
-    for (size_t i = 0; i < mod_names_.size(); ++i)
-        if (std::find(mods_disabled_.begin(), mods_disabled_.end(), mod_names_[i]) !=
+    mods_checked_.assign(mods_.size(), true);
+    for (size_t i = 0; i < mods_.size(); ++i)
+        if (std::find(mods_disabled_.begin(), mods_disabled_.end(), mods_[i].id) !=
             mods_disabled_.end())
             mods_checked_[i] = false;
     // 快照取"与现有 mod 对应的禁用子集"：配置里指向已删除 mod 的陈旧项不算改动，
@@ -174,8 +176,8 @@ void Shell::open_mods() {
 
 std::vector<std::string> Shell::mods_disabled_now() const {
     std::vector<std::string> out;
-    for (size_t i = 0; i < mod_names_.size(); ++i)
-        if (i < mods_checked_.size() && !mods_checked_[i]) out.push_back(mod_names_[i]);
+    for (size_t i = 0; i < mods_.size(); ++i)
+        if (i < mods_checked_.size() && !mods_checked_[i]) out.push_back(mods_[i].id);
     return out;
 }
 
@@ -191,12 +193,22 @@ bool Shell::mods_changed() const {
 
 ui::Rect Shell::mods_box() const {
     const ui::Rect content = content_rect();
-    const int items = static_cast<int>(mod_names_.size()) + 2;  // + 确认 + 取消
+    const int items = static_cast<int>(mods_.size()) + 1;  // + 确认（Esc 即取消）
     int h = items + 4;
     const int max_h = content.h - 2;
     if (h > max_h) h = max_h;
     if (h < 6) h = 6;
-    return ui::Rect::centered(content, 46, h);
+    // 宽度按最宽的 mod **显示名**算（含 "[x] " 前缀与左右留白），并给一个最小宽度；
+    // 列表长时仍单列，只是更高的内容靠滚动容纳
+    int w = kModsMinWidth;
+    for (const ModOption& mod : mods_) {
+        const std::string& name = lang_ == Lang::en ? mod.en : mod.zh;
+        const int row = text::display_width("[x] ") + text::display_width(name);
+        if (row + kModsPad > w) w = row + kModsPad;
+    }
+    const int max_w = content.w - 2;
+    if (w > max_w) w = max_w;
+    return ui::Rect::centered(content, w, h);
 }
 
 // ---------------------------------------------------------------- 更新
@@ -211,7 +223,7 @@ Shell::Intent Shell::update(const Input& input, float dt) {
 
     // MODS 浮窗的平滑滚动：一条 float 首行位置指数逼近目标（像视窗样式那样，不硬跳）
     if (mode_ == ShellMode::mods) {
-        const int items = static_cast<int>(mod_names_.size()) + 2;
+        const int items = static_cast<int>(mods_.size()) + 1;
         const int visible = std::max(1, mods_box().h - 4);
         int row_target = 0;
         if (items > visible) {
@@ -265,7 +277,7 @@ Shell::Intent Shell::update_shelf(const Input& input) {
     }
     if (input.pressed("f")) shelf_search_.begin_edit();
     // M：打开 Mod 管理器（仅当有 mod 时）。架面上的自定义键，与 F 搜索同级
-    if (!mod_names_.empty() && input.pressed("m")) {
+    if (!mods_.empty() && input.pressed("m")) {
         open_mods();
         return intent;
     }
@@ -466,8 +478,8 @@ Shell::Intent Shell::update_paused(const Input& input) {
 
 Shell::Intent Shell::update_mods(const Input& input) {
     Intent intent;
-    const int mods = static_cast<int>(mod_names_.size());
-    const int items = mods + 2;  // 单列：N 个 mod 行 + 确认 + 取消
+    const int mods = static_cast<int>(mods_.size());
+    const int items = mods + 1;  // 单列：N 个 mod 行 + 确认（取消由 Esc 承担）
     if (items <= 0) {            // 理论上不会（无 mod 打不开），兜底回架面
         mode_ = ShellMode::shelf;
         return intent;
@@ -476,18 +488,16 @@ Shell::Intent Shell::update_mods(const Input& input) {
     if (input.pressed(Key::up))   mods_cursor_ = (mods_cursor_ + items - 1) % items;
     if (input.pressed(Key::down)) mods_cursor_ = (mods_cursor_ + 1) % items;
 
-    // A / 空格：mod 行=切换勾选；确认/取消=执行。Enter 不在此列（与架上插卡区分开）
+    // A / 空格：mod 行=切换勾选；确认=执行。Enter 不在此列（与架上插卡区分开）
     if (input.pressed(Key::a) || input.pressed("space")) {
         if (mods_cursor_ < mods) {
             mods_checked_[static_cast<size_t>(mods_cursor_)] =
                 !mods_checked_[static_cast<size_t>(mods_cursor_)];
-        } else if (mods_cursor_ == mods) {  // 确认
-            if (mods_changed()) {           // 没变就只关窗，不重启
+        } else {                    // 确认
+            if (mods_changed()) {   // 没变就只关窗，不重启
                 intent.mods_applied = true;
                 intent.mods_disabled = mods_disabled_now();
             }
-            mode_ = ShellMode::shelf;
-        } else {  // 取消：丢弃改动
             mode_ = ShellMode::shelf;
         }
     }
@@ -632,7 +642,7 @@ void Shell::draw_shelf(Screen& screen) const {
     if (!shelf_search_.visible()) {
         // 有 mod 才追加 M 提示（没有 mod 时页脚与从前逐字节一致）
         std::string hints = tr(lang_, Msg::shelf_insert_hint);
-        if (!mod_names_.empty()) hints += std::string("   ") + tr(lang_, Msg::mods_hint);
+        if (!mods_.empty()) hints += std::string("   ") + tr(lang_, Msg::mods_hint);
         draw_footer(screen, hints);
     } else if (matches.empty() && !carts_.empty())
         draw_footer(screen, tr(lang_, Msg::shelf_search_empty));
@@ -693,14 +703,14 @@ void Shell::draw_mods(Screen& screen) const {
     ui::fill(screen, box, U' ', style_.fg, style_.bg);
     ui::frame(screen, box, tr(lang_, Msg::mods_title), style_);
 
-    const int mods = static_cast<int>(mod_names_.size());
-    const int items = mods + 2;  // mod 行 + 确认 + 取消，单列
+    const int mods = static_cast<int>(mods_.size());
+    const int items = mods + 1;  // mod 行 + 确认，单列
     const int list_x = box.x + 3;
     const int list_y = box.y + 2;
     const int list_h = box.h - 4;
+    const int text_w = box.w - 5;  // '>' 与左右留白之外的可写宽度（超宽则截断）
 
     const std::string confirm = std::string("[ ") + tr(lang_, Msg::mods_confirm) + " ]";
-    const std::string cancel = std::string("[ ") + tr(lang_, Msg::mods_cancel) + " ]";
 
     for (int i = 0; i < items; ++i) {
         // 平滑滚动：以浮点首行铺排，指数逼近时行逐帧位移（不是硬跳）
@@ -710,15 +720,17 @@ void Shell::draw_mods(Screen& screen) const {
         if (sel) screen.put(box.x + 1, y, U'>', style_.accent, style_.bg);
 
         if (i < mods) {
+            const ModOption& mod = mods_[static_cast<size_t>(i)];
+            const std::string& shown = lang_ == Lang::en ? mod.en : mod.zh;
             const bool on = mods_checked_[static_cast<size_t>(i)];
-            const std::string text =
-                std::string(on ? "[x] " : "[ ] ") + mod_names_[static_cast<size_t>(i)];
+            // 行显示 mod 自己的名字（缺省已回落文件夹名），不是目标 id
+            const std::string text = text::truncate(
+                std::string(on ? "[x] " : "[ ] ") + (shown.empty() ? mod.id : shown), text_w);
             // 未勾选 = 不生效：用暗色，一眼能分辨
             ui::print(screen, list_x + 1, y, text,
                       sel ? style_.accent : (on ? style_.fg : style_.dim), style_.bg);
         } else {
-            ui::print(screen, list_x + 1, y, i == mods ? confirm : cancel,
-                      sel ? style_.accent : style_.fg, style_.bg);
+            ui::print(screen, list_x + 1, y, confirm, sel ? style_.accent : style_.fg, style_.bg);
         }
     }
 

@@ -100,7 +100,7 @@ constexpr std::array<Entry, static_cast<size_t>(Msg::count)> kTable{{
 
     // Mod 管理器（卡带架 M 键浮窗）
     {"模组", "MODS"},
-    {"M MODS", "M MODS"},
+    {"[M] MODS", "[M] MODS"},
     {"确认", "CONFIRM"},
     {"取消", "CANCEL"},
     {"[↑ / ↓] 选择   [A / 空格] 切换·确认   [Esc] 取消",

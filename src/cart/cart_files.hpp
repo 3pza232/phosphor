@@ -8,7 +8,7 @@ namespace phos {
 
 /// 卡带文件访问：统一"目录卡带"（开发期散装）与".phos 卡带"（zip 单文件）。
 ///
-/// 两级查找：覆盖层 Mod（`mods/<任意名>/overrides/<卡带id>/<路径>`）优先，其次包内本体。
+/// 两级查找：覆盖层 Mod（`mods/<mod-id>/<卡带id>/<路径>`）优先，其次包内本体。
 /// 覆盖层的解析见 core/mods.hpp（pack/ 与 cart/ 共用同一处）。
 /// `manifest.lua` 例外——卡带身份（id/entry）不允许被 mod 改写，否则
 /// 扫描、打包与运行时会对同一张卡带产生不同认知。
@@ -42,7 +42,7 @@ private:
     bool valid_ = false;
     bool is_zip_ = false;
     std::string cart_path_;
-    std::string cart_id_;  // 卡带 id：覆盖层按 `mods/<任意名>/overrides/<cart_id>/…` 查找
+    std::string cart_id_;  // 卡带 id：覆盖层按 `mods/<mod-id>/<cart_id>/…` 查找
 };
 
 } // namespace phos

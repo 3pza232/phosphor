@@ -105,8 +105,8 @@ theme/skin/rust-cabinet/
 - `font_size`：字号 = 单元格像素边长（`12`~`24`；`0` = 跟随字体方案声明的 `size`，缺省即 16）。
   整机字符与行距随之缩放（窗口也随格尺寸变大变小）
 - `language`：界面语言（`zh` / `en`）—— 主机界面、卡带架简介与启动动画文案都随它切换
-- `mods_disabled`：被禁用的覆盖层 Mod id 列表（字符串数组，见「六、Mod 体系」）。
-  空 = 全部生效；在卡带架按 `M` 开关，改动后重启生效
+- `mods_disabled`：被禁用的覆盖层 Mod id 列表（字符串数组，**按 mod-id = 文件夹名**记，
+  见「六、Mod 体系」）。空 = 全部生效；在卡带架按 `M` 开关，改动后重启生效
 - 主机设置界面中可视化切换，等价于改写此文件。**全部即时生效并持久化**
   （`mods_disabled` 例外：它需要重启才生效）
 - 版本约定：主机版本号是唯一权威（`phos.sys.version()`）；
@@ -361,7 +361,7 @@ theme/font/default/
 
   `order` 里没列到的字体文件按文件名规则**附在其后**（绝不静默丢字）；`size` 是方案声明的默认字号。
   `min`/`max` 是**设置界面"字号"行的可调范围**——抬高 `max` 就是"允许更大的字"，
-  且**可用 Mod 覆盖**（`mods/<任意名>/overrides/default/font.lua`，不改原文件；见「六、Mod 体系」）。
+  且**可用 Mod 覆盖**（`mods/<mod-id>/default/font.lua`，不改原文件；见「六、Mod 体系」）。
 - 坏字体文件被跳过并告警；方案缺失或装不出字体时退回 `default` 方案并告警
   —— 绝不因此开不了机
 - 更换中文观感：复制 `default/` 成新目录（如 `theme/font/hei/`），换掉字形文件，
@@ -383,44 +383,63 @@ theme/font/default/
 
 ### 覆盖层 Mod（Resource Override）——已实装
 
-**`mods/` 下的相对路径本身就是覆盖键** `<目标id>/<目标内路径>`——放进 `mods/` 默认即生效
-（没有多余层级、没有"方案"之分）：
+**`mods/` 下直接是有名字的 mod 文件夹**：一个文件夹 = 一个 mod，**文件夹名就是它的 id**。
+覆盖内容镜像要覆盖的目标结构放在它之下；放进 `mods/` 默认即生效：
 
 ```
-mods/<目标id>/<目标内路径>
+mods/<mod-id>/                 一个 mod（文件夹名 = id，如 font-resize）
+├── mod.lua                    可选清单：return { name = {..}, desc = {..} }（显示名/说明）
+└── <目标id>/<目标内路径>        覆盖内容（可放多个目标）
 
-例：mods/default/font.lua      → 抬高大字号上限（覆盖 default 字体方案）
-    mods/snake/panel.lua       → 改贪吃蛇侧栏
-    mods/snake/game.lua        → 改贪吃蛇玩法数值
-    mods/snake/assets/map.txt  → 改关卡数据（经 phos.assets 读到的是覆盖后的）
-    mods/graphite/skin.lua     → 改某个主题的外观
-    mods/static-rain/main.lua  → 改开机动画
-    mods/relay/sounds.lua      → 改主机音效
+例：mods/font-resize/default/font.lua    → 键 default/font.lua（抬高大字号上限）
+    mods/snake-tweaks/snake/panel.lua    → 键 snake/panel.lua（改贪吃蛇侧栏）
+    mods/snake-tweaks/snake/game.lua     → 键 snake/game.lua（改玩法数值）
+    mods/snake-tweaks/snake/assets/map.txt  → 键 snake/assets/map.txt（改关卡数据）
+    mods/bold-theme/graphite/skin.lua    → 键 graphite/skin.lua（改某个主题外观）
+    mods/static-rain/static-rain/main.lua → 键 static-rain/main.lua（改开机动画）
+    mods/quiet/relay/sounds.lua          → 键 relay/sounds.lua（改主机音效）
 ```
 
+- **覆盖键**取 `<mod-id>` **之后**的相对路径 `<目标id>/<目标内路径>`（不再有扁平布局里
+  "相对路径本身就是键"的说法）
 - 目标 id：内容包的文件夹名、字体方案名，或卡带 id（目录名；`.phos` 单文件取文件名去后缀）
-- 覆盖项与包内路径一致（`font.lua` / `skin.lua` / `panel.lua` / `assets/…`）；一个目标下可放多条
-- **一个键（`<目标id>/<路径>`）在文件系统里只有一份**——不再有"多个 mod 叠层、谁盖谁"的问题；
-  根目录下的裸文件（只有一段、定位不到目标）会被忽略
+- 覆盖项与包内路径一致（`font.lua` / `skin.lua` / `panel.lua` / `assets/…`）；一个 mod 可覆盖多个目标
+- 顶层 `mod.lua`（清单）与任何"只有一段"的裸文件都定位不到目标，会被忽略
 - 查找顺序：命中的 mod 覆盖优先，否则包内本体兜底；**mods 无需修改原包**，删除即还原
+- 两个 mod 撞同一个覆盖键时，按 mod-id 字典序后者覆盖前者并写日志告警
 - 覆盖层只替换"内容"，不改变"身份"
 
-**开关（M 键 / `mods_disabled`）**：卡带架上按 **`M`** 打开 MODS 浮窗，逐条勾选要生效的 mod
-（没有 mod 时页脚不显示 `M MODS`、也不响应此键）。确认后：
+**`mod.lua`（可选清单）**：一个**纯返回表**的 Lua（不调用任何 API），只放元信息：
 
-- 禁用集合按 `mods/<目标id>/` 的 `<目标id>` 判定，写进 `config.json` 的 **`mods_disabled`**
+```lua
+return {
+  name = { zh = "字体放大", en = "Font Resize" },  -- 显示名；缺省 = 文件夹名
+  desc = { zh = "字号上限 24 → 28", en = "..." },  -- 说明（可空）
+}
+```
+
+`name` 也可直接给字符串（中英同值）；只写一种语言时互补，都不写则显示文件夹名。
+清单**不参与**覆盖路径。读失败（语法错 / 不返回表）只是"没声明"——显示名回落文件夹名，
+mod 照常列出。
+
+**开关（M 键 / `mods_disabled`）**：卡带架上按 **`M`** 打开 MODS 浮窗，逐条勾选要生效的 mod
+（没有 mod 时页脚不显示 `[M] MODS`、也不响应此键）。列表里显示的是 **mod 的显示名**
+（`mod.lua` 的 `name`，本地化；缺省即文件夹名）。确认后：
+
+- 禁用集合按 **mod-id** 判定，写进 `config.json` 的 **`mods_disabled`**
   （字符串数组；缺省 / 空 = 全部生效，保持"放进即生效"）
 - 被禁用的 mod 其覆盖**不再进入查表**——但仍在列表里列出，随时能再打开
 - **改动后需要重启主机才生效**：覆盖层是启动时扫描进表的，主机确认后会立即重启
-  （让"改了没生效"不会发生）
+  （让"改了没生效"不会发生）；启用集没有变化时只关窗、不重启
 
 **唯一例外：卡带的 `manifest.lua` 不可被覆盖。** 身份
 （`id` / `entry` / `save` 等）必须稳定，从而扫描、打包与运行时
 对同一张卡带保持一致认知。
 
-> 主机这边只有一处实现：对 `mods/<目标id>/<路径>` 的统一路径解析（卡带与内容包共用），
-> 启动时扫描一次并建表。**不硬编码任何具体 mod**——引擎提供的是"覆盖任意内容文件"这条通用能力，
-> 具体改什么由 mod 自己决定。
+> 主机这边只有一处实现：对 `mods/<mod-id>/<目标id>/<路径>` 的统一路径解析（卡带与内容包
+> 共用），启动时扫描一次并建表（`core/mods.cpp` 只做路径解析；`mod.lua` 元信息由
+> `pack/pack.cpp` 的 `scan_mods` 读）。**不硬编码任何具体 mod**——引擎提供的是
+> "覆盖任意内容文件"这条通用能力，具体改什么由 mod 自己决定。
 
 ### 脚本插件 Mod（Lua Plugin）——第二世代预留
 

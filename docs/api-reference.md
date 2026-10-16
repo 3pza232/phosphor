@@ -661,7 +661,7 @@ local all  = phos.assets.list("assets/")            -- 列出包内文件（可�
 音频文件（配合 `phos.audio.sample`）、平衡性数值表（改数值不必动代码）。
 
 > 覆盖层 Mod 生效时读到的是替换后的内容，卡带代码无感知
-> （做覆盖层 Mod，把文件放到 `mods/<任意名>/overrides/<卡带id>/assets/` 即可，见 content-packs.md）。
+> （做覆盖层 Mod，把文件放到 `mods/<mod-id>/<卡带id>/assets/` 即可，见 content-packs.md）。
 
 ## phos.cart
 

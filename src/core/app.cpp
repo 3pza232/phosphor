@@ -84,8 +84,11 @@ int App::run(const CliOptions& opts) {
     shell_.set_music_volume(config_.music_volume);
     shell_.set_sfx_volume(config_.sfx_volume);
     shell_.set_skin(packs_.skin());
-    // 覆盖层 Mod 清单 + 当前禁用集：架面据此决定是否显示/响应 M 键
-    shell_.set_mods(mod_names(), config_.mods_disabled);
+    // 覆盖层 Mod 清单（各自读 mod.lua 取显示名）+ 当前禁用集：架面据此决定是否显示/响应 M 键
+    std::vector<ModOption> mods;
+    for (const ModManifest& m : scan_mods())
+        mods.push_back(ModOption{m.id, m.name_zh, m.name_en});
+    shell_.set_mods(std::move(mods), config_.mods_disabled);
 
     // 音频必须先于开机动画就绪：boot 事件音与动画脚本的 phos.audio.* 都在第一秒内发生
     if (!opts.headless) init_audio();

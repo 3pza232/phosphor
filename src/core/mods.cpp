@@ -16,8 +16,8 @@ namespace fs = std::filesystem;
 /// 禁用集合可经 set_disabled 中途改写，故保留 built 标志做失效重建
 struct Registry {
     bool built = false;
-    std::vector<std::string> names;
-    std::vector<std::string> disabled;             // 被禁用的 mod id（= 目标 id）
+    std::vector<std::string> names;                // 全部 mod id（= 文件夹名，按名排序）
+    std::vector<std::string> disabled;             // 被禁用的 mod id
     std::map<std::string, std::string> overrides;  // "<目标id>/<路径>" → 落盘路径
 };
 
@@ -37,29 +37,36 @@ void build(Registry& r) {
     std::error_code ec;
     if (!fs::is_directory("mods", ec)) return;
 
-    // 扁平规则：`mods/` 下的相对路径**本身就是覆盖键** `<目标id>/<目标内路径>`，
-    // 不再有 `overrides/` 与"随意命名的 mod 外层"。例：
-    //   mods/snake/panel.lua      → 覆盖 snake 的 panel.lua
-    //   mods/default/font.lua     → 覆盖 default 字体方案
-    //   mods/graphite/skin.lua    → 覆盖 graphite 主题
-    // 一个键在一个文件系统里只有一份 → 不再有"多 mod 叠层"，也就没有"谁盖谁"的歧义。
-    std::vector<std::string> tops;
-    for (fs::recursive_directory_iterator it("mods", ec), end; it != end && !ec; it.increment(ec)) {
-        if (!it->is_regular_file(ec)) continue;
-        const fs::path rel = fs::relative(it->path(), "mods", ec);
-        if (rel.empty()) continue;
-        // 键必须形如 "<目标id>/<路径>"：根目录下的裸文件（只有一段）定位不到目标，忽略
-        const std::string key = rel.generic_string();
-        if (key.find('/') == std::string::npos) continue;
-        std::string top = rel.begin()->string();  // 顶层第一段 = 目标 id = mod id
-        if (std::find(tops.begin(), tops.end(), top) == tops.end()) tops.push_back(top);
-        // 被禁用的 mod 仍然列出（UI 要能管理），但它的覆盖不进入查表
-        if (is_disabled(r, top)) continue;
-        r.overrides[key] = it->path().generic_string();
+    // 每个 mod 是一个**有名字的文件夹**：文件夹名即 mod id，`mods/` 下只认文件夹。
+    // 先收齐 id 并排序——列表顺序与应用顺序（撞键时谁覆盖谁）都由它定，跨机器一致
+    for (fs::directory_iterator it("mods", ec), end; it != end && !ec; it.increment(ec)) {
+        if (!it->is_directory(ec)) continue;
+        r.names.push_back(it->path().filename().string());
+    }
+    std::sort(r.names.begin(), r.names.end());
+
+    // 覆盖内容镜像目标结构放在 `<mod-id>/` 之下，覆盖键取 mod-id **之后**的相对路径：
+    //   mods/font-resize/default/font.lua → 键 default/font.lua
+    //   mods/snake-tweaks/snake/panel.lua → 键 snake/panel.lua
+    // `mod.lua` 清单与任何"只有一段"的裸文件都定位不到目标（键须形如 "<目标id>/<路径>"），
+    // 由下面那条 "无斜杠即忽略" 一并挡掉。禁用 mod 仍列出（UI 要能管理），覆盖不入表。
+    for (const std::string& id : r.names) {
+        if (is_disabled(r, id)) continue;
+        const fs::path root = fs::path("mods") / id;
+        for (fs::recursive_directory_iterator it(root, ec), end; it != end && !ec; it.increment(ec)) {
+            if (!it->is_regular_file(ec)) continue;
+            const fs::path rel = fs::relative(it->path(), root, ec);
+            if (rel.empty()) continue;
+            const std::string key = rel.generic_string();
+            if (key.find('/') == std::string::npos) continue;
+            // 命名化后两个 mod 可能撞同一个键：按 id 字典序后处理的覆盖先前的，并留痕。
+            // 旧布局"一个键只有一份"的保证不再成立，碰撞必须可见而不是静默丢弃
+            if (r.overrides.count(key) != 0)
+                log::warn("mod override collision on '" + key + "' (mod '" + id + "' wins)");
+            r.overrides[key] = it->path().generic_string();
+        }
     }
 
-    std::sort(tops.begin(), tops.end());
-    r.names = std::move(tops);
     if (!r.names.empty()) {
         std::string list;
         for (const std::string& n : r.names) {

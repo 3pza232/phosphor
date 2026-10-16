@@ -47,6 +47,20 @@ struct ShelfPack {
 /// 扫描 theme/shelf/ 下全部卡带架样式包
 std::vector<ShelfPack> scan_shelves(const std::string& dir);
 
+/// 一条覆盖层 Mod 的**清单**（`mods/<id>/mod.lua`，可选）。
+/// id 一律以 `core::mod_names()` 为准；清单只补显示名与说明，不参与覆盖路径。
+struct ModManifest {
+    std::string id;       // 文件夹名（= mod id）
+    std::string name_zh;  // 显示名；缺省/读失败回落文件夹名，故非空
+    std::string name_en;
+    std::string desc_zh;  // 说明（可空）
+    std::string desc_en;
+};
+
+/// 读 `mods/` 下全部 mod 的清单（顺序 = core::mod_names()）。缺 `mod.lua`、语法错、
+/// 顶层不是表都只是**读不到声明**——显示名回落文件夹名，且**仍列出**该 mod
+std::vector<ModManifest> scan_mods();
+
 /// 音效包：主机事件 → 合成参数（或包内音频文件）
 struct SoundPack {
     std::string id;

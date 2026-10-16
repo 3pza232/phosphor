@@ -37,6 +37,14 @@ struct ShelfOption {
     int cols = 0;  // 0 = 包未声明列数：上下键按一维（∓1）处理
 };
 
+/// MODS 管理器里的一条：`id` 是启用集比较与写盘用的 mod 名，`zh`/`en` 是显示名。
+/// 显示名由调用方（pack 的 `scan_mods`）补好 folders-name 兜底，故按界面语言取用即可
+struct ModOption {
+    std::string id;
+    std::string zh;
+    std::string en;
+};
+
 /// 外壳界面：机身装饰 + 开机动画 + 卡带架 + 设置 + 暂停 + 错误画面。
 /// 界面绘制全部经由 core/ui 原语，与卡带可用的 phos.ui 同源，风格天然统一。
 class Shell {
@@ -107,8 +115,9 @@ public:
     /// 告知可选的卡带架样式包与当前项。候选项是 `[LIST, WINDOW, <包…>]`，
     /// `active` = 0（list）/ 1（window）/ 2+i（第 i 个包）
     void set_shelves(std::vector<ShelfOption> options, int active);
-    /// 告知覆盖层 Mod 清单与当前被禁用的 id：架面只在有 mod 时显示 M 提示、才响应 M 键
-    void set_mods(std::vector<std::string> names, std::vector<std::string> disabled);
+    /// 告知覆盖层 Mod 清单（含各自的本地化显示名）与当前被禁用的 id：
+    /// 架面只在有 mod 时显示 M 提示、才响应 M 键
+    void set_mods(std::vector<ModOption> mods, std::vector<std::string> disabled);
     /// 设置卡带架内容区的绘制回调。非空 = 内容区由内容包接管（ShelfView 标记 external）；
     /// 清空即回退内置样式 —— 包加载失败时 App 就是这样兜底的
     void set_shelf_painter(shelf::Painter painter) { shelf_painter_ = std::move(painter); }
@@ -246,11 +255,11 @@ private:
     int fps_ = kDefaultFps;
     int pause_cursor_ = 0;
 
-    /// 覆盖层 Mod 清单（全部，含禁用的）与当前禁用集合（由 App 从 config 填入）
-    std::vector<std::string> mod_names_;
+    /// 覆盖层 Mod 清单（全部，含禁用的；带各自显示名）与当前禁用集合（由 App 从 config 填入）
+    std::vector<ModOption> mods_;
     std::vector<std::string> mods_disabled_;
-    int mods_cursor_ = 0;              // 单列光标：N 个 mod 行 + 确认 + 取消
-    std::vector<bool> mods_checked_;   // 编辑态勾选（下标与 mod_names_ 对齐）
+    int mods_cursor_ = 0;              // 单列光标：N 个 mod 行 + 确认（Esc 即取消）
+    std::vector<bool> mods_checked_;   // 编辑态勾选（下标与 mods_ 对齐）
     std::vector<std::string> mods_disabled_snapshot_;  // 打开时的禁用集（比较用）
     float mods_scroll_ = 0.0f;         // 平滑滚动首行（浮点，逼近目标）
 
