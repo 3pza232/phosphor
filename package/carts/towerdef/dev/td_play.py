@@ -269,8 +269,8 @@ class Bot:
             if nd is None:
                 break
             d = nd
-        # 3) 升级已有塔（选最靠前的几座）
-        for t in d["towers"][:4]:
+        # 3) 升级已有塔（选最靠前的几座）。空表经控制通道会变成 {}（falsy），兜底成 []。
+        for t in (d["towers"] or [])[:4]:
             if d["credits"] < 120 or t["level"] >= 3:
                 continue
             self.move_to(t["x"], t["y"])

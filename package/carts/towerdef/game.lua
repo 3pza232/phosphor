@@ -24,6 +24,10 @@ local POWER_BASE = 8 -- 基础电力上限（反应堆在此之上累加）
 local AIRSTRIKE_CD = 40
 local AIRSTRIKE_RADIUS = 3.0
 local AIRSTRIKE_WARN = 0.6
+-- 战斗中提前招下一波的奖金 = EARLY_A + EARLY_B·(所招波号)：与 build 期"提前放波"同一个精神
+-- （贪快有奖），但金额更小、随波号缓增（与波清奖金 15+2w 同量级的下沿），不喧宾夺主。
+-- 该估计已纳入 waves.lua 的 I(w)（EARLY_A/EARLY_B 与那边同步）。
+local EARLY_A, EARLY_B = 3, 1
 
 local function hypot(x, y) return math.sqrt(x * x + y * y) end
 
@@ -284,6 +288,7 @@ end
 
 -- 提前放波：build 期随时可放（按剩余秒数给奖金）；combat 期也能放，但场上**最多同时两拨**——
 -- 两拨都还在（有活口或还没出完）就不能再招，直到某一拨被清干净。贪快有代价，也有上限。
+-- 两个分支都发奖金（同一个精神）：build 期按剩余秒数；combat 期按所招波号给 EARLY_A+EARLY_B·w。
 function Game:early_wave()
 	if self.phase == "build" then
 		local bonus = math.floor(math.max(0, self.build_timer)) * 2
@@ -293,6 +298,9 @@ function Game:early_wave()
 		return true
 	elseif self.phase == "combat" then
 		if self:active_waves() >= 2 then return false end
+		local bonus = EARLY_A + EARLY_B * (self.wave + 1)
+		self.credits = self.credits + bonus
+		self.ev.early_bonus = bonus
 		self:start_wave()
 		return true
 	end
