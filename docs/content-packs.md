@@ -154,6 +154,9 @@ return {
 | `crimson-arcade` | 红白街机机台：深红机身 + 金色高亮 |
 | `graphite` | 石墨灰工程终端：细线冷灰 |
 | `eva-unit01` | 初号机配色：紫机身 + 荧光绿高亮 + 橙色警戒 |
+| `abyssal` | 深潜耐压舱：青灰机身 + 舷窗铆钉 + 青绿呼吸灯（配 `abyss` 色板） |
+| `inkstone` | 砚台/宣纸机台：宣纸暖白机身 + 朱砂印章 + 回纹/云纹 + 砚池与笔架（配 `inkwash` 色板，浅底深字） |
+| `brasswork` | 黄铜工坊仪表：黄铜机身 + 铆钉铰链 + 上下齿合边 + 纯字符小表（配 `verdigris` 色板） |
 
 ### boot（启动动画）
 
@@ -188,6 +191,9 @@ return {
 | `helix` | HELIX：双螺旋——两条正弦链缠绕 + 碱基对逐个点亮 → 合拢后产品名亮起 |
 | `circuit` | CIRCUIT：电路板通电——正交走线逐段点亮 + 电流亮点流动 + 焊盘闪烁 |
 | `globe` | GLOBE：线框地球——经线随自转流动 + 陆地扫描 + 轨道卫星掠过 |
+| `sonar` | SONAR：深潜下潜（深度计/气泡/光柱）→ 声呐 ping 同心环外扩、回声响点连成海底与机台轮廓 → 生物荧光 → 产品名自深处上浮 |
+| `calligraphy` | CALLIGRAPHY：卷轴展开 + 墨点入砚晕开 → 毛笔**逐笔**写产品名（湿墨渐干 + 洇晕）→ 朱砂阴文印章 |
+| `clockwork` | CLOCKWORK：上发条 → **等模数齿轮真咬合**转动 → 指针加速扫过表盘并锁定 → 中央开启露出铭牌 |
 
 > **文案约定**：出厂默认字体方案已带中文字体（`theme/font/default/font-cn.otf` 作回退），
 > 中文与 ASCII 都能显示。但一个包要在**任何**字体方案下都不缺字，只能用 ASCII 写文案
@@ -229,7 +235,8 @@ return {
 
 随包色板（名字即文件夹名）：`default`（荧光绿）、`amber`（琥珀）、`ice-blue`（冰蓝）、
 `slate`（灰白）、`paper`（纸面深墨）、`crimson`（血橙红，配 `crimson-arcade`）、
-`eva`（初号机紫/绿/橙，配 `eva-unit01`）。
+`eva`（初号机紫/绿/橙，配 `eva-unit01`）、`abyss`（深海蓝青，配 `abyssal`）、
+`inkwash`（宣纸墨朱，**浅底深字**，配 `inkstone`）、`verdigris`（黄铜铜绿，配 `brasswork`）。
 
 ### sound（音效包）
 
