@@ -100,6 +100,14 @@ Config load_config(const std::string& path) {
         clamp_volume(pick_int(&root, "music_volume", legacy >= 0 ? legacy : kDefaultMusicVolume));
     cfg.sfx_volume =
         clamp_volume(pick_int(&root, "sfx_volume", legacy >= 0 ? legacy : kDefaultSfxVolume));
+
+    // 被禁用的 Mod：字符串数组。去重、去空，手改文件写重复项也只算一次
+    for (const std::string& id : root.string_array("mods_disabled")) {
+        if (id.empty()) continue;
+        if (std::find(cfg.mods_disabled.begin(), cfg.mods_disabled.end(), id) ==
+            cfg.mods_disabled.end())
+            cfg.mods_disabled.push_back(id);
+    }
     return cfg;
 }
 
@@ -123,7 +131,11 @@ void save_config(const std::string& path, const Config& cfg) {
         << "  \"crt_level\": " << cfg.crt_level << ",\n"
         << "  \"fps\": " << cfg.fps << ",\n"
         << "  \"music_volume\": " << cfg.music_volume << ",\n"
-        << "  \"sfx_volume\": " << cfg.sfx_volume << "\n"
+        << "  \"sfx_volume\": " << cfg.sfx_volume << ",\n"
+        << "  \"mods_disabled\": [";
+    for (size_t i = 0; i < cfg.mods_disabled.size(); ++i)
+        out << (i == 0 ? "" : ", ") << json::quote(cfg.mods_disabled[i]);
+    out << "]\n"
         << "}\n";
 }
 

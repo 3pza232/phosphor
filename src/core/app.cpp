@@ -4,6 +4,7 @@
 #include "cart/cart_info.hpp"
 #include "core/effects.hpp"
 #include "core/log.hpp"
+#include "core/mods.hpp"
 #include "core/version.hpp"
 #include "platform/window.hpp"
 #include "render/renderer.hpp"
@@ -21,6 +22,10 @@ namespace phos {
 int App::run(const CliOptions& opts) {
     if (opts.config) config_path_ = *opts.config;
     config_ = load_config(config_path_);
+
+    // 禁用集合必须先于任何内容扫描落地：覆盖层会影响包与卡带的扫描结果，
+    // 晚了被禁的 mod 就已经生效过一次（见 core/mods.hpp）
+    set_disabled(config_.mods_disabled);
 
     // 内容包（皮肤/色板/开机动画/音效）：扫描用户区+出厂区并按配置定位 —— 交给内容库
     packs_.scan(config_);
@@ -79,6 +84,8 @@ int App::run(const CliOptions& opts) {
     shell_.set_music_volume(config_.music_volume);
     shell_.set_sfx_volume(config_.sfx_volume);
     shell_.set_skin(packs_.skin());
+    // 覆盖层 Mod 清单 + 当前禁用集：架面据此决定是否显示/响应 M 键
+    shell_.set_mods(mod_names(), config_.mods_disabled);
 
     // 音频必须先于开机动画就绪：boot 事件音与动画脚本的 phos.audio.* 都在第一秒内发生
     if (!opts.headless) init_audio();

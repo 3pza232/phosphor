@@ -97,6 +97,14 @@ constexpr std::array<Entry, static_cast<size_t>(Msg::count)> kTable{{
     {"字号", "FONT SIZE"},
     {"字形预览", "GLYPH PREVIEW"},
     {"汉字样本：你好，世界！（全角标点）", "CJK sample: 你好，世界！ (full-width)"},
+
+    // Mod 管理器（卡带架 M 键浮窗）
+    {"模组", "MODS"},
+    {"M MODS", "M MODS"},
+    {"确认", "CONFIRM"},
+    {"取消", "CANCEL"},
+    {"[↑ / ↓] 选择   [A / 空格] 切换·确认   [Esc] 取消",
+     "[Up / Down] CHOOSE   [A / Space] TOGGLE·APPLY   [Esc] CANCEL"},
 }};
 
 static_assert(kTable.size() == static_cast<size_t>(Msg::count),

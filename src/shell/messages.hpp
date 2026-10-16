@@ -94,6 +94,13 @@ enum class Msg {
     font_preview,
     font_preview_cjk,
 
+    // Mod 管理器（卡带架 M 键浮窗）
+    mods_title,
+    mods_hint,
+    mods_confirm,
+    mods_cancel,
+    mods_footer,
+
     count
 };
 

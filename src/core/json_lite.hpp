@@ -10,7 +10,8 @@ namespace phos::json {
 
 /// 极简 JSON 工具：控制通道与配置读取共用同一份实现。
 /// 取舍：只需要"输出任意 JSON + 解析对象"，因此刻意不引入第三方 JSON 库，
-/// 宿主保持零外部解析依赖。嵌套对象会递归解析（配置文件需要），数组跳过。
+/// 宿主保持零外部解析依赖。嵌套对象会递归解析；数组只收**字符串元素**
+/// （配置里的 `mods_disabled` 需要），其余类型的元素跳过——数组本身不参与取值。
 
 /// 字符串转义（不含引号）
 std::string escape(std::string_view text);
@@ -38,11 +39,15 @@ public:
     /// 嵌套对象；键不存在或不是对象时返回 nullptr
     const Object* object(std::string_view key) const;
 
+    /// 字符串数组读取：键不存在或不是数组时返回空表。
+    /// 数组里的数字/布尔按原样文本收（`1` → `"1"`），嵌套对象/数组跳过
+    std::vector<std::string> string_array(std::string_view key) const;
+
     /// 上一次 parse 中重复出现的键。"一个键只写一次"的配置文件据此提醒用户
     const std::vector<std::string>& duplicate_keys() const { return duplicates_; }
 
 private:
-    enum class Kind { string, number, boolean, null, object };
+    enum class Kind { string, number, boolean, null, object, array };
 
     struct Entry {
         Kind kind = Kind::null;
@@ -50,6 +55,7 @@ private:
         double number = 0.0;
         bool boolean = false;
         std::shared_ptr<Object> object;  // Kind::object：嵌套对象
+        std::vector<std::string> array;  // Kind::array：收集到的字符串元素
     };
 
     /// 原样取数（integer / number 的实现基础）

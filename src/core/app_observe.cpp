@@ -16,6 +16,7 @@ std::string App::mode_name() const {
         case ShellMode::shelf: return "SHELF";
         case ShellMode::settings: return "SETTINGS";
         case ShellMode::paused: return "PAUSED";
+        case ShellMode::mods: return "MODS";
         case ShellMode::tape: return "TAPE";
         case ShellMode::cart_error: return "CART_ERROR";
     }

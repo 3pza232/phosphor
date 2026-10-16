@@ -182,6 +182,11 @@ painter 回调（`shelf::Painter`），`ShelfView.external` 标记"内容区由�
 App 在激活内容包时挂上回调、页面模式下每帧跑包的 Lua（组件上下文来自 `ShelfView`
 + 内容区配色），画家为空即回退内置样式。输入仍全归主机——包只画，不处理输入。
 
+外壳模式由 `ShellMode` 枚举（`shell.hpp`）表达：`boot` / `shelf` / `settings` /
+`paused` / `mods` / `tape` / `cart_error`。其中 **`mods`** 是卡带架按 `M` 打开的
+覆盖层 Mod 管理器：单列勾选、确认后把禁用集合交回 App 写盘并（窗口路径）重启。
+它的输入与绘制收在 `shell.cpp`（`update_mods` / `draw_mods`），画家式内容包与它无关。
+
 为保持文件职责单一，外壳按视图拆分：
 
 | 文件 | 职责 |
@@ -223,7 +228,8 @@ miniaudio 封装：软件混音（波形 / 包络 / 扫频 / 噪声）、采样�
 ### platform —— 平台层
 
 窗口（GLFW）、文件对话框、路径处理、**socket**（`platform/socket.*`：WinSock/POSIX
-的唯一落点）等 OS 相关资源的唯一聚集地。
+的唯一落点）、**重启自身**（`platform/relaunch.*`：Win32 用 `CreateProcessW` 另起一个新实例，
+供"改动的 Mod 启用集需重启生效"用）等 OS 相关资源的唯一聚集地。
 
 ## 三、仓库目录结构
 

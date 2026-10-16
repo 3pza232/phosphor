@@ -167,6 +167,23 @@ TEST(json_rejects_deep_nesting) {
     CHECK(ok_obj.parse("{\"a\":{\"b\":{\"c\":1}}}", ok_err));
 }
 
+TEST(json_string_array) {
+    json::Object obj;
+    std::string err;
+    CHECK(obj.parse("{\"a\":[\"x\",\"y\"],\"n\":[1,2],\"e\":[],\"o\":{\"k\":1},\"s\":\"z\"}",
+                    err));
+    const std::vector<std::string> a = obj.string_array("a");
+    CHECK_EQ(a.size(), size_t(2));
+    CHECK_EQ(a[0], std::string("x"));
+    CHECK_EQ(a[1], std::string("y"));
+    CHECK_EQ(obj.string_array("n").size(), size_t(2));  // 数字按原样文本收
+    CHECK(obj.string_array("e").empty());               // 空数组
+    CHECK(obj.string_array("o").empty());               // 非数组 → 空
+    CHECK(obj.string_array("s").empty());               // 字符串不是数组
+    CHECK(obj.string_array("missing").empty());
+    CHECK_EQ(obj.integer("x", 5), 5);  // 数组不干扰其它取值
+}
+
 // ---------------------------------------------------------------- palette / builtin
 
 TEST(palette_slot_names) {
@@ -257,6 +274,7 @@ TEST(config_roundtrip) {
     c.fps = 120;
     c.music_volume = 42;
     c.sfx_volume = 13;
+    c.mods_disabled = {"default", "snake"};
     save_config(path.string(), c);
 
     const Config r = load_config(path.string());
@@ -268,6 +286,9 @@ TEST(config_roundtrip) {
     CHECK_EQ(r.fps, 120);
     CHECK_EQ(r.music_volume, 42);
     CHECK_EQ(r.sfx_volume, 13);
+    CHECK_EQ(r.mods_disabled.size(), size_t(2));
+    CHECK_EQ(r.mods_disabled[0], std::string("default"));
+    CHECK_EQ(r.mods_disabled[1], std::string("snake"));
 
     std::error_code ec;
     std::filesystem::remove(path, ec);  // 清理临时文件；删不掉也无所谓

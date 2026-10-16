@@ -1,6 +1,7 @@
 #include "core/app.hpp"
 
 #include "core/log.hpp"
+#include "platform/relaunch.hpp"
 #include "platform/window.hpp"
 #include "render/renderer.hpp"
 
@@ -36,6 +37,10 @@ void App::handle_escape() {
         case ShellMode::settings:
             shell_.to_shelf();
             log::info("settings closed -> shelf");
+            break;
+        case ShellMode::mods:
+            shell_.to_shelf();  // Esc = 取消：丢弃改动，不写盘
+            log::info("mods closed -> shelf");
             break;
         case ShellMode::tape:
             shell_.to_paused();  // 磁带码界面回暂停菜单（卡带仍暂停着）
@@ -147,6 +152,17 @@ void App::handle_intent(const Shell::Intent& intent, Renderer* renderer, Window*
             shell_.set_tape_result(ok ? Shell::TapeResult::ok : Shell::TapeResult::invalid);
             log::info(std::string("tape import: ") + (ok ? "ok" : "rejected"));
         }
+    }
+    if (intent.mods_applied) {
+        // 确认且启用集**确有变化**（Shell 已用集合语义判过）：写盘，然后重启才生效——
+        // 覆盖层是启动期扫描进表的，运行中改不回去
+        config_.mods_disabled = intent.mods_disabled;
+        save_config_now();
+        log::info("mods updated; restart to apply");
+        // 无头（agent/CI）不真正另起进程：日志已留痕，避免留下继承同一控制端口的幽灵实例。
+        // 窗口路径是给玩家的正式行为，真重启
+        if (!headless_) relaunch_self();
+        quit_ = true;
     }
     if (intent.insert_cart) load_cart(intent.cart_index);
 }

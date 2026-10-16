@@ -23,6 +23,7 @@ enum class ShellMode {
     shelf,
     settings,
     paused,
+    mods,        // Mod 管理器：开关覆盖层 Mod（改后重启生效）
     tape,        // 磁带码：查看本机存档的码 / 输入别人的码
     cart_error
 };
@@ -67,6 +68,10 @@ public:
         std::string tape_code;     // 待导入的码（十六进制）
         bool language_changed = false;  // 界面语言已切换（App 读 shell_.language() 落盘）
         bool preview_sound = false;     // 音效行按 Enter：试听**当前**音效包（不切换）
+        /// MODS 浮窗"确认"且启用集**确有变化**：App 写盘并重启。没变时这里恒为 false
+        /// （关掉又开回算没变——用集合语义比较，不看按键历史）
+        bool mods_applied = false;
+        std::vector<std::string> mods_disabled;  // 确认后的禁用集合
     };
 
     /// 换皮肤（同时重建几何：格子尺寸与外壳尺寸随主题变）
@@ -102,6 +107,8 @@ public:
     /// 告知可选的卡带架样式包与当前项。候选项是 `[LIST, WINDOW, <包…>]`，
     /// `active` = 0（list）/ 1（window）/ 2+i（第 i 个包）
     void set_shelves(std::vector<ShelfOption> options, int active);
+    /// 告知覆盖层 Mod 清单与当前被禁用的 id：架面只在有 mod 时显示 M 提示、才响应 M 键
+    void set_mods(std::vector<std::string> names, std::vector<std::string> disabled);
     /// 设置卡带架内容区的绘制回调。非空 = 内容区由内容包接管（ShelfView 标记 external）；
     /// 清空即回退内置样式 —— 包加载失败时 App 就是这样兜底的
     void set_shelf_painter(shelf::Painter painter) { shelf_painter_ = std::move(painter); }
@@ -112,6 +119,7 @@ public:
             case ShellMode::shelf: return shelf_cursor_;
             case ShellMode::paused: return pause_cursor_;
             case ShellMode::settings: return settings_cursor_;
+            case ShellMode::mods: return mods_cursor_;
             default: return -1;
         }
     }
@@ -178,7 +186,17 @@ private:
     Intent update_shelf(const Input& input);
     Intent update_settings(const Input& input);
     Intent update_paused(const Input& input);
+    Intent update_mods(const Input& input);
     Intent update_tape(const Input& input);
+
+    /// 打开 MODS 浮窗（快照当前启用集）；仅在已有 mod 时有意义
+    void open_mods();
+    /// 当前勾选状态推出的禁用集合（勾掉的即禁用）
+    std::vector<std::string> mods_disabled_now() const;
+    /// 启用集是否相对打开时的快照有变化（**集合语义**：关掉又开回 = 没变）
+    bool mods_changed() const;
+    /// MODS 浮窗矩形（居中）：输入（滚动视口）与绘制共用同一份布局
+    ui::Rect mods_box() const;
 
     ui::Rect content_rect() const;
     void draw_bezel(Screen& screen) const;
@@ -189,6 +207,7 @@ private:
     /// 磁带码界面（两态渲染见 shell/tape_view.cpp）
     void draw_tape(Screen& screen) const;
     void draw_error(Screen& screen) const;
+    void draw_mods(Screen& screen) const;
     void draw_chrome(Screen& screen, const std::string& title,
                      const std::string& right_text) const;
     void draw_footer(Screen& screen, const std::string& hints) const;
@@ -226,6 +245,14 @@ private:
     int settings_cursor_ = 0;
     int fps_ = kDefaultFps;
     int pause_cursor_ = 0;
+
+    /// 覆盖层 Mod 清单（全部，含禁用的）与当前禁用集合（由 App 从 config 填入）
+    std::vector<std::string> mod_names_;
+    std::vector<std::string> mods_disabled_;
+    int mods_cursor_ = 0;              // 单列光标：N 个 mod 行 + 确认 + 取消
+    std::vector<bool> mods_checked_;   // 编辑态勾选（下标与 mod_names_ 对齐）
+    std::vector<std::string> mods_disabled_snapshot_;  // 打开时的禁用集（比较用）
+    float mods_scroll_ = 0.0f;         // 平滑滚动首行（浮点，逼近目标）
 
     std::vector<std::string> skin_names_;
     int skin_index_ = 0;

@@ -93,6 +93,40 @@ std::string trim(std::string text) {
     return text.substr(begin, end - begin);
 }
 
+/// 解析数组：只收集字符串元素（数字/布尔按原样文本收），嵌套对象/数组整体跳过。
+/// 配置里的 `mods_disabled` 是字符串数组，其它数组语义未定义——收了也没人读
+bool parse_array(Scanner& s, std::vector<std::string>& out) {
+    ++s.pos;  // '['
+    while (true) {
+        s.skip_ws();
+        if (s.eof()) {
+            s.fail("unterminated array");
+            return false;
+        }
+        if (s.peek() == ']') {
+            ++s.pos;
+            return true;
+        }
+        if (s.peek() == ',') {
+            ++s.pos;
+            continue;
+        }
+        const char c = s.peek();
+        if (c == '"') {
+            out.push_back(parse_string(s));
+            if (!s.ok) return false;
+        } else if (c == '{' || c == '[') {
+            skip_value(s);  // 嵌套的复合值不参与取值
+            if (!s.ok) return false;
+        } else {
+            const size_t start = s.pos;
+            while (!s.eof() && s.peek() != ',' && s.peek() != ']') ++s.pos;
+            const std::string raw = trim(std::string(s.text.substr(start, s.pos - start)));
+            if (!raw.empty()) out.push_back(raw);
+        }
+    }
+}
+
 } // namespace
 
 std::string escape(std::string_view text) {
@@ -181,12 +215,11 @@ bool Object::parse_at(std::string_view text, std::string& err, int depth) {
             entry.object = std::move(child);
             s.pos += nested.pos;
         } else if (c == '[') {
-            skip_value(s);
-            if (!s.ok) {
+            entry.kind = Kind::array;
+            if (!parse_array(s, entry.array)) {
                 err = s.err;
                 return false;
             }
-            entry.kind = Kind::null;  // 数组不参与取值
         } else if (c == '"') {
             entry.kind = Kind::string;
             entry.text = parse_string(s);
@@ -264,6 +297,12 @@ const Object* Object::object(std::string_view key) const {
     auto it = values_.find(std::string(key));
     if (it == values_.end() || it->second.kind != Kind::object) return nullptr;
     return it->second.object.get();
+}
+
+std::vector<std::string> Object::string_array(std::string_view key) const {
+    auto it = values_.find(std::string(key));
+    if (it == values_.end() || it->second.kind != Kind::array) return {};
+    return it->second.array;
 }
 
 } // namespace phos::json

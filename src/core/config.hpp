@@ -22,6 +22,9 @@ struct Config {
     int fps = kDefaultFps;                 // 画面刷新率上限（档位见 defaults.hpp 的 kFpsChoices）
     int music_volume = kDefaultMusicVolume;  // 音乐音量 0~100（音序器产出）
     int sfx_volume = kDefaultSfxVolume;      // 音效音量 0~100（beep/音符/采样）
+    /// 被禁用的 Mod id（= `mods/<id>/` 的 `<id>`，见 core/mods.hpp）。空 = 全部生效
+    /// （"放进 mods/ 即生效"的默认行为），非空才屏蔽对应 Mod 的覆盖
+    std::vector<std::string> mods_disabled;
 };
 
 /// 读取配置；文件不存在/损坏时返回默认值（安静回退）

@@ -10,6 +10,7 @@
 #include "shell/settings_view.hpp"
 #include "shell/tape_view.hpp"
 
+#include <algorithm>
 #include <cmath>
 
 namespace phos {
@@ -68,6 +69,11 @@ void Shell::set_shelves(std::vector<ShelfOption> options, int active) {
     shelf_options_ = std::move(options);
     const int count = 2 + static_cast<int>(shelf_options_.size());
     shelf_index_ = (active >= 0 && active < count) ? active : 1;  // 越界回退 window
+}
+
+void Shell::set_mods(std::vector<std::string> names, std::vector<std::string> disabled) {
+    mod_names_ = std::move(names);
+    mods_disabled_ = std::move(disabled);
 }
 
 void Shell::open_settings() {
@@ -150,6 +156,49 @@ void Shell::to_paused() {
     pause_cursor_ = 0;
 }
 
+void Shell::open_mods() {
+    if (mod_names_.empty()) return;   // 没有 mod 就没有可管理的东西
+    mode_ = ShellMode::mods;
+    // 勾选态按当前启用集初始化；快照存下来，"关掉又开回"才不会误判成变化
+    mods_checked_.assign(mod_names_.size(), true);
+    for (size_t i = 0; i < mod_names_.size(); ++i)
+        if (std::find(mods_disabled_.begin(), mods_disabled_.end(), mod_names_[i]) !=
+            mods_disabled_.end())
+            mods_checked_[i] = false;
+    // 快照取"与现有 mod 对应的禁用子集"：配置里指向已删除 mod 的陈旧项不算改动，
+    // 否则打开后原样确认也会被判成"有变化"而平白重启
+    mods_disabled_snapshot_ = mods_disabled_now();
+    mods_cursor_ = 0;
+    mods_scroll_ = 0.0f;
+}
+
+std::vector<std::string> Shell::mods_disabled_now() const {
+    std::vector<std::string> out;
+    for (size_t i = 0; i < mod_names_.size(); ++i)
+        if (i < mods_checked_.size() && !mods_checked_[i]) out.push_back(mod_names_[i]);
+    return out;
+}
+
+bool Shell::mods_changed() const {
+    // 集合语义比较：内容相同即"没变"，与列举顺序、按键历史无关
+    auto normalize = [](std::vector<std::string> v) {
+        std::sort(v.begin(), v.end());
+        v.erase(std::unique(v.begin(), v.end()), v.end());
+        return v;
+    };
+    return normalize(mods_disabled_now()) != normalize(mods_disabled_snapshot_);
+}
+
+ui::Rect Shell::mods_box() const {
+    const ui::Rect content = content_rect();
+    const int items = static_cast<int>(mod_names_.size()) + 2;  // + 确认 + 取消
+    int h = items + 4;
+    const int max_h = content.h - 2;
+    if (h > max_h) h = max_h;
+    if (h < 6) h = 6;
+    return ui::Rect::centered(content, 46, h);
+}
+
 // ---------------------------------------------------------------- 更新
 
 Shell::Intent Shell::update(const Input& input, float dt) {
@@ -160,6 +209,21 @@ Shell::Intent Shell::update(const Input& input, float dt) {
     shelf_pos_ += (target - shelf_pos_) * (1.0f - std::exp(-10.0f * dt));
     if (std::fabs(target - shelf_pos_) < 0.001f) shelf_pos_ = target;
 
+    // MODS 浮窗的平滑滚动：一条 float 首行位置指数逼近目标（像视窗样式那样，不硬跳）
+    if (mode_ == ShellMode::mods) {
+        const int items = static_cast<int>(mod_names_.size()) + 2;
+        const int visible = std::max(1, mods_box().h - 4);
+        int row_target = 0;
+        if (items > visible) {
+            row_target = mods_cursor_ - visible / 2;
+            if (row_target < 0) row_target = 0;
+            if (row_target > items - visible) row_target = items - visible;
+        }
+        const float goal = static_cast<float>(row_target);
+        mods_scroll_ += (goal - mods_scroll_) * (1.0f - std::exp(-16.0f * dt));
+        if (std::fabs(goal - mods_scroll_) < 0.01f) mods_scroll_ = goal;
+    }
+
     switch (mode_) {
         case ShellMode::boot:
             boot_time_ += dt;
@@ -169,6 +233,7 @@ Shell::Intent Shell::update(const Input& input, float dt) {
         case ShellMode::shelf: return update_shelf(input);
         case ShellMode::settings: return update_settings(input);
         case ShellMode::paused: return update_paused(input);
+        case ShellMode::mods: return update_mods(input);
         case ShellMode::tape: return update_tape(input);
         case ShellMode::cart_error:
             if (input.pressed(Key::start)) return {.eject = true};  // Enter 返回卡带架
@@ -199,6 +264,11 @@ Shell::Intent Shell::update_shelf(const Input& input) {
         return intent;
     }
     if (input.pressed("f")) shelf_search_.begin_edit();
+    // M：打开 Mod 管理器（仅当有 mod 时）。架面上的自定义键，与 F 搜索同级
+    if (!mod_names_.empty() && input.pressed("m")) {
+        open_mods();
+        return intent;
+    }
 
     // 先对齐再取命中集：下面的插卡用的是 shelf_cursor_，它必须已经在结果里
     shelf_sync_cursor();
@@ -212,32 +282,26 @@ Shell::Intent Shell::update_shelf(const Input& input) {
                 if (matches[static_cast<std::size_t>(i)] == shelf_cursor_) return i;
             return 0;
         };
-        // 内置样式：环绕（列表上下、视窗左右），行为与从前逐字节一致
+        // 环绕：内置与内容包一致——越过一端从另一端回来。上下按行（±cols）、
+        // 左右按格（±1）；delta 可能大于命中集长度，取模前先归正到 [0,n)
         auto move = [&, this](int delta) {
-            shelf_cursor_ =
-                matches[static_cast<std::size_t>((at_of() + delta + n) % n)];
-        };
-        // 内容包样式：夹在 [0, count)，不环绕——二维网格里"到头停住"比"绕回另一头"更符合直觉
-        auto step = [&, this](int delta) {
-            int at = at_of() + delta;
-            if (at < 0) at = 0;
-            if (at >= n) at = n - 1;
+            const int at = ((at_of() + delta) % n + n) % n;
             shelf_cursor_ = matches[static_cast<std::size_t>(at)];
         };
 
         const bool external = shelf_index_ >= 2;  // 内容包接管时的二维导航
         const int cols = shelf_cols();            // 0 = 包未声明列数
-        if (input.pressed(Key::left))  { if (external) step(-1); else move(-1); }
-        if (input.pressed(Key::right)) { if (external) step(1);  else move(1);  }
+        if (input.pressed(Key::left))  move(-1);
+        if (input.pressed(Key::right)) move(1);
         if (input.pressed(Key::up)) {
             if (external)
-                step(-(cols > 0 ? cols : 1));  // 逐行上移；无列数声明也至少动一格
+                move(-(cols > 0 ? cols : 1));  // 逐行上移；无列数声明也至少动一格
             else if (shelf_index_ == 0)
                 move(-1);  // 列表样式下用上下键更符合直觉（内置行为不变）
         }
         if (input.pressed(Key::down)) {
             if (external)
-                step(cols > 0 ? cols : 1);
+                move(cols > 0 ? cols : 1);
             else if (shelf_index_ == 0)
                 move(1);
         }
@@ -400,6 +464,36 @@ Shell::Intent Shell::update_paused(const Input& input) {
     return intent;
 }
 
+Shell::Intent Shell::update_mods(const Input& input) {
+    Intent intent;
+    const int mods = static_cast<int>(mod_names_.size());
+    const int items = mods + 2;  // 单列：N 个 mod 行 + 确认 + 取消
+    if (items <= 0) {            // 理论上不会（无 mod 打不开），兜底回架面
+        mode_ = ShellMode::shelf;
+        return intent;
+    }
+    // 首尾循环
+    if (input.pressed(Key::up))   mods_cursor_ = (mods_cursor_ + items - 1) % items;
+    if (input.pressed(Key::down)) mods_cursor_ = (mods_cursor_ + 1) % items;
+
+    // A / 空格：mod 行=切换勾选；确认/取消=执行。Enter 不在此列（与架上插卡区分开）
+    if (input.pressed(Key::a) || input.pressed("space")) {
+        if (mods_cursor_ < mods) {
+            mods_checked_[static_cast<size_t>(mods_cursor_)] =
+                !mods_checked_[static_cast<size_t>(mods_cursor_)];
+        } else if (mods_cursor_ == mods) {  // 确认
+            if (mods_changed()) {           // 没变就只关窗，不重启
+                intent.mods_applied = true;
+                intent.mods_disabled = mods_disabled_now();
+            }
+            mode_ = ShellMode::shelf;
+        } else {  // 取消：丢弃改动
+            mode_ = ShellMode::shelf;
+        }
+    }
+    return intent;
+}
+
 // ---------------------------------------------------------------- 布局
 
 ui::Rect Shell::content_rect() const { return phos::content_rect(skin_); }
@@ -424,6 +518,7 @@ void Shell::draw(Screen& screen) const {
         case ShellMode::shelf: draw_shelf(screen); break;
         case ShellMode::settings: draw_settings(screen); break;
         case ShellMode::paused: draw_paused(screen); break;
+        case ShellMode::mods: draw_mods(screen); break;
         case ShellMode::tape: draw_tape(screen); break;
         case ShellMode::cart_error: draw_error(screen); break;
     }
@@ -534,9 +629,12 @@ void Shell::draw_shelf(Screen& screen) const {
                   text::truncate(field, box.w - 4), style_.fg, style_.bg);
     }
 
-    if (!shelf_search_.visible())
-        draw_footer(screen, tr(lang_, Msg::shelf_insert_hint));
-    else if (matches.empty() && !carts_.empty())
+    if (!shelf_search_.visible()) {
+        // 有 mod 才追加 M 提示（没有 mod 时页脚与从前逐字节一致）
+        std::string hints = tr(lang_, Msg::shelf_insert_hint);
+        if (!mod_names_.empty()) hints += std::string("   ") + tr(lang_, Msg::mods_hint);
+        draw_footer(screen, hints);
+    } else if (matches.empty() && !carts_.empty())
         draw_footer(screen, tr(lang_, Msg::shelf_search_empty));
     else
         draw_footer(screen, tr(lang_, Msg::shelf_search_hint));
@@ -587,6 +685,44 @@ void Shell::draw_paused(Screen& screen) const {
     ui::menu(screen, ui::Rect{box.x + 6, box.y + 3, box.w - 12, 5}, items, pause_cursor_, style_);
 
     draw_footer(screen, tr(lang_, Msg::pause_footer));
+}
+
+void Shell::draw_mods(Screen& screen) const {
+    draw_chrome(screen, tr(lang_, Msg::mods_title), "");
+    const ui::Rect box = mods_box();
+    ui::fill(screen, box, U' ', style_.fg, style_.bg);
+    ui::frame(screen, box, tr(lang_, Msg::mods_title), style_);
+
+    const int mods = static_cast<int>(mod_names_.size());
+    const int items = mods + 2;  // mod 行 + 确认 + 取消，单列
+    const int list_x = box.x + 3;
+    const int list_y = box.y + 2;
+    const int list_h = box.h - 4;
+
+    const std::string confirm = std::string("[ ") + tr(lang_, Msg::mods_confirm) + " ]";
+    const std::string cancel = std::string("[ ") + tr(lang_, Msg::mods_cancel) + " ]";
+
+    for (int i = 0; i < items; ++i) {
+        // 平滑滚动：以浮点首行铺排，指数逼近时行逐帧位移（不是硬跳）
+        const int y = list_y + static_cast<int>(std::lround(static_cast<float>(i) - mods_scroll_));
+        if (y < list_y || y >= list_y + list_h) continue;  // 视口外（含动画中间帧）
+        const bool sel = i == mods_cursor_;
+        if (sel) screen.put(box.x + 1, y, U'>', style_.accent, style_.bg);
+
+        if (i < mods) {
+            const bool on = mods_checked_[static_cast<size_t>(i)];
+            const std::string text =
+                std::string(on ? "[x] " : "[ ] ") + mod_names_[static_cast<size_t>(i)];
+            // 未勾选 = 不生效：用暗色，一眼能分辨
+            ui::print(screen, list_x + 1, y, text,
+                      sel ? style_.accent : (on ? style_.fg : style_.dim), style_.bg);
+        } else {
+            ui::print(screen, list_x + 1, y, i == mods ? confirm : cancel,
+                      sel ? style_.accent : style_.fg, style_.bg);
+        }
+    }
+
+    draw_footer(screen, tr(lang_, Msg::mods_footer));
 }
 
 void Shell::draw_tape(Screen& screen) const {
