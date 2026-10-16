@@ -62,6 +62,11 @@ class Game:
         r = self.h.cmd({"cmd": "screen.read"})
         return "\n".join(r.get("lines", []))
 
+    def shot(self, path):
+        os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+        self.h.cmd({"cmd": "screenshot", "path": path})
+        return path
+
     def move(self, key):
         dx, dy = {"left": (-1, 0), "right": (1, 0), "up": (0, -1), "down": (0, 1)}[key]
         nx, ny = self.cur[0] + dx, self.cur[1] + dy
@@ -223,6 +228,55 @@ def test_power(seed):
         check("power: 半径内塔通电", near and near[0]["powered"] is True)
         check("power: 半径外塔不工作（红 x）", far and far[0]["powered"] is False,
               "powered=%s" % (far[0]["powered"] if far else None))
+    finally:
+        g.close()
+
+
+def _playfield_origin(g, core):
+    lines = g.screen().split("\n")
+    for Y, L in enumerate(lines):
+        X = L.find("@")
+        if X >= 0:
+            return X - core[0], Y - core[1]
+    return None, None
+
+
+def test_power_x(seed):
+    """断电塔：在**塔所在格**叠一个缓慢闪烁的红 x（同格）；通电塔所在格看不到 x。"""
+    g = Game(seed, diff="EASY", style="OPEN", credits=9000)
+    try:
+        p = g.find_slots([(0, 0), (2, 0), (0, 9)])
+        check("x: 找到可摆放区", p is not None)
+        if not p:
+            return
+        ax, ay = p
+        g.build_at(ax, ay, "REACTOR")
+        g.build_at(ax + 2, ay, "GUN")   # 通电
+        g.build_at(ax, ay + 9, "GUN")   # 断电
+        d = g.debug()
+        px, py = _playfield_origin(g, (d["core_x"], d["core_y"]))
+        check("x: 定位 playfield 原点", px is not None)
+        if px is None:
+            return
+        off, on = (ax, ay + 9), (ax + 2, ay)
+
+        def cell(lines, x, y):
+            return lines[py + y][px + x]
+
+        saw_off, saw_on, above = False, False, False
+        g.move_to(1, 1)  # 光标移开，免光标框/非法 x 干扰
+        for _ in range(14):
+            g.h.step(None, frames=5)
+            lines = g.screen().split("\n")
+            if cell(lines, off[0], off[1]) == "x":
+                saw_off = True
+            if cell(lines, on[0], on[1]) == "x":
+                saw_on = True
+            if cell(lines, off[0], off[1] - 1) == "x":
+                above = True
+        check("x: 断电塔**所在格**出现闪烁红 x", saw_off, "saw=%s" % saw_off)
+        check("x: 通电塔所在格无 x", not saw_on)
+        check("x: x 不在塔的上一行（旧 bug）", not above)
     finally:
         g.close()
 
@@ -428,7 +482,7 @@ def main():
     base = int(sys.argv[1]) if len(sys.argv) > 1 else 500
     print("== towerdef 定点检查 ==")
     for fn, off in [(test_pause, 1), (test_wall, 2), (test_power, 3),
-                    (test_power_cap, 14), (test_power_overlap, 15),
+                    (test_power_x, 18), (test_power_cap, 14), (test_power_overlap, 15),
                     (test_upgrade_refund, 4), (test_airstrike, 5),
                     (test_menu_and_fields, 6), (test_radar_aura, 7),
                     (test_determinism, 8), (test_priority_panel, 9)]:

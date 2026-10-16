@@ -270,14 +270,16 @@ def test_laser_nerf(seed):
 
 
 def test_ui_no_power(seed):
-    """电力 UI 移除：顶部 HUD 与右栏都不再有全局电力读数（POWER）与旧字段。"""
-    g = Game(seed, diff="EASY", style="OPEN")
+    """电力 UI 移除：顶部 HUD 无全局电力读数（旧 `POWER a/b`），debug 无旧字段。"""
+    import re
+    g = Game(seed, diff="EASY", style="OPEN", credits=9000)
     try:
         g.build_near("GUN")  # 让侧栏进入"塔详情"（含耗电行）
         g.h.step(None, frames=5)
         txt = g.screen()
-        check("H: 顶部/右栏已无全局电力读数（无 POWER）", "POWER" not in txt,
-              "screen 含 POWER" if "POWER" in txt else "")
+        check("H: 顶部无全局电力读数（旧 `POWER a/b`）",
+              re.search(r"POWER\s+\d", txt) is None,
+              "screen 含 POWER <数字>" if re.search(r"POWER\s+\d", txt) else "")
         d = g.debug()
         old = [k for k in ("power_used", "power_cap", "overload", "overload_over", "overload_rate")
                if k in d]
@@ -285,6 +287,47 @@ def test_ui_no_power(seed):
         check("H: debug_state 报新电力（power 列表 + 每塔 powered）",
               isinstance(d.get("power"), list) and len(d["power"]) >= 1
               and "powered" in (d["towers"][0] if d["towers"] else {}))
+    finally:
+        g.close()
+
+
+def test_power_ui(seed):
+    """侧栏：电源行显示"发电 a/n"、名字行末尾带通电状态；耗电塔仍显示"耗电 d"。"""
+    import re
+    g = Game(seed, diff="EASY", style="OPEN", credits=9000)
+    try:
+        p = g.find_slots([(0, 0), (2, 0), (0, 9)])   # 反应堆 / 圈内 GUN / 圈外 GUN
+        check("P: 找到可摆放区", p is not None)
+        if not p:
+            return
+        ax, ay = p
+        g.build_at(ax, ay, "REACTOR")
+        g.build_at(ax + 2, ay, "GUN")   # 距 2（≤4）：通电
+        g.build_at(ax, ay + 9, "GUN")   # 距 9（>4）：断电
+        # 反应堆：发电 a/n + 名字行 ONLINE
+        g.move_to(ax, ay)
+        g.h.step(None, frames=2)
+        txt = g.screen()
+        check("P: 电源行显示 `OUT a/n`（发电 a/n）",
+              re.search(r"OUT\s+\d+/\d+", txt) is not None, "")
+        check("P: 通电塔名字行末尾显示 ONLINE", "ONLINE" in txt, "")
+        # 圈内 GUN：耗电行 DRAW + ONLINE
+        g.move_to(ax + 2, ay)
+        g.h.step(None, frames=2)
+        txt = g.screen()
+        check("P: 耗电塔显示 `DRAW 20` 且 ONLINE",
+              re.search(r"DRAW\s+20", txt) is not None and "ONLINE" in txt, "")
+        # 圈外 GUN：NO POWER（醒目）
+        g.move_to(ax, ay + 9)
+        g.h.step(None, frames=2)
+        txt = g.screen()
+        check("P: 断电塔名字行显示 NO POWER", "NO POWER" in txt, "")
+        # 基地磁芯：光标悬上 → 发电 a/200
+        d = g.debug()
+        g.move_to(d["core_x"], d["core_y"])
+        g.h.step(None, frames=2)
+        txt = g.screen()
+        check("P: 基地磁芯显示 `OUT a/200`", re.search(r"OUT\s+\d+/200", txt) is not None, "")
     finally:
         g.close()
 
@@ -373,6 +416,7 @@ def main():
                     (test_endless, 4), (test_endless_repro, 5),
                     (test_new_towers, 6), (test_miner, 7),
                     (test_early_wave, 8), (test_laser_nerf, 9), (test_ui_no_power, 16),
+                    (test_power_ui, 17),
                     (test_save_continue, 12), (test_end_consumes, 13)]:
         print("-- %s --" % fn.__name__)
         try:

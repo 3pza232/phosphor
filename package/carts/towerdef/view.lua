@@ -104,6 +104,19 @@ function View.draw(game, C)
 			aura_range = tsel.aura_range, aura_rate = tsel.aura_rate }, tsel.aura)
 		if nr and nr > range then range_ring(nr, "+", C.dark_gray) end
 	end
+	-- 供电范围**预览**（与射程圈同一套画法，用更淡的蓝以示区别）：
+	--   · 光标在**电源**（反应堆塔 / 基地磁芯）上 → 画它的供电圈；
+	--   · 光标在**空地**、待建塔型是反应堆 → 画待建反应堆的供电圈（和攻击范围预览同源）。
+	-- 只在光标处画，不常驻——保持与射程圈一致的克制（不喧宾夺主）。
+	local supply_r
+	if tsel then
+		if Towers.TYPES[tsel.type].kind == "reactor" then supply_r = Towers.REACTOR_RADIUS end
+	elseif cx == map.core.x and cy == map.core.y then
+		supply_r = Towers.CORE_RADIUS
+	elseif Towers.TYPES[game:selected_name()].kind == "reactor" then
+		supply_r = Towers.REACTOR_RADIUS
+	end
+	if supply_r then range_ring(supply_r, "\u{00B7}", C.blue) end
 	-- 光标框：亮色（旧版 dark_gray 太不显眼），用 blend 叠加，不覆盖格子里的塔/敌人字形
 	local box = { { -1, -1, "+" }, { 0, -1, "-" }, { 1, -1, "+" },
 		{ -1, 0, "|" }, { 1, 0, "|" },
@@ -126,10 +139,10 @@ function View.draw(game, C)
 		end
 		S.put(px + t.x, py + t.y, ch, fg)
 
-		-- 未通电（范围供电分配不足）：头顶一个**缓慢闪烁的红 x**（blend 叠加，画在塔之上）。
-		-- 2Hz 闪烁 = 一眼看出"这座停了"，又不至于像受击那样急。
+		-- 未通电（范围供电分配不足）：**塔所在格**叠一个缓慢闪烁的红 `x`（blend 压在同格字形之上，
+		-- 同格上层 = 盖住塔字符，一眼看出"这座停了"）。2Hz 闪烁，不像受击那样急。
 		if t.powered == false and (math.floor(phos.sys.time() * 2) % 2 == 0) then
-			S.blend(px + t.x, py + t.y - 1, "x", C.red)
+			S.blend(px + t.x, py + t.y, "x", C.red)
 		end
 
 		-- 雷达：每秒一次扩散脉动（点到为止）+ 被覆盖友塔头顶一个极轻的 ·。
@@ -145,15 +158,8 @@ function View.draw(game, C)
 					S.blend(px + o.x, py + o.y - 1, "\u{00B7}", C.dark_gray)
 				end
 			end
-		-- 反应堆：**电源**——静态淡光圈标出供电半径（很淡，只做"这里能供电"的提示）。
-		elseif d.kind == "reactor" then
-			ring(S, px, py, t.x + 0.5, t.y + 0.5, Towers.REACTOR_RADIUS, "\u{00B7}", C.blue)
 		end
 	end
-
-	-- 基地磁芯：也是电源——画一圈 6 格的供电光圈（与反应堆同色，静态淡环）。
-	ring(S, px, py, game.map.core.x + 0.5, game.map.core.y + 0.5,
-		Towers.CORE_RADIUS, "\u{00B7}", C.blue)
 
 	-- ── 敌人 ──
 	for _, e in ipairs(game.enemies) do

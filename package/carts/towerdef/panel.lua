@@ -10,7 +10,8 @@ local Panel = {}
 
 local Text = {
 	zh = {
-		wave = "波次", credits = "金币", draw = "耗电", core = "磁芯",
+		wave = "波次", credits = "金币", draw = "耗电", out = "发电", core = "磁芯",
+		online = "运作中", nopower = "未通电", base_pwr = "基地供电",
 		build = "建造", selected = "已选", dmg = "伤害", range = "射程",
 		rate = "攻速", kills = "击杀", upgrade = "升级", refund = "返还",
 		cost = "造价", persec = "/秒", speed = "速度", hp = "血量",
@@ -25,7 +26,8 @@ local Text = {
 		map_names = { OPEN = "开阔", CANALS = "水道", MAZE = "迷宫", RANDOM = "随机" },
 	},
 	en = {
-		wave = "WAVE", credits = "CREDITS", draw = "DRAW", core = "CORE",
+		wave = "WAVE", credits = "CREDITS", draw = "DRAW", out = "OUT", core = "CORE",
+		online = "ONLINE", nopower = "NO POWER", base_pwr = "BASE POWER",
 		build = "BUILD", selected = "SELECTED", dmg = "DMG", range = "RNG",
 		rate = "RATE", kills = "KILLS", upgrade = "UP", refund = "SELL",
 		cost = "COST", persec = "/s", speed = "SPEED", hp = "HP",
@@ -120,7 +122,12 @@ function Panel.draw(game, cart, speed, C)
 			dmg2, range2, interval2 = Towers.stats({ type = tsel.type, level = tsel.level + 1,
 				aura_range = tsel.aura_range, aura_rate = tsel.aura_rate }, tsel.aura)
 		end
-		P.print(1, y, string.format("%s %s%d", Towers.label(tsel.type), t.lvl, tsel.level), C[sel_color(d, tsel)])
+		local title = string.format("%s %s%d", Towers.label(tsel.type), t.lvl, tsel.level)
+		P.print(1, y, title, C[sel_color(d, tsel)])
+		-- "名字 等级"行**末尾**追加通电状态：未通电用醒目红、运作中用绿——一眼看出停没停
+		local live = (tsel.powered ~= false)
+		P.print(1 + phos.text.width(title) + 1, y, live and t.online or t.nopower,
+			live and C.green or C.red)
 		-- 名字下面一行：一句话功能简介（"它是干嘛的"）
 		P.print(1, y + 1, phos.text.fit(Towers.desc(tsel.type), pw - 2), C.gray)
 		-- HP：数字 + 血条（色随血量档）——选中的塔一眼看得出还撑不撑得住
@@ -134,10 +141,15 @@ function Panel.draw(game, cart, speed, C)
 			Panel._rng(range), range2 and Panel._rng(range2)), pw - 2), C.white)
 		P.print(1, y + 6, phos.text.fit(Panel._line(t.rate,
 			Panel._rate(d, interval, t), interval2 and Panel._rate(d, interval2, t)), pw - 2), C.white)
-		-- 耗电（反应堆反过来是"+供电"）；未通电时整行标红，与场上的红 x 呼应
-		local out = (d.kind == "reactor") and string.format("+%d", Towers.power_out(tsel))
-			or tostring(Towers.power_use(tsel))
-		P.print(1, y + 7, kv(t.draw, out), (tsel.powered == false) and C.red or C.white)
+		-- 电源显示"发电 a/n"（a=已消耗 / n=供电量）；普通塔显示"耗电 d"；未通电时耗电行标红
+		if d.kind == "reactor" then
+			local s = game:source_at(tsel.x, tsel.y)
+			P.print(1, y + 7, kv(t.out, string.format("%d/%d", s and s.used or 0,
+				Towers.power_out(tsel))), C.white)
+		else
+			P.print(1, y + 7, kv(t.draw, tostring(Towers.power_use(tsel))),
+				(tsel.powered == false) and C.red or C.white)
+		end
 		P.print(1, y + 8, kv(t.kills, tostring(tsel.kills)), C.white)
 		-- 目标优先级（P 键切换）：让"按了 P 变成什么"看得见，而不是只在内部悄悄改
 		P.print(1, y + 9, kv(t.priority, t.priority_names[tsel.priority] or tsel.priority), C.cyan)
@@ -149,6 +161,14 @@ function Panel.draw(game, cart, speed, C)
 		end
 		P.print(1, y + 11, kv(t.refund, "$" .. Towers.refund(tsel)), C.orange)
 		y = y + 12
+	elseif game.cx == game.map.core.x and game.cy == game.map.core.y then
+		-- 基地磁芯（也是电源）：光标悬在磁芯格上时显示它的"发电 a/n"
+		local s = game:source_at(game.map.core.x, game.map.core.y)
+		P.print(1, y, t.core, C.cyan)
+		P.print(1, y + 1, phos.text.fit(t.base_pwr, pw - 2), C.gray)
+		P.print(1, y + 2, kv(t.out, string.format("%d/%d", s and s.used or 0,
+			Towers.CORE_SUPPLY)), C.white)
+		y = y + 4
 	else
 		local name = game:selected_name()
 		local d = Towers.TYPES[name]
@@ -156,9 +176,12 @@ function Panel.draw(game, cart, speed, C)
 		P.print(1, y, Towers.label(name), C[d.color])
 		P.print(1, y + 1, phos.text.fit(Towers.desc(name), pw - 2), C.gray)
 		P.print(1, y + 2, kv(t.cost, "$" .. d.cost), C.yellow)
-		local out = (d.kind == "reactor") and string.format("+%d", d.supply[1])
-			or tostring(Towers.power_at(name, 1))
-		P.print(1, y + 3, kv(t.draw, out), C.white)
+		-- 待建反应堆 → "发电 0/n"（还没建、未消耗）；其余 → "耗电 d"
+		if d.kind == "reactor" then
+			P.print(1, y + 3, kv(t.out, string.format("0/%d", d.supply[1])), C.white)
+		else
+			P.print(1, y + 3, kv(t.draw, tostring(Towers.power_at(name, 1))), C.white)
+		end
 		-- 建造前也报塔的血量（这一型的总血量）：建好后侧栏改显"当前/总"，
 		-- 于是不管光标在塔上还是空地，血量都看得见。
 		P.print(1, y + 4, kv(t.hp, tostring(d.hp or 0)), C.white)

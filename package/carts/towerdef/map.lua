@@ -87,9 +87,9 @@ function Map.new(w, h, style)
 	m.rand = ri
 	m.style = style
 	m.gates = {}
-	-- 基地磁芯：右侧、且**范围供电圆不越出地图**——留出半径 + 1 格右边距，y 居中并夹住
-	-- 上下也放得下整圆（CORE_R 与 towers.CORE_RADIUS 一致=6；生成期 protect 已在圆内
-	-- 禁撒岩石/水，所以"圆内无遮挡"由构造保证）。
+	-- 基地磁芯：右侧、且**范围供电圆不越出地图**——留出 ≥ 供电半径的边距，y 居中并夹住
+	-- 上下也放得下整圆。（实际供电半径 towers.CORE_RADIUS = 5；这里保守留 6 格边距 +
+	-- protect 半径 6 禁撒，于是"供电圆不越界、圆内无遮挡"由构造保证。）
 	local CORE_R = 6
 	local cy = math.floor(h / 2)
 	m.core = { x = w - 2 - CORE_R, y = math.max(CORE_R, math.min(h - 1 - CORE_R, cy)) }

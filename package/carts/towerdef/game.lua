@@ -79,6 +79,14 @@ function Game:tower_at(x, y)
 	return nil
 end
 
+-- 覆盖某格的电源（反应堆或基地）；给侧栏显示"发电 a/n"用。没有则 nil。
+function Game:source_at(x, y)
+	for _, s in ipairs(self.sources or {}) do
+		if s.x == x and s.y == y then return s end
+	end
+	return nil
+end
+
 function Game:selected_name()
 	return Towers.ORDER[self.build_index]
 end
