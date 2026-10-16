@@ -352,8 +352,13 @@ ModScan scan_mods() {
         if (m.desc_zh.empty()) m.desc_zh = m.desc_en;
         if (m.desc_en.empty()) m.desc_en = m.desc_zh;
 
-        // 被禁用的 mod 仍列出（UI 能再开），但它的覆盖整份不进表
-        if (mod_enabled(id)) {
+        // default_off = true：出厂默认关闭，要玩家显式打开（写进 config 的 mods_enabled）
+        sol::object off = t["default_off"];
+        m.default_off = off.is<bool>() && off.as<bool>();
+        m.enabled = mod_enabled(id, m.default_off);
+
+        // 未启用的 mod 仍列出（UI 能再开），但它的覆盖整份不进表
+        if (m.enabled) {
             sol::table map = ov.as<sol::table>();
             for (const auto& kv : map) {
                 if (!kv.first.is<std::string>() || !kv.second.is<std::string>()) {
@@ -386,7 +391,7 @@ ModScan scan_mods() {
         for (const ModManifest& m : scan.mods) {
             if (!list.empty()) list += ", ";
             list += m.id;
-            if (!mod_enabled(m.id)) list += " (disabled)";
+            if (!m.enabled) list += m.default_off ? " (off)" : " (disabled)";
         }
         log::info("mods loaded: " + list);
     }

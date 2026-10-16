@@ -9,14 +9,14 @@ local Hud = {}
 local Text = {
 	zh = {
 		wave = "波次", combat = "交战", build = "布防", combo = "战斗",
-		credits = "金币", power = "电力", core = "磁芯",
-		overload = "电力超载", airstrike_ready = "空袭就绪", airstrike = "空袭",
+		credits = "金币", core = "磁芯",
+		airstrike_ready = "空袭就绪", airstrike = "空袭",
 		early = "空格 提前放波", banner = "第 %d 波",
 	},
 	en = {
 		wave = "WAVE", combat = "COMBAT", build = "BUILD", combo = "FIGHT",
-		credits = "CREDITS", power = "POWER", core = "CORE",
-		overload = "POWER OVERLOAD", airstrike_ready = "AIRSTRIKE RDY", airstrike = "AIRSTRIKE",
+		credits = "CREDITS", core = "CORE",
+		airstrike_ready = "AIRSTRIKE RDY", airstrike = "AIRSTRIKE",
 		early = "SPACE: early wave", banner = "WAVE %d",
 	},
 }
@@ -33,16 +33,11 @@ function Hud.draw(game, C)
 	local wave_str = (game.endless and game.wave > game.wave_total)
 		and string.format("%d+", game.wave)
 		or string.format("%d/%d", game.wave, game.wave_total)
-	local line = string.format("%s %s  %s %s  %s %d  %s %d/%d  %s %d/%d",
+	-- 顶部只有 波次 / 阶段 / 金币 / 磁芯——电力改范围供电后不再有全局读数（见 §6.4）
+	local line = string.format("%s %s  %s %s  %s %d  %s %d/%d",
 		t.wave, wave_str, phase, timer,
-		t.credits, game.credits, t.power, game.power_used, game.power_cap,
-		t.core, game.core_hp, game.core_max)
+		t.credits, game.credits, t.core, game.core_hp, game.core_max)
 	S.print(px + 1, py, line, C.white)
-
-	-- 欠压警示：单独一行，橙色（DESIGN §6.4）
-	if game.overload then
-		S.print(px + 1, py + 1, t.overload, C.orange)
-	end
 
 	-- ── 波次横幅（scale=2 居中，只在前 1.8s）──
 	if game.banner > 0 then
@@ -59,7 +54,10 @@ function Hud.cursor_hint(game, C)
 	local px, py, pw, ph = S.playfield()
 	local name = game:selected_name()
 	local d = Towers.TYPES[name]
-	local txt = string.format("%s  $%d  %dp", Towers.label(name), d.cost, d.power)
+	-- 反应堆是电源：显示"+供电"；其余显示本级耗电
+	local spec = (d.kind == "reactor") and string.format("+%d", d.supply[1])
+		or string.format("%dp", Towers.power_at(name, 1))
+	local txt = string.format("%s  $%d  %s", Towers.label(name), d.cost, spec)
 	S.print(px + 1, py + ph - 2, phos.text.fit(txt, pw - 2), C.yellow)
 end
 

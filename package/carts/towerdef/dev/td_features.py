@@ -72,7 +72,8 @@ def test_tower_hp(seed):
 def test_repair(seed):
     g = Game(seed, diff="EASY", style="OPEN", credits=9000)
     try:
-        g.move_to(g.mw - 6, g.mh // 2)
+        d0 = g.debug()
+        g.move_to(d0["core_x"] - 3, d0["core_y"])  # 贴磁芯：敌人会经过，便于拆它/被修
         ok_r = g.build_near("REACTOR")
         reactors = [t for t in g.debug()["towers"] if t["type"] == "REACTOR"]
         check("C: 建出反应堆（被拆对象）", ok_r and len(reactors) == 1)
@@ -140,9 +141,12 @@ def test_new_towers(seed):
             g.h.step("x")
         check("E: 建造列表含 13 型", len(seen) == 13, "seen=%d" % len(seen))
 
-        # 四种新塔都能建出来（放在刷怪口前方，敌人会路过它们的射程）
+        # 四种新塔都能建出来并开火：放在磁芯供电圈内（基地 200 供电，四座正好 200），
+        # 位置在磁芯左侧的进怪方向，敌人扑磁芯时会进入它们的射程。
         new_types = ["LASER", "HELL", "SNIPER", "MORTAR"]
-        spots = [(5, g.mh // 2 - 2), (7, g.mh // 2 - 2), (5, g.mh // 2 + 2), (7, g.mh // 2 + 2)]
+        d0 = g.debug()
+        cx0, cy0 = d0["core_x"], d0["core_y"]
+        spots = [(cx0 - 4, cy0 - 2), (cx0 - 4, cy0 + 2), (cx0 - 2, cy0 - 2), (cx0 - 2, cy0 + 2)]
         placed = {}
         for typ, (cx, cy) in zip(new_types, spots):
             got = False
@@ -196,17 +200,21 @@ def test_miner_priority(seed):
 def test_miner(seed):
     g = Game(seed, diff="EASY", style="OPEN")
     try:
+        d0 = g.debug()
         ok = False
-        for dx in range(0, 6):
-            g.move_to(min(g.mw - 2, g.mw // 2 + dx), g.mh // 2)
-            if g.build_here("MINER"):
+        # 放在磁芯供电圈内（采矿机 L1 耗电 60，需通电才产金）
+        for dx, dy in ((0, -2), (0, 2), (-2, -2), (-2, 2), (-3, 0), (-2, 0)):
+            if g.build_at(d0["core_x"] + dx, d0["core_y"] + dy, "MINER"):
                 ok = True
                 break
         check("F: 建出采矿机", ok)
         if not ok:
             return
         d0 = g.debug()
-        check("F: 采矿机占 8 电（L1）", d0["power_used"] == 8, "used=%d" % d0["power_used"])
+        m = g.tower("MINER")
+        check("F: 采矿机 L1 耗电 60 且被基地供电",
+              m and m["draw"] == 60 and m["powered"] is True,
+              "draw=%s powered=%s" % (m and m["draw"], m and m["powered"]))
         # 布防期无敌人 → 金币上涨只可能来自采矿机（L1 = 每 6s +5）
         g.h.step(None, frames=400)
         d1 = g.debug()
@@ -242,27 +250,41 @@ def test_early_wave(seed):
         g.close()
 
 
-# ── H：欠压（按超出比例降载）────────────────────────────────────────
-def test_overload(seed):
+# ── H：激光削弱（线宽 1/1/2、攻速加成 0.9）+ 电力 UI 移除 ────────────
+def test_laser_nerf(seed):
     g = Game(seed, diff="EASY", style="OPEN", credits=9000)
     try:
-        # 基础电力上限 8；不建反应堆，纯堆塔把它顶过去（GUN 每座 1 电）
-        for i in range(40):
-            g.move_to(min(g.mw - 2, 3 + i % 12), min(g.mh - 2, 3 + (i // 12) * 2))
-            g.build_here("GUN")
-            if g.debug()["overload"]:
-                break
+        check("H: 建出 LASER", g.build_near("LASER"))
+        g.h.step("a")  # L2
+        g.h.step("a")  # L3
+        t = g.tower("LASER")
+        check("H: 满级线宽=2（thickness_by {1,1,2}）",
+              t and t["level"] == 3 and t["thick"] == 2,
+              "lvl=%s thick=%s" % (t and t["level"], t and t["thick"]))
+        # 攻速间隔 = base 1.0 × 0.9² = 0.81（旧版 0.8 → 0.64）
+        check("H: 满级攻速间隔=0.81（up.rate 0.9，加成变小）",
+              t and abs(t["interval"] - 0.81) < 1e-6,
+              "interval=%s" % (t and t["interval"]))
+    finally:
+        g.close()
+
+
+def test_ui_no_power(seed):
+    """电力 UI 移除：顶部 HUD 与右栏都不再有全局电力读数（POWER）与旧字段。"""
+    g = Game(seed, diff="EASY", style="OPEN")
+    try:
+        g.build_near("GUN")  # 让侧栏进入"塔详情"（含耗电行）
+        g.h.step(None, frames=5)
+        txt = g.screen()
+        check("H: 顶部/右栏已无全局电力读数（无 POWER）", "POWER" not in txt,
+              "screen 含 POWER" if "POWER" in txt else "")
         d = g.debug()
-        check("H: 堆塔触发欠压", d["overload"], "used=%d cap=%d" % (d["power_used"], d["power_cap"]))
-        if not d["overload"]:
-            return
-        over = (d["power_used"] - d["power_cap"]) / max(1, d["power_cap"])
-        check("H: 降载比例 = 超出比例（overload_over）",
-              abs(d["overload_over"] - over) < 1e-6,
-              "over=%.3f reported=%.3f" % (over, d["overload_over"]))
-        check("H: 降载系数 = max(0.2, 1-超出)（overload_rate）",
-              abs(d["overload_rate"] - max(0.2, 1 - over)) < 1e-6,
-              "rate=%.3f" % d["overload_rate"])
+        old = [k for k in ("power_used", "power_cap", "overload", "overload_over", "overload_rate")
+               if k in d]
+        check("H: debug_state 已无旧电力字段", not old, "still=%s" % old)
+        check("H: debug_state 报新电力（power 列表 + 每塔 powered）",
+              isinstance(d.get("power"), list) and len(d["power"]) >= 1
+              and "powered" in (d["towers"][0] if d["towers"] else {}))
     finally:
         g.close()
 
@@ -350,7 +372,7 @@ def main():
                     (test_reactor_priority, 3), (test_miner_priority, 11),
                     (test_endless, 4), (test_endless_repro, 5),
                     (test_new_towers, 6), (test_miner, 7),
-                    (test_early_wave, 8), (test_overload, 9),
+                    (test_early_wave, 8), (test_laser_nerf, 9), (test_ui_no_power, 16),
                     (test_save_continue, 12), (test_end_consumes, 13)]:
         print("-- %s --" % fn.__name__)
         try:

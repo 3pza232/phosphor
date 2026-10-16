@@ -32,6 +32,17 @@ int pick_int(const json::Object* scope, const char* key, int fallback) {
 
 int clamp_volume(int value) { return value < 0 ? 0 : (value > 100 ? 100 : value); }
 
+/// 读一个字符串数组：去空、去重（手改文件写重复项也只算一次）
+std::vector<std::string> read_id_array(const json::Object* scope, const char* key) {
+    std::vector<std::string> out;
+    if (!scope) return out;
+    for (const std::string& id : scope->string_array(key)) {
+        if (id.empty()) continue;
+        if (std::find(out.begin(), out.end(), id) == out.end()) out.push_back(id);
+    }
+    return out;
+}
+
 } // namespace
 
 Config load_config(const std::string& path) {
@@ -101,13 +112,10 @@ Config load_config(const std::string& path) {
     cfg.sfx_volume =
         clamp_volume(pick_int(&root, "sfx_volume", legacy >= 0 ? legacy : kDefaultSfxVolume));
 
-    // 被禁用的 Mod：字符串数组。去重、去空，手改文件写重复项也只算一次
-    for (const std::string& id : root.string_array("mods_disabled")) {
-        if (id.empty()) continue;
-        if (std::find(cfg.mods_disabled.begin(), cfg.mods_disabled.end(), id) ==
-            cfg.mods_disabled.end())
-            cfg.mods_disabled.push_back(id);
-    }
+    // 两个 Mod 列表：默认开的被关掉（mods_disabled）/ 默认关的被打开（mods_enabled）。
+    // 各自去重去空，手改文件写重复项也只算一次
+    cfg.mods_disabled = read_id_array(&root, "mods_disabled");
+    cfg.mods_enabled = read_id_array(&root, "mods_enabled");
     return cfg;
 }
 
@@ -135,6 +143,10 @@ void save_config(const std::string& path, const Config& cfg) {
         << "  \"mods_disabled\": [";
     for (size_t i = 0; i < cfg.mods_disabled.size(); ++i)
         out << (i == 0 ? "" : ", ") << json::quote(cfg.mods_disabled[i]);
+    out << "],\n"
+        << "  \"mods_enabled\": [";
+    for (size_t i = 0; i < cfg.mods_enabled.size(); ++i)
+        out << (i == 0 ? "" : ", ") << json::quote(cfg.mods_enabled[i]);
     out << "]\n"
         << "}\n";
 }

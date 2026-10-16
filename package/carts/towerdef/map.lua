@@ -87,7 +87,12 @@ function Map.new(w, h, style)
 	m.rand = ri
 	m.style = style
 	m.gates = {}
-	m.core = { x = w - 3, y = math.floor(h / 2) }
+	-- 基地磁芯：右侧、且**范围供电圆不越出地图**——留出半径 + 1 格右边距，y 居中并夹住
+	-- 上下也放得下整圆（CORE_R 与 towers.CORE_RADIUS 一致=6；生成期 protect 已在圆内
+	-- 禁撒岩石/水，所以"圆内无遮挡"由构造保证）。
+	local CORE_R = 6
+	local cy = math.floor(h / 2)
+	m.core = { x = w - 2 - CORE_R, y = math.max(CORE_R, math.min(h - 1 - CORE_R, cy)) }
 	m.cells = {}
 	for i = 0, w * h - 1 do m.cells[i] = Map.GRASS end
 	-- 地形/塔每次变动就 version+1：敌人拆塔用的"进攻寻路场"据此失效重算（见 assault_field）。

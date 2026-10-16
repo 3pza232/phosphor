@@ -157,6 +157,7 @@ void App::handle_intent(const Shell::Intent& intent, Renderer* renderer, Window*
         // 确认且启用集**确有变化**（Shell 已用集合语义判过）：写盘，然后重启才生效——
         // 覆盖层是启动期扫描进表的，运行中改不回去
         config_.mods_disabled = intent.mods_disabled;
+        config_.mods_enabled = intent.mods_enabled;
         save_config_now();
         log::info("mods updated; restart to apply");
         // 无头（agent/CI）不真正另起进程：日志已留痕，避免留下继承同一控制端口的幽灵实例。

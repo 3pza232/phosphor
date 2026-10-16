@@ -10,7 +10,7 @@ local Panel = {}
 
 local Text = {
 	zh = {
-		wave = "波次", credits = "金币", power = "电力", core = "磁芯",
+		wave = "波次", credits = "金币", draw = "耗电", core = "磁芯",
 		build = "建造", selected = "已选", dmg = "伤害", range = "射程",
 		rate = "攻速", kills = "击杀", upgrade = "升级", refund = "返还",
 		cost = "造价", persec = "/秒", speed = "速度", hp = "血量",
@@ -18,7 +18,6 @@ local Text = {
 		priority = "优先",
 		priority_names = { FIRST = "先攻", STRONG = "最强", CLOSE = "最近", AIR = "对空" },
 		diff = "难度", map = "地图", max = "满级", combat = "交战", buildp = "布防",
-		overload = "电力超限！设施降载",
 		hint_k = "键位表",
 		h_build = "建造/升级", h_sell = "拆除", h_type = "塔型",
 		h_strike = "空袭", h_speed = "调速", h_keys = "键位",
@@ -26,7 +25,7 @@ local Text = {
 		map_names = { OPEN = "开阔", CANALS = "水道", MAZE = "迷宫", RANDOM = "随机" },
 	},
 	en = {
-		wave = "WAVE", credits = "CREDITS", power = "POWER", core = "CORE",
+		wave = "WAVE", credits = "CREDITS", draw = "DRAW", core = "CORE",
 		build = "BUILD", selected = "SELECTED", dmg = "DMG", range = "RNG",
 		rate = "RATE", kills = "KILLS", upgrade = "UP", refund = "SELL",
 		cost = "COST", persec = "/s", speed = "SPEED", hp = "HP",
@@ -34,7 +33,6 @@ local Text = {
 		priority = "PRIORITY",
 		priority_names = { FIRST = "FIRST", STRONG = "STRONG", CLOSE = "CLOSE", AIR = "AIR" },
 		diff = "DIFF", map = "MAP", max = "MAX", combat = "COMBAT", buildp = "BUILD",
-		overload = "POWER OVER - derated",
 		hint_k = "CONTROLS",
 		h_build = "BUILD", h_sell = "SELL", h_type = "TYPE",
 		h_strike = "STRIKE", h_speed = "SPEED", h_keys = "KEYS",
@@ -78,36 +76,27 @@ function Panel.draw(game, cart, speed, C)
 	region:bar(1, 4, pw - 2, frac)
 
 	P.print(1, 5, string.format("%s %d", t.credits, game.credits), C.yellow)
-	-- 电力：超限时行文变红并闪烁、后缀 -NN%（超出比例），下一行盖过状态读数给"降载"警示。
-	local blink = (math.floor(phos.sys.time() * 3) % 2 == 0)
-	local pcol = game.overload and (blink and C.white or C.red) or C.white
-	local pstr = string.format("%s %d/%d", t.power, game.power_used, game.power_cap)
-	if game.overload then pstr = pstr .. string.format(" -%d%%", math.floor(game.overload_over * 100 + 0.5)) end
-	P.print(1, 6, phos.text.fit(pstr, pw - 2), pcol)
 
-	if game.overload then
-		P.print(1, 7, phos.text.fit(t.overload, pw - 2), pcol)
+	-- 波次状态：build 倒计时 / combat 剩余（电力已改范围供电，不再有全局电力读数）
+	local state
+	if game.phase == "combat" or game.phase == "won" or game.phase == "over" then
+		state = string.format("%s %.0f", t.combat, game.next_in)
 	else
-		local state
-		if game.phase == "combat" or game.phase == "won" or game.phase == "over" then
-			state = string.format("%s %.0f", t.combat, game.next_in)
-		else
-			state = string.format("%s %.0f", t.buildp, game.build_timer)
-		end
-		P.print(1, 7, phos.text.fit(state, pw - 2), C.gray)
+		state = string.format("%s %.0f", t.buildp, game.build_timer)
 	end
+	P.print(1, 6, phos.text.fit(state, pw - 2), C.gray)
 
 	-- 速度读数：x1/x2/x3 常显，>1 时高亮——切速必须肉眼可辨（否则像按键没生效）。
 	local spd = speed or 1
-	P.print(1, 8, string.format("%s x%d", t.speed, spd), (spd > 1) and C.yellow or C.white)
+	P.print(1, 7, string.format("%s x%d", t.speed, spd), (spd > 1) and C.yellow or C.white)
 
 	-- 分隔线：把上面的状态区与下面的建造/详情区分开，读起来更清爽
-	P.print(1, 9, string.rep("-", pw - 2), C.dark_gray)
+	P.print(1, 8, string.rep("-", pw - 2), C.dark_gray)
 
 	-- 建造面板：**竖排一列**（`>名字 造价`，造价右对齐成一列），光标高亮当前选中；Z/X 按这一列上下切。
-	P.print(1, 10, t.build, C.gray)
+	P.print(1, 9, t.build, C.gray)
 	local namew = pw - 6 -- 光标位 + 名字 + 右对齐的 3 位造价 = pw-2
-	local list_y = 11
+	local list_y = 10
 	for i, name in ipairs(Towers.ORDER) do
 		local d = Towers.TYPES[name]
 		local mark = (i == game.build_index) and ">" or " "
@@ -145,9 +134,10 @@ function Panel.draw(game, cart, speed, C)
 			Panel._rng(range), range2 and Panel._rng(range2)), pw - 2), C.white)
 		P.print(1, y + 6, phos.text.fit(Panel._line(t.rate,
 			Panel._rate(d, interval, t), interval2 and Panel._rate(d, interval2, t)), pw - 2), C.white)
+		-- 耗电（反应堆反过来是"+供电"）；未通电时整行标红，与场上的红 x 呼应
 		local out = (d.kind == "reactor") and string.format("+%d", Towers.power_out(tsel))
 			or tostring(Towers.power_use(tsel))
-		P.print(1, y + 7, kv(t.power, out), C.white)
+		P.print(1, y + 7, kv(t.draw, out), (tsel.powered == false) and C.red or C.white)
 		P.print(1, y + 8, kv(t.kills, tostring(tsel.kills)), C.white)
 		-- 目标优先级（P 键切换）：让"按了 P 变成什么"看得见，而不是只在内部悄悄改
 		P.print(1, y + 9, kv(t.priority, t.priority_names[tsel.priority] or tsel.priority), C.cyan)
@@ -166,8 +156,9 @@ function Panel.draw(game, cart, speed, C)
 		P.print(1, y, Towers.label(name), C[d.color])
 		P.print(1, y + 1, phos.text.fit(Towers.desc(name), pw - 2), C.gray)
 		P.print(1, y + 2, kv(t.cost, "$" .. d.cost), C.yellow)
-		local out = (d.kind == "reactor") and string.format("+%d", d.cap[1]) or tostring(d.power or 0)
-		P.print(1, y + 3, kv(t.power, out), C.white)
+		local out = (d.kind == "reactor") and string.format("+%d", d.supply[1])
+			or tostring(Towers.power_at(name, 1))
+		P.print(1, y + 3, kv(t.draw, out), C.white)
 		-- 建造前也报塔的血量（这一型的总血量）：建好后侧栏改显"当前/总"，
 		-- 于是不管光标在塔上还是空地，血量都看得见。
 		P.print(1, y + 4, kv(t.hp, tostring(d.hp or 0)), C.white)

@@ -90,7 +90,8 @@ theme/skin/rust-cabinet/
   "fps": 60,
   "music_volume": 80,
   "sfx_volume": 90,
-  "mods_disabled": []
+  "mods_disabled": [],
+  "mods_enabled": []
 }
 ```
 
@@ -105,8 +106,10 @@ theme/skin/rust-cabinet/
 - `font_size`：字号 = 单元格像素边长（`12`~`24`；`0` = 跟随字体方案声明的 `size`，缺省即 16）。
   整机字符与行距随之缩放（窗口也随格尺寸变大变小）
 - `language`：界面语言（`zh` / `en`）—— 主机界面、卡带架简介与启动动画文案都随它切换
-- `mods_disabled`：被禁用的覆盖层 Mod id 列表（字符串数组，**按 mod-id = 文件夹名**记，
-  见「六、Mod 体系」）。空 = 全部生效；在卡带架按 `M` 开关，改动后重启生效
+- `mods_disabled`：被关掉的**默认开**覆盖层 Mod id 列表（字符串数组，**按 mod-id = 文件夹名**
+  记，见「六、Mod 体系」）。空 = 默认开的都生效；在卡带架按 `M` 开关，改动后重启生效
+- `mods_enabled`：被打开的**默认关**Mod id 列表（`mod.lua` 里 `default_off = true` 的那些）。
+  空 = 所有默认关的都保持关着；同样在 `M` 管理器里开关、改动后重启生效
 - 主机设置界面中可视化切换，等价于改写此文件。**全部即时生效并持久化**
   （`mods_disabled` 例外：它需要重启才生效）
 - 版本约定：主机版本号是唯一权威（`phos.sys.version()`）；
@@ -398,7 +401,7 @@ mods/<mod-id>/                 一个 mod（文件夹名 = mod 名，如 font-re
 - 一个 mod 可注册多条 overrides（多目标 / 多文件）
 - 查找顺序：命中的 mod 覆盖优先，否则包内本体兜底；**mods 无需修改原包**，删除即还原
 - 顺序与冲突：按 **mod-id 字典序**叠加，两个 mod 注册同一键时后者覆盖前者并写日志告警
-- 被禁用（`config.mods_disabled` 含该 mod-id）的 mod **整份不进表**
+- 未启用的 mod（见下「默认开关」）**整份不进表**，但仍列在管理器里
 - 覆盖层只替换"内容"，不改变"身份"
 
 **`mod.lua`（必需清单）**：一个**纯返回表**的 Lua（不调用任何 API）：
@@ -407,6 +410,7 @@ mods/<mod-id>/                 一个 mod（文件夹名 = mod 名，如 font-re
 return {
   name = { zh = "字体放大", en = "Font Resize" },   -- 显示名；缺省 = 文件夹名
   desc = { zh = "字号上限 24 → 28", en = "…" },     -- 说明（可空）
+  default_off = true,                               -- 可选：出厂默认关闭（缺省 false）
   overrides = {                                     -- 覆盖注册（必需）
     ["default/font.lua"] = "font.lua",              -- 键 = "<目标id>/<包内路径>"
   },                                                -- 值 = 本 mod 目录内的相对文件
@@ -419,24 +423,39 @@ return {
 `overrides` 为空表 = 只登记、不覆盖任何东西。键非法（缺 `<目标id>/<路径>` 形态）、
 值指向的文件不存在等条目跳过并告警。
 
-**开关（M 键 / `mods_disabled`）**：卡带架上按 **`M`** 打开 MODS 浮窗，逐条勾选要生效的 mod
-（没有 mod 时页脚不显示 `[M] MODS`、也不响应此键）。列表里显示的是 **mod 的显示名**
-（`mod.lua` 的 `name`，本地化；缺省即文件夹名）。确认后：
+**默认开关（`default_off` / `mods_disabled` / `mods_enabled`）**：每个 mod 有一个**默认**
+启用态——不带 `default_off` 的**默认开**（放进去即生效），带 `default_off = true` 的**默认关**
+（出厂附带但玩家要显式打开，如「塔防建造暂停」）。是否**生效**由默认态 + `config.json`
+的两个列表决定：
 
-- 禁用集合按 **mod-id** 判定，写进 `config.json` 的 **`mods_disabled`**
-  （字符串数组；缺省 / 空 = 全部生效，保持"放进即生效"）
-- 被禁用的 mod 其覆盖**不再进入查表**——但仍在列表里列出，随时能再打开
+```
+生效 = default_off ? (mod-id ∈ mods_enabled) : (mod-id ∉ mods_disabled)
+```
+
+- `mods_disabled`：被关掉的**默认开** mod（缺省/空 = 默认开的都生效）
+- `mods_enabled`：被打开的**默认关** mod（缺省/空 = 默认关的都保持关着）
+- 两个列表都按 **mod-id** 记，各自是一个字符串数组，互不干涉
+
+卡带架上按 **`M`** 打开 MODS 浮窗，逐条勾选要生效的 mod（没有 mod 时页脚不显示 `[M] MODS`、
+也不响应此键）。列表里显示的是 **mod 的显示名**（`mod.lua` 的 `name`，本地化；缺省即文件夹名），
+勾选态 = **有效启用态**。确认后：
+
+- 按每个 mod 的 `default_off` 把新状态写回两个列表：默认关的**打开**→写进 `mods_enabled`、
+  **关闭**→从 `mods_enabled` 移除；默认开的**关闭**→写进 `mods_disabled`、**打开**→从
+  `mods_disabled` 移除（即：回到各自默认态就不在表里）
 - **改动后需要重启主机才生效**：覆盖层是启动时扫描进表的，主机确认后会立即重启
-  （让"改了没生效"不会发生）；启用集没有变化时只关窗、不重启
+  （让"改了没生效"不会发生）
+- "有没有变化"按**有效启用集**比较：关掉又开回 = 没变，只关窗、不重启
 
 **唯一例外：卡带的 `manifest.lua` 不可被覆盖。** 身份
 （`id` / `entry` / `save` 等）必须稳定，从而扫描、打包与运行时
 对同一张卡带保持一致认知。
 
 > 主机这边只有一处实现：`core/mods.cpp` 是纯查询表（`mod_override` / `set_overrides`，
-> 不碰 Lua），`pack/pack.cpp` 的 `scan_mods` 负责读各 `mod.lua`、按启用集过滤、按 mod-id
-> 字典序叠加成表，App 在内容扫描前喂给 core。**不硬编码任何具体 mod**——引擎提供的是
-> "覆盖任意内容文件"这条通用能力，具体改什么由 mod 自己决定。
+> 并据两个配置列表 + `default_off` 回答"某 mod 是否生效"，不碰 Lua），`pack/pack.cpp` 的
+> `scan_mods` 负责读各 `mod.lua`、按启用集过滤、按 mod-id 字典序叠加成表，App 在内容扫描前
+> 喂给 core。**不硬编码任何具体 mod**——引擎提供的是"覆盖任意内容文件"这条通用能力，
+> 具体改什么由 mod 自己决定。
 
 ### 脚本插件 Mod（Lua Plugin）——第二世代预留
 

@@ -10,9 +10,13 @@ local Enemies = require("enemies") -- 冰塔/火焰要往敌人身上挂 slow / 
 
 local Towers = {}
 
--- 每个字段：cost 金币 / power 电力占用 / dmg / rate(攻击间隔秒) / range(格) /
--- chars 三级字符 / color 槽位 / kind 机制 / ignore_armor 无视护甲 / hp 满血。
+-- 每个字段：cost 金币 / power 耗电（按 L1/L2/L3 三项，见 §电力）/ dmg / rate(攻击间隔秒) /
+-- range(格) / chars 三级字符 / color 槽位 / kind 机制 / ignore_armor 无视护甲 / hp 满血。
 -- hp 让塔也能被拆（敌人 siege 直接扣它）——满值按类型，独立于造价。
+--
+-- 电力（范围供电，DESIGN §6.4）：**耗电**是一张"每型×每级"表（power = {L1,L2,L3}）；
+-- 反应堆是**电源**（supply = {L1,L2,L3} 供电量，不耗电）。锚点：L1 机枪 = 20，
+-- 一个 L2 反应堆(100) 带约 5 个中型设备。重火力/激光/地狱/采矿机偏高；雷达/维修偏低。
 --
 -- up 是每型的**升级档案**：dmg 每级伤害乘子 / rate 每级间隔乘子 / range 每级射程加值。
 -- 默认 1.6 / 0.88 / 1.5；填 1.0 / 1.0 / 0 表示该轴不涨。冰塔不堆伤害、雷达/反应堆
@@ -20,17 +24,17 @@ local Towers = {}
 -- 特殊量随等级的（溅射半径、连锁数、锁定数…）写成按等级数组成员，用 Towers.by 取。
 Towers.TYPES = {
 	-- 机枪：主堆攻速（0.85 比旧的 0.88 更快）与伤害，射程仅小幅跟进。
-	GUN = { cost = 50, power = 1, dmg = 9, rate = 0.35, range = 5.0, hp = 100,
+	GUN = { cost = 50, power = { 20, 32, 50 }, dmg = 9, rate = 0.35, range = 5.0, hp = 100,
 		up = { dmg = 1.7, rate = 0.85, range = 1.0 },
 		chars = { "g", "G", "G" }, color = "green", kind = "gun",
 		label = { zh = "机枪", en = "GUN" }, desc = { zh = "单体速射，便宜", en = "fast single shot" } },
 	-- 加农炮：溅射半径随级放大是它的身份（否则只是个大枪）。
-	CANNON = { cost = 95, power = 2, dmg = 34, rate = 1.25, range = 6.0, splash = 1.6, hp = 140,
+	CANNON = { cost = 95, power = { 40, 62, 96 }, dmg = 34, rate = 1.25, range = 6.0, splash = 1.6, hp = 140,
 		up = { dmg = 1.7, rate = 0.92, range = 1.0 }, splash_by = { 1.6, 2.1, 2.7 },
 		chars = { "c", "C", "C" }, color = "orange", kind = "cannon",
 		label = { zh = "加农炮", en = "CANNON" }, desc = { zh = "高伤溅射", en = "high splash dmg" } },
 	-- 冰霜：只堆"控"——减速更狠、更久、目标更多；伤害乘子 1.0（升级不涨伤害）。
-	FROST = { cost = 70, power = 2, dmg = 5, rate = 0.70, range = 5.0, max_targets = 3, hp = 90,
+	FROST = { cost = 70, power = { 30, 46, 70 }, dmg = 5, rate = 0.70, range = 5.0, max_targets = 3, hp = 90,
 		slow_factor = 0.55, slow_time = 1.8,
 		up = { dmg = 1.0, rate = 0.92, range = 1.5 },
 		slow_by = { 0.55, 0.42, 0.30 }, slow_time_by = { 1.8, 2.4, 3.2 },
@@ -38,56 +42,58 @@ Towers.TYPES = {
 		chars = { "f", "F", "F" }, color = "cyan", kind = "frost",
 		label = { zh = "冰霜", en = "FROST" }, desc = { zh = "范围减速", en = "slows a group" } },
 	-- 电塔：连锁数与连锁距离随级涨（更多跳、更远跳），伤害中等放大。
-	TESLA = { cost = 130, power = 3, dmg = 24, rate = 1.40, range = 5.5, chain = 3, chain_range = 3.0, hp = 120,
+	TESLA = { cost = 130, power = { 45, 70, 108 }, dmg = 24, rate = 1.40, range = 5.5, chain = 3, chain_range = 3.0, hp = 120,
 		up = { dmg = 1.55, rate = 0.9, range = 1.2 },
 		chain_by = { 3, 4, 5 }, chain_range_by = { 3.0, 3.6, 4.4 },
 		chars = { "t", "T", "T" }, color = "purple", kind = "tesla", ignore_armor = true,
 		label = { zh = "电塔", en = "TESLA" }, desc = { zh = "连锁电击，破甲", en = "chain, no armor" } },
 	-- 喷火：伤害/灼烧/溅射都涨，射程几乎不涨（近距武器）；连续伤不占冷却。
-	FLAME = { cost = 115, power = 3, dmg = 13, dps = true, range = 3.0, splash = 2.0, hp = 130,
+	FLAME = { cost = 115, power = { 40, 62, 96 }, dmg = 13, dps = true, range = 3.0, splash = 2.0, hp = 130,
 		burn_dps = 6, burn_time = 2.0,
 		up = { dmg = 1.7, range = 0.8 },
 		burn_by = { 6, 11, 18 }, splash_by = { 2.0, 2.6, 3.2 },
 		chars = { "l", "L", "L" }, color = "red", kind = "flame", ignore_armor = true,
 		label = { zh = "喷火", en = "FLAME" }, desc = { zh = "近距持续灼烧", en = "short-range burn" } },
-	-- 激光：贯穿一条线上的全部敌人，线宽随级加粗（thickness_by）；伤害中、攻速中。
-	LASER = { cost = 120, power = 3, dmg = 26, rate = 1.0, range = 7.0, thickness = 1, hp = 110,
-		up = { dmg = 1.7, rate = 0.8 }, thickness_by = { 1, 2, 3 },
+	-- 激光：贯穿一条线上的全部敌人。线宽升级**克制**（1/1/2，满级才到 2）与攻速加成放缓
+	-- （up.rate 0.9）——贯穿+高伤本就强，升级再叠粗细/攻速会一枝独秀，这里压一头。
+	LASER = { cost = 120, power = { 50, 78, 120 }, dmg = 26, rate = 1.0, range = 7.0, thickness = 1, hp = 110,
+		up = { dmg = 1.7, rate = 0.9 }, thickness_by = { 1, 1, 2 },
 		chars = { "n", "N", "N" }, color = "magenta", kind = "laser",
 		label = { zh = "激光炮", en = "LASER" }, desc = { zh = "贯穿整线的光束", en = "pierces a line" } },
 	-- 地狱塔：锁定 N 个目标持续掉血，锁定越久伤害越高（3s 内线性升到 3×）；dmg 存的是 dps。
-	HELL = { cost = 150, power = 4, dmg = 8, dps = true, range = 5.0, lock = 1, hp = 110,
+	HELL = { cost = 150, power = { 55, 85, 130 }, dmg = 8, dps = true, range = 5.0, lock = 1, hp = 110,
 		up = { dmg = 1.6, range = 1.0 }, lock_by = { 1, 2, 3 },
 		chars = { "y", "Y", "Y" }, color = "red", kind = "hell",
 		label = { zh = "地狱塔", en = "HELL" }, desc = { zh = "锁定灼烧渐增", en = "lock & ramp burn" } },
 	-- 狙击：极远单体、高伤、慢，无视护甲。
-	SNIPER = { cost = 140, power = 3, dmg = 90, rate = 2.4, range = 9.0, hp = 100,
+	SNIPER = { cost = 140, power = { 45, 70, 108 }, dmg = 90, rate = 2.4, range = 9.0, hp = 100,
 		up = { dmg = 1.85, range = 2.5, rate = 0.94 },
 		chars = { "s", "S", "S" }, color = "gray", kind = "sniper", ignore_armor = true,
 		label = { zh = "狙击塔", en = "SNIPER" }, desc = { zh = "超远单体高伤", en = "long-range sniper" } },
 	-- 迫击炮：抛射(shell)延迟 ~0.5s 落地，落点范围伤害；溅射半径随级涨。
-	MORTAR = { cost = 135, power = 3, dmg = 40, rate = 1.6, range = 8.0, splash = 2.2, hp = 120,
+	MORTAR = { cost = 135, power = { 50, 78, 120 }, dmg = 40, rate = 1.6, range = 8.0, splash = 2.2, hp = 120,
 		up = { dmg = 1.7, rate = 0.9, range = 1.0 }, splash_by = { 2.2, 2.8, 3.4 },
 		chars = { "m", "M", "M" }, color = "orange", kind = "mortar",
 		label = { zh = "迫击炮", en = "MORTAR" }, desc = { zh = "抛射落点范围伤害", en = "lobbed splash" } },
 	-- 雷达：光环增益随级走 aura_by（L1 {+25%,+15%} → L3 {+55%,+35%}）；自身无伤害档。
-	RADAR = { cost = 100, power = 2, dmg = 0, rate = 0, range = 4.0, aura_range = 0.25, aura_rate = 0.15, hp = 70,
+	RADAR = { cost = 100, power = { 25, 40, 60 }, dmg = 0, rate = 0, range = 4.0, aura_range = 0.25, aura_rate = 0.15, hp = 70,
 		up = { range = 1.5 }, aura_by = { { 0.25, 0.15 }, { 0.38, 0.24 }, { 0.55, 0.35 } },
 		chars = { "r", "R", "R" }, color = "yellow", kind = "radar",
 		label = { zh = "雷达", en = "RADAR" }, desc = { zh = "光环：友塔增强", en = "aura: buff allies" } },
 	-- 维修塔：不攻击，周期治疗范围内受损友军（治疗量/频率/目标数随等级走，见 heal）。
-	REPAIR = { cost = 90, power = 2, dmg = 0, range = 4.0, hp = 80,
+	REPAIR = { cost = 90, power = { 25, 40, 60 }, dmg = 0, range = 4.0, hp = 80,
 		heal = { time = { 4, 3, 2 }, count = { 1, 2, 3 }, amount = { 10, 14, 18 } },
 		chars = { "h", "H", "H" }, color = "green", kind = "repair",
 		label = { zh = "维修", en = "REPAIR" }, desc = { zh = "治疗受损友塔", en = "heals allies" } },
-	-- 反应堆：不攻击，只供电；射程对它无意义（up.range=0 免得练级凭空长出射程）。
-	REACTOR = { cost = 60, power = 0, dmg = 0, rate = 0, range = 0, cap = { 10, 16, 24 }, hp = 80,
+	-- 反应堆：不攻击，只作**电源**（范围供电）；射程对它无意义（up.range=0）。
+	-- supply = 各级供电量；升级只拉高供电（不耗电、无攻击档）。
+	REACTOR = { cost = 60, power = { 0, 0, 0 }, dmg = 0, rate = 0, range = 0, supply = { 60, 100, 150 }, hp = 80,
 		up = { range = 0 },
 		chars = { "R", "R", "R" }, color = "blue", kind = "reactor",
-		label = { zh = "反应堆", en = "REACTOR" }, desc = { zh = "供电，抬电力上限", en = "power: raises cap" } },
-	-- 采矿机：不攻击，周期把金币"挖"出来（小幅、**不随波次膨胀**）；代价是吃电很凶
-	-- （8 电起步、每级 +2），逼你为它配反应堆——纯经济塔的取舍就在这。产出时冒 +N（view 的 gold）。
-	MINER = { cost = 100, power = 8, power_growth = 2, dmg = 0, range = 0, hp = 90,
+		label = { zh = "反应堆", en = "REACTOR" }, desc = { zh = "范围供电", en = "area power" } },
+	-- 采矿机：不攻击，周期把金币"挖"出来（小幅、**不随波次膨胀**）；代价是**吃电最凶**
+	-- （L1 就要 60 电 ≈ 整个 L1 反应堆），逼你为它专门拉电——纯经济塔的取舍就在这。
+	MINER = { cost = 100, power = { 60, 90, 125 }, dmg = 0, range = 0, hp = 90,
 		up = { range = 0 },
 		mine = { time = { 6, 6, 6 }, amount = { 5, 9, 14 } },
 		chars = { "$", "$", "$" }, color = "yellow", kind = "miner",
@@ -149,18 +155,33 @@ function Towers.stats(t, aura)
 	return dmg, range, interval
 end
 
--- 电力占用（**每级成长按类型**：多数塔每级 +1，采矿机 +2；反应堆不占电、产电）。
-function Towers.power_use(t)
-	local d = Towers.TYPES[t.type]
-	if d.kind == "reactor" then return 0 end
-	return (d.power or 0) + (t.level - 1) * (d.power_growth or 1)
+-- ── 电力：范围供电（DESIGN §6.4）──────────────────────────────────────
+-- 电源的**供电半径**（格）：反应堆 5、基地磁芯 6。反应堆 5 格够罩住一座反应堆带起来的
+-- 中型塔群；基地 200 是最大单源，给 6 格把磁芯周边铺满（玩家自然先在内圈布防）。
+-- 核心生成据此选位（map.lua），保证供电圆不越出地图。
+Towers.REACTOR_RADIUS = 5
+Towers.CORE_RADIUS = 6
+Towers.CORE_SUPPLY = 200
+
+-- 某型塔在 lvl 级的耗电（power = {L1,L2,L3}，反应堆为 0）。
+function Towers.power_at(name, lvl)
+	lvl = lvl or 1
+	local d = Towers.TYPES[name]
+	if type(d.power) ~= "table" then return 0 end
+	return d.power[lvl] or d.power[1] or 0
 end
 
--- 反应堆产能（按等级）。
+-- 设备耗电（反应堆是电源、不耗电 → 0）。
+function Towers.power_use(t)
+	if Towers.TYPES[t.type].kind == "reactor" then return 0 end
+	return Towers.power_at(t.type, t.level)
+end
+
+-- 电源供电量（按等级）。非反应堆 → 0。
 function Towers.power_out(t)
 	local d = Towers.TYPES[t.type]
 	if d.kind ~= "reactor" then return 0 end
-	return d.cap[t.level]
+	return d.supply[t.level]
 end
 
 -- 敌人到磁芯的"远近"评分：地面看 BFS 步数，飞行看直线距离。
@@ -213,25 +234,27 @@ local function nearest_to(px, py, enemies, used, maxr)
 end
 
 -- 推进所有塔开火。ctx 由 game 每帧现搭：
---   enemies / map / core / overload(欠压攻速系数) / deal_damage(e,dmg,ignore,tower) / add_fx(eff)
+--   enemies / map / core / deal_damage(e,dmg,ignore,tower) / add_fx(eff)
+-- 范围供电：game 每帧先算好 t.powered；**未通电的设备一律不工作**（不攻击/不治疗/不产金），
+-- 也不再有任何"欠压降载"——电够了才动，不够就停（表现见 view 的红 x）。
+local function on(t) return t.powered ~= false end
+
 function Towers.update(ts, ctx, dt)
 	-- 1) 先清光环，再由每座雷达点亮它覆盖到的塔。多座雷达覆盖同一塔时**取最强的一个**
 	--    （加成不叠加）；雷达增益随等级走 aura_by（L1 25%/15% → L3 55%/35%）。
+	--    雷达自己没通电就不发光环（它也是用电设备）。
 	for _, t in ipairs(ts) do t.aura, t.aura_range, t.aura_rate = false, nil, nil end
 	-- 被拆闪烁计时衰减（game 受击时置 0.12）
 	for _, t in ipairs(ts) do
 		if t.hit_t and t.hit_t > 0 then t.hit_t = math.max(0, t.hit_t - dt) end
 	end
-	-- 欠压系数：按"超出电力上限的比例"降载（超出多少、削多少）。攻速/射程/连续伤/
-	-- 雷达光环一起乘它——所有设施低负载运作（见 game.compute_power）。
-	local overload = ctx.overload or 1
 	for _, r in ipairs(ts) do
 		local rd = Towers.TYPES[r.type]
-		if rd.kind == "radar" then
+		if rd.kind == "radar" and on(r) then
 			local _, arange = Towers.stats(r, false)
 			local r2 = arange * arange
 			local ab = Towers.by(rd.aura_by, r.level, { rd.aura_range or 0, rd.aura_rate or 0 })
-			local br, ba = ab[1] * overload, ab[2] * overload
+			local br, ba = ab[1], ab[2]
 			for _, t in ipairs(ts) do
 				if t ~= r then
 					local dx, dy = t.x - r.x, t.y - r.y
@@ -246,14 +269,13 @@ function Towers.update(ts, ctx, dt)
 		end
 	end
 
-	-- 2) 逐塔开火。欠压时冷却走得慢 = 有效攻速降（DESIGN §6.4）
+	-- 2) 逐塔开火（仅通电的）
 	for _, t in ipairs(ts) do
 		local d = Towers.TYPES[t.type]
-		if d.rate and d.rate > 0 then
-			t.cd = (t.cd or 0) - dt * overload
+		if d.rate and d.rate > 0 and on(t) then
+			t.cd = (t.cd or 0) - dt
 			if t.cd <= 0 then
 				local dmg, range, interval = Towers.stats(t, t.aura)
-				range = range * overload -- 欠压：射程也一起缩（超出多少、缩多少）
 				if Towers.fire(t, d, dmg, range, t.priority or "FIRST", ctx) then
 					t.cd = interval
 				else
@@ -267,10 +289,9 @@ function Towers.update(ts, ctx, dt)
 	--    射程内选中一个目标，向它周围 splash_by 溅射，无视护甲 + 挂燃烧（burn_by）。
 	for _, t in ipairs(ts) do
 		local d = Towers.TYPES[t.type]
-		if d.kind == "flame" then
+		if d.kind == "flame" and on(t) then
 			local dmg, range = Towers.stats(t, t.aura)
 			dmg = dmg * (1 + (t.aura_rate or 0)) -- 雷达光环的"攻速"对连续塔体现为 dps 提升
-			range = range * overload -- 欠压：连续塔同样缩射程
 			local ex, ey = t.x + 0.5, t.y + 0.5
 			local tgt = Towers.pick_target(ex, ey, range, ctx.enemies,
 				t.priority or "FIRST", ctx.map, ctx.core)
@@ -283,7 +304,7 @@ function Towers.update(ts, ctx, dt)
 						local dx, dy = o.x - tgt.x, o.y - tgt.y
 						if dx * dx + dy * dy <= r2 then
 							any = true
-							ctx.deal_damage(o, dmg * dt * overload, true, t)
+							ctx.deal_damage(o, dmg * dt, true, t)
 							Enemies.apply_burn(o, Towers.by(d.burn_by, t.level, d.burn_dps), d.burn_time)
 						end
 					end
@@ -300,10 +321,9 @@ function Towers.update(ts, ctx, dt)
 	--     （锁定秒数）线性升到 3× 封顶；目标死亡或离开射程即解除。锁定表存塔上 t.locked。
 	for _, t in ipairs(ts) do
 		local d = Towers.TYPES[t.type]
-		if d.kind == "hell" then
+		if d.kind == "hell" and on(t) then
 			local dmg, range = Towers.stats(t, t.aura)
 			dmg = dmg * (1 + (t.aura_rate or 0))
-			range = range * overload -- 欠压：射程也缩
 			local ex, ey = t.x + 0.5, t.y + 0.5
 			local r2 = range * range
 			local maxn = Towers.by(d.lock_by, t.level, d.lock or 1)
@@ -338,7 +358,7 @@ function Towers.update(ts, ctx, dt)
 			for _, L in ipairs(locked) do
 				L.heat = L.heat + dt
 				local mult = 1 + 2 * math.min(L.heat, 3) / 3
-				ctx.deal_damage(L.e, dmg * mult * dt * overload, false, t)
+				ctx.deal_damage(L.e, dmg * mult * dt, false, t)
 				ctx.add_fx({ kind = "hell", x0 = ex, y0 = ey, x1 = L.e.x, y1 = L.e.y,
 					heat = L.heat, color = d.color, t = 0.08 })
 			end
@@ -346,10 +366,10 @@ function Towers.update(ts, ctx, dt)
 	end
 
 	-- 4) 维修塔：周期治疗范围内"血量缺口最大"的 N 座友军（不超 max_hp）。
-	--    治疗不受欠压影响（它不是火力）；目标数/治疗量/间隔随等级取自 d.heal。
+	--    它也要通电（停电就不治）；目标数/治疗量/间隔随等级取自 d.heal。
 	for _, t in ipairs(ts) do
 		local d = Towers.TYPES[t.type]
-		if d.kind == "repair" then
+		if d.kind == "repair" and on(t) then
 			t.cd = (t.cd or 0) - dt
 			if t.cd <= 0 then
 				local lvl = t.level
@@ -392,10 +412,10 @@ function Towers.update(ts, ctx, dt)
 		end
 	end
 
-	-- 5) 采矿机：周期进账（小幅、不随波次膨胀）。不受欠压影响——它是经济设施，不是火力。
+	-- 5) 采矿机：周期进账（小幅、不随波次膨胀）。也要通电——停电就不产金。
 	for _, t in ipairs(ts) do
 		local d = Towers.TYPES[t.type]
-		if d.kind == "miner" then
+		if d.kind == "miner" and on(t) then
 			t.cd = (t.cd or 0) - dt
 			if t.cd <= 0 then
 				local lvl = t.level

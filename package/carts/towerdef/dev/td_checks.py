@@ -98,6 +98,40 @@ class Game:
             self.move(rev)
         return False
 
+    # ── 范围供电/摆放用的辅助 ──
+    def build_at(self, x, y, typ):
+        self.move_to(x, y)
+        return self.build_here(typ)
+
+    def _all_buildable(self, cells):
+        mw, mh = self.mw, self.mh
+        for (x, y) in cells:
+            if not (1 <= x <= mw - 2 and 1 <= y <= mh - 2):
+                return False
+        for (x, y) in cells:
+            self.move_to(x, y)
+            if not self.debug()["buildable"]:
+                return False
+        return True
+
+    def find_slots(self, offsets, xr=None, yr=None):
+        """在左侧空旷区找一处能让所有 offsets 都建成的位置（避开磁芯供电圈，专测反应堆供电）。"""
+        mw, mh = self.mw, self.mh
+        xr = xr or range(3, mw // 2)
+        yr = yr or range(3, mh - 3)
+        for ax in xr:
+            for ay in yr:
+                if self._all_buildable([(ax + dx, ay + dy) for dx, dy in offsets]):
+                    return ax, ay
+        return None
+
+    def tower(self, typ, nth=-1):
+        ts = [t for t in self.debug()["towers"] if t["type"] == typ]
+        return ts[nth] if ts else None
+
+    def source(self, x, y):
+        return next((s for s in self.debug()["power"] if s["x"] == x and s["y"] == y), None)
+
     def close(self):
         self.h.close()
 
@@ -125,7 +159,7 @@ def test_wall(seed):
     g = Game(seed, credits=9000)
     try:
         # 在磁芯左侧建一整列，尽量把刷怪口与磁芯隔开（OPEN 图岩石少，列基本可封死）
-        wall_x = g.mw - 6
+        wall_x = g.debug()["core_x"] - 2
         g.move_to(wall_x, 1)
         built = 0
         for y in range(1, g.mh - 1):
@@ -158,32 +192,93 @@ def test_wall(seed):
 
 
 def test_power(seed):
-    g = Game(seed, credits=2000)   # 给足钱：这条测电力机制，不该被"起始金币"绑住
+    """范围供电：反应堆罩住半径内的塔（通电），罩不住半径外的塔（不工作）。"""
+    g = Game(seed, diff="EASY", style="OPEN", credits=9000)
     try:
+        # 基地是电源：供电 200、半径 6、圆不越界、圆内无遮挡
         d = g.debug()
-        base = d["power_cap"]
-        # 建反应堆
-        check("power: 建出反应堆", g.build_near("REACTOR"))
+        core = [s for s in d["power"] if s["kind"] == "core"]
+        check("power: 基地磁芯是电源（供电 200）", len(core) == 1 and core[0]["supply"] == 200,
+              "%s" % [(s["kind"], s["supply"]) for s in d["power"]])
+        R = d["core_radius"]
+        inside = (d["core_x"] - R >= 0 and d["core_x"] + R <= g.mw - 1 and
+                  d["core_y"] - R >= 0 and d["core_y"] + R <= g.mh - 1)
+        check("power: 磁芯供电圆不越界且无岩石/水",
+              inside and d["core_power_clear"] is True,
+              "inside=%s clear=%s" % (inside, d["core_power_clear"]))
+        # 反应堆供电 60（L1），L2 = 100
+        p = g.find_slots([(0, 0), (2, 0), (0, 9)])   # 反应堆、半径内 GUN、半径外 GUN
+        check("power: 找到可摆放区", p is not None)
+        if not p:
+            return
+        ax, ay = p
+        g.build_at(ax, ay, "REACTOR")
+        g.build_at(ax + 2, ay, "GUN")   # 距反应堆 2（≤5）：通电
+        g.build_at(ax, ay + 9, "GUN")   # 距反应堆 9（>5）且远离磁芯：不通电
         d = g.debug()
-        check("power: 反应堆 +10 上限", d["power_cap"] == base + 10,
-              "%d -> %d" % (base, d["power_cap"]))
-        # 建一座 GUN 占 1 电（逐个方向试，避开岩石/水）
-        placed = None
-        for k, rev in (("right", "left"), ("left", "right"), ("up", "down"), ("down", "up")):
-            g.move(k)
-            if g.build_here("GUN"):
-                placed = rev
-                break
-            g.move(rev)
+        rea = g.source(ax, ay)
+        check("power: 反应堆 L1 供电 60", rea and rea["supply"] == 60, "%s" % rea)
+        near = [t for t in d["towers"] if t["type"] == "GUN" and t["x"] == ax + 2]
+        far = [t for t in d["towers"] if t["type"] == "GUN" and t["x"] == ax]
+        check("power: 半径内塔通电", near and near[0]["powered"] is True)
+        check("power: 半径外塔不工作（红 x）", far and far[0]["powered"] is False,
+              "powered=%s" % (far[0]["powered"] if far else None))
+    finally:
+        g.close()
+
+
+def test_power_cap(seed):
+    """单电源供电量：L2 反应堆(100) 半径内 6 座机枪(6×20=120) → 只 5 座通电。"""
+    g = Game(seed, diff="EASY", style="OPEN", credits=9000)
+    try:
+        slots = [(0, 0), (1, 0), (2, 0), (0, 1), (1, 1), (2, 1), (0, 2)]
+        p = g.find_slots(slots)
+        check("cap: 找到可摆放区", p is not None)
+        if not p:
+            return
+        ax, ay = p
+        g.build_at(ax, ay, "REACTOR")
+        g.move_to(ax, ay)
+        g.h.step("a")  # 升级到 L2 → 供电 100
         d = g.debug()
-        check("power: GUN 占 1 电", d["power_used"] == 1, "used=%d" % d["power_used"])
-        # 回到反应堆格，升级到 L2 → cap +16
-        if placed:
-            g.move(placed)
-        g.h.step("a")
+        rea = g.source(ax, ay)
+        check("cap: 反应堆升到 L2（供电 100）", rea and rea["supply"] == 100, "%s" % rea)
+        for dx, dy in slots[1:]:
+            g.build_at(ax + dx, ay + dy, "GUN")
         d = g.debug()
-        check("power: 反应堆 L2 上限 +16", d["power_cap"] == base + 16,
-              "cap=%d" % d["power_cap"])
+        guns = [t for t in d["towers"] if t["type"] == "GUN"]
+        powered = sum(1 for t in guns if t["powered"])
+        check("cap: 6 座机枪只 5 座通电（第 6 座断电）",
+              len(guns) == 6 and powered == 5, "guns=%d powered=%d" % (len(guns), powered))
+    finally:
+        g.close()
+
+
+def test_power_overlap(seed):
+    """范围重叠 → 跨电源分摊：A 剩 10、B 富余，一个 40 设备 → A 出 10 + B 出 30。"""
+    g = Game(seed, diff="EASY", style="OPEN", credits=9000)
+    try:
+        # A=(0,0) B=(0,6)；GUN(-1,0)+FROST(-2,0) 只吃 A(50) → A 剩 10；CANNON(0,3) 在 A∩B
+        offs = [(0, 0), (0, 6), (-1, 0), (-2, 0), (0, 3)]
+        p = g.find_slots(offs, yr=range(3, g.mh - 9))
+        check("overlap: 找到可摆放区", p is not None)
+        if not p:
+            return
+        ax, ay = p
+        g.build_at(ax, ay, "REACTOR")        # A
+        g.build_at(ax, ay + 6, "REACTOR")    # B
+        g.build_at(ax - 1, ay, "GUN")        # 20（只 A 覆盖）
+        g.build_at(ax - 2, ay, "FROST")      # 30（只 A 覆盖）→ A 已用 50
+        g.build_at(ax, ay + 3, "CANNON")     # 40（A∩B 重叠）
+        A = g.source(ax, ay)
+        B = g.source(ax, ay + 6)
+        can = g.tower("CANNON")
+        check("overlap: A 出 10（用 60）、B 出 30（用 30）",
+              A and B and A["used"] == 60 and B["used"] == 30,
+              "A.used=%s B.used=%s" % (A and A["used"], B and B["used"]))
+        check("overlap: 设备跨两个电源分摊且通电",
+              can and can["powered"] and len(can["srcs"]) == 2,
+              "srcs=%s" % (can and can["srcs"]))
     finally:
         g.close()
 
@@ -239,7 +334,7 @@ def test_menu_and_fields(seed):
         check("menu: 难度选择生效", d["diff"] == "HARD", d["diff"])
         check("menu: 地图选择生效", d["map_style"] == "OPEN", d["map_style"])
         need = ["phase", "wave", "wave_total", "diff", "map_style", "core_hp", "core_max",
-                "credits", "power_used", "power_cap", "overload", "speed", "next_in",
+                "core_x", "core_y", "credits", "power", "speed", "next_in",
                 "enemies_alive", "selected_type", "cursor_x", "cursor_y", "airstrike_cd",
                 "buildable", "towers", "enemies", "path_ok", "grid"]
         missing = [k for k in need if k not in d]
@@ -257,6 +352,9 @@ def _first_float_after(text, token):
 def test_radar_aura(seed):
     g = Game(seed, credits=2000)
     try:
+        # 挪到磁芯附近（基地供电圈内）建雷达+炮塔：没电的雷达不发光环
+        d0 = g.debug()
+        g.move_to(max(1, d0["core_x"] - 3), d0["core_y"])
         g.cycle_to("RADAR")
         g.h.step("a")  # radar @ cursor
         # 在雷达旁建一座 GUN（逐个方向试；失败就退回雷达格，别误按到升级）
@@ -330,6 +428,7 @@ def main():
     base = int(sys.argv[1]) if len(sys.argv) > 1 else 500
     print("== towerdef 定点检查 ==")
     for fn, off in [(test_pause, 1), (test_wall, 2), (test_power, 3),
+                    (test_power_cap, 14), (test_power_overlap, 15),
                     (test_upgrade_refund, 4), (test_airstrike, 5),
                     (test_menu_and_fields, 6), (test_radar_aura, 7),
                     (test_determinism, 8), (test_priority_panel, 9)]:

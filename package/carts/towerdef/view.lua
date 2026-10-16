@@ -126,6 +126,12 @@ function View.draw(game, C)
 		end
 		S.put(px + t.x, py + t.y, ch, fg)
 
+		-- 未通电（范围供电分配不足）：头顶一个**缓慢闪烁的红 x**（blend 叠加，画在塔之上）。
+		-- 2Hz 闪烁 = 一眼看出"这座停了"，又不至于像受击那样急。
+		if t.powered == false and (math.floor(phos.sys.time() * 2) % 2 == 0) then
+			S.blend(px + t.x, py + t.y - 1, "x", C.red)
+		end
+
 		-- 雷达：每秒一次扩散脉动（点到为止）+ 被覆盖友塔头顶一个极轻的 ·。
 		-- 覆盖判定这里现算（不依赖 combat 期才写好的 t.aura），布防期也看得见光环范围。
 		if d.kind == "radar" then
@@ -139,12 +145,15 @@ function View.draw(game, C)
 					S.blend(px + o.x, py + o.y - 1, "\u{00B7}", C.dark_gray)
 				end
 			end
-		-- 反应堆：极轻的慢脉动（供电感），别喧宾夺主。
+		-- 反应堆：**电源**——静态淡光圈标出供电半径（很淡，只做"这里能供电"的提示）。
 		elseif d.kind == "reactor" then
-			ring(S, px, py, t.x + 0.5, t.y + 0.5,
-				math.max(1, (phos.sys.time() % 2.0) / 2.0 * 2.0), "\u{00B7}", C.blue)
+			ring(S, px, py, t.x + 0.5, t.y + 0.5, Towers.REACTOR_RADIUS, "\u{00B7}", C.blue)
 		end
 	end
+
+	-- 基地磁芯：也是电源——画一圈 6 格的供电光圈（与反应堆同色，静态淡环）。
+	ring(S, px, py, game.map.core.x + 0.5, game.map.core.y + 0.5,
+		Towers.CORE_RADIUS, "\u{00B7}", C.blue)
 
 	-- ── 敌人 ──
 	for _, e in ipairs(game.enemies) do

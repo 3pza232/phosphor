@@ -208,6 +208,8 @@ class Bot:
         self.press("a")
         d = self.h.debug()
         self.mw, self.mh = d["grid"]["w"], d["grid"]["h"]
+        # 环形建造计划以磁芯为中心；磁芯位置由地图生成决定（debug_state 给出）。
+        self.core = (d.get("core_x", self.mw - 8), d.get("core_y", self.mh // 2))
         self._sync_cur(d)
         return d
 
@@ -221,7 +223,7 @@ class Bot:
             self.press("x")
 
     def next_spot(self):
-        core = (self.mw - 3, self.mh // 2)
+        core = self.core
         while self.plan_i < len(self.plan):
             dx, dy = self.plan[self.plan_i]
             self.plan_i += 1
@@ -249,19 +251,49 @@ class Bot:
                 self.stats["path_broken"] += 1
         return d
 
+    def build_at_current(self, typ):
+        """在**当前光标格**建一座（不移动）——用于"到故障塔旁边补反应堆"。"""
+        d = self.h.debug()
+        self.select_type(typ)
+        before = len(d["towers"])
+        self.press("a")
+        self.frames += 1
+        d = self.h.debug()
+        if len(d["towers"]) > before:
+            self.stats["builds"] += 1
+            return d
+        self.stats["denied"] += 1
+        if d["path_ok"] is False:
+            self.stats["path_broken"] += 1
+        return None
+
     def do_build_phase(self, d):
-        # 1) 电力吃紧就先补反应堆（避免全场欠压）
+        # 1) 范围供电：有塔没通电 → 就在那座塔旁边补一座反应堆（半径 5 罩住它）
         for _ in range(4):
-            if d["power_used"] + 3 > d["power_cap"] and d["credits"] >= 60:
-                nd = self.try_build("REACTOR")
-                if nd is None:
-                    break
-                d = nd
-            else:
+            off = next((t for t in (d["towers"] or []) if not t.get("powered", True)), None)
+            if not off or d["credits"] < 60:
                 break
-        # 2) 建攻击塔，直到预算/电力见底
+            done = False
+            for rad in (1, 2):
+                for dx in range(-rad, rad + 1):
+                    for dy in range(-rad, rad + 1):
+                        tx, ty = off["x"] + dx, off["y"] + dy
+                        if not (1 <= tx <= self.mw - 2 and 1 <= ty <= self.mh - 2):
+                            continue
+                        self.move_to(tx, ty)
+                        if self.build_at_current("REACTOR"):
+                            done = True
+                            break
+                    if done:
+                        break
+                if done:
+                    break
+            d = self.h.debug()
+            if not done:
+                break
+        # 2) 建攻击塔（范围供电下没有全局电容门槛；没电的塔会在下一轮触发补反应堆）
         for _ in range(6):
-            if d["credits"] < 130 or d["power_used"] >= d["power_cap"]:
+            if d["credits"] < 130:
                 break
             typ = TYPES_CYCLE[self.type_i % len(TYPES_CYCLE)]
             self.type_i += 1
@@ -359,8 +391,7 @@ class Bot:
             d = self.h.debug()
 
         self.stats["end"] = {k: d.get(k) for k in
-                             ("phase", "wave", "credits", "core_hp", "power_used",
-                              "power_cap", "overload", "enemies_alive")}
+                             ("phase", "wave", "credits", "core_hp", "enemies_alive")}
         self.stats["won"] = d["phase"] == "won"
         self.stats["over"] = d["phase"] == "over"
         self.stats["frames"] = self.frames

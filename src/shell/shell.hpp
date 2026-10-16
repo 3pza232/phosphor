@@ -38,11 +38,14 @@ struct ShelfOption {
 };
 
 /// MODS 管理器里的一条：`id` 是启用集比较与写盘用的 mod 名，`zh`/`en` 是显示名。
-/// 显示名由调用方（pack 的 `scan_mods`）补好 folders-name 兜底，故按界面语言取用即可
+/// `default_off` 决定写盘时落进 `mods_enabled` 还是 `mods_disabled`；`enabled` 是打开
+/// 管理器时的有效启用态（勾选初值）。显示名由调用方（pack 的 `scan_mods`）补好兜底
 struct ModOption {
     std::string id;
     std::string zh;
     std::string en;
+    bool default_off = false;
+    bool enabled = true;
 };
 
 /// 外壳界面：机身装饰 + 开机动画 + 卡带架 + 设置 + 暂停 + 错误画面。
@@ -79,7 +82,10 @@ public:
         /// MODS 浮窗"确认"且启用集**确有变化**：App 写盘并重启。没变时这里恒为 false
         /// （关掉又开回算没变——用集合语义比较，不看按键历史）
         bool mods_applied = false;
-        std::vector<std::string> mods_disabled;  // 确认后的禁用集合
+        /// 确认后按各 mod 的 default_off 拆成的两个列表：默认开的被关掉落 mods_disabled，
+        /// 默认关的被打开落 mods_enabled（不在表里 = 回到各自默认）
+        std::vector<std::string> mods_disabled;
+        std::vector<std::string> mods_enabled;
     };
 
     /// 换皮肤（同时重建几何：格子尺寸与外壳尺寸随主题变）
@@ -115,9 +121,9 @@ public:
     /// 告知可选的卡带架样式包与当前项。候选项是 `[LIST, WINDOW, <包…>]`，
     /// `active` = 0（list）/ 1（window）/ 2+i（第 i 个包）
     void set_shelves(std::vector<ShelfOption> options, int active);
-    /// 告知覆盖层 Mod 清单（含各自的本地化显示名）与当前被禁用的 id：
+    /// 告知覆盖层 Mod 清单（含各自的本地化显示名、default_off 与有效启用态）：
     /// 架面只在有 mod 时显示 M 提示、才响应 M 键
-    void set_mods(std::vector<ModOption> mods, std::vector<std::string> disabled);
+    void set_mods(std::vector<ModOption> mods);
     /// 设置卡带架内容区的绘制回调。非空 = 内容区由内容包接管（ShelfView 标记 external）；
     /// 清空即回退内置样式 —— 包加载失败时 App 就是这样兜底的
     void set_shelf_painter(shelf::Painter painter) { shelf_painter_ = std::move(painter); }
@@ -200,8 +206,8 @@ private:
 
     /// 打开 MODS 浮窗（快照当前启用集）；仅在已有 mod 时有意义
     void open_mods();
-    /// 当前勾选状态推出的禁用集合（勾掉的即禁用）
-    std::vector<std::string> mods_disabled_now() const;
+    /// 当前勾选状态推出的**有效启用集**（勾上的即生效）
+    std::vector<std::string> mods_enabled_now() const;
     /// 启用集是否相对打开时的快照有变化（**集合语义**：关掉又开回 = 没变）
     bool mods_changed() const;
     /// MODS 浮窗矩形（居中）：输入（滚动视口）与绘制共用同一份布局
@@ -255,12 +261,11 @@ private:
     int fps_ = kDefaultFps;
     int pause_cursor_ = 0;
 
-    /// 覆盖层 Mod 清单（全部，含禁用的；带各自显示名）与当前禁用集合（由 App 从 config 填入）
+    /// 覆盖层 Mod 清单（全部，含未启用的；带各自显示名与 default_off）与编辑/快照态
     std::vector<ModOption> mods_;
-    std::vector<std::string> mods_disabled_;
     int mods_cursor_ = 0;              // 单列光标：N 个 mod 行 + 确认（Esc 即取消）
-    std::vector<bool> mods_checked_;   // 编辑态勾选（下标与 mods_ 对齐）
-    std::vector<std::string> mods_disabled_snapshot_;  // 打开时的禁用集（比较用）
+    std::vector<bool> mods_checked_;   // 编辑态勾选 = 有效启用态（下标与 mods_ 对齐）
+    std::vector<std::string> mods_enabled_snapshot_;  // 打开时的有效启用集（比较用）
     float mods_scroll_ = 0.0f;         // 平滑滚动首行（浮点，逼近目标）
 
     std::vector<std::string> skin_names_;

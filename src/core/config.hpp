@@ -22,9 +22,11 @@ struct Config {
     int fps = kDefaultFps;                 // 画面刷新率上限（档位见 defaults.hpp 的 kFpsChoices）
     int music_volume = kDefaultMusicVolume;  // 音乐音量 0~100（音序器产出）
     int sfx_volume = kDefaultSfxVolume;      // 音效音量 0~100（beep/音符/采样）
-    /// 被禁用的 Mod id（= `mods/<id>/` 的 `<id>`，见 core/mods.hpp）。空 = 全部生效
-    /// （"放进 mods/ 即生效"的默认行为），非空才屏蔽对应 Mod 的覆盖
+    /// 被禁用的 Mod id（= `mods/<id>/` 的 `<id>`，见 core/mods.hpp）。空 = 默认开的都生效。
+    /// 默认关闭的 Mod（`mod.lua` 里 `default_off = true`）不看这一份，看 `mods_enabled`
     std::vector<std::string> mods_disabled;
+    /// 显式启用的"默认关闭"Mod id。空 = 所有默认关的都保持关着
+    std::vector<std::string> mods_enabled;
 };
 
 /// 读取配置；文件不存在/损坏时返回默认值（安静回退）

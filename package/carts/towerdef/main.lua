@@ -558,8 +558,30 @@ function debug_state()
 	local g = game
 	local towers = {}
 	for _, t in ipairs(g.towers) do
+		local _, _, interval = Towers.stats(t, t.aura)
 		towers[#towers + 1] = { x = t.x, y = t.y, type = t.type, level = t.level,
-			kills = t.kills, priority = t.priority, hp = t.hp, max_hp = t.max_hp }
+			kills = t.kills, priority = t.priority, hp = t.hp, max_hp = t.max_hp,
+			-- 范围供电：是否通电 / 本型本级耗电 / 由哪些电源（下标）分摊
+			powered = (t.powered ~= false), draw = t.draw or 0, srcs = t.srcs or {},
+			-- 有效攻速（连续塔 0）与线宽（激光用、其余 0）：供自测核对升级数值
+			interval = interval, thick = Towers.by(Towers.TYPES[t.type].thickness_by, t.level, 0) }
+	end
+	-- 基地供电圆内是否无岩石/水（生成期 protect 保证；这里给观测口径）
+	local core_clear = true
+	local CR = Towers.CORE_RADIUS
+	for dy = -CR, CR do
+		for dx = -CR, CR do
+			if dx * dx + dy * dy <= CR * CR then
+				local v = g.map:get(g.map.core.x + dx, g.map.core.y + dy)
+				if v == 1 or v == 2 then core_clear = false end -- Map.ROCK / Map.WATER
+			end
+		end
+	end
+	local sources = {}
+	for i, s in ipairs(g.sources or {}) do
+		sources[#sources + 1] = { index = i, x = s.x, y = s.y, kind = s.kind,
+			supply = s.supply, used = s.used, remaining = s.supply - s.used,
+			radius = s.radius }
 	end
 	local enemies = {}
 	for _, e in ipairs(g.enemies) do
@@ -574,10 +596,10 @@ function debug_state()
 		wave = g.wave, wave_total = g.wave_total, endless = g.endless,
 		diff = g.diff, map_style = g.map_style,
 		core_hp = g.core_hp, core_max = g.core_max,
+		core_x = g.map.core.x, core_y = g.map.core.y,
+		core_radius = Towers.CORE_RADIUS, core_power_clear = core_clear,
 		credits = g.credits,
-		power_used = g.power_used, power_cap = g.power_cap,
-		overload = (g.power_used > g.power_cap),
-		overload_over = g.overload_over, overload_rate = g.overload_rate,
+		power = sources, -- 电源（反应堆 + 基地）：供应/已用/剩余/半径
 		active_waves = g:active_waves(),
 		speed = speed, next_in = g.next_in,
 		enemies_alive = #g.enemies,

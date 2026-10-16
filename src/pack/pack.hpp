@@ -55,18 +55,21 @@ struct ModManifest {
     std::string name_en;
     std::string desc_zh;  // 说明（可空）
     std::string desc_en;
+    bool default_off = false;  // 清单声明 `default_off = true`：出厂默认关闭
+    bool enabled = true;       // 有效启用态（据 default_off + 两个配置列表算出）
 };
 
 /// `mods/` 的扫描结果：可管理的 mod 清单 + 已建好的覆盖表
 struct ModScan {
-    /// 全部**有有效 mod.lua** 的 mod（含被禁用的，UI 才能再开）；按 id 字典序
+    /// 全部**有有效 mod.lua** 的 mod（含未启用的，UI 才能再开）；按 id 字典序
     std::vector<ModManifest> mods;
     /// 覆盖表：键 `<目标id>/<包内路径>` → 覆盖文件的落盘路径。
-    /// 已按启用集过滤（禁用的不进表）、按 mod-id 字典序叠加（同键后者覆盖前者）
+    /// 已按启用集过滤（未启用的不进表）、按 mod-id 字典序叠加（同键后者覆盖前者）
     std::map<std::string, std::string> overrides;
 };
 
-/// 扫描 `mods/` 下全部 mod：读 `mod.lua` 的 `name`/`desc`/`overrides`。
+/// 扫描 `mods/` 下全部 mod：读 `mod.lua` 的 `name`/`desc`/`default_off`/`overrides`。
+/// 「是否生效」按 `core::mod_enabled(id, default_off)` 判定（需先 `set_disabled`/`set_enabled`）。
 /// 没有 `mod.lua`、读不出表、或**没有 `overrides` 表**的文件夹都不算 mod——`log::warn`
 /// 后跳过（不再有"路径即键"的隐式规则）；`overrides` 为空表 = 只登记、不覆盖。
 /// 覆盖键非法（缺 `<目标id>/<路径>` 形态）、值指向的文件不存在等条目跳过并告警。

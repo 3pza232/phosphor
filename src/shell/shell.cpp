@@ -73,9 +73,8 @@ void Shell::set_shelves(std::vector<ShelfOption> options, int active) {
     shelf_index_ = (active >= 0 && active < count) ? active : 1;  // 越界回退 window
 }
 
-void Shell::set_mods(std::vector<ModOption> mods, std::vector<std::string> disabled) {
+void Shell::set_mods(std::vector<ModOption> mods) {
     mods_ = std::move(mods);
-    mods_disabled_ = std::move(disabled);
 }
 
 void Shell::open_settings() {
@@ -161,23 +160,21 @@ void Shell::to_paused() {
 void Shell::open_mods() {
     if (mods_.empty()) return;   // 没有 mod 就没有可管理的东西
     mode_ = ShellMode::mods;
-    // 勾选态按当前启用集初始化；快照存下来，"关掉又开回"才不会误判成变化
+    // 勾选态 = 当前有效启用态（由 App 从 default_off + 两个配置列表算好）；
+    // 快照存下来，"关掉又开回"才不会误判成变化
     mods_checked_.assign(mods_.size(), true);
-    for (size_t i = 0; i < mods_.size(); ++i)
-        if (std::find(mods_disabled_.begin(), mods_disabled_.end(), mods_[i].id) !=
-            mods_disabled_.end())
-            mods_checked_[i] = false;
-    // 快照取"与现有 mod 对应的禁用子集"：配置里指向已删除 mod 的陈旧项不算改动，
+    for (size_t i = 0; i < mods_.size(); ++i) mods_checked_[i] = mods_[i].enabled;
+    // 快照只含现有 mod 的启用态：配置里指向已删除 mod 的陈旧项不算改动，
     // 否则打开后原样确认也会被判成"有变化"而平白重启
-    mods_disabled_snapshot_ = mods_disabled_now();
+    mods_enabled_snapshot_ = mods_enabled_now();
     mods_cursor_ = 0;
     mods_scroll_ = 0.0f;
 }
 
-std::vector<std::string> Shell::mods_disabled_now() const {
+std::vector<std::string> Shell::mods_enabled_now() const {
     std::vector<std::string> out;
     for (size_t i = 0; i < mods_.size(); ++i)
-        if (i < mods_checked_.size() && !mods_checked_[i]) out.push_back(mods_[i].id);
+        if (i < mods_checked_.size() && mods_checked_[i]) out.push_back(mods_[i].id);
     return out;
 }
 
@@ -188,7 +185,7 @@ bool Shell::mods_changed() const {
         v.erase(std::unique(v.begin(), v.end()), v.end());
         return v;
     };
-    return normalize(mods_disabled_now()) != normalize(mods_disabled_snapshot_);
+    return normalize(mods_enabled_now()) != normalize(mods_enabled_snapshot_);
 }
 
 ui::Rect Shell::mods_box() const {
@@ -496,7 +493,17 @@ Shell::Intent Shell::update_mods(const Input& input) {
         } else {                    // 确认
             if (mods_changed()) {   // 没变就只关窗，不重启
                 intent.mods_applied = true;
-                intent.mods_disabled = mods_disabled_now();
+                // 按每个 mod 的 default_off 把新勾选态拆成两个列表：
+                // 默认关的打开→mods_enabled；默认开的关闭→mods_disabled（其余都留在默认侧）
+                for (size_t i = 0; i < mods_.size(); ++i) {
+                    const ModOption& m = mods_[i];
+                    const bool on = i < mods_checked_.size() && mods_checked_[i];
+                    if (m.default_off) {
+                        if (on) intent.mods_enabled.push_back(m.id);
+                    } else if (!on) {
+                        intent.mods_disabled.push_back(m.id);
+                    }
+                }
             }
             mode_ = ShellMode::shelf;
         }

@@ -6,10 +6,11 @@ namespace phos {
 
 namespace {
 
-/// 覆盖表与禁用集合：由上层（App）在启动期一次性喂入，之后只读。
+/// 覆盖表与两个 mod 列表：由上层（App）在启动期一次性喂入，之后只读。
 /// 覆盖表是纯数据（键→落盘路径），本层不扫描目录、不碰 Lua
 struct Registry {
-    std::vector<std::string> disabled;             // 被禁用的 mod id
+    std::vector<std::string> disabled;  // 默认开但被关掉的 mod id
+    std::vector<std::string> enabled;   // 默认关但被打开的 mod id
     std::map<std::string, std::string> overrides;  // "<目标id>/<路径>" → 落盘路径
 };
 
@@ -18,8 +19,8 @@ Registry& registry() {
     return r;
 }
 
-bool is_disabled(const Registry& r, const std::string& id) {
-    return std::find(r.disabled.begin(), r.disabled.end(), id) != r.disabled.end();
+bool contains(const std::vector<std::string>& ids, const std::string& id) {
+    return std::find(ids.begin(), ids.end(), id) != ids.end();
 }
 
 } // namespace
@@ -39,8 +40,13 @@ void set_disabled(const std::vector<std::string>& ids) {
     registry().disabled = ids;
 }
 
-bool mod_enabled(const std::string& id) {
-    return !is_disabled(registry(), id);
+void set_enabled(const std::vector<std::string>& ids) {
+    registry().enabled = ids;
+}
+
+bool mod_enabled(const std::string& id, bool default_off) {
+    const Registry& r = registry();
+    return default_off ? contains(r.enabled, id) : !contains(r.disabled, id);
 }
 
 } // namespace phos

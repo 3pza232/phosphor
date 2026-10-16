@@ -63,23 +63,25 @@ TEMPLATES = [
 ]
 TOTAL = len(TEMPLATES)
 
-# ── 攻击塔（与 towers.lua 同步；FPC 就是这张表的中位数，见下）──
+# ── 攻击塔（与 towers.lua 同步；FPC 就是这张表的中位数，draw=L1 耗电）──
 TOWERS = {
-    "GUN":    dict(cost=50,  dmg=9,  rate=0.35, range=5.0),
-    "CANNON": dict(cost=95,  dmg=34, rate=1.25, range=6.0, splash=1.6),
-    "FROST":  dict(cost=70,  dmg=5,  rate=0.70, range=5.0),
-    "TESLA":  dict(cost=130, dmg=24, rate=1.40, range=5.5, chain=3),
-    "FLAME":  dict(cost=115, dps=13,            range=3.0, splash=2.0),
-    "LASER":  dict(cost=120, dmg=26, rate=1.0,  range=7.0),
-    "HELL":   dict(cost=150, dps=8,             range=5.0),
-    "SNIPER": dict(cost=140, dmg=90, rate=2.4,  range=9.0),
-    "MORTAR": dict(cost=135, dmg=40, rate=1.6,  range=8.0, splash=2.2),
+    "GUN":    dict(cost=50,  dmg=9,  rate=0.35, range=5.0, draw=20),
+    "CANNON": dict(cost=95,  dmg=34, rate=1.25, range=6.0, splash=1.6, draw=40),
+    "FROST":  dict(cost=70,  dmg=5,  rate=0.70, range=5.0, draw=30),
+    "TESLA":  dict(cost=130, dmg=24, rate=1.40, range=5.5, chain=3, draw=45),
+    "FLAME":  dict(cost=115, dps=13,            range=3.0, splash=2.0, draw=40),
+    "LASER":  dict(cost=120, dmg=26, rate=1.0,  range=7.0, draw=50),
+    "HELL":   dict(cost=150, dps=8,             range=5.0, draw=55),
+    "SNIPER": dict(cost=140, dmg=90, rate=2.4,  range=9.0, draw=45),
+    "MORTAR": dict(cost=135, dmg=40, rate=1.6,  range=8.0, splash=2.2, draw=50),
 }
 
 # ── 模型常量（含义 + 取值理由，见 DESIGN §5.4）─────────────────────────
 ARMOR_W   = 20.0    # 每点 armor 折算的等效血量：armor=5 → 装甲等效血约 ×1.45
-EFF       = 0.50    # 中位数玩家把金币转成"有效火力"的效率（布局/空转/超杀/欠压/雷达地堡）
-S_SLOPE   = 0.02    # 每波目标松紧缓坡：后期略紧，不突变
+EFF       = 0.50    # 中位数玩家把金币转成"有效火力"的效率（布局/空转/超杀/辅助设施）
+S_SLOPE   = 0.03    # 每波目标松紧缓坡：后期略紧（上调自 0.02，压无尽后期我方膨胀）
+BASE_SUPPLY   = 200.0  # 基地磁芯免费供电（只罩磁芯附近，空间限制折进 EFF）
+SUPPLY_PER_GOLD = 1.0  # 反应堆供电/金币（L1 = 60 供 / 60 金）
 CLEAR_A, CLEAR_B = 15.0, 2.0                # 波清奖金 = A + B·w（game.lua check_end）
 BUILD_TIME = 60.0                           # 每波等待秒数（game.lua BUILD_TIME；满额=整段都省掉）
 WAIT_A, WAIT_B = 10.0, 2.0                  # 满额等待金 max_bonus(w) = A + B·w（waves.wait_bonus_max）
@@ -99,6 +101,13 @@ def fpc():
     n = len(vals); m = n // 2
     return vals[m] if n % 2 else 0.5 * (vals[m - 1] + vals[m])
 FPC = fpc()
+
+# 每金攻击塔带来的耗电（均值）；范围供电约束下：G·DRAW_RATIO ≤ BASE + (I−G)·SUPPLY_PER_GOLD
+DRAW_RATIO = (sum(d["draw"] for d in TOWERS.values()) / len(TOWERS)) \
+             / (sum(d["cost"] for d in TOWERS.values()) / len(TOWERS))
+def attack_gold(I):
+    g = (I + BASE_SUPPLY * SUPPLY_PER_GOLD) / (1.0 + DRAW_RATIO / SUPPLY_PER_GOLD)
+    return min(g, I)
 
 def base_hp(kind):
     e = ENEMY[kind]
@@ -121,7 +130,7 @@ def income(w, include_wait=True):
         if include_wait:
             s += wait_est(i)
     return s
-def P(w, credits0): return (credits0 + income(w)) * FPC * EFF
+def P(w, credits0): return attack_gold(credits0 + income(w)) * FPC * EFF
 
 # R：整体松紧，标定 hp_growth(1)=HP_GROWTH_1（用 NORMAL 的起始金币）
 NORMAL_CREDITS = 130
@@ -132,7 +141,7 @@ DIFF = {
     # credits / core / hp 乘数 / speed 乘数
     "EASY":   dict(credits=170, core=25, hp=0.80, speed=0.90),
     "NORMAL": dict(credits=130, core=20, hp=1.00, speed=1.00),
-    "HARD":   dict(credits=120, core=15, hp=1.15, speed=1.05),
+    "HARD":   dict(credits=150, core=15, hp=1.15, speed=1.05),
 }
 
 # 无尽：强度按模型在第 15→20 波的平均每波增幅线性外推（对齐第 20 波，去掉单波噪声）
@@ -148,14 +157,15 @@ def row(name, d, tag):
     for w in range(1, TOTAL + 1):
         Iw = d["credits"] + income(w, True)
         Inw = d["credits"] + income(w, False)
-        Pw = Iw * FPC * EFF
+        Pw = attack_gold(Iw) * FPC * EFF
         Eb = Ebase(w)
         Et = Pw * R * S(w) * d["hp"]
         g = hp_growth(w)
         Ep = Eb * g * d["hp"] / Pw
         print("%2d | %6.0f | %7.0f | %7.0f | %7.0f | %7.0f | %5.2f | %5.2f" % (
             w, Iw, Inw, Pw, Eb, Et, g, Ep))
-    ep = [Ebase(w) * hp_growth(w) * d["hp"] / (d["credits"] + income(w)) / (FPC * EFF)
+    ep = [Ebase(w) * hp_growth(w) * d["hp"]
+          / (attack_gold(d["credits"] + income(w)) * FPC * EFF)
           for w in range(1, TOTAL + 1)]
     print("   E/P 范围 %.2f..%.2f（末/首 %.2f）" % (min(ep), max(ep), ep[-1] / ep[0]))
 
@@ -244,6 +254,21 @@ def check_sync():
                 problems.append("%s: 源=%s ≠ model %s" % (label, got, ref))
     except Exception as e:
         problems.append("等待金常量自检异常：%r" % e)
+    # 范围供电：waves.lua 的 MODEL_TOWER 耗电 / S_SLOPE / BASE_SUPPLY 与本文件一致
+    try:
+        m = re.search(r"S_SLOPE\s*=\s*([0-9.]+)", waves)
+        if not m or abs(float(m.group(1)) - S_SLOPE) > 1e-9:
+            problems.append("S_SLOPE: waves=%s ≠ model %s" % (m and m.group(1), S_SLOPE))
+        m = re.search(r"BASE_SUPPLY\s*=\s*([0-9.]+)", waves)
+        if not m or abs(float(m.group(1)) - BASE_SUPPLY) > 1e-9:
+            problems.append("BASE_SUPPLY: waves=%s ≠ model %s" % (m and m.group(1), BASE_SUPPLY))
+        seg = _entry(waves, "MODEL_TOWER") or ""
+        draws = [float(x) for x in re.findall(r"draw\s*=\s*([0-9.]+)", seg)]
+        refs = [float(d["draw"]) for d in TOWERS.values()]
+        if sorted(draws) != sorted(refs):
+            problems.append("MODEL_TOWER 耗电 %s ≠ model %s" % (sorted(draws), sorted(refs)))
+    except Exception as e:
+        problems.append("电力常量自检异常：%r" % e)
     if problems:
         print("同步自检：发现 %d 处不一致（改 enemies/towers 要同步 waves.MODEL_ENEMY/FPC + 本文件）:" % len(problems))
         for p in problems:
@@ -259,6 +284,12 @@ def main():
     print("ARMOR_W = %.1f  EFF = %.2f  S_SLOPE = %.3f" % (ARMOR_W, EFF, S_SLOPE))
     print("BUILD_TIME = %.0f  max_bonus(w) = %.0f + %.0f·w  P_MED = %.2f  INCLUDE = %.2f" % (
         BUILD_TIME, WAIT_A, WAIT_B, P_MED, INCLUDE))
+    print("范围供电：BASE_SUPPLY = %.0f  SUPPLY_PER_GOLD = %.2f  DRAW_RATIO = %.4f" % (
+        BASE_SUPPLY, SUPPLY_PER_GOLD, DRAW_RATIO))
+    g20 = attack_gold(NORMAL_CREDITS + income(TOTAL))
+    print("  攻击塔金币占比：w1 %.2f → w20 %.2f（基地免费电覆盖早期；后期约 %.0f%% 金币转买反应堆）" % (
+        attack_gold(NORMAL_CREDITS + income(1)) / (NORMAL_CREDITS + income(1)),
+        g20 / (NORMAL_CREDITS + income(TOTAL)), (1 - g20 / (NORMAL_CREDITS + income(TOTAL))) * 100))
     print("等待金折入 I：每波 = INCLUDE·P_MED·max_bonus(w) = %.3f·(%.0f+%.0f·w)；"
           "w1=%.1f w10=%.1f w20=%.1f" % (
         INCLUDE * P_MED, WAIT_A, WAIT_B,
@@ -278,7 +309,8 @@ def main():
     ok = True
     for name in ("EASY", "NORMAL", "HARD"):
         d = DIFF[name]
-        ep = [Ebase(w) * hp_growth(w) * d["hp"] / (d["credits"] + income(w)) / (FPC * EFF)
+        ep = [Ebase(w) * hp_growth(w) * d["hp"]
+              / (attack_gold(d["credits"] + income(w)) * FPC * EFF)
               for w in range(1, TOTAL + 1)]
         early_ok = ep[0] <= min(ep) * 1.05 + 1e-9   # 开局就是最低档（不突刺）
         rise = ep[-1] > ep[0]

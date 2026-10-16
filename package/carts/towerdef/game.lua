@@ -20,7 +20,6 @@ Game.BUILD_TIME = 60 -- 每波等待时间（秒）；提前放波奖金按"省�
 Game.START_CREDITS = 0 -- 0 = 用难度默认；>0 = 调试台覆盖起始金币（DESIGN §12 第三刀）
 Game.ENEMY_HP_MULT = 1 -- 调试台：敌人血量额外乘数（DESIGN §12 第三刀）
 Game.AIRSTRIKE_DMG = 150 -- 空袭伤害（可被调试台覆盖）
-local POWER_BASE = 8 -- 基础电力上限（反应堆在此之上累加）
 local AIRSTRIKE_CD = 40
 local AIRSTRIKE_RADIUS = 3.0
 local AIRSTRIKE_WARN = 0.6
@@ -62,11 +61,7 @@ function Game.new(diff, style, endless)
 	self.cy = math.floor(ph / 2)
 	self.banner = 0
 
-	self.power_used = 0
-	self.power_cap = POWER_BASE
-	self.overload = false
-	self.overload_over = 0 -- 超出上限的比例（0 = 不超）
-	self.overload_rate = 1
+	self.sources = {} -- 电源列表（反应堆 + 基地），每帧由 compute_power 现算
 	self.ev = {}
 	-- 首个随机值当场定成"续局种子"：主机没有读当前 RNG 状态的接口，续局只能重新 seed，
 	-- 做不到精确续流（详见 DESIGN §9）。存下它，restore 才能让续局后的随机可复现。
@@ -236,21 +231,69 @@ function Game:earn(amount)
 	end
 end
 
--- ── 电力 ─────────────────────────────────────────────────────────────
-
+-- ── 电力：范围供电 + 贪心分配（DESIGN §6.4）────────────────────────────
+-- 电源：每座反应堆（供电 radius=Towers.REACTOR_RADIUS）+ 基地磁芯（Towers.CORE_SUPPLY）。
+-- 每帧重算，确定性可复现：
+--   1) 电源按"反应堆建造顺序 + 基地最后"定序；每个电源有 供应/已用。
+--   2) 用电设备按**建塔顺序**处理（同局可复现）。
+--   3) 对每个设备：取覆盖它的所有电源，按"**剩余电量少的优先**"贪心分配——
+--      A 剩 10、B 富余、设备要 40 → A 出 10 + B 出 30（范围重叠可跨电源分摊；
+--      单设备需求超过任一电源时，重叠多个电源会**串起来供**）。
+--   4) 合计仍不足 → 该设备**不工作**（powered=false），且**耗电记 0**（不占任何电源）。
 function Game:compute_power()
-	local used, cap = 0, POWER_BASE
+	local sources = {}
 	for _, t in ipairs(self.towers) do
-		used = used + Towers.power_use(t)
-		cap = cap + Towers.power_out(t)
+		if Towers.TYPES[t.type].kind == "reactor" then
+			sources[#sources + 1] = { x = t.x, y = t.y, kind = "reactor",
+				supply = Towers.power_out(t), used = 0,
+				radius = Towers.REACTOR_RADIUS, tower = t }
+		end
 	end
-	self.power_used = used
-	self.power_cap = cap
-	self.overload = used > cap
-	-- 欠压：按"超出上限的比例"降载——攻速/射程/连续伤/雷达光环都乘它（见 towers.update）。
-	-- 例：12/8 → 超出 50% → 系数 0.5；下限 0.2 保底，不至于全场停摆。
-	self.overload_over = self.overload and (used - cap) / cap or 0
-	self.overload_rate = self.overload and math.max(0.2, 1 - self.overload_over) or 1
+	sources[#sources + 1] = { x = self.map.core.x, y = self.map.core.y, kind = "core",
+		supply = Towers.CORE_SUPPLY, used = 0, radius = Towers.CORE_RADIUS }
+	self.sources = sources
+
+	for _, t in ipairs(self.towers) do
+		local draw = Towers.power_use(t)
+		t.draw = draw
+		t.srcs = {}
+		t.powered = (draw <= 0)
+		if draw > 0 then
+			-- 覆盖它的电源（带下标，用于平局定序）
+			local cov = {}
+			for si = 1, #sources do
+				local s = sources[si]
+				local dx, dy = s.x - t.x, s.y - t.y
+				if dx * dx + dy * dy <= s.radius * s.radius then
+					cov[#cov + 1] = { s = s, i = si }
+				end
+			end
+			local function remaining(c) return c.s.supply - c.s.used end
+			-- 剩余少的优先；平局按电源定序（确定性）
+			table.sort(cov, function(a, b)
+				local ra, rb = remaining(a), remaining(b)
+				if ra ~= rb then return ra < rb end
+				return a.i < b.i
+			end)
+			local avail = 0
+			for _, c in ipairs(cov) do avail = avail + remaining(c) end
+			if avail >= draw then
+				local need = draw
+				for _, c in ipairs(cov) do
+					if need <= 0 then break end
+					local take = math.min(remaining(c), need)
+					if take > 0 then
+						c.s.used = c.s.used + take
+						need = need - take
+						t.srcs[#t.srcs + 1] = c.i
+					end
+				end
+				t.powered = true
+			else
+				t.powered = false -- 合计不足：不工作、耗电记 0（已不占任何电源）
+			end
+		end
+	end
 end
 
 -- ── 波次 ─────────────────────────────────────────────────────────────
@@ -394,7 +437,6 @@ function Game:update(dt)
 	-- 塔每帧都跑（布防期也跑）：采矿机在布防期照产钱；无敌人时开火逻辑自然空转。
 	local ctx = {
 		enemies = self.enemies, map = self.map, core = self.map.core,
-		overload = self.overload_rate,
 		deal_damage = function(e, dmg, ig, tower) return self:deal_damage(e, dmg, ig, tower) end,
 		add_fx = function(eff) self:add_fx(eff) end,
 		earn = function(n) self:earn(n) end,

@@ -23,9 +23,10 @@ int App::run(const CliOptions& opts) {
     if (opts.config) config_path_ = *opts.config;
     config_ = load_config(config_path_);
 
-    // Mod：先落禁用集合（决定哪些 mod 生效），再由 pack 读各 mod.lua 建覆盖表。
+    // Mod：先落两个配置列表（决定哪些 mod 生效），再由 pack 读各 mod.lua 建覆盖表。
     // 覆盖表必须先于任何内容扫描落地，否则被覆盖的包/卡带会先按原样扫一遍
     set_disabled(config_.mods_disabled);
+    set_enabled(config_.mods_enabled);
     ModScan mod_scan = scan_mods();
     set_overrides(std::move(mod_scan.overrides));
 
@@ -86,11 +87,12 @@ int App::run(const CliOptions& opts) {
     shell_.set_music_volume(config_.music_volume);
     shell_.set_sfx_volume(config_.sfx_volume);
     shell_.set_skin(packs_.skin());
-    // 覆盖层 Mod 清单（name/desc 来自各自的 mod.lua）+ 当前禁用集：架面据此决定是否显示/响应 M 键
+    // 覆盖层 Mod 清单（name/desc/default_off/有效启用态来自各自的 mod.lua）：架面据此决定
+    // 是否显示/响应 M 键，并初始化 MODS 管理器里每行的勾选态
     std::vector<ModOption> mods;
     for (const ModManifest& m : mod_scan.mods)
-        mods.push_back(ModOption{m.id, m.name_zh, m.name_en});
-    shell_.set_mods(std::move(mods), config_.mods_disabled);
+        mods.push_back(ModOption{m.id, m.name_zh, m.name_en, m.default_off, m.enabled});
+    shell_.set_mods(std::move(mods));
 
     // 音频必须先于开机动画就绪：boot 事件音与动画脚本的 phos.audio.* 都在第一秒内发生
     if (!opts.headless) init_audio();

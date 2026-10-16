@@ -9,7 +9,8 @@
 --   I(w)  = 起始金币 + Σ_{i≤w}( 赏金 + 波清奖金(15+2i) + INCLUDE·P_MED·max_bonus(i) )
 --           赏金 = Σ count·base_bounty·reward_growth(i)
 --           max_bonus(i)=WAIT_A+WAIT_B·i 是第 i 波"满额等待金"（game.lua 提前放波，见 §6.4）
---   P(w)  = I(w)·FPC·EFF                       （中位数玩家的累计火力）
+--   P(w)  = 攻击力金币 ·FPC·EFF                 （范围供电约束下的有效火力，见下）
+--           攻击力金币 = G(I(w))：金币要么买攻击塔、要么买反应堆供电；基地免费供 200。
 --   Ebase = Σ count·(hp + ARMOR_W·armor + shield)
 --   Etarget(w) = P(w)·R·S(w)，  S(w)=1+S_SLOPE·(w-1)
 --   hp_growth(w) = Etarget(w)/Ebase(w)         （逐波推出，不是手填表）
@@ -56,9 +57,13 @@ Waves.TEMPLATES = {
 -- FPC：攻击塔 F/cost 的中位数。现行塔表中位塔 = TESLA
 --   （24/1.40·5.5·3 / 130 ≈ 2.176）。改 towers.lua 的火力/造价要重算这里。
 local FPC = 2.17582
-local EFF = 0.50          -- 中位数玩家把金币转成"有效火力"的效率：布局/空转/超杀/欠压/辅助设施
+local EFF = 0.50          -- 中位数玩家把金币转成"有效火力"的效率：布局/空转/超杀/辅助设施
 local ARMOR_W = 20        -- 每点 armor 折算的有效血：armor=5 → 装甲等效血约 ×1.45
-local S_SLOPE = 0.02      -- 每波目标松紧缓坡：后期略紧，不突变
+local S_SLOPE = 0.03      -- 每波目标松紧缓坡：后期略紧（从 0.02 上调，压一压无尽后期我方膨胀）
+-- 范围供电（DESIGN §6.4）：基地免费供 BASE_SUPPLY；反应堆 L1 花 60 金供 60 电（≈1 电/金）。
+-- 攻击塔"每金带来的耗电"DRAW_RATIO 由下面 MODEL_TOWER 表算（耗电/造价 的均值）。
+local BASE_SUPPLY = 200   -- 基地磁芯供电（免费，但只罩磁芯附近——空间限制折进 EFF）
+local SUPPLY_PER_GOLD = 1.0 -- 反应堆供电/金币（L1=60/60）
 local REWARD_MAX = 1.20   -- 赏金乘子全程上限：数量已驱动收入增长 ~18×，乘子再快就滚雪球
 local HP_GROWTH_1 = 1.0   -- 标定：第 1 波（NORMAL）血乘子 = 1.0（开局面值 → 平顺开局）
 -- 经济/奖金常量（与 game.lua 一一对应）
@@ -75,9 +80,23 @@ local MODEL_ENEMY = {
 	runner = { hp = 40,   armor = 0, bounty = 6,   shield = 0 },
 	swarm  = { hp = 25,   armor = 0, bounty = 2,   shield = 0 },
 	armor  = { hp = 220,  armor = 5, bounty = 13,  shield = 0 },
-	shield = { hp = 140,  armor = 0, bounty = 15,  shield = 40 },
-	flyer  = { hp = 90,   armor = 0, bounty = 10,  shield = 0 },
+	shield = { hp = 140, armor = 0, bounty = 15, shield = 40 },
+	flyer  = { hp = 90,  armor = 0, bounty = 10, shield = 0 },
 	boss   = { hp = 2600, armor = 8, bounty = 170, shield = 0 },
+}
+
+-- 攻击塔最小输入表（towers.lua 镜像；模型只用 cost 与 L1 耗电估"每金耗电"）。
+-- 改 towers.lua 的造价/耗电要同步这里（与 MODEL_ENEMY 同一约定）。
+local MODEL_TOWER = {
+	{ cost = 50,  draw = 20 }, -- GUN
+	{ cost = 95,  draw = 40 }, -- CANNON
+	{ cost = 70,  draw = 30 }, -- FROST
+	{ cost = 130, draw = 45 }, -- TESLA
+	{ cost = 115, draw = 40 }, -- FLAME
+	{ cost = 120, draw = 50 }, -- LASER
+	{ cost = 150, draw = 55 }, -- HELL
+	{ cost = 140, draw = 45 }, -- SNIPER
+	{ cost = 135, draw = 50 }, -- MORTAR
 }
 
 -- 速度仍走一条独立缓坡（与血量解耦：快慢是风味，强度由模型定）。
@@ -115,7 +134,22 @@ do
 	end
 end
 
-local function P(w) return (NORMAL_CREDITS + Income[w]) * FPC * EFF end
+-- 每金攻击塔带来的耗电（均值）；反应堆每金供 SUPPLY_PER_GOLD。
+-- 攻击力金币 G 满足：G·DRAW_RATIO ≤ BASE_SUPPLY + (I − G)·SUPPLY_PER_GOLD；
+-- 解出 G = min(I, (I + BASE_SUPPLY)/(1 + DRAW_RATIO/SUPPLY_PER_GOLD))：
+-- 早期 I 小、基地 200 免费够用 → G=I（不扣电税）；后期 I 大 → 一部分金币转去买反应堆。
+local DRAW_RATIO = 0
+do
+	local sc, sd = 0, 0
+	for _, tw in ipairs(MODEL_TOWER) do sc = sc + tw.cost; sd = sd + tw.draw end
+	DRAW_RATIO = (sd / #MODEL_TOWER) / (sc / #MODEL_TOWER) -- 均值耗电 / 均值造价
+end
+local function attack_gold(I)
+	local g = (I + BASE_SUPPLY * SUPPLY_PER_GOLD) / (1 + DRAW_RATIO / SUPPLY_PER_GOLD)
+	if g > I then g = I end
+	return g
+end
+local function P(w) return attack_gold(NORMAL_CREDITS + Income[w]) * FPC * EFF end
 
 -- R：整体松紧常量，标定 hp_growth(1)=HP_GROWTH_1（即开局面值）
 local R = HP_GROWTH_1 * Ebase[1] / P(1)
@@ -160,12 +194,13 @@ function Waves.hp_growth_endless(w)
 end
 
 -- 难度（开局菜单选）：起始金币 / 磁芯血 / 敌人 hp 乘数 / 敌人速度乘数。
--- 起始金币按模型"够撑过前几波"定：HARD 120 足以开局两台机枪/一枪一炮（模型 E/P≈2.2，
--- 紧但不秒崩），hp 乘数按各档松紧（EASY 0.8 / NORMAL 1.0 / HARD 1.15）叠在模型曲线之上。
+-- 起始金币按模型"够撑过前几波"定：范围供电后前期还要花钱拉电（反应堆），HARD 起始金币
+-- 随之上调到 150，保证"前几波不变难"；EASY 170 更宽松。hp 乘数按各档松紧
+-- （EASY 0.8 / NORMAL 1.0 / HARD 1.15）叠在模型曲线之上。
 Waves.DIFF = {
 	EASY = { credits = 170, core = 25, hp = 0.80, speed = 0.90 },
 	NORMAL = { credits = 130, core = 20, hp = 1.00, speed = 1.00 },
-	HARD = { credits = 120, core = 15, hp = 1.15, speed = 1.05 },
+	HARD = { credits = 150, core = 15, hp = 1.15, speed = 1.05 },
 }
 Waves.DIFF_ORDER = { "EASY", "NORMAL", "HARD" }
 
