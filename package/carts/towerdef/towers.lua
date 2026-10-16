@@ -86,9 +86,9 @@ Towers.TYPES = {
 		chars = { "h", "H", "H" }, color = "green", kind = "repair",
 		label = { zh = "维修", en = "REPAIR" }, desc = { zh = "治疗受损友塔", en = "heals allies" } },
 	-- 反应堆：不攻击，只作**电源**（范围供电）；射程对它无意义（up.range=0）。
-	-- supply = 各级供电量；升级只拉高供电（不耗电、无攻击档）。
-	REACTOR = { cost = 60, power = { 0, 0, 0 }, dmg = 0, rate = 0, range = 0, supply = { 60, 100, 150 }, hp = 80,
-		up = { range = 0 },
+	-- 电源：不耗电、无攻击档；`range` = **供电半径**（三级 4/5/6，升级扩张），`supply` = 各级供电量。
+	REACTOR = { cost = 60, power = { 0, 0, 0 }, dmg = 0, rate = 0, range = 4.0, supply = { 60, 100, 150 }, hp = 80,
+		up = { range = 1.0 },
 		chars = { "R", "R", "R" }, color = "blue", kind = "reactor",
 		label = { zh = "反应堆", en = "REACTOR" }, desc = { zh = "范围供电", en = "area power" } },
 	-- 采矿机：不攻击，周期把金币"挖"出来（小幅、**不随波次膨胀**）；代价是**吃电最凶**
@@ -146,7 +146,8 @@ function Towers.stats(t, aura)
 	local dmg = (d.dmg or 0) * ((up.dmg or 1.6) ^ (lvl - 1))
 	local range = (d.range or 0) + (up.range or 1.5) * (lvl - 1)
 	local interval = (d.rate or 0) * ((up.rate or 0.88) ^ (lvl - 1))
-	if aura then
+	if aura and d.kind ~= "reactor" then
+		-- 反应堆的"范围"是**供电半径**（结构属性），不被雷达光环放大
 		range = range * (1 + (t.aura_range or 0)) -- 雷达光环：射程 +25%
 		if d.rate and d.rate > 0 then
 			interval = interval / (1 + (t.aura_rate or 0)) -- 攻速 +15%（连续塔无间隔，改在结算里加速度）
@@ -156,12 +157,9 @@ function Towers.stats(t, aura)
 end
 
 -- ── 电力：范围供电（DESIGN §6.4）──────────────────────────────────────
--- 电源的**供电半径**（格）：反应堆 **4**、基地磁芯 **5**。
--- 反应堆 4 格：直径 9 的区域放得下一座反应堆 + 其 L2 能带的 ~5 台中型塔（60/100 供电是真正的
---   瓶颈；半径只决定"够不够得着"）——比 5 更"局部"，逼玩家沿防线铺多座反应堆而非一塔管一片。
--- 基地 5 格（比反应堆略大）：磁芯周边一圈铺满，开局内圈免费供电够用。
+-- 供电半径：**反应堆看它自己的 `range`（4/5/6，随升级扩张）**；基地磁芯固定 CORE_RADIUS。
+-- 基地 5 格（比反应堆初始的 4 略大）：磁芯周边一圈铺满，开局内圈免费供电够用。
 -- 核心生成据此选位（map.lua 用 ≥ 供电半径的留白），保证供电圆不越出地图。
-Towers.REACTOR_RADIUS = 4
 Towers.CORE_RADIUS = 5
 Towers.CORE_SUPPLY = 200
 

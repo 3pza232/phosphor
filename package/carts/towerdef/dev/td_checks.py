@@ -430,9 +430,9 @@ def test_radar_aura(seed):
             g.h.step("space")
             g.h.step(None, frames=10)
             g.move_to(near["x"], near["y"])
-            v = _first_float_after(g.screen(), "RNG")
+            v = _first_float_after(g.screen(), "RANGE")
             check("radar: 光环内炮塔射程 +25%（GUN 5.0→6.25）",
-                  v is not None and v > 5.5, "RNG=%s" % v)
+                  v is not None and v > 5.5, "RANGE=%s" % v)
     finally:
         g.close()
 

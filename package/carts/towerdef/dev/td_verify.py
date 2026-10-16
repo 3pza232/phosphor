@@ -113,7 +113,7 @@ class Host:
 
 
 def panel_lines(lines):
-    # 侧栏文案在整屏文本右侧。这些 token（DMG/RNG/COST/SPEED…）只出现在侧栏，
+    # 侧栏文案在整屏文本右侧。这些 token（DMG/RANGE/COST/SPEED…）只出现在侧栏，
     # 直接搜整屏即可，不必精确裁列（裁列易被左右侧壁的 | 干扰）。
     return "\n".join(lines)
 
@@ -154,8 +154,8 @@ def main():
         tx, ty = d["towers"][0]["x"], d["towers"][0]["y"]
         select("FLAME")  # 故意选另一种塔，证明显示的是"塔的"而非"待建的"
         panel = panel_lines(h.screen())
-        check("#3 塔上侧栏显示塔数据（DMG/RNG/KILLS）",
-              "DMG" in panel and "RNG" in panel and "KILLS" in panel)
+        check("#3 塔上侧栏显示塔数据（DMG/RANGE/KILLS）",
+              "DMG" in panel and "RANGE" in panel and "KILLS" in panel)
 
         # ---- #4 光标在塔上：射程圈 = 该塔射程（GUN L1=5.0），而非待建 FLAME(3.0) ----
         p_on = h.shot("ring_on_tower_GUN_L1.png")
@@ -163,8 +163,8 @@ def main():
         # ---- #5 升级提高射程，并同步侧栏 ----
         def rng_from_panel():
             for ln in panel_lines(h.screen()).splitlines():
-                if "RNG" in ln:
-                    tok = ln.split("RNG")[1].strip().split()
+                if "RANGE" in ln:
+                    tok = ln.split("RANGE")[1].strip().split()
                     if tok:
                         try:
                             return float(tok[0])
@@ -180,8 +180,8 @@ def main():
         r3 = rng_from_panel()
         # GUN 升级档案 up.range=1.0：L2=6.0、L3=7.0（新档位下射程增幅收窄，命中判定随之放宽）
         check("#5 升级射程明显变大 (5.0 -> +)", lvl2 == 2 and r2 and r2 >= 6.0,
-              "L2 RNG=%s" % r2)
-        check("#5 L3 射程更大", r3 and r3 >= 7.0, "L3 RNG=%s" % r3)
+              "L2 RANGE=%s" % r2)
+        check("#5 L3 射程更大", r3 and r3 >= 7.0, "L3 RANGE=%s" % r3)
 
         # ---- #4b 移到空地：射程圈恢复成待建塔型（FLAME=3.0） ----
         h.step("right")  # 移开一格（空地）
@@ -192,8 +192,8 @@ def main():
 
         # ---- #3b 空地：侧栏显示待建造塔型完整数据 ----
         panel = panel_lines(h.screen())
-        check("#3 空地侧栏显示待建塔数据（COST/POWER/DMG/RNG/RATE）",
-              all(k in panel for k in ("COST", "POWER", "DMG", "RNG", "RATE")))
+        check("#3 空地侧栏显示待建塔数据（COST/POWER/DMG/RANGE/RATE）",
+              all(k in panel for k in ("COST", "DRAW", "DMG", "RANGE", "RATE")))
         check("#3 空地显示当前待建塔型 FLAME", "FLAME" in panel)
 
         # ---- #1 空袭改 C ----

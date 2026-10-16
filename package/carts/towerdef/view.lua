@@ -66,20 +66,38 @@ function View.draw(game, C)
 		end
 	end
 
-	-- ── 建造光标：空心框 + 射程轮廓 + 非法标记 ──
+	-- ── 供电光圈（常驻）：电源（反应堆 / 基地磁芯）周围一圈很淡的蓝，标出供电范围 ──
+	-- 用 ring()（稀疏采样 = "淡"），与光标处的 range_ring（更密）区分；画在地形之上、棋子之下。
+	-- 反应堆的光圈随其 `range`（4/5/6）涨——升级扩张供电范围在这里一眼可见。
+	local core = map.core
+	ring(S, px, py, core.x + 0.5, core.y + 0.5, Towers.CORE_RADIUS, "\u{00B7}", C.blue)
+	for _, t in ipairs(game.towers) do
+		if Towers.TYPES[t.type].kind == "reactor" then
+			local _, sr = Towers.stats(t, t.aura)
+			ring(S, px, py, t.x + 0.5, t.y + 0.5, sr, "\u{00B7}", C.blue)
+		end
+	end
+
+	-- ── 建造光标：空心框 + 范围轮廓 + 非法标记 ──
 	-- 射程圈的半径随光标下的内容走：塔上 = 那座塔的**实际**射程（含升级/光环），
 	-- 空地 = 当前待建造塔型的射程。圈色也跟着，一眼分清自己在看谁的射程。
 	local cx, cy = game.cx, game.cy
 	local tsel = game:tower_at(cx, cy)
+	-- 圈色：反应堆的"范围"是**供电半径**，用供电蓝；普通塔满级显本色、未满级白；空地照待建塔型。
 	local range, ring_col
 	if tsel then
 		local _, r = Towers.stats(tsel, tsel.aura)
 		range = r
-		ring_col = (tsel.level >= 3) and C[Towers.TYPES[tsel.type].color] or C.white
+		if Towers.TYPES[tsel.type].kind == "reactor" then
+			ring_col = C.blue
+		else
+			ring_col = (tsel.level >= 3) and C[Towers.TYPES[tsel.type].color] or C.white
+		end
 	else
-		local _, r = Towers.stats({ type = game:selected_name(), level = 1 }, false)
+		local name = game:selected_name()
+		local _, r = Towers.stats({ type = name, level = 1 }, false)
 		range = r
-		ring_col = C.dark_gray
+		ring_col = (Towers.TYPES[name].kind == "reactor") and C.blue or C.dark_gray
 	end
 	-- 画一圈射程点（同一段代码画"当前圈"与"下一级虚圈"）
 	local function range_ring(rr, ch, col)
@@ -104,19 +122,6 @@ function View.draw(game, C)
 			aura_range = tsel.aura_range, aura_rate = tsel.aura_rate }, tsel.aura)
 		if nr and nr > range then range_ring(nr, "+", C.dark_gray) end
 	end
-	-- 供电范围**预览**（与射程圈同一套画法，用更淡的蓝以示区别）：
-	--   · 光标在**电源**（反应堆塔 / 基地磁芯）上 → 画它的供电圈；
-	--   · 光标在**空地**、待建塔型是反应堆 → 画待建反应堆的供电圈（和攻击范围预览同源）。
-	-- 只在光标处画，不常驻——保持与射程圈一致的克制（不喧宾夺主）。
-	local supply_r
-	if tsel then
-		if Towers.TYPES[tsel.type].kind == "reactor" then supply_r = Towers.REACTOR_RADIUS end
-	elseif cx == map.core.x and cy == map.core.y then
-		supply_r = Towers.CORE_RADIUS
-	elseif Towers.TYPES[game:selected_name()].kind == "reactor" then
-		supply_r = Towers.REACTOR_RADIUS
-	end
-	if supply_r then range_ring(supply_r, "\u{00B7}", C.blue) end
 	-- 光标框：亮色（旧版 dark_gray 太不显眼），用 blend 叠加，不覆盖格子里的塔/敌人字形
 	local box = { { -1, -1, "+" }, { 0, -1, "-" }, { 1, -1, "+" },
 		{ -1, 0, "|" }, { 1, 0, "|" },

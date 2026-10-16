@@ -12,7 +12,7 @@ local Text = {
 	zh = {
 		wave = "波次", credits = "金币", draw = "耗电", out = "发电", core = "磁芯",
 		online = "运作中", nopower = "未通电", base_pwr = "基地供电",
-		build = "建造", selected = "已选", dmg = "伤害", range = "射程",
+		build = "建造", selected = "已选", dmg = "伤害", range = "范围",
 		rate = "攻速", kills = "击杀", upgrade = "升级", refund = "返还",
 		cost = "造价", persec = "/秒", speed = "速度", hp = "血量",
 		lvl = "级", airstrike = "空袭", ready = "就绪", sec = "秒", cont = "连续",
@@ -28,7 +28,7 @@ local Text = {
 	en = {
 		wave = "WAVE", credits = "CREDITS", draw = "DRAW", out = "OUT", core = "CORE",
 		online = "ONLINE", nopower = "NO POWER", base_pwr = "BASE POWER",
-		build = "BUILD", selected = "SELECTED", dmg = "DMG", range = "RNG",
+		build = "BUILD", selected = "SELECTED", dmg = "DMG", range = "RANGE",
 		rate = "RATE", kills = "KILLS", upgrade = "UP", refund = "SELL",
 		cost = "COST", persec = "/s", speed = "SPEED", hp = "HP",
 		lvl = "Lv", airstrike = "AIRSTRIKE", ready = "READY", sec = "s", cont = "CONT",

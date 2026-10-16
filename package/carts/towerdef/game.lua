@@ -240,7 +240,7 @@ function Game:earn(amount)
 end
 
 -- ── 电力：范围供电 + 贪心分配（DESIGN §6.4）────────────────────────────
--- 电源：每座反应堆（供电 radius=Towers.REACTOR_RADIUS）+ 基地磁芯（Towers.CORE_SUPPLY）。
+-- 电源：每座反应堆（供电半径 = 塔的 `range`，随升级扩张）+ 基地磁芯（Towers.CORE_SUPPLY）。
 -- 每帧重算，确定性可复现：
 --   1) 电源按"反应堆建造顺序 + 基地最后"定序；每个电源有 供应/已用。
 --   2) 用电设备按**建塔顺序**处理（同局可复现）。
@@ -252,9 +252,10 @@ function Game:compute_power()
 	local sources = {}
 	for _, t in ipairs(self.towers) do
 		if Towers.TYPES[t.type].kind == "reactor" then
+			local _, radius = Towers.stats(t, t.aura) -- 供电半径随等级扩张（4/5/6）
 			sources[#sources + 1] = { x = t.x, y = t.y, kind = "reactor",
 				supply = Towers.power_out(t), used = 0,
-				radius = Towers.REACTOR_RADIUS, tower = t }
+				radius = radius, tower = t }
 		end
 	end
 	sources[#sources + 1] = { x = self.map.core.x, y = self.map.core.y, kind = "core",
