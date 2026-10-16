@@ -6,12 +6,18 @@
 链条（waves.lua 加载期用同一套公式推导，本脚本是独立复算）：
   1) FPC   = 所有攻击塔 F/cost 的中位数（F = dps·range；连续塔用 dps；
              AoE 乘 (1+splash)；连锁乘 chain 数）。
-  2) I(w)  = 起始金币 + Σ_{i≤w}( 赏金 + 波清奖金 15+2i + 提前放波奖金估计 EARLY(i) )；
-             赏金 = Σ count·base_bounty·reward_growth(i)。
+  2) I(w)  = 起始金币 + Σ_{i≤w}( 赏金 + 波清奖金 15+2i + INCLUDE·P_MED·max_bonus(i) )；
+             赏金 = Σ count·base_bounty·reward_growth(i)；
+             max_bonus(i) = WAIT_A + WAIT_B·i 是第 i 波的"满额等待金"（game.lua 提前放波）。
   3) P(w)  = I(w)·FPC·EFF。
   4) Ebase(w) = Σ count·(hp + ARMOR_W·armor + shield)（装甲/护盾折算进有效血）。
   5) Etarget(w) = P(w)·R·S(w)，S(w) = 1 + S_SLOPE·(w-1)。
   6) hp_growth(w) = Etarget(w)/Ebase(w)（逐波算，非手填表）；reward_growth 由经济目标反推。
+
+等待金入账规则（game.lua §6.4）：build 期按"剩余秒/60"给 **比例×满额**；combat 期（波没清完
+就招下一波）给 **满额**。模型里用一个**中位实现比例 P_MED**（玩家不总提前招、且常建到一半才招）
+估中位玩家实际拿到的比例，再乘 **INCLUDE(≈0.5)** 折入 I(w)——即"等待金只按一半计入怪物强度"，
+让它的*短期手感*奖励大于它对*怪物曲线*的长期影响。
 
 **注意**：hp_growth 会随模板组成波动（boss 波基础血高 → 乘子低）。这正是让 E(w)/P(w) 保持
 平缓的机制——若强行把 hp_growth 平滑成单调，E/P 会摆动 4~10 倍（见文末 sanity）。所以这里
@@ -75,8 +81,10 @@ ARMOR_W   = 20.0    # 每点 armor 折算的等效血量：armor=5 → 装甲等
 EFF       = 0.50    # 中位数玩家把金币转成"有效火力"的效率（布局/空转/超杀/欠压/雷达地堡）
 S_SLOPE   = 0.02    # 每波目标松紧缓坡：后期略紧，不突变
 CLEAR_A, CLEAR_B = 15.0, 2.0                # 波清奖金 = A + B·w（game.lua check_end）
-EARLY_CA, EARLY_CB = 3.0, 1.0               # combat 期提前放波奖励 = A + B·w（game.lua early_wave）
-EARLY_BUILD_EST = 5.0                        # 中位数玩家 build 期提前放波、平均剩 ~5s → ~10 金？取保守 5
+BUILD_TIME = 60.0                           # 每波等待秒数（game.lua BUILD_TIME；满额=整段都省掉）
+WAIT_A, WAIT_B = 10.0, 2.0                  # 满额等待金 max_bonus(w) = A + B·w（waves.wait_bonus_max）
+P_MED     = 0.50    # 中位实现比例：玩家不总提前招，且常建到一半才招 → 中位拿到满额的一半
+INCLUDE   = 0.50    # 等待金折入 I(w) 的比例：只按一半计入怪物强度（手感奖励 > 曲线影响）
 REWARD_MAX = 1.20   # 赏金乘子全程上限：数量已驱动收入增长 18×，乘子再快就滚雪球
 HP_GROWTH_1 = 1.0   # 标定：第 1 波（NORMAL）血乘子 = 1.0（开局面值，平顺）
 
@@ -100,14 +108,19 @@ def base_bounty(w): return sum(c * ENEMY[t]["bounty"] for t, c, _ in TEMPLATES[w
 
 def S(w):          return 1.0 + S_SLOPE * (w - 1)
 def clear_bonus(w):return CLEAR_A + CLEAR_B * w
-def early_est(w):  return EARLY_BUILD_EST + (EARLY_CA + EARLY_CB * w)
+def max_bonus(w):  return WAIT_A + WAIT_B * w
+def wait_est(w):   return INCLUDE * P_MED * max_bonus(w)   # 折入 I 的中位等待金
 
 RG_SLOPE = (REWARD_MAX - 1.0) / (TOTAL - 1)      # reward_growth 由"乘子上限"反推
 def reward_growth(w): return 1.0 + RG_SLOPE * (w - 1)
 
-def income(w):
-    return sum(base_bounty(i) * reward_growth(i) + clear_bonus(i) + early_est(i)
-               for i in range(1, w + 1))
+def income(w, include_wait=True):
+    s = 0.0
+    for i in range(1, w + 1):
+        s += base_bounty(i) * reward_growth(i) + clear_bonus(i)
+        if include_wait:
+            s += wait_est(i)
+    return s
 def P(w, credits0): return (credits0 + income(w)) * FPC * EFF
 
 # R：整体松紧，标定 hp_growth(1)=HP_GROWTH_1（用 NORMAL 的起始金币）
@@ -130,16 +143,18 @@ def hp_growth_endless(w): return hp_growth(TOTAL) * (1.0 + EL_RATE * (w - TOTAL)
 # ── 报告 ─────────────────────────────────────────────────────────────
 def row(name, d, tag):
     print("\n── %s %s ──" % (name, tag))
-    print(" w |    I(w) |   P(w)  |  Ebase  | Etarget |hp_gro |  E/P  ")
-    print("-" * 72)
+    print(" w |  I(w)含 | I(w)不含 |   P(w)  |  Ebase  | Etarget |hp_gro |  E/P  ")
+    print("-" * 84)
     for w in range(1, TOTAL + 1):
-        Iw = d["credits"] + income(w)
+        Iw = d["credits"] + income(w, True)
+        Inw = d["credits"] + income(w, False)
         Pw = Iw * FPC * EFF
         Eb = Ebase(w)
         Et = Pw * R * S(w) * d["hp"]
         g = hp_growth(w)
         Ep = Eb * g * d["hp"] / Pw
-        print("%2d | %6.0f | %7.0f | %7.0f | %7.0f | %5.2f | %5.2f" % (w, Iw, Pw, Eb, Et, g, Ep))
+        print("%2d | %6.0f | %7.0f | %7.0f | %7.0f | %7.0f | %5.2f | %5.2f" % (
+            w, Iw, Inw, Pw, Eb, Et, g, Ep))
     ep = [Ebase(w) * hp_growth(w) * d["hp"] / (d["credits"] + income(w)) / (FPC * EFF)
           for w in range(1, TOTAL + 1)]
     print("   E/P 范围 %.2f..%.2f（末/首 %.2f）" % (min(ep), max(ep), ep[-1] / ep[0]))
@@ -182,6 +197,7 @@ def check_sync():
         enemies = open(os.path.join(root, "enemies.lua"), encoding="utf-8").read()
         waves = open(os.path.join(root, "waves.lua"), encoding="utf-8").read()
         towers = open(os.path.join(root, "towers.lua"), encoding="utf-8").read()
+        game = open(os.path.join(root, "game.lua"), encoding="utf-8").read()
     except OSError as e:
         print("同步自检：读源文件失败（跳过）：%s" % e)
         return
@@ -211,6 +227,23 @@ def check_sync():
             problems.append("FPC: towers.lua 推出 %.4f ≠ waves.lua %.4f" % (fpc_calc, fpc_lua))
     except Exception as e:
         problems.append("FPC 自检异常：%r" % e)
+    # 等待金经济常量：waves.lua（WAIT_A/B、P_MED、INCLUDE）与 game.lua（BUILD_TIME）
+    try:
+        def one(pat, txt):
+            m = re.search(pat, txt)
+            return float(m.group(1)) if m else None
+        m = re.search(r"WAIT_A,\s*WAIT_B\s*=\s*([0-9.]+),\s*([0-9.]+)", waves)
+        wa, wb = (float(m.group(1)), float(m.group(2))) if m else (None, None)
+        pmed = one(r"P_MED\s*=\s*([0-9.]+)", waves)
+        inc = one(r"INCLUDE\s*=\s*([0-9.]+)", waves)
+        btime = one(r"Game\.BUILD_TIME\s*=\s*([0-9.]+)", game)
+        for label, got, ref in (("WAIT_A", wa, WAIT_A), ("WAIT_B", wb, WAIT_B),
+                                ("P_MED", pmed, P_MED), ("INCLUDE", inc, INCLUDE),
+                                ("BUILD_TIME(game.lua)", btime, BUILD_TIME)):
+            if got is None or abs(got - ref) > 1e-6:
+                problems.append("%s: 源=%s ≠ model %s" % (label, got, ref))
+    except Exception as e:
+        problems.append("等待金常量自检异常：%r" % e)
     if problems:
         print("同步自检：发现 %d 处不一致（改 enemies/towers 要同步 waves.MODEL_ENEMY/FPC + 本文件）:" % len(problems))
         for p in problems:
@@ -221,10 +254,16 @@ def check_sync():
 
 def main():
     check_sync()
-    print("=" * 80)
+    print("=" * 84)
     print("FPC = %.4f  R = %.4f  EL_RATE = %.4f  RG_SLOPE = %.6f" % (FPC, R, EL_RATE, RG_SLOPE))
     print("ARMOR_W = %.1f  EFF = %.2f  S_SLOPE = %.3f" % (ARMOR_W, EFF, S_SLOPE))
-    print("=" * 80)
+    print("BUILD_TIME = %.0f  max_bonus(w) = %.0f + %.0f·w  P_MED = %.2f  INCLUDE = %.2f" % (
+        BUILD_TIME, WAIT_A, WAIT_B, P_MED, INCLUDE))
+    print("等待金折入 I：每波 = INCLUDE·P_MED·max_bonus(w) = %.3f·(%.0f+%.0f·w)；"
+          "w1=%.1f w10=%.1f w20=%.1f" % (
+        INCLUDE * P_MED, WAIT_A, WAIT_B,
+        wait_est(1), wait_est(10), wait_est(20)))
+    print("=" * 84)
     for name in ("EASY", "NORMAL", "HARD"):
         d = DIFF[name]
         row(name, d, "(credits=%d core=%d hp×%.2f speed×%.2f)" % (

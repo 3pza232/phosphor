@@ -16,7 +16,7 @@ local Game = {}
 Game.__index = Game
 
 -- 手感常量（DESIGN 未定的项取合理默认；都是"一改就换手感"的旋钮）
-Game.BUILD_TIME = 15 -- 布防期倒计时（秒）
+Game.BUILD_TIME = 60 -- 每波等待时间（秒）；提前放波奖金按"省下的等待比例"给（见 early_wave）
 Game.START_CREDITS = 0 -- 0 = 用难度默认；>0 = 调试台覆盖起始金币（DESIGN §12 第三刀）
 Game.ENEMY_HP_MULT = 1 -- 调试台：敌人血量额外乘数（DESIGN §12 第三刀）
 Game.AIRSTRIKE_DMG = 150 -- 空袭伤害（可被调试台覆盖）
@@ -24,10 +24,6 @@ local POWER_BASE = 8 -- 基础电力上限（反应堆在此之上累加）
 local AIRSTRIKE_CD = 40
 local AIRSTRIKE_RADIUS = 3.0
 local AIRSTRIKE_WARN = 0.6
--- 战斗中提前招下一波的奖金 = EARLY_A + EARLY_B·(所招波号)：与 build 期"提前放波"同一个精神
--- （贪快有奖），但金额更小、随波号缓增（与波清奖金 15+2w 同量级的下沿），不喧宾夺主。
--- 该估计已纳入 waves.lua 的 I(w)（EARLY_A/EARLY_B 与那边同步）。
-local EARLY_A, EARLY_B = 3, 1
 
 local function hypot(x, y) return math.sqrt(x * x + y * y) end
 
@@ -286,19 +282,23 @@ local function schedule_done(s)
 	return true
 end
 
--- 提前放波：build 期随时可放（按剩余秒数给奖金）；combat 期也能放，但场上**最多同时两拨**——
--- 两拨都还在（有活口或还没出完）就不能再招，直到某一拨被清干净。贪快有代价，也有上限。
--- 两个分支都发奖金（同一个精神）：build 期按剩余秒数；combat 期按所招波号给 EARLY_A+EARLY_B·w。
+-- 提前放波：奖励 = 满额等待金 max_bonus(所招波号) 按"省下的等待比例"折算。
+--   build 期：ratio = 剩余秒 / BUILD_TIME（0~1）→ bonus = round(ratio × max_bonus)。
+--             剩得越多拿越多：整段等待刚结束就招 ≈ 满额，快等完才招 ≈ 0。
+--   combat 期：波没清完就招下一波 = 整段等待全免 → **满额**（这也是"贪快该最多"的那个上限）。
+-- combat 期场上**最多同时两拨**（两拨都在就不能再招，直到某一拨被清干净）。
+-- 满额曲线 max_bonus 在 waves.lua（数据层），这里只管"按比例发多少"。
 function Game:early_wave()
 	if self.phase == "build" then
-		local bonus = math.floor(math.max(0, self.build_timer)) * 2
+		local ratio = math.max(0, math.min(1, self.build_timer / Game.BUILD_TIME))
+		local bonus = math.floor(ratio * Waves.wait_bonus_max(self.wave + 1) + 0.5)
 		self.credits = self.credits + bonus
 		self.ev.early_bonus = bonus
 		self:start_wave()
 		return true
 	elseif self.phase == "combat" then
 		if self:active_waves() >= 2 then return false end
-		local bonus = EARLY_A + EARLY_B * (self.wave + 1)
+		local bonus = Waves.wait_bonus_max(self.wave + 1)
 		self.credits = self.credits + bonus
 		self.ev.early_bonus = bonus
 		self:start_wave()

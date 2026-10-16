@@ -6,8 +6,9 @@
 -- ── 难度模型：经济 → 我方火力 → 敌人强度 ──────────────────────────────
 -- 不硬编码逐波难度：加载期用"模板 + 少量具名常量"推导每条血/赏金乘子。方程：
 --   FPC   = 攻击塔 F/cost 的中位数（F=dps·range；连续塔用 dps；AoE×(1+splash)；连锁×chain）
---   I(w)  = 起始金币 + Σ_{i≤w}( 赏金 + 波清奖金(15+2i) + 提前放波奖金估计 EARLY(i) )
+--   I(w)  = 起始金币 + Σ_{i≤w}( 赏金 + 波清奖金(15+2i) + INCLUDE·P_MED·max_bonus(i) )
 --           赏金 = Σ count·base_bounty·reward_growth(i)
+--           max_bonus(i)=WAIT_A+WAIT_B·i 是第 i 波"满额等待金"（game.lua 提前放波，见 §6.4）
 --   P(w)  = I(w)·FPC·EFF                       （中位数玩家的累计火力）
 --   Ebase = Σ count·(hp + ARMOR_W·armor + shield)
 --   Etarget(w) = P(w)·R·S(w)，  S(w)=1+S_SLOPE·(w-1)
@@ -62,8 +63,10 @@ local REWARD_MAX = 1.20   -- 赏金乘子全程上限：数量已驱动收入增
 local HP_GROWTH_1 = 1.0   -- 标定：第 1 波（NORMAL）血乘子 = 1.0（开局面值 → 平顺开局）
 -- 经济/奖金常量（与 game.lua 一一对应）
 local CLEAR_A, CLEAR_B = 15, 2        -- 波清奖金 = A + B·w（game.lua check_end）
-local EARLY_A, EARLY_B = 3, 1         -- combat 期提前放波奖励 = A + B·w（game.lua early_wave）
-local EARLY_BUILD_EST = 5             -- 中位数玩家 build 期提前放波、平均剩 ~5s 的估计值
+local WAIT_A, WAIT_B = 10, 2          -- 满额等待金 = A + B·w（game.lua early_wave 调 wait_bonus_max）
+local P_MED = 0.50                    -- 中位实现比例：玩家不总提前招、常建到一半才招 → 中位拿满额一半
+local INCLUDE = 0.50                  -- 等待金折入 I(w) 的比例（手感奖励 > 曲线影响）
+local BUILD_TIME = 60                 -- 每波等待秒数（与 game.BUILD_TIME 同步；仅供模型阅读）
 local NORMAL_CREDITS = 130            -- 标定 R 用的起始金币（NORMAL 档）
 
 -- 敌人最小输入表（enemies.lua 镜像；模型只用 hp/armor/bounty/shield）
@@ -81,6 +84,10 @@ local MODEL_ENEMY = {
 function Waves.speed_growth(w) return math.min(1.25, 1 + 0.012 * (w - 1)) end
 -- 赏金乘子：线性缓升到 REWARD_MAX（由"不滚雪球"的经济目标反推，见 DESIGN §5.4）
 function Waves.reward_growth(w) return 1 + (REWARD_MAX - 1) / (Waves.TOTAL - 1) * (w - 1) end
+-- 满额等待金：整段等待都省掉时拿多少（combat 期提前招 = 满额；build 期按剩余比例）。
+-- 按波号缓增，量级与波清奖金 15+2w 相当但略低——"有意义但非主要收入"：够推动你抢节奏，
+-- 又不至于让提前放波变成主要刷钱手段。game.lua 的 early_wave 直接调它。
+function Waves.wait_bonus_max(w) return WAIT_A + WAIT_B * w end
 
 -- ── 加载期推导（下面全是模型算出来的，不是手填）──────────────────────
 local function S(w) return 1 + S_SLOPE * (w - 1) end
@@ -103,7 +110,7 @@ do
 	for w = 1, Waves.TOTAL do
 		cum = cum + Bounty[w] * Waves.reward_growth(w)
 			+ (CLEAR_A + CLEAR_B * w)
-			+ (EARLY_BUILD_EST + EARLY_A + EARLY_B * w)
+			+ INCLUDE * P_MED * Waves.wait_bonus_max(w)
 		Income[w] = cum
 	end
 end
