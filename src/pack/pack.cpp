@@ -303,39 +303,94 @@ std::vector<ShelfPack> scan_shelves(const std::string& dir) {
     });
 }
 
-std::vector<ModManifest> scan_mods() {
+ModScan scan_mods() {
     namespace fs = std::filesystem;
-    std::vector<ModManifest> out;
-    // id 权威来自 core（它同时决定排序与覆盖），这里只按同一份 id 补元信息
-    for (const std::string& id : mod_names()) {
-        ModManifest m;
-        m.id = id;
-        m.name_zh = m.name_en = id;  // 缺省显示名 = 文件夹名
-        std::error_code ec;
-        const fs::path manifest = fs::path("mods") / id / "mod.lua";
+    ModScan scan;
+    std::error_code ec;
+    if (!fs::is_directory("mods", ec)) return scan;
+
+    // 先收齐候选 mod 文件夹并排序：列表顺序与应用顺序（撞键时谁覆盖谁）都由它定，
+    // 跨机器一致。`mods/` 下只认文件夹（裸文件不是 mod）
+    std::vector<std::string> ids;
+    for (fs::directory_iterator it("mods", ec), end; it != end && !ec; it.increment(ec))
+        if (it->is_directory(ec)) ids.push_back(it->path().filename().string());
+    std::sort(ids.begin(), ids.end());
+
+    for (const std::string& id : ids) {
+        const fs::path dir = fs::path("mods") / id;
+        const fs::path manifest = dir / "mod.lua";
+
+        // 没有清单就不知道它覆盖到哪 → 跳过（不再有"目录结构即覆盖键"的隐式规则）
         if (!fs::is_regular_file(manifest, ec)) {
-            out.push_back(std::move(m));
+            log::warn("mod skipped (no mod.lua): " + dir.generic_string());
             continue;
         }
-        // mod.lua 是"纯返回一个表"的声明（不调用任何 API）：给一个最小沙箱跑一次即可。
-        // 读不到（坏脚本 / 不返回表）只是**没声明**——显示名回落文件夹名，mod 照常列出
+
+        // mod.lua 是"纯返回一个表"的声明：最小沙箱跑一次即可（与 shelf/素材包同一套）
         sol::state lua;
         open_pack_api(lua);
         auto r = lua.safe_script_file(manifest.string(), &sol::script_pass_on_error);
         if (!r.valid() || !r.get<sol::object>().is<sol::table>()) {
-            log::warn("mod manifest unreadable (using folder name): " + manifest.string());
-            out.push_back(std::move(m));
+            log::warn("mod skipped (mod.lua must return a table): " + manifest.string());
             continue;
         }
         sol::table t = r.get<sol::object>().as<sol::table>();
+
+        // overrides 是必需的：没有它（或不是表）就无法声明覆盖，跳过这个 mod
+        sol::object ov = t["overrides"];
+        if (!ov.is<sol::table>()) {
+            log::warn("mod skipped (mod.lua has no overrides table): " + manifest.string());
+            continue;
+        }
+
+        ModManifest m;
+        m.id = id;
+        m.name_zh = m.name_en = id;  // 缺省显示名 = 文件夹名
         read_localized(t, "name", m.name_zh, m.name_en);
         read_localized(t, "desc", m.desc_zh, m.desc_en);
         if (m.name_zh.empty() && m.name_en.empty()) m.name_zh = m.name_en = id;
         if (m.desc_zh.empty()) m.desc_zh = m.desc_en;
         if (m.desc_en.empty()) m.desc_en = m.desc_zh;
-        out.push_back(std::move(m));
+
+        // 被禁用的 mod 仍列出（UI 能再开），但它的覆盖整份不进表
+        if (mod_enabled(id)) {
+            sol::table map = ov.as<sol::table>();
+            for (const auto& kv : map) {
+                if (!kv.first.is<std::string>() || !kv.second.is<std::string>()) {
+                    log::warn("mod '" + id + "' has a non-string override entry, skipped");
+                    continue;
+                }
+                const std::string key = kv.first.as<std::string>();
+                const std::string rel = kv.second.as<std::string>();
+                // 键须是 "<目标id>/<包内路径>"：没有斜杠就定位不到目标
+                if (key.find('/') == std::string::npos || rel.empty()) {
+                    log::warn("mod '" + id + "' override key must be '<target>/<path>': " + key);
+                    continue;
+                }
+                const fs::path file = dir / rel;
+                if (!fs::is_regular_file(file, ec)) {
+                    log::warn("mod '" + id + "' override file missing: " + file.generic_string());
+                    continue;
+                }
+                // 命名化后两个 mod 可注册同一键：按 id 字典序后处理的覆盖先前的并留痕
+                if (scan.overrides.count(key) != 0)
+                    log::warn("mod override collision on '" + key + "' (mod '" + id + "' wins)");
+                scan.overrides[key] = file.generic_string();
+            }
+        }
+        scan.mods.push_back(std::move(m));
     }
-    return out;
+
+    if (!scan.mods.empty()) {
+        std::string list;
+        for (const ModManifest& m : scan.mods) {
+            if (!list.empty()) list += ", ";
+            list += m.id;
+            if (!mod_enabled(m.id)) list += " (disabled)";
+        }
+        log::info("mods loaded: " + list);
+    }
+    return scan;
 }
 
 std::vector<SoundPack> scan_sounds(const std::string& dir) {

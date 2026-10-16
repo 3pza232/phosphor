@@ -61,7 +61,7 @@ CartFiles CartFiles::open(const std::string& cart_path) {
     }
     cf.cart_path_ = cart_path;
 
-    // 卡带 id：覆盖层按 `mods/<mod-id>/<卡带id>/<路径>` 查找（见 core/mods.hpp）
+    // 卡带 id：覆盖层按键 `<卡带id>/<路径>` 查找（mod.lua 的 overrides 注册，见 core/mods.hpp）
     cf.cart_id_ = cart_id_of(cart_path);
 
     cf.valid_ = true;

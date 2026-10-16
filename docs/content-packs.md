@@ -383,44 +383,41 @@ theme/font/default/
 
 ### 覆盖层 Mod（Resource Override）——已实装
 
-**`mods/` 下直接是有名字的 mod 文件夹**：一个文件夹 = 一个 mod，**文件夹名就是它的 id**。
-覆盖内容镜像要覆盖的目标结构放在它之下；放进 `mods/` 默认即生效：
+**`mods/` 下每个文件夹就是一个独立 mod**：文件夹名 = mod 名。里面直接放这个 mod 独有的
+内容（扁平，文件名自由），再由它自己的 `mod.lua` 清单**声明这些内容覆盖到哪里**：
 
 ```
-mods/<mod-id>/                 一个 mod（文件夹名 = id，如 font-resize）
-├── mod.lua                    可选清单：return { name = {..}, desc = {..} }（显示名/说明）
-└── <目标id>/<目标内路径>        覆盖内容（可放多个目标）
-
-例：mods/font-resize/default/font.lua    → 键 default/font.lua（抬高大字号上限）
-    mods/snake-tweaks/snake/panel.lua    → 键 snake/panel.lua（改贪吃蛇侧栏）
-    mods/snake-tweaks/snake/game.lua     → 键 snake/game.lua（改玩法数值）
-    mods/snake-tweaks/snake/assets/map.txt  → 键 snake/assets/map.txt（改关卡数据）
-    mods/bold-theme/graphite/skin.lua    → 键 graphite/skin.lua（改某个主题外观）
-    mods/static-rain/static-rain/main.lua → 键 static-rain/main.lua（改开机动画）
-    mods/quiet/relay/sounds.lua          → 键 relay/sounds.lua（改主机音效）
+mods/<mod-id>/                 一个 mod（文件夹名 = mod 名，如 font-resize）
+├── mod.lua                    必需清单（见下）
+└── <任意文件名>                该 mod 独有的内容（扁平；也可放子目录，如 files/x.lua）
 ```
 
-- **覆盖键**取 `<mod-id>` **之后**的相对路径 `<目标id>/<目标内路径>`（不再有扁平布局里
-  "相对路径本身就是键"的说法）
+- **覆盖键**仍是 `<目标id>/<包内路径>`（`mod_override(target_id, rel_path)` 的查询接口不变）
 - 目标 id：内容包的文件夹名、字体方案名，或卡带 id（目录名；`.phos` 单文件取文件名去后缀）
-- 覆盖项与包内路径一致（`font.lua` / `skin.lua` / `panel.lua` / `assets/…`）；一个 mod 可覆盖多个目标
-- 顶层 `mod.lua`（清单）与任何"只有一段"的裸文件都定位不到目标，会被忽略
+- 「包内路径」与包内一致（`font.lua` / `skin.lua` / `panel.lua` / `assets/…`）
+- 一个 mod 可注册多条 overrides（多目标 / 多文件）
 - 查找顺序：命中的 mod 覆盖优先，否则包内本体兜底；**mods 无需修改原包**，删除即还原
-- 两个 mod 撞同一个覆盖键时，按 mod-id 字典序后者覆盖前者并写日志告警
+- 顺序与冲突：按 **mod-id 字典序**叠加，两个 mod 注册同一键时后者覆盖前者并写日志告警
+- 被禁用（`config.mods_disabled` 含该 mod-id）的 mod **整份不进表**
 - 覆盖层只替换"内容"，不改变"身份"
 
-**`mod.lua`（可选清单）**：一个**纯返回表**的 Lua（不调用任何 API），只放元信息：
+**`mod.lua`（必需清单）**：一个**纯返回表**的 Lua（不调用任何 API）：
 
 ```lua
 return {
-  name = { zh = "字体放大", en = "Font Resize" },  -- 显示名；缺省 = 文件夹名
-  desc = { zh = "字号上限 24 → 28", en = "..." },  -- 说明（可空）
+  name = { zh = "字体放大", en = "Font Resize" },   -- 显示名；缺省 = 文件夹名
+  desc = { zh = "字号上限 24 → 28", en = "…" },     -- 说明（可空）
+  overrides = {                                     -- 覆盖注册（必需）
+    ["default/font.lua"] = "font.lua",              -- 键 = "<目标id>/<包内路径>"
+  },                                                -- 值 = 本 mod 目录内的相对文件
 }
 ```
 
 `name` 也可直接给字符串（中英同值）；只写一种语言时互补，都不写则显示文件夹名。
-清单**不参与**覆盖路径。读失败（语法错 / 不返回表）只是"没声明"——显示名回落文件夹名，
-mod 照常列出。
+`overrides` 的值指向**本 mod 目录内的文件**（相对该文件夹；允许子目录）。
+**没有 `mod.lua`、读不出表、或没有 `overrides` 表**的文件夹不算 mod——`log::warn` 后跳过；
+`overrides` 为空表 = 只登记、不覆盖任何东西。键非法（缺 `<目标id>/<路径>` 形态）、
+值指向的文件不存在等条目跳过并告警。
 
 **开关（M 键 / `mods_disabled`）**：卡带架上按 **`M`** 打开 MODS 浮窗，逐条勾选要生效的 mod
 （没有 mod 时页脚不显示 `[M] MODS`、也不响应此键）。列表里显示的是 **mod 的显示名**
@@ -436,9 +433,9 @@ mod 照常列出。
 （`id` / `entry` / `save` 等）必须稳定，从而扫描、打包与运行时
 对同一张卡带保持一致认知。
 
-> 主机这边只有一处实现：对 `mods/<mod-id>/<目标id>/<路径>` 的统一路径解析（卡带与内容包
-> 共用），启动时扫描一次并建表（`core/mods.cpp` 只做路径解析；`mod.lua` 元信息由
-> `pack/pack.cpp` 的 `scan_mods` 读）。**不硬编码任何具体 mod**——引擎提供的是
+> 主机这边只有一处实现：`core/mods.cpp` 是纯查询表（`mod_override` / `set_overrides`，
+> 不碰 Lua），`pack/pack.cpp` 的 `scan_mods` 负责读各 `mod.lua`、按启用集过滤、按 mod-id
+> 字典序叠加成表，App 在内容扫描前喂给 core。**不硬编码任何具体 mod**——引擎提供的是
 > "覆盖任意内容文件"这条通用能力，具体改什么由 mod 自己决定。
 
 ### 脚本插件 Mod（Lua Plugin）——第二世代预留

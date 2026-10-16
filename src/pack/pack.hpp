@@ -47,19 +47,31 @@ struct ShelfPack {
 /// 扫描 theme/shelf/ 下全部卡带架样式包
 std::vector<ShelfPack> scan_shelves(const std::string& dir);
 
-/// 一条覆盖层 Mod 的**清单**（`mods/<id>/mod.lua`，可选）。
-/// id 一律以 `core::mod_names()` 为准；清单只补显示名与说明，不参与覆盖路径。
+/// 一条覆盖层 Mod 的**清单**（`mods/<id>/mod.lua`，必需）。
+/// 清单既提供 UI 显示名/说明，也**显式声明**本 mod 的内容覆盖到哪里（overrides）
 struct ModManifest {
     std::string id;       // 文件夹名（= mod id）
-    std::string name_zh;  // 显示名；缺省/读失败回落文件夹名，故非空
+    std::string name_zh;  // 显示名；缺省回落文件夹名，故非空
     std::string name_en;
     std::string desc_zh;  // 说明（可空）
     std::string desc_en;
 };
 
-/// 读 `mods/` 下全部 mod 的清单（顺序 = core::mod_names()）。缺 `mod.lua`、语法错、
-/// 顶层不是表都只是**读不到声明**——显示名回落文件夹名，且**仍列出**该 mod
-std::vector<ModManifest> scan_mods();
+/// `mods/` 的扫描结果：可管理的 mod 清单 + 已建好的覆盖表
+struct ModScan {
+    /// 全部**有有效 mod.lua** 的 mod（含被禁用的，UI 才能再开）；按 id 字典序
+    std::vector<ModManifest> mods;
+    /// 覆盖表：键 `<目标id>/<包内路径>` → 覆盖文件的落盘路径。
+    /// 已按启用集过滤（禁用的不进表）、按 mod-id 字典序叠加（同键后者覆盖前者）
+    std::map<std::string, std::string> overrides;
+};
+
+/// 扫描 `mods/` 下全部 mod：读 `mod.lua` 的 `name`/`desc`/`overrides`。
+/// 没有 `mod.lua`、读不出表、或**没有 `overrides` 表**的文件夹都不算 mod——`log::warn`
+/// 后跳过（不再有"路径即键"的隐式规则）；`overrides` 为空表 = 只登记、不覆盖。
+/// 覆盖键非法（缺 `<目标id>/<路径>` 形态）、值指向的文件不存在等条目跳过并告警。
+/// 显示名一律以文件夹名兜底，故读不到 name 也照常列出
+ModScan scan_mods();
 
 /// 音效包：主机事件 → 合成参数（或包内音频文件）
 struct SoundPack {

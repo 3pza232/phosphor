@@ -23,9 +23,11 @@ int App::run(const CliOptions& opts) {
     if (opts.config) config_path_ = *opts.config;
     config_ = load_config(config_path_);
 
-    // 禁用集合必须先于任何内容扫描落地：覆盖层会影响包与卡带的扫描结果，
-    // 晚了被禁的 mod 就已经生效过一次（见 core/mods.hpp）
+    // Mod：先落禁用集合（决定哪些 mod 生效），再由 pack 读各 mod.lua 建覆盖表。
+    // 覆盖表必须先于任何内容扫描落地，否则被覆盖的包/卡带会先按原样扫一遍
     set_disabled(config_.mods_disabled);
+    ModScan mod_scan = scan_mods();
+    set_overrides(std::move(mod_scan.overrides));
 
     // 内容包（皮肤/色板/开机动画/音效）：扫描用户区+出厂区并按配置定位 —— 交给内容库
     packs_.scan(config_);
@@ -84,9 +86,9 @@ int App::run(const CliOptions& opts) {
     shell_.set_music_volume(config_.music_volume);
     shell_.set_sfx_volume(config_.sfx_volume);
     shell_.set_skin(packs_.skin());
-    // 覆盖层 Mod 清单（各自读 mod.lua 取显示名）+ 当前禁用集：架面据此决定是否显示/响应 M 键
+    // 覆盖层 Mod 清单（name/desc 来自各自的 mod.lua）+ 当前禁用集：架面据此决定是否显示/响应 M 键
     std::vector<ModOption> mods;
-    for (const ModManifest& m : scan_mods())
+    for (const ModManifest& m : mod_scan.mods)
         mods.push_back(ModOption{m.id, m.name_zh, m.name_en});
     shell_.set_mods(std::move(mods), config_.mods_disabled);
 
