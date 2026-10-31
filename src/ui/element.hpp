@@ -56,6 +56,7 @@ struct Props {
     int cols = 0;    ///< grid 的列数（0 = 全部排一行）
     int scroll = 0;    ///< scroll 的纵向内容偏移（行）；显式初值，之后由焦点跟随维护
     int scroll_x = 0;  ///< scroll 的横向内容偏移（列）；同一套语义
+    bool scrollbar = true;  ///< scroll 内容溢出时是否画滚动条（位置指示）
     Align align_h = Align::stretch;
     Align align_v = Align::start;
 

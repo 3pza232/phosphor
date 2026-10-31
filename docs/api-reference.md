@@ -452,6 +452,7 @@ pending = phos.ui.render{
 | `cols` | integer | 0 | grid 的列数（0 = 全部排一行）；单元格宽度均分可用宽度 |
 | `scroll` | integer | 0 | scroll 的内容偏移（行）；由卡带显式控制，引擎负责视口裁剪 |
 | `scroll_x` | integer | 0 | scroll 的横向内容偏移（列）；内容宽于视口时才启用横向滚动 |
+| `scrollbar` | boolean | true | scroll 内容溢出时在视口右/下画位置指示条（只显示，不可拖拽） |
 | `columns` | string[] | — | table 的表头（空 = 无表头；有表头时自动加一条分隔线） |
 | `rows` | table[] | — | table 的数据行：每行一个字符串数组；数字单元格按整数/两位小数转文本 |
 | `widths` | integer[] | — | table 各列固定宽度；0 或缺省 = 按内容自适应（余量均摊铺满可用宽度） |
@@ -526,7 +527,7 @@ pending = phos.ui.render{
 height 指定视口高度，scroll 指定纵向偏移（行，从 0 起）；width + scroll_x 可做横向滚动
 （内容宽于视口时子项按自然宽排布，否则按视口宽拉伸，纵向列表行为不变）。
 偏移由卡带显式控制（比如只显示日志尾部：scroll = max(0, #lines - height)）；
-超出视口的子项由引擎**裁剪绘制**，不会漏到视口外。`scroll` / `scroll_x` 只在首次出现时作为初值；
+超出视口的子项由引擎**裁剪绘制**，不会漏到视口外。 内容溢出时默认在视口右缘/下缘画一条位置指示（`scrollbar = false` 可关）。`scroll` / `scroll_x` 只在首次出现时作为初值；
 之后视口会**自动跟随焦点**（纵横各自把焦点"刚好"滚进可视区）
 （焦点移出可视区时滚动刚好够用的行数），与 checkbox 的 `checked` 初值同一套语义。
 

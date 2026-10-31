@@ -566,6 +566,51 @@ void paint_node(Screen& screen, Node& node, const Theme& theme, const State& sta
                         screen.set(node.inner.x + x, node.inner.y + y, cell);
                 }
             }
+
+            // 滚动条：只画位置指示（没有鼠标拖拽），让"还有内容"一眼可见。
+            // 轨道/滑块用主题字形，颜色取次要文字色，不抢内容
+            if (node.props.scrollbar) {
+                int content_w = 0;
+                int content_h = 0;
+                for (const Node& child : node.children) {
+                    content_w = std::max(content_w, child.rect.x + child.rect.w);
+                    content_h = std::max(content_h, child.rect.y + child.rect.h);
+                }
+                const int content_w_rel = content_w - node.inner.x + node.props.scroll_x;
+                const int content_h_rel = content_h - node.inner.y + node.props.scroll;
+                const int max_scroll_y = std::max(0, content_h_rel - node.inner.h);
+                const int max_scroll_x = std::max(0, content_w_rel - node.inner.w);
+                const Color track = theme.text_dim;
+                const Color thumb = theme.text;
+                const auto bar_cell = [&](int x, int y, bool on) {
+                    screen.put(x, y, on ? theme.glyphs.scroll_thumb : theme.glyphs.scroll_track,
+                               on ? thumb : track);
+                };
+                if (max_scroll_y > 0 && node.inner.h > 1) {
+                    const int x = node.inner.x + node.inner.w - 1;
+                    const int track_h = node.inner.h;
+                    const int thumb_h = std::clamp(
+                        track_h * node.inner.h / (node.inner.h + max_scroll_y), 1, track_h);
+                    const int span = track_h - thumb_h;
+                    const int pos = max_scroll_y > 0
+                                        ? span * node.props.scroll / max_scroll_y
+                                        : 0;
+                    for (int i = 0; i < track_h; ++i)
+                        bar_cell(x, node.inner.y + i, i >= pos && i < pos + thumb_h);
+                }
+                if (max_scroll_x > 0 && node.inner.w > 1) {
+                    const int y = node.inner.y + node.inner.h - 1;
+                    const int track_w = node.inner.w;
+                    const int thumb_w = std::clamp(
+                        track_w * node.inner.w / (node.inner.w + max_scroll_x), 1, track_w);
+                    const int span = track_w - thumb_w;
+                    const int pos = max_scroll_x > 0
+                                        ? span * node.props.scroll_x / max_scroll_x
+                                        : 0;
+                    for (int i = 0; i < track_w; ++i)
+                        bar_cell(node.inner.x + i, y, i >= pos && i < pos + thumb_w);
+                }
+            }
             break;
         }
         case Kind::text: paint_text(screen, node, theme); break;

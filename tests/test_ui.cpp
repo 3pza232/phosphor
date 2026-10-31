@@ -125,6 +125,53 @@ TEST(ui_scroll_follows_focused_child) {
     CHECK(shown.find("0") == std::string::npos);
 }
 
+TEST(ui_scroll_draws_position_bars) {
+    ui::Theme theme;
+    ui::State state;
+    Input input;
+
+    // 纵向溢出：右侧一列应有轨道/滑块
+    ui::Frame frame("v", state, theme, ui::Rect{0, 0, 10, 4}, &input);
+    ui::Node& scroll = frame.root().add_scroll("vs", 2);
+    scroll.props.width = 6;
+    for (int i = 0; i < 5; ++i) scroll.add_text("r" + std::to_string(i), std::to_string(i));
+    frame.run();
+    Screen vertical(10, 4);
+    frame.paint(vertical);
+    int vertical_marks = 0;
+    for (int y = 0; y < 2; ++y) {
+        const char32_t ch = vertical.at(5, y).ch;  // inner 宽 6 → 最后一列 x=5
+        if (ch == theme.glyphs.scroll_thumb || ch == theme.glyphs.scroll_track) ++vertical_marks;
+    }
+    CHECK_EQ(vertical_marks, 2);
+
+    // 横向溢出：底部一行应有轨道/滑块
+    ui::Frame frame2("h", state, theme, ui::Rect{0, 0, 10, 4}, &input);
+    ui::Node& wide = frame2.root().add_scroll("hs", 2);
+    wide.props.width = 6;
+    wide.add_text("row", "ABCDEFGHIJ");
+    frame2.run();
+    Screen horizontal(10, 4);
+    frame2.paint(horizontal);
+    int horizontal_marks = 0;
+    for (int x = 0; x < 6; ++x) {
+        const char32_t ch = horizontal.at(x, 1).ch;  // inner 高 2 → 最后一行 y=1
+        if (ch == theme.glyphs.scroll_thumb || ch == theme.glyphs.scroll_track) ++horizontal_marks;
+    }
+    CHECK(horizontal_marks > 0);
+
+    // 关掉滚动条：同一个屏不应再出现指示字符
+    ui::Frame frame3("off", state, theme, ui::Rect{0, 0, 10, 4}, &input);
+    ui::Node& off = frame3.root().add_scroll("off", 2);
+    off.props.width = 6;
+    off.props.scrollbar = false;
+    for (int i = 0; i < 5; ++i) off.add_text("o" + std::to_string(i), std::to_string(i));
+    frame3.run();
+    Screen none(10, 4);
+    frame3.paint(none);
+    CHECK_EQ(int(none.at(5, 0).ch), int(U' '));
+}
+
 TEST(ui_toast_push_expire_and_paint) {
     ui::Theme theme;
     ui::Toasts toasts;
