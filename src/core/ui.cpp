@@ -6,6 +6,7 @@
 #include "core/text.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <vector>
 
 namespace phos::ui {
@@ -91,8 +92,9 @@ void frame(Screen& screen, Rect rect, std::string_view title, const Style& style
 
 void bar(Screen& screen, int x, int y, int width, float ratio, const Style& style) {
     if (width < 2) return;
-    ratio = ratio < 0.0f ? 0.0f : (ratio > 1.0f ? 1.0f : ratio);
-    int filled = static_cast<int>(ratio * (width - 2) + 0.5f);
+    // ratio 来自脚本/内容：NaN/inf 不能参与 int 转换（那是 UB）。非有限一律按 0，其余钳到 0..1
+    ratio = std::isfinite(ratio) ? std::clamp(ratio, 0.0f, 1.0f) : 0.0f;
+    const int filled = static_cast<int>(ratio * static_cast<float>(width - 2) + 0.5f);
 
     screen.put(x, y, U'[', style.frame, style.bg);
     screen.put(x + width - 1, y, U']', style.frame, style.bg);

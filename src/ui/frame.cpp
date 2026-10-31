@@ -684,9 +684,10 @@ void paint_node(Screen& screen, Node& node, const Theme& theme, const State& sta
             if (node.inner.w < 2) break;
             Surface surface(screen, node.inner.x, node.inner.y, node.inner.w, node.inner.h);
             const Color bg = node.props.opaque ? resolve_bg(node, theme) : kKeepBg;
-            float ratio = node.props.ratio;
-            if (!(ratio > 0.0f)) ratio = 0.0f;
-            if (ratio > 1.0f) ratio = 1.0f;
+            // ratio 来自调用方/脚本：非有限（NaN/inf）不得进入 int 转换（UB），一律按 0；其余钳到 0..1
+            const float ratio = std::isfinite(node.props.ratio)
+                                    ? std::clamp(node.props.ratio, 0.0f, 1.0f)
+                                    : 0.0f;
             const int span = node.inner.w - 2;
             const int filled = static_cast<int>(ratio * static_cast<float>(span) + 0.5f);
             // 填充色可由 fg 覆盖：血条/油条/经验条需要不同颜色，但形状仍是同一个组件

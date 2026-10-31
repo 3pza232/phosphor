@@ -154,7 +154,7 @@ void DrawRegion::sprite(int x, int y, const std::vector<std::string>& rows,
     if (rows.empty()) return;
     int art_w = 0;
     for (const auto& row : rows)
-        art_w = std::max(art_w, static_cast<int>(row.size()));
+        art_w = std::max(art_w, text::display_width(row));  // 按显示列算：中文占两格
     const int art_h = static_cast<int>(rows.size());
     // ui::icon 以中心定位；这里按左上角语义换算，越界部分由 icon/screen 自己夹住
     ui::icon(screen(), rows, colors, abs_x(x) + art_w / 2, abs_y(y) + art_h / 2,

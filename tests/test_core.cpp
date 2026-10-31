@@ -16,6 +16,7 @@
 #include "core/text.hpp"
 #include "core/text_input.hpp"
 #include "core/ui.hpp"
+#include "ui/frame.hpp"
 #include "cart/cart_files.hpp"
 #include "cart/cart_info.hpp"
 #include "cart/save_store.hpp"
@@ -1029,6 +1030,72 @@ TEST(ui_navigate_wrap_and_actions) {
     CHECK(action == ui::NavAction::cancel);
 
     CHECK_EQ(ui::navigate(input, 0, 5, action), 0);  // 空列表
+}
+
+TEST(ui_bar_nonfinite_ratio_is_zero_and_clamped) {
+    Screen screen(12, 1);
+    const ui::Style style;
+    const auto render = [&screen, &style](float ratio) {
+        ui::bar(screen, 0, 0, 12, ratio, style);
+    };
+
+    // 非有限值不得进入 int 转换（NaN/inf -> int 是 UB），一律按 0：内部全是未填充格
+    render(std::numeric_limits<float>::quiet_NaN());
+    CHECK_EQ(screen.at(1, 0).ch, U'-');
+    CHECK_EQ(screen.at(10, 0).ch, U'-');
+    render(std::numeric_limits<float>::infinity());
+    CHECK_EQ(screen.at(1, 0).ch, U'-');
+    render(-std::numeric_limits<float>::infinity());
+    CHECK_EQ(screen.at(1, 0).ch, U'-');
+
+    // 有限值钳到 0..1
+    render(-1.0f);
+    CHECK_EQ(screen.at(1, 0).ch, U'-');
+    render(2.0f);
+    CHECK_EQ(screen.at(1, 0).ch, U'#');
+    CHECK_EQ(screen.at(10, 0).ch, U'#');
+    CHECK_EQ(screen.at(0, 0).ch, U'[');
+    CHECK_EQ(screen.at(11, 0).ch, U']');
+
+    // 0.5：内部 10 格填 5 格
+    render(0.5f);
+    CHECK_EQ(screen.at(5, 0).ch, U'#');
+    CHECK_EQ(screen.at(6, 0).ch, U'-');
+}
+
+TEST(ui_frame_bar_nonfinite_ratio_is_zero) {
+    // 声明式组件的 bar 是第二条绘制路径：同一套"非有限按 0、其余钳 0..1"的规则
+    const auto filled_cells = [](float ratio) {
+        Screen screen(12, 1);
+        ui::State state;
+        const ui::Theme theme;
+        ui::Frame frame("unit.bar", state, theme, ui::Rect{0, 0, 12, 1}, nullptr);
+        ui::Node& bar = frame.root().add_bar("hp", ratio);
+        bar.props.width = 12;  // 固定宽度：bar 的自然宽是 20，超出测试屏
+        frame.run();
+        frame.paint(screen);
+        int filled = 0;
+        for (int x = 0; x < 12; ++x)
+            if (screen.at(x, 0).ch == U'#') ++filled;
+        return filled;
+    };
+
+    CHECK_EQ(filled_cells(std::numeric_limits<float>::quiet_NaN()), 0);
+    CHECK_EQ(filled_cells(std::numeric_limits<float>::infinity()), 0);
+    CHECK_EQ(filled_cells(0.5f), 5);   // 12 格 - 两侧括号 = 10 格，一半
+    CHECK_EQ(filled_cells(2.0f), 10);  // 钳到 1 = 满
+}
+
+TEST(ui_icon_width_uses_display_width) {
+    // 多字节字符画的宽度必须按显示宽度（"中" = 2 列），不是字节数（3）：
+    // 卡带 sprite 的宽/居中与 icon 共用这一条度量
+    Screen screen(14, 3);
+    const std::vector<std::string> art{"中"};
+    const std::map<char, Color> colors;
+    ui::icon(screen, art, colors, 6, 1, 1, 1.0f, Color::white);
+    CHECK_EQ(screen.at(5, 1).ch, U'中');  // draw_w = 2 -> x0 = 6 - 1
+    CHECK_EQ(int(screen.at(5, 1).cols), 2);
+    CHECK_EQ(int(screen.at(6, 1).cols), 0);  // 宽字续格
 }
 
 // ---------------------------------------------------------------- save store

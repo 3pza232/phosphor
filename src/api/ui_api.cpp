@@ -5,11 +5,13 @@
 #include "api/lua_value.hpp"
 #include "api/ui_render.hpp"
 #include "core/log.hpp"
+#include "core/text.hpp"
 #include "core/ui.hpp"
 #include "ui/toast.hpp"
 
 #include <sol/sol.hpp>
 
+#include <algorithm>
 #include <map>
 #include <vector>
 
@@ -112,11 +114,12 @@ void register_ui_api(sol::state& lua, HostContext& host) {
         ui::Style style = cart_style(host);
         std::vector<std::string> art = api::read_rows(rows);
         std::map<char, Color> palette = color_map(colors);
-        int h = static_cast<int>(art.size());
+        const int h = static_cast<int>(art.size());
+        // 宽度按**显示宽度**算（一行"中"是 2 列、3 字节）：与 icon 的度量一致，
+        // 按字节算会让多字节字符画偏宽，居中点也跟着算错
         int w = 0;
-        for (const auto& row : art)
-            w = w > static_cast<int>(row.size()) ? w : static_cast<int>(row.size());
-        ui::Rect r = rect_at(x, y, w, h);
+        for (const auto& row : art) w = std::max(w, text::display_width(row));
+        const ui::Rect r = rect_at(x, y, w, h);
         const int scale = step.value_or(1);
         // 以左上角定位：icon 语义为居中，此处用中心点换算
         ui::icon(*host.screen, art, palette, r.x + w / 2, r.y + h / 2,
