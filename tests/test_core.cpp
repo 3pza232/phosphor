@@ -12,6 +12,7 @@
 #include "core/layered_screen.hpp"
 #include "core/palette.hpp"
 #include "core/screen_draw.hpp"
+#include "core/screen_store.hpp"
 #include "core/screen_text.hpp"
 #include "core/skin.hpp"
 #include "core/surface.hpp"
@@ -849,8 +850,8 @@ TEST(screen_draw_forwarding_matches_writer) {
     // 同一组操作分别走方法与 Writer，完整状态（字形/底色/宽字/缩放/笔迹/子位/裁剪）必须一致
     const Color fg = rgb_clamped(10, 20, 30);
     const Color bg = rgb_clamped(40, 50, 60);
-    auto snapshot = [](const Screen& s) {
-        std::string out = s.to_text();
+    auto snapshot = [](const auto& s) {
+        std::string out;
         for (int y = 0; y < s.height(); ++y)
             for (int x = 0; x < s.width(); ++x) {
                 const Cell& c = s.at(x, y);
@@ -883,7 +884,7 @@ TEST(screen_draw_forwarding_matches_writer) {
         s.clear_transparent();
         s.put(1, 1, U'q', fg, bg);
     };
-    auto by_writer = [&](Screen& s) {
+    auto by_writer = [&](ScreenStore& s) {
         screen_draw::Writer::put(s, 0, 0, U'A', Color::white, kKeepBg, 1);
         screen_draw::Writer::put(s, 2, 0, U'中', Color::white, kKeepBg, 1);
         screen_draw::Writer::put(s, 5, 0, U'Z', fg, bg, 2);
@@ -900,7 +901,8 @@ TEST(screen_draw_forwarding_matches_writer) {
         screen_draw::Writer::clear_transparent(s);
         screen_draw::Writer::put(s, 1, 1, U'q', fg, bg, 1);
     };
-    Screen via_method(8, 5), via_writer(8, 5);
+    Screen via_method(8, 5);
+    ScreenStore via_writer(8, 5);
     by_method(via_method);
     by_writer(via_writer);
     CHECK_EQ(snapshot(via_method), snapshot(via_writer));

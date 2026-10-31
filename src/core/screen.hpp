@@ -1,55 +1,20 @@
 #pragma once
 
 #include "core/color.hpp"
+#include "core/screen_store.hpp"
 
 #include <cstdint>
 #include <string>
 #include <string_view>
-#include <unordered_map>
-#include <vector>
 
 namespace phos {
-
-namespace screen_draw {
-struct Writer;  // Screen 写入语义的实现单元（core/screen_draw.cpp）
-}
-
-/// 屏幕一格。ch 为 Unicode 码点。
-///
-/// 全角字符（CJK 等）占两格：左格是"头"（`cols = 2`），右格是"续格"
-/// （`cols = 0`，自身没有字形，绘制时跳过）。这样"格"仍然是等宽单位，
-/// 渲染与对齐只需认 `cols`，不必满屏推断宽度。
-///
-/// 缩放（`scale`）与 `cols` **正交**：`cols` 管横向续格（宽字），`scale` 管"更大的字"
-/// 成块覆盖（`scale=S>=2` 的头格占 `cols*S` 列 × `S` 行，块内其余格 `scale = 0` 被覆盖）。
-/// 于是同一屏可以并存不同大小的字：`scale = 1` 是常规正文，`scale >= 2` 是大标题
-struct Cell {
-    char32_t ch = U' ';
-    Color fg = Color::white;
-    Color bg = Color::black;
-    /// 列宽：1 = 半角；2 = 全角头格；0 = 续格（右半，由左邻格决定外观）
-    uint8_t cols = 1;
-    /// 缩放：1 = 普通；S>=2 = 缩放块头格；0 = 被缩放块覆盖（自身无字形，绘制时跳过）
-    uint8_t scale = 1;
-    /// 底色是否存在：0 = 透明（层合成时跳过底色），非 0 = 存在。
-    /// 底层网格的默认 `alpha` 是 255（不透明）；层缓冲的清屏把它置 0。
-    /// 注意：`put` 的默认底色是 `kKeepBg`（保留原底色），所以"不动背景"是默认行为
-    uint8_t alpha = 255;
-
-    /// 抹掉这一格的字形，**保留底色与存在性**。宽字被截断、层用空格抹掉下层字形时用；
-    /// 是全工程"清一格字形"的唯一写法——新调用点必须走它，不要内联改 ch/cols
-    void clear_glyph() {
-        ch = U' ';
-        cols = 1;
-        scale = 1;
-    }
-};
 
 /// 字符网格：游戏画面的逻辑抽象，与渲染完全解耦。
 /// 渲染器只是网格的消费者之一（headless 下文本导出是唯一消费者）。
 ///
 /// 写入/替换方法（put/print/fill/blend/back/plot/set/prepend_ink/…）的实现已下沉到
-/// core/screen_draw.cpp（Screen 只保留一行转发）；存储、读取与几何查询仍在本类。
+/// core/screen_draw.cpp（Writer 依赖 core/screen_store.hpp）；存储本身是 ScreenStore，
+/// 本类只保留公开 API、一行转发与读取/几何查询。
 class Screen {
 public:
     Screen() = default;
@@ -62,19 +27,16 @@ public:
     ///   * `blend`（追加一笔）= **拒绝新的一笔**：已画上的内容只增不减；
     ///   * 层合成要压入新的一笔（`prepend_ink`）= 丢弃**最深**的一笔，
     ///     否则新内容根本画不出来（新的一笔是表层，不能丢）。
-    static constexpr int kMaxInks = 3;
+    static constexpr int kMaxInks = ScreenStore::kMaxInks;
 
     /// 单格缩放上限：`scale` 就是这个范围里的整数（1 = 常规，2/3 = 更大字号）
-    static constexpr int kMaxCellScale = 3;
+    static constexpr int kMaxCellScale = ScreenStore::kMaxCellScale;
 
-    /// 叠在同一格上的一笔（`ch` 之外的字形）
-    struct Ink {
-        char32_t ch = U' ';
-        Color fg = Color::white;
-    };
+    /// 叠在同一格上的一笔（ch 之外的字形）；物理定义在 ScreenStore 的存储单元里
+    using Ink = phos::Ink;
 
-    int width() const { return w_; }
-    int height() const { return h_; }
+    int width() const { return store_.width(); }
+    int height() const { return store_.height(); }
 
     /// 重建网格尺寸（切换游戏机主题时按皮肤几何调整）
     void resize(int w, int h);
@@ -118,11 +80,7 @@ public:
     /// 子格坐标 → 格坐标 + 子位。**这一步换算是引擎契约**：格 g 覆盖子格 2g 与 2g+1，
     /// 位序 1 左上 / 2 右上 / 4 左下 / 8 右下。卡带的相机、降水、光柱都该用这一份 ——
     /// 各处自己写 `floor(u/2)` 的话，同一屏会长出两套网格，差半格就是"看着陷进墙里"
-    struct SubCell {
-        int x = 0;        ///< 格坐标
-        int y = 0;        ///< 格坐标
-        uint8_t bit = 0;  ///< 该子格在这一格里的位
-    };
+    using SubCell = ScreenStore::SubCell;
     static SubCell cell_of(int x2, int y2);
 
     /// 在某个**子位**上落一笔：坐标是**本网格的子格坐标**（一格 = 2x2 子格）。
@@ -165,36 +123,8 @@ public:
     bool covered_by_scaled_block(int x, int y) const;
 
 private:
-    /// 写入/替换语义在 core/screen_draw.cpp：唯一 friend，能摸私有存储，
-    /// 但它的头文件只暴露函数签名（没有 cells_/inks_/plot_bits_ 访问器）
-    friend struct screen_draw::Writer;
-
-    /// 线性下标：全工程"格 (x, y) → cells_ 下标"的唯一换算，笔迹表与子位表也共用它。
-    /// 各处自己写 `y * w_ + x` 时漏一个 `w_` 就会静默写错格，收成一处就没有这种可能
-    int index_of(int x, int y) const { return y * w_ + x; }
-
-    /// 笔迹的存放处：只有"叠过笔"的格才在表里（键为 index_of）。
-    /// 不放进 Cell 是刻意的：Cell 满屏一格一份，塞一个定长数组进去，会让每张卡带、
-    /// 每一帧都为"可能用不到的多笔"付内存与拷贝代价
-    std::unordered_map<int, std::vector<Ink>> inks_;
-    std::vector<Ink>* inks_at(int x, int y);
-
-    /// 覆盖 (x,y) 的缩放块的头格坐标；不在任何缩放块里时返回 false。
-    /// 只在头格左上方的有界窗口内扫（块不大），put 写到块内任意一格时靠它清整块
-    bool scaled_block_of(int x, int y, int& head_x, int& head_y) const;
-
-    /// 子位累积：`plot` 要知道这一格"已经占了哪几个子位"，两次半笔才能合成一个象限字形。
-    /// 与笔迹表同一套稀疏策略：只有 plot 过的格才在表里
-    std::unordered_map<int, uint8_t> plot_bits_;
-
-    /// 叠画上限的日志只报一次：满了是密处的常态，逐条写会把日志冲成噪声
-    bool warned_ink_cap_ = false;
-    /// "blend 落在无字形槽的格上"只报一次：密集画面里会频繁触发
-    bool warned_blend_slot_ = false;
-
-    // 默认构造后是"0x0 空网格"：读尺寸的调用方拿到的是确定的 0，而不是未初始化的值
-    int w_ = 0, h_ = 0;
-    std::vector<Cell> cells_;
+    /// 存储（格 / 笔迹 / 子位表）的唯一持有者；写入语义是它的 friend Writer
+    ScreenStore store_;
 };
 
 } // namespace phos
