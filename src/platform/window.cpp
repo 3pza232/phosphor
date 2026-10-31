@@ -132,6 +132,12 @@ void key_callback(GLFWwindow*, int key, int, int action, int) {
     }
 }
 
+void focus_callback(GLFWwindow*, int focused) {
+    // 失焦时物理按键的 release 事件可能根本收不到（Alt+Tab / 点别的窗口）：
+    // 不释放就会"卡键"——回到游戏还在往一个方向走。这里直接把所有键松开。
+    if (!focused && g_handlers.input) g_handlers.input->release_all();
+}
+
 void char_callback(GLFWwindow*, unsigned int codepoint) {
     if (*g_handlers.input_block) return;
     // 按 UTF-8 编码整段交给输入层，中文等全角字符也走这里。
@@ -188,6 +194,7 @@ Window Window::create(int width, int height, const std::string& title,
 
     glfwSetKeyCallback(win.window_, key_callback);
     glfwSetCharCallback(win.window_, char_callback);
+    glfwSetWindowFocusCallback(win.window_, focus_callback);
 
     win.make_context_current();
     glfwSwapInterval(1);  // 与显示器刷新同步，避免空转烧显卡
