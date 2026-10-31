@@ -133,6 +133,7 @@ if(PHOSPHOR_BUILD_TESTS)
         src/core/crt.cpp
         src/core/screen.cpp
         src/core/screen_text.cpp
+        src/core/screen_draw.cpp
         src/core/surface.cpp
         src/core/layered_screen.cpp
         src/core/input.cpp

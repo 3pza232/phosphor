@@ -11,6 +11,7 @@
 #include "core/json_lite.hpp"
 #include "core/layered_screen.hpp"
 #include "core/palette.hpp"
+#include "core/screen_draw.hpp"
 #include "core/screen_text.hpp"
 #include "core/skin.hpp"
 #include "core/surface.hpp"
@@ -841,6 +842,68 @@ TEST(screen_text_forwarding_matches_export) {
     scaled.put(1, 0, U'X', Color::white, Color::black, 2);  // 2x2 块：覆盖格导出空格
     CHECK_EQ(scaled.to_text(), screen_text::to_text(scaled));
     CHECK_EQ(screen_text::to_text(scaled), std::string(" X  \n    \n"));
+}
+
+TEST(screen_draw_forwarding_matches_writer) {
+    // 转发断言：Screen 的写入方法只是 screen_draw::Writer 的一行转发。
+    // 同一组操作分别走方法与 Writer，完整状态（字形/底色/宽字/缩放/笔迹/子位/裁剪）必须一致
+    const Color fg = rgb_clamped(10, 20, 30);
+    const Color bg = rgb_clamped(40, 50, 60);
+    auto snapshot = [](const Screen& s) {
+        std::string out = s.to_text();
+        for (int y = 0; y < s.height(); ++y)
+            for (int x = 0; x < s.width(); ++x) {
+                const Cell& c = s.at(x, y);
+                out += std::to_string(int(c.ch)) + ":" + std::to_string(int(c.fg.r)) + "," +
+                       std::to_string(int(c.fg.g)) + "," + std::to_string(int(c.fg.b)) + ":" +
+                       std::to_string(int(c.bg.r)) + "," + std::to_string(int(c.bg.g)) + "," +
+                       std::to_string(int(c.bg.b)) + ":" + std::to_string(int(c.cols)) + ":" +
+                       std::to_string(int(c.scale)) + ":" + std::to_string(int(c.alpha)) + ":" +
+                       std::to_string(int(s.covered_by_scaled_block(x, y))) + "[";
+                for (const auto& ink : s.inks(x, y))
+                    out += std::to_string(int(ink.ch)) + "," + std::to_string(int(ink.fg.r)) + ".";
+                out += "]";
+            }
+        return out;
+    };
+    auto by_method = [&](Screen& s) {
+        s.put(0, 0, U'A');
+        s.put(2, 0, U'中');
+        s.put(5, 0, U'Z', fg, bg, 2);
+        s.print(0, 1, "hi", fg, bg);
+        s.fill(0, 2, 3, 2, U'#', fg, bg);
+        s.blend(0, 0, U'x', fg);
+        s.back(1, 1, bg);
+        s.plot(0, 0, fg);
+        s.plot(1, 0, fg);
+        s.plot(1, 1, fg);
+        s.set(3, 2, s.at(0, 0));
+        s.prepend_ink(0, 1, U'p', fg);
+        s.forget_plot_bits(1, 1);
+        s.clear_transparent();
+        s.put(1, 1, U'q', fg, bg);
+    };
+    auto by_writer = [&](Screen& s) {
+        screen_draw::Writer::put(s, 0, 0, U'A', Color::white, kKeepBg, 1);
+        screen_draw::Writer::put(s, 2, 0, U'中', Color::white, kKeepBg, 1);
+        screen_draw::Writer::put(s, 5, 0, U'Z', fg, bg, 2);
+        screen_draw::Writer::print(s, 0, 1, "hi", fg, bg, 1);
+        screen_draw::Writer::fill(s, 0, 2, 3, 2, U'#', fg, bg);
+        screen_draw::Writer::blend(s, 0, 0, U'x', fg);
+        screen_draw::Writer::back(s, 1, 1, bg);
+        screen_draw::Writer::plot(s, 0, 0, fg);
+        screen_draw::Writer::plot(s, 1, 0, fg);
+        screen_draw::Writer::plot(s, 1, 1, fg);
+        screen_draw::Writer::set(s, 3, 2, s.at(0, 0));
+        screen_draw::Writer::prepend_ink(s, 0, 1, U'p', fg);
+        screen_draw::Writer::forget_plot_bits(s, 1, 1);
+        screen_draw::Writer::clear_transparent(s);
+        screen_draw::Writer::put(s, 1, 1, U'q', fg, bg, 1);
+    };
+    Screen via_method(8, 5), via_writer(8, 5);
+    by_method(via_method);
+    by_writer(via_writer);
+    CHECK_EQ(snapshot(via_method), snapshot(via_writer));
 }
 
 TEST(layered_merge_normalizes_scaled_block) {

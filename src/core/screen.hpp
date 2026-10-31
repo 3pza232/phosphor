@@ -10,6 +10,10 @@
 
 namespace phos {
 
+namespace screen_draw {
+struct Writer;  // Screen 写入语义的实现单元（core/screen_draw.cpp）
+}
+
 /// 屏幕一格。ch 为 Unicode 码点。
 ///
 /// 全角字符（CJK 等）占两格：左格是"头"（`cols = 2`），右格是"续格"
@@ -43,6 +47,9 @@ struct Cell {
 
 /// 字符网格：游戏画面的逻辑抽象，与渲染完全解耦。
 /// 渲染器只是网格的消费者之一（headless 下文本导出是唯一消费者）。
+///
+/// 写入/替换方法（put/print/fill/blend/back/plot/set/prepend_ink/…）的实现已下沉到
+/// core/screen_draw.cpp（Screen 只保留一行转发）；存储、读取与几何查询仍在本类。
 class Screen {
 public:
     Screen() = default;
@@ -158,6 +165,10 @@ public:
     bool covered_by_scaled_block(int x, int y) const;
 
 private:
+    /// 写入/替换语义在 core/screen_draw.cpp：唯一 friend，能摸私有存储，
+    /// 但它的头文件只暴露函数签名（没有 cells_/inks_/plot_bits_ 访问器）
+    friend struct screen_draw::Writer;
+
     /// 线性下标：全工程"格 (x, y) → cells_ 下标"的唯一换算，笔迹表与子位表也共用它。
     /// 各处自己写 `y * w_ + x` 时漏一个 `w_` 就会静默写错格，收成一处就没有这种可能
     int index_of(int x, int y) const { return y * w_ + x; }
@@ -168,14 +179,9 @@ private:
     std::unordered_map<int, std::vector<Ink>> inks_;
     std::vector<Ink>* inks_at(int x, int y);
 
-    /// 按**子位掩码**落笔（plot 的里子：位序在这里定，也只在这里定）
-    void plot_bit(int x, int y, uint8_t bit, Color fg);
-
     /// 覆盖 (x,y) 的缩放块的头格坐标；不在任何缩放块里时返回 false。
-    /// 只在头格左上方的有界窗口内扫（块不大），`put` 写到块内任意一格时靠它清整块
+    /// 只在头格左上方的有界窗口内扫（块不大），put 写到块内任意一格时靠它清整块
     bool scaled_block_of(int x, int y, int& head_x, int& head_y) const;
-    /// 把 (x,y) 所在的缩放块清成空格（连带清掉笔迹与子位累积）
-    void clear_scaled_block_at(int x, int y, Color fg, Color bg, bool keeps_bg);
 
     /// 子位累积：`plot` 要知道这一格"已经占了哪几个子位"，两次半笔才能合成一个象限字形。
     /// 与笔迹表同一套稀疏策略：只有 plot 过的格才在表里
