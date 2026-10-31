@@ -455,7 +455,7 @@ pending = phos.ui.render{
 | `scrollbar` | boolean | true | scroll 内容溢出时在视口右/下画位置指示条（只显示，不可拖拽） |
 | `columns` | string[] | — | table 的表头（空 = 无表头；有表头时自动加一条分隔线） |
 | `rows` | table[] | — | table 的数据行：每行一个字符串数组；数字单元格按整数/两位小数转文本 |
-| `widths` | integer[] | — | table 各列固定宽度；0 或缺省 = 按内容自适应（余量均摊铺满可用宽度） |
+| `widths` | integer[] | — | table 各列宽度**基数**；0 或缺省 = 按内容自适应。剩余宽度均摊到**所有列**（含显式宽列） |
 | `col_align` | string[] | start | table 各列对齐：`left` / `center` / `right` |
 | `disabled` | table? | — | list 中不可选的行：下标数组 `{2, 5}` 或等长布尔数组 |
 | `ratio` | number | 0 | bar 的比例（0..1，越界按 0/1 画） |
