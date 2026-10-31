@@ -7,6 +7,7 @@
 #include "harness.hpp"
 
 #include "core/input.hpp"
+#include "core/version.hpp"
 #include "shell/layout.hpp"
 #include "shell/settings_view.hpp"
 #include "shell/tape_view.hpp"
@@ -242,4 +243,35 @@ TEST(shell_settings_search_tree_matches_and_empty_state) {
     CHECK(find_node(full, "settings/section_0") != nullptr);
     CHECK(find_node(full, "settings/theme") != nullptr);
     CHECK(find_node(full, "settings/back") != nullptr);
+}
+
+
+TEST(shell_about_view_uses_version_and_host_keys) {
+    const ui::Rect area{7, 11, 72, 37};
+    ui::Theme theme;
+
+    ui::Node zh = ui::make_root("shell.about");
+    build_about(zh, Lang::zh, area);
+    ui::measure(zh, area.w, theme);
+    ui::arrange(zh, area, theme);
+
+    const ui::Node* product = find_node(zh, "about/product");
+    CHECK(product != nullptr);
+    CHECK(product->props.text.find(kProductName) != std::string::npos);
+    CHECK(product->props.text.find(kVersion) != std::string::npos);
+    CHECK(find_node(zh, "about/build") != nullptr);
+    CHECK(find_node(zh, "about/ops/settings") != nullptr);
+    CHECK(find_node(zh, "about/ops/search") != nullptr);
+    CHECK(find_node(zh, "about/ops/about") != nullptr);
+    CHECK(find_node(zh, "about/ops/f12") != nullptr);
+    CHECK(find_node(zh, "about/content/body") != nullptr);
+    CHECK(find_node(zh, "about/credits/body") != nullptr);
+    CHECK(find_node(zh, "about/licenses") != nullptr);
+    CHECK(find_node(zh, "about/hint") != nullptr);
+    CHECK(find_node(zh, "about/rule0") != nullptr);
+
+    ui::Node en = ui::make_root("shell.about");
+    build_about(en, Lang::en, area);
+    CHECK_EQ(find_node(en, "about/ops/title")->props.text, std::string("BASIC CONTROLS"));
+    CHECK_EQ(find_node(en, "about/credits/title")->props.text, std::string("CREDITS"));
 }

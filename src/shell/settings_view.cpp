@@ -2,6 +2,7 @@
 
 #include "core/crt.hpp"
 #include "core/text.hpp"
+#include "core/version.hpp"
 #include "ui/frame.hpp"
 
 #include <algorithm>
@@ -358,6 +359,66 @@ void build_settings(ui::Node& root, const SettingsContext& ctx, const ui::Rect& 
     }
 
     add_preview(root, ctx, area);
+}
+
+void build_about(ui::Node& root, Lang lang, const ui::Rect& area) {
+    (void)area;  // 宽度由 Frame 的内容区决定；这里只声明流式内容
+    const bool en = lang == Lang::en;
+    root.props.padding = ui::Insets{4, 2, 4, 2};
+    root.props.gap = 0;
+
+    ui::Node& product = root.add_text("about/product", std::string(kProductName) + "  " + kVersion);
+    product.props.accent = true;
+    root.add_text("about/build",
+                  std::string(en ? "Build: C++17  ·  logic 60 Hz  ·  phos_api "
+                                 : "构建: C++17  ·  逻辑帧率 60 Hz  ·  phos_api ") +
+                      std::to_string(kPhosApiVersion));
+    ui::Node& tagline =
+        root.add_text("about/tagline",
+                      en ? "A virtual console for text, pixels and little machines."
+                         : "一台给文本、像素与小机器人的虚拟游戏机。");
+    tagline.props.dim = true;
+    root.add_divider("about/rule0");
+
+    root.add_text("about/ops/title", en ? "BASIC CONTROLS" : "基本操作").props.dim = true;
+    auto op = [&root, en](const char* id, const char* key, const char* zh, const char* english) {
+        std::string line = std::string("  ") + key;
+        while (line.size() < 10) line += ' ';
+        line += en ? english : zh;
+        root.add_text(id, line);
+    };
+    op("about/ops/move", "ARROWS", "移动 / 选择", "move / select");
+    op("about/ops/confirm", "ENTER", "确认 / 开始", "confirm / start");
+    op("about/ops/cancel", "ESC", "返回 / 暂停", "back / pause");
+    op("about/ops/settings", "F2", "设置", "settings");
+    op("about/ops/search", "/", "设置内搜索", "search in settings");
+    op("about/ops/about", "F1", "关于（本页）", "about (this page)");
+    op("about/ops/console", "\x60", "调试台", "debug console");
+    op("about/ops/f12", "F12", "截图（screenshots/）", "screenshot (screenshots/)");
+
+    root.add_divider("about/rule1");
+    root.add_text("about/content/title", en ? "CONTENT ROOT" : "内容根").props.dim = true;
+    root.add_text("about/content/paths", "carts/  theme/  devkit/  mods/");
+    ui::Node& content_body =
+        root.add_text("about/content/body",
+                      en ? "The folder containing phosphor.exe is the content root; "
+                           "--root overrides it."
+                         : "phosphor.exe 所在目录就是内容根；启动时可用 --root 指定别处。");
+    content_body.props.overflow = ui::Overflow::wrap;
+    content_body.props.lines = 2;
+
+    root.add_text("about/credits/title", en ? "CREDITS" : "致谢").props.dim = true;
+    ui::Node& credits = root.add_text(
+        "about/credits/body",
+        "PHOSPHOR contributors  ·  Lua 5.4  ·  GLFW  ·  miniz  ·  stb  ·  sol2");
+    credits.props.dim = true;
+    ui::Node& licenses = root.add_text(
+        "about/licenses",
+        en ? "Licenses: see extern/*/LICENSE (Lua, GLFW, miniz, stb, sol2)"
+           : "许可：见 extern/ 各依赖目录的 LICENSE（Lua、GLFW、miniz、stb、sol2）");
+    licenses.props.dim = true;
+    ui::Node& hint = root.add_hint("about/hint");
+    hint.props.items = {"ESC", en ? "back to settings" : "返回设置"};
 }
 
 } // namespace phos

@@ -207,6 +207,10 @@ private:
     void push_screen(ShellMode mode, bool modal = false);
     void pop_screen();
     void reset_screen(ShellMode mode, bool modal = false);
+    /// 关于页：settings 栈上的普通浮层（push/pop，不 reset）；ShellMode 仍映射为 settings，
+    /// 这样 App 的 Esc 路由（to_shelf）不必改就能"第一次返回设置"
+    void open_about();
+    bool about_open() const;
 
     Intent update_shelf(const Input& input);
     Intent update_settings(const Input& input);
@@ -238,6 +242,7 @@ private:
     void draw_boot(Screen& screen) const;
     void draw_shelf(Screen& screen);
     void draw_settings(Screen& screen);
+    void draw_about(Screen& screen);
     void draw_paused(Screen& screen);
     /// 磁带码界面（两态渲染见 shell/tape_view.cpp）
     void draw_tape(Screen& screen);

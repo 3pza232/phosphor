@@ -76,6 +76,10 @@ std::vector<SettingId> settings_visible_items(const SettingsSearch& search);
 void build_settings(ui::Node& root, const SettingsContext& ctx, const ui::Rect& area,
                     const SettingsSearch* search = nullptr);
 
+/// 关于页：产品名/版本/构建信息/基本操作/内容根/致谢，纯组件树（id 以 about/ 开头）。
+/// 由 Shell 在 settings 栈上 push "about" 后绘制；Esc 返回设置（pop）。
+void build_about(ui::Node& root, Lang lang, const ui::Rect& area);
+
 /// 可选中项数量（不含分区标题）
 constexpr int settings_item_count() { return static_cast<int>(SettingId::count); }
 

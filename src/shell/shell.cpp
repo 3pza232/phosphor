@@ -116,6 +116,8 @@ bool shell_mode_from(std::string_view id, ShellMode& mode) {
     else if (id == "mods") mode = ShellMode::mods;
     else if (id == "tape") mode = ShellMode::tape;
     else if (id == "cart_error") mode = ShellMode::cart_error;
+    // 关于页是 settings 之上的普通浮层：对 App 仍报告 settings（Esc 路由不必改）
+    else if (id == "about") mode = ShellMode::settings;
     else return false;
     return true;
 }
@@ -138,6 +140,13 @@ void Shell::pop_screen() {
 }
 
 void Shell::reset_screen(ShellMode mode, bool modal) { screens_.reset(shell_mode_id(mode), modal); }
+
+void Shell::open_about() {
+    settings_search_clear(settings_search_);
+    screens_.push("about");
+}
+
+bool Shell::about_open() const { return screens_.top() == "about"; }
 
 // ---------------------------------------------------------------- 状态
 
@@ -203,7 +212,8 @@ void Shell::open_settings() {
 }
 
 bool Shell::settings_on_sound_row() const {
-    return mode() == ShellMode::settings &&
+    // 关于页是 settings 之上的浮层：它没有"音效行"，别让底下的旧光标误触发试听
+    return !about_open() && mode() == ShellMode::settings &&
            static_cast<SettingId>(settings_cursor_) == SettingId::sound_pack;
 }
 
@@ -271,6 +281,11 @@ void Shell::to_boot() {
 }
 
 void Shell::to_shelf() {
+    // 关于页是 settings 栈上的浮层：App 的 Esc 路由调到这里时先 pop 回设置，不离开设置。
+    if (about_open()) {
+        screens_.pop();
+        return;
+    }
     // App 的 Esc 路由在 Shell::update 之前执行：设置搜索中按 Esc 先退出搜索、留在设置，
     // 再按一次才回卡带架（与卡带架搜索"Esc 只清搜索"的语义一致）
     if (mode() == ShellMode::settings && settings_search_.active) {
@@ -440,6 +455,14 @@ Shell::Intent Shell::update_shelf(const Input& input) {
 
 Shell::Intent Shell::update_settings(const Input& input) {
     Intent intent;
+    if (about_open()) return intent;  // 关于页只画/等 Esc；输入由 App 的 Esc 路由处理
+
+    // F1：在设置里打开关于页（settings 栈上 push；Esc pop 回设置）
+    if (input.pressed("f1")) {
+        open_about();
+        return intent;
+    }
+
     const ui::Rect area = settings_area();
     const SettingsContext ctx = make_settings_context();
 
@@ -790,7 +813,13 @@ void Shell::draw(Screen& screen) {
     switch (mode()) {
         case ShellMode::boot: draw_boot(screen); break;
         case ShellMode::shelf: draw_shelf(screen); break;
-        case ShellMode::settings: draw_settings(screen); break;
+        case ShellMode::settings:
+            if (about_open()) {
+                draw_about(screen);
+            } else {
+                draw_settings(screen);
+            }
+            break;
         case ShellMode::paused: draw_paused(screen); break;
         case ShellMode::mods: draw_mods(screen); break;
         case ShellMode::tape: draw_tape(screen); break;
@@ -933,6 +962,19 @@ void Shell::draw_settings(Screen& screen) {
     frame.paint(screen);
 
     draw_footer(screen, tr(lang_, Msg::settings_footer));
+}
+
+void Shell::draw_about(Screen& screen) {
+    const bool en = lang_ == Lang::en;
+    draw_chrome(screen, en ? "ABOUT" : "关于", "");
+
+    const ui::Rect area = settings_area();
+    ui::Frame frame("shell.about", ui_state_, ui_theme_, area, nullptr, ui::Keys::host());
+    build_about(frame.root(), lang_, area);
+    frame.run();  // 关于页无输入：Esc 由 App 转发到 to_shelf()（pop 回设置）
+    frame.paint(screen);
+
+    draw_footer(screen, en ? "Esc back to settings" : "Esc 返回设置");
 }
 
 void Shell::draw_paused(Screen& screen) {
