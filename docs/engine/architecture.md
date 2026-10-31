@@ -104,6 +104,7 @@
 | `App::CartTiming` | 卡带逐帧耗时（update / draw / 峰值 / 图层合成） | 纯数据；换卡 / 拔卡一次 `reset()` |
 | `Display` | 三块显示面（`screen` / `base` / `chrome`）与合成顺序（`present`） | 只依赖 core 与 `Renderer`（向下），**不吃 `HostContext`**，故是纯展示单元 |
 | `App::AgentSession` | agent 控制通道的**会话语义**（单步推进 / 待回包的请求 / 注入按键的定时释放） | 纯数据；与通道的 I/O（`ControlChannel`）分开 |
+| `FontState` | 字体方案状态与加载：方案表/名字列表/当前字体链/声明字号与 min-max；`scan/load_chain/effective_px/clamp_px` | 只注入字体目录与配置值，不碰 Renderer/Window；字号=窗口尺寸仍归 App |
 | `HostCartBinding` | 卡带会话在 `HostContext` 上的 RAII 绑定：持有 `unique_ptr<Cartridge>`，构造挂入口、析构先清 HostContext 再销毁卡带 | 只依赖 `HostContext` + 回调；清理本体在 `App::unbind_host_cart`；开机/架子脚本仍由 App 持有（生命周期不重叠） |
 
 **判据**：一个关切若"只依赖 core/ 或同层、且不含设备副作用"，就抽成独立单元；若它需要反过来
@@ -133,6 +134,7 @@ net / input / host / control 多个协作者、且依赖 `HostContext`（api 层
 | `text` | 文本工具：UTF-8 码点解码、显示宽度（全角算 2 格）、截断/折行/补齐/居中、删除事件约定 |
 | `text_input` | 界面文本输入缓冲：过滤、退格（按码点）、限长、计数——输入进入界面的唯一入口 |
 | `font_files` | 字体方案目录里的字体文件枚举与**默认回退顺序**（纯路径，不加载字形）：内容包扫描与字体加载共用，二者不必互相依赖 |
+| `screen_text` / `screen_draw` | Screen 的两个消费/写入关注点：文本导出、写入/替换语义（friend Writer，不暴露存储） |
 | `defaults` / `version` | 跨模块常量与产品信息的**单一来源** |
 
 `App` 不在 core（见上「app —— 组装层」）：core 只放与设备/内容无关的模型与工具。

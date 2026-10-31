@@ -25,7 +25,7 @@
 | 内容包 | skin 11 · palette 11 · boot 16 · sound 8 · shelf 2 · font 1 套方案（另有 icon） |
 | 卡带内容 | 11 张出厂卡带，17,694 行 Lua；最大 `worms/main.lua` 3,271 行 |
 | 文档 | 发行文档 7 篇 + 引擎文档 8 篇（含本文件与 roadmap.md），4,983 行；双层（发行 / 引擎）分界清楚 |
-| 测试 | `tests/` 116 个用例 / 1,223 条断言；`tools/` 24 个 Python 脚本共 3,624 行，无头门禁 14 项全绿（含 packs 内容包校验） |
+| 测试 | `tests/` 117 个用例 / 1,224 条断言；`tools/` 24 个 Python 脚本共 3,624 行，无头门禁 14 项全绿（含 packs 内容包校验） |
 | API 世代 | `kVersion = 0.9.0`，`kPhosApiVersion = 7`，`--check-api` 134/134 一致 |
 
 一句话形态：**一台把"字符网格 + 内容包 + Lua 沙箱 + agent 控制通道"做得很扎实的字符主机；
@@ -90,13 +90,13 @@
 
 | # | 现象 | 证据 | 后果 |
 |---|---|---|---|
-| S1 | `App` 是 2,179 行 / 7 个 TU / 54 方法的上帝对象，且曾**住在最低层** `core/` | 旧：`core/app.hpp:3-20` 反向 include `cart/ pack/ shell/ agent/ net/ api/`，于是 core 头文件把 sol2 拉进整棵依赖树 | 任何接触 App 的 TU 都编译 Lua 宿主；"可替换子系统"实际上被 App 焊死 | 🟡 **部分修复（阶段一：搬家）**：App 与 7 个 TU 已迁到 `app/`（`app/app.hpp`），`core` 不再反向 include 上层；门禁新增"下层不得 include `app/`"并移除 `core/app*` 白名单。**App 仍是上帝对象、成员未拆**（阶段二：按内聚子系统拆分） |
+| S1 | `App` 是 2,179 行 / 7 个 TU / 54 方法的上帝对象，且**住在最低层** `core/` | 旧：`core/app.hpp` 反向 include cart/pack/shell/agent/net/api，于是 core 头文件把 sol2 拉进整棵依赖树 | 任何接触 App 的 TU 都编译 Lua 宿主；"可替换子系统"实际上被 App 焊死 | 🟡 **部分修复（阶段一/二）**：7 TU 已迁 `app/` 组装层，core 不再反向 include 上层；`App::Mode` 三态互斥（S2）；已抽出 `Display`、`CartTiming`、`AgentSession`、`HostCartBinding`、`FontState`；App 仍是组装点（下一步 ShelfPlayback/SoundState/AgentController） |
 | S2 | 模式不是状态机 | 旧：`in_boot_` / `playing_` / `quit_` 与 ShellMode 由多处分别写 | 非法状态组合可表示；状态查询不可信 | ✅ **已修复**：`App::Mode`（boot / shelf / playing）三态互斥，全部写点集中为 9 处直接赋值；读点用 `in_boot()/playing()`；旧 (true,false)/(false,true)/(false,false) 与新三态一一映射（(true,true) 无产生路径）。`quit_` 保留为独立请求标志（不是模式） |
 | S3 | 选择状态有 3~4 份副本 | `Config` 字符串、`ContentLibrary` 下标、`Shell` 自带名字/下标（`shell/shell.hpp:271-286`）、字体状态 4 处 | 每次改设置手工三方同步，17 处 `save_config_now()` 即其症状 |
 | S4 | `HostContext` 是 15 个裸指针的手工生命周期 | 旧：`api/host_api.hpp`；`clear_host_cart()` 有 9 个手工调用点 | 新增子系统就要再加一处"记得清空"；错一次就是悬垂指针 | ✅ **已修复**：`HostCartBinding` 持有 `unique_ptr<Cartridge>` 并统一装/清 HostContext（析构顺序：先清指针、再销毁卡带）；`replace_cart()` 处理 reload/开机期插卡；`App::cart_` 已删除（46 处引用改 `cart()`），不存在单独的 `cart_.reset()`；`clear_host_cart()` 10→5 且剩余点只清未绑定会话（开机/架子脚本仍 App 持有，生命周期与卡带不重叠） |
 | S5 | `cart` ↔ `api` 头文件环 | 旧：`cart/cartridge.hpp` include `api/host_api.hpp`，反向亦 include | 依赖方向与 `architecture.md:43-46` 相反 | ✅ **已断开**：两侧改用前向声明（`HostContext` / `SaveStore`），需要完整类型的 TU（`cartridge.cpp` / `score_api.cpp`）各自直接 include；`check_includes` 通过、构建与 12 项门禁全绿 |
 | S6 | 三份帧步进、三份沙箱、三份本地化解析 | 旧：`app.cpp` 三处 advance→计数→释放→回包→dump；cartridge/pack/host_api/devkit api_check 各一份沙箱或本地化 | 三处已开始分叉；改一处漏两处 | ✅ **已修复**：帧步进收口到 `App::step_frame`（advance 只剩一个调用点）；沙箱装配收口到 `api/lua_sandbox.hpp`（cart/pack/devkit api_check 共用）；manifest 本地化读取收口到 `lua_sandbox::read_localized`（cart/pack/host_api 共用）；环境节流/空闲外壳仍按各自循环保留 |
-| S7 | `Screen` 过载 | 旧：`core/screen.hpp` 存储 + 宽字续格 + 缩放块 + 子位累积 + alpha + 文本导出 | 每个新绘制特性都要改它并同时改三条消费路径 | ◐ **部分修复（阶段一）**：文本导出已下沉 `core/screen_text`（纯消费 public 的 width/height/at/glyph_at，`Screen::to_text` 一行转发；行为逐字节不变）；存储 vs 写入语义、inks、plot_bits、缩放块归一仍耦合在 `Screen`，待后续 |
+| S7 | `Screen` 过载 | 旧：存储 + 宽字 + 缩放块 + 笔迹 + 子位 + alpha + 文本导出 + 写入语义全在一个类 | 每个新绘制特性都要改它并同时改三条消费路径 | ◐ **部分修复（阶段一/二）**：文本导出下沉 `screen_text`（阶段一）；写入/替换语义与两个私有写助手下沉 `screen_draw`（friend Writer，不暴露存储），`Screen` 的方法变一行转发；存储、inks、plot 位、缩放块归一仍耦合在 `Screen`，后续可抽 screen_store |
 | S8 | 反向依赖 `pack → render` | 旧：`pack/pack.cpp` include `render/font.hpp`；`FontScheme` 定义在 `pack/pack.hpp` | 与 `architecture.md` 方向相反 | ✅ **已修复**：字体文件枚举与默认顺序下沉 `core/font_files`（纯路径）；`pack` 不再 include `render/`，`render/font` 只按路径加载、不再保留枚举入口；`app/app_settings.cpp` 的方案兜底也直接用 `core/font_files` |
 | S9 | 全局可变状态 | `core/log.cpp`、`platform/window.cpp`、`core/mods.cpp`、`cartridge.cpp` 的文件级 static | 与 `code-style.md` 冲突；不可重入，无法并行跑两台主机/两个测试 | ◐ **部分修复**：`platform/window.cpp` 的回调上下文 `g_handlers` 已移除——每窗口 `unique_ptr<WindowHandlers>` 存在 GLFW user pointer 里，移动构造/赋值会重挂指针（多窗口不再互相覆盖）；`log` 的帧号/时间、`mods` 缓存、`cartridge` 的静态表仍为全局，待后续 |
 | S10 | 底层健壮性未收口 | 旧：`core/config.cpp` 非原子写、`json_lite` 转义/窄化缺测试、`platform/socket` 无 SIGPIPE 处理 | 设置/日志/联机在异常路径的失败方式不可预测 | ◐ **部分修复**：json 严格性已补 5 组测试（8 转义/代理对/未闭合、数字文法与 17g 往返、空容器与 64 层边界、dump 稳定性与键序、double→int 边界钳制）并修掉 `Value::dump` 非有限数输出 inf/nan 的问题（Host 写存档先拒绝 NaN/inf，dump 兜底 null）；config 原子写与 socket SIGPIPE 仍待做；解析器对尾随逗号/裸控制字符的宽松容错未收紧（需与控制通道/配置容错一起决策） |
