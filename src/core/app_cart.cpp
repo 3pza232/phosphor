@@ -14,7 +14,10 @@ void App::load_cart_path(const std::string& path) {
 
     // 界面状态随卡带：换卡/重载不把上一张的焦点、滚动、输入缓冲带进来
     host_.cart_ui.screens.clear();
+    host_.cart_ui_json.clear();
     host_.last_ui_focus.clear();
+    host_.pending_ui_focus.clear();
+    host_.pending_ui_activate.clear();
     audio_.stop_music();  // 上一张卡带的音乐到此为止
     net_.stop();          // 联机随卡带生命周期：换卡/重载都先收线，端口不跨卡带留
     cart_ = std::make_unique<Cartridge>();
@@ -81,6 +84,11 @@ void App::eject_cart() {
 }
 
 void App::clear_host_cart() {
+    // 界面快照与待办也是"当前卡带的"，一并清掉：否则 state.query.ui 会报上一张卡带的控件
+    host_.cart_ui_json.clear();
+    host_.cart_ui.screens.clear();
+    host_.pending_ui_focus.clear();
+    host_.pending_ui_activate.clear();
     // 这四处都指向"当前卡带（或宿主动画脚本）"。销毁点必须调用它，否则留下的是悬垂指针——
     // phos.save / phos.assets / phos.cart / phos.debug 都靠它们，谁也不该读到已析构的对象
     host_.save = nullptr;

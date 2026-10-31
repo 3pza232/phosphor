@@ -431,19 +431,21 @@ void register_cart_ui_api(sol::state& lua, HostContext& host) {
         for (const auto& [id, value] : builder.ok_checked) frame.ensure_checked(id, value);
         for (const auto& [id, value] : builder.ok_field) frame.ensure_field_text(id, value);
 
-        // agent 请求：先落焦点（run 时按 id 解析），再跑输入
-        if (!host.pending_ui_focus.empty()) {
+        // agent 请求只落在"负责输入"的那一屏：否则同帧的显示型界面会把请求吃掉
+        if (consume_input && !host.pending_ui_focus.empty()) {
             host.cart_ui.screen(screen_id).focus = host.pending_ui_focus;
             host.pending_ui_focus.clear();
         }
 
         std::vector<ui::Event> events = frame.run();
-        if (!host.pending_ui_activate.empty()) {
+        if (consume_input && !host.pending_ui_activate.empty()) {
             synthesize_activation(frame.root(), host.cart_ui, screen_id, host.pending_ui_activate,
                                   events);
             host.pending_ui_activate.clear();
         }
         if (consume_input) {
+            // 文本域要收中文：界面层举手，主机据此开系统输入法（与 phos.input.field 同一信号）
+            if (frame.ime_requested()) host.ime_wanted = true;
             // 查询接口以"负责输入的那一屏"为准：同一帧还有只画的界面时，焦点不跟着它走
             host.last_ui_focus = frame.focused_id();
             host.last_ui_screen = screen_id;

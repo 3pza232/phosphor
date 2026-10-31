@@ -38,5 +38,5 @@ return {
   -- },
   -- icon_colors = { ["#"] = { 120, 255, 160 } },
 
-  phos_api = 1,             -- API 版本，保持 1
+  phos_api = 7,             -- API 版本，保持 1
 }
