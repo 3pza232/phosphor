@@ -246,6 +246,101 @@ TEST(shell_settings_search_tree_matches_and_empty_state) {
 }
 
 
+
+TEST(shell_settings_theme_sample_uses_theme_tokens) {
+    SettingsContext ctx;
+    ctx.lang = Lang::zh;
+    ctx.theme.bg = Color{11, 1, 1};
+    ctx.theme.surface = Color{12, 2, 2};
+    ctx.theme.surface_alt = Color{13, 3, 3};
+    ctx.theme.text = Color{14, 4, 4};
+    ctx.theme.text_dim = Color{15, 5, 5};
+    ctx.theme.accent = Color{16, 6, 6};
+    ctx.theme.border = Color{17, 7, 7};
+    ctx.theme.border_focus = Color{18, 8, 8};
+    ctx.theme.selection_bg = Color{19, 9, 9};
+    ctx.theme.selection_fg = Color{20, 10, 10};
+    ctx.theme.warning = Color{21, 11, 11};
+    ctx.theme.danger = Color{22, 12, 12};
+    ctx.theme.glyphs.h = U'=';
+    ctx.theme.glyphs.tl = U'[';
+    ctx.theme.glyphs.tr = U']';
+    ctx.theme.glyphs.v = U'!';
+    ctx.theme.glyphs.bl = U'{';
+    ctx.theme.glyphs.br = U'}';
+    ctx.theme.glyphs.cursor = U'\u2192';
+    ctx.theme.glyphs.scroll_thumb = U'#';
+    ctx.theme.glyphs.scroll_track = U'.';
+    ctx.theme.glyphs.table_rule = U'\u2500';
+
+    const ui::Rect area{7, 11, 72, 37};
+    ui::Node root = ui::make_root("shell.settings");
+    build_settings(root, ctx, area);
+    ui::measure(root, area.w, ctx.theme);
+    ui::arrange(root, area, ctx.theme);
+
+    const ui::Node* sample = find_node(root, "settings/theme/sample");
+    CHECK(sample != nullptr);
+    CHECK_EQ(sample->props.title, std::string("主题样张"));
+    CHECK_EQ(int(sample->props.border), int(ui::Border::single));
+    CHECK(sample->props.opaque);
+    CHECK(!sample->focusable);  // 样张非交互，不抢设置焦点
+
+    const Color expected[12] = {
+        ctx.theme.bg,          ctx.theme.surface,      ctx.theme.surface_alt,
+        ctx.theme.text,        ctx.theme.text_dim,     ctx.theme.accent,
+        ctx.theme.border,      ctx.theme.border_focus, ctx.theme.selection_bg,
+        ctx.theme.selection_fg, ctx.theme.warning,      ctx.theme.danger,
+    };
+    for (int i = 0; i < 12; ++i) {
+        const ui::Node* swatch =
+            find_node(root, "settings/theme/swatch_" + std::to_string(i));
+        CHECK(swatch != nullptr);
+        CHECK(swatch->rect.w >= 2);  // 色块必须真有 2 列宽（空格文本不能被量成 0）
+        CHECK(swatch->props.has_bg);
+        CHECK_EQ(int(swatch->props.bg.r), int(expected[i].r));
+        CHECK_EQ(int(swatch->props.bg.g), int(expected[i].g));
+        CHECK_EQ(int(swatch->props.bg.b), int(expected[i].b));
+    }
+
+    const ui::Node* glyphs = find_node(root, "settings/theme/glyphs");
+    CHECK(glyphs != nullptr);
+    CHECK(glyphs->props.text.find("=") != std::string::npos);
+    CHECK(glyphs->props.text.find("[") != std::string::npos);
+    CHECK(glyphs->props.text.find("]") != std::string::npos);
+    CHECK(glyphs->props.text.find("!") != std::string::npos);
+    CHECK(glyphs->props.text.find("}") != std::string::npos);
+    CHECK(glyphs->props.text.find("\u2192") != std::string::npos);
+    CHECK(glyphs->props.text.find("#") != std::string::npos);
+    CHECK(glyphs->props.text.find(".") != std::string::npos);
+    CHECK(glyphs->props.text.find("\u2500") != std::string::npos);
+
+    CHECK(find_node(root, "settings/theme/title")->props.accent);
+    CHECK(!find_node(root, "settings/theme/body")->props.dim);
+    CHECK(find_node(root, "settings/theme/dim")->props.dim);
+    const ui::Node* selected = find_node(root, "settings/theme/selected");
+    CHECK(selected != nullptr);
+    CHECK_EQ(int(selected->props.bg.r), 19);
+    CHECK_EQ(int(selected->props.fg.r), 20);
+    const ui::Node* bar = find_node(root, "settings/theme/bar");
+    CHECK(bar != nullptr);
+    CHECK_EQ(bar->props.ratio, 0.6f);
+
+    // 样张在设置行区域内、不压到底部字体预览
+    const ui::Node* preview = find_node(root, "settings/preview");
+    CHECK(preview != nullptr);
+    CHECK(sample->rect.y + sample->rect.h <= preview->rect.y);
+    CHECK(sample->rect.x >= area.x && sample->rect.x + sample->rect.w <= area.x + area.w);
+
+    // 搜索态保持紧凑：不插样张（旧搜索文本/布局不膨胀）
+    SettingsSearch search;
+    settings_search_begin(search);
+    settings_search_apply_text(search, "音量");
+    ui::Node filtered = ui::make_root("shell.settings");
+    build_settings(filtered, ctx, area, &search);
+    CHECK(find_node(filtered, "settings/theme/sample") == nullptr);
+}
+
 TEST(shell_about_view_uses_version_and_host_keys) {
     const ui::Rect area{7, 11, 72, 37};
     ui::Theme theme;

@@ -911,6 +911,7 @@ SettingsContext Shell::make_settings_context() const {
     ctx.shelf_index = shelf_index_;
     ctx.font_px = font_px_;
     ctx.lang = lang_;
+    ctx.theme = ui_theme_;
     return ctx;
 }
 

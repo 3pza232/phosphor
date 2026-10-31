@@ -225,6 +225,85 @@ void add_preview(ui::Node& root, const SettingsContext& ctx, const ui::Rect& are
     preview.add_text("settings/preview/cjk", tr(ctx.lang, Msg::font_preview_cjk));
 }
 
+std::string glyph_utf8(char32_t cp) {
+    std::string out;
+    text::append_utf8(out, cp);
+    return out;
+}
+
+/// 主题样张：12 个主题色角色 + 字形 + 标题/正文/次要文字 + 选中行/bar。
+/// 全部走声明式组件与 theme token，不写绝对坐标；紧凑排成 5 行内容（边框另 2 行）。
+void add_theme_sample(ui::Node& root, const SettingsContext& ctx) {
+    const ui::Theme& theme = ctx.theme;
+    const bool en = ctx.lang == Lang::en;
+
+    ui::Node& sample = root.add_box("settings/theme/sample", en ? "THEME SAMPLE" : "主题样张");
+    sample.props.border = ui::Border::single;
+    sample.props.opaque = true;
+    sample.props.has_bg = true;
+    sample.props.bg = theme.surface;
+    sample.props.has_fg = true;
+    sample.props.fg = theme.text;
+    // 样张是紧凑预览：仍用主题 metrics，但把内缩/间距夹到小值，
+    // 免得上限 16 的皮肤度量把 12 格色板/字形行挤出设置区
+    const int pad_x = std::min(std::max(0, theme.metrics.pad_x), 2);
+    sample.props.padding = ui::Insets{pad_x, 0, pad_x, 0};
+    sample.props.gap = 0;  // 紧凑：设置屏还要容纳 12 行设置与底部字体预览
+
+    // 12 个可直接从 Theme 读到的颜色角色（disabled 属于文字态，不占色板格）
+    const std::array<Color, 12> palette{{
+        theme.bg,          theme.surface,      theme.surface_alt, theme.text,
+        theme.text_dim,    theme.accent,       theme.border,      theme.border_focus,
+        theme.selection_bg, theme.selection_fg, theme.warning,     theme.danger,
+    }};
+    const int swatch_gap = std::min(std::max(0, theme.metrics.gap), 1);
+    for (int row = 0; row < 2; ++row) {
+        ui::Node& swatches =
+            sample.add_row("settings/theme/swatches_" + std::to_string(row));
+        swatches.props.gap = swatch_gap;
+        for (int col = 0; col < 6; ++col) {
+            const int index = row * 6 + col;
+            ui::Node& swatch =
+                swatches.add_text("settings/theme/swatch_" + std::to_string(index), "  ");
+            swatch.props.has_bg = true;
+            swatch.props.bg = palette[static_cast<size_t>(index)];
+            swatch.props.has_fg = true;
+            swatch.props.fg = palette[static_cast<size_t>(index)];
+        }
+    }
+
+    const char32_t tl = theme.glyphs.tl, h = theme.glyphs.h, tr = theme.glyphs.tr;
+    const char32_t v = theme.glyphs.v, bl = theme.glyphs.bl, br = theme.glyphs.br;
+    const std::string frame = glyph_utf8(tl) + glyph_utf8(h) + glyph_utf8(h) + glyph_utf8(tr) +
+                              " " + glyph_utf8(v) + " " + glyph_utf8(bl) + glyph_utf8(h) +
+                              glyph_utf8(h) + glyph_utf8(br);
+    std::string glyph_line = (en ? "FRAME " : "边框 ") + frame;
+    glyph_line += en ? "  CURSOR " : "  光标 ";
+    glyph_line += glyph_utf8(theme.glyphs.cursor);
+    glyph_line += en ? "  SCROLL " : "  滚动 ";
+    glyph_line += glyph_utf8(theme.glyphs.scroll_thumb) + glyph_utf8(theme.glyphs.scroll_track);
+    glyph_line += en ? "  TABLE " : "  表线 ";
+    glyph_line += glyph_utf8(theme.glyphs.table_rule);
+    sample.add_text("settings/theme/glyphs", glyph_line);
+
+    ui::Node& styles = sample.add_row("settings/theme/styles");
+    styles.props.gap = std::min(std::max(1, theme.metrics.gap), 2);
+    styles.add_text("settings/theme/title", en ? "TITLE" : "标题").props.accent = true;
+    styles.add_text("settings/theme/body", en ? "BODY" : "正文");
+    styles.add_text("settings/theme/dim", en ? "DIM" : "次要").props.dim = true;
+
+    ui::Node& state = sample.add_row("settings/theme/state");
+    state.props.gap = std::min(std::max(1, theme.metrics.gap), 2);
+    ui::Node& selected =
+        state.add_text("settings/theme/selected", en ? "> SELECTED ITEM" : "> 选中项");
+    selected.props.has_bg = true;
+    selected.props.bg = theme.selection_bg;
+    selected.props.has_fg = true;
+    selected.props.fg = theme.selection_fg;
+    state.add_text("settings/theme/bar_label", "BAR").props.dim = true;
+    ui::Node& bar = state.add_bar("settings/theme/bar", 0.6f);
+    bar.props.width = 10;
+}
 } // namespace
 
 const char* setting_key(SettingId id) {
@@ -355,6 +434,8 @@ void build_settings(ui::Node& root, const SettingsContext& ctx, const ui::Rect& 
             continue;
         }
         add_setting_item(root, row.id, ctx);
+        // 主题/皮肤行下方紧跟一张主题样张；只在完整树里出现（搜索态保持紧凑）
+        if (row.id == SettingId::theme) add_theme_sample(root, ctx);
         first = false;
     }
 

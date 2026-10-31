@@ -3,6 +3,7 @@
 #include "core/defaults.hpp"
 #include "shell/messages.hpp"
 #include "ui/element.hpp"
+#include "ui/theme.hpp"
 
 #include <string>
 #include <string_view>
@@ -40,6 +41,9 @@ struct SettingsContext {
     int shelf_index = 1;
     int font_px = kDefaultFontPx;  // 当前生效字号（= 单元格边长）
     Lang lang = Lang::zh;  // 界面语言：设置界面自己的文案也要跟着切
+    /// 当前外壳主题：主题样张直接读 token（色板/字形/度量/选中态）。
+    /// 只读快照；Shell 每帧从 ui_theme_ 填入，换 skin 后样张自动跟随
+    ui::Theme theme;
 };
 
 /// 设置项在界面上的稳定 id（焦点/事件/agent 观测都以它为键）："settings/<key>"
