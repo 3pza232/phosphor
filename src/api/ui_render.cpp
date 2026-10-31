@@ -96,6 +96,7 @@ ui::Kind kind_from_name(const std::string& name) {
     if (name == "bar") return ui::Kind::bar;
     if (name == "button") return ui::Kind::button;
     if (name == "hint") return ui::Kind::hint;
+    if (name == "table") return ui::Kind::table;
     return ui::Kind::column;
 }
 
@@ -139,6 +140,69 @@ std::vector<std::string> strings_field(const sol::table& t, const char* key) {
     sol::object value = t[key];
     if (!value.is<sol::table>()) return {};
     return api::read_rows(value);
+}
+
+std::string cell_string(const sol::object& value) {
+    if (value.is<std::string>()) return value.as<std::string>();
+    if (value.is<int>()) return std::to_string(value.as<int>());
+    if (value.is<bool>()) return value.as<bool>() ? "true" : "false";
+    if (value.is<double>()) {
+        const double number = value.as<double>();
+        if (number == static_cast<long long>(number)) return std::to_string(static_cast<long long>(number));
+        char buffer[32];
+        std::snprintf(buffer, sizeof(buffer), "%.2f", number);
+        return std::string(buffer);
+    }
+    return {};
+}
+
+/// rows = {{"a","b"},{"c","d"}}：每行一张表，单元格按字符串/数字转文本
+std::vector<std::vector<std::string>> rows_field(const sol::table& t, const char* key) {
+    std::vector<std::vector<std::string>> rows;
+    sol::object value = t[key];
+    if (!value.is<sol::table>()) return rows;
+    sol::table list = value.as<sol::table>();
+    for (size_t i = 1; i <= list.size(); ++i) {
+        sol::object row = list[i];
+        if (!row.is<sol::table>()) continue;
+        sol::table cells = row.as<sol::table>();
+        std::vector<std::string> line;
+        for (size_t j = 1; j <= cells.size(); ++j) {
+            sol::object cell = cells[j];
+            line.push_back(cell_string(cell));
+        }
+        rows.push_back(std::move(line));
+    }
+    return rows;
+}
+
+std::vector<int> ints_field(const sol::table& t, const char* key) {
+    std::vector<int> out;
+    sol::object value = t[key];
+    if (!value.is<sol::table>()) return out;
+    sol::table list = value.as<sol::table>();
+    for (size_t i = 1; i <= list.size(); ++i) {
+        sol::object item = list[i];
+        if (item.is<int>()) out.push_back(item.as<int>());
+        else if (item.is<double>()) out.push_back(static_cast<int>(item.as<double>()));
+        else out.push_back(0);
+    }
+    return out;
+}
+
+std::vector<ui::Align> aligns_field(const sol::table& t, const char* key) {
+    std::vector<ui::Align> out;
+    sol::object value = t[key];
+    if (!value.is<sol::table>()) return out;
+    sol::table list = value.as<sol::table>();
+    for (size_t i = 1; i <= list.size(); ++i) {
+        sol::object item = list[i];
+        const std::string name = item.is<std::string>() ? item.as<std::string>() : "left";
+        if (name == "center") out.push_back(ui::Align::center);
+        else if (name == "right" || name == "end") out.push_back(ui::Align::end);
+        else out.push_back(ui::Align::start);
+    }
+    return out;
 }
 
 /// items + disabled：disabled 可写成下标数组 {2,5} 或等长布尔数组
@@ -313,6 +377,10 @@ struct Builder {
         out.text = str_field(t, "text");
         out.value = str_field(t, "value");
         out.items = strings_field(t, "items");
+        out.columns = strings_field(t, "columns");
+        out.rows = rows_field(t, "rows");
+        out.widths = ints_field(t, "widths");
+        out.col_align = aligns_field(t, "col_align");
         out.ratio = float_field(t, "ratio");
         out.absolute = bool_field(t, "absolute", out.absolute);
         out.x = int_field(t, "x");

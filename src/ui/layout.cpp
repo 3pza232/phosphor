@@ -44,6 +44,36 @@ bool focusable_kind(Kind kind) {
     }
 }
 
+std::vector<int> table_column_widths(const Props& props, int available) {
+    int n = static_cast<int>(props.columns.size());
+    for (const auto& row : props.rows) n = std::max(n, static_cast<int>(row.size()));
+    n = std::max(n, static_cast<int>(props.widths.size()));
+    if (n <= 0) return {};
+    std::vector<int> widths(static_cast<size_t>(n), 0);
+    for (int i = 0; i < n; ++i) {
+        if (i < static_cast<int>(props.widths.size()) && props.widths[static_cast<size_t>(i)] > 0) {
+            widths[static_cast<size_t>(i)] = props.widths[static_cast<size_t>(i)];
+            continue;
+        }
+        int natural = 0;
+        if (i < static_cast<int>(props.columns.size()))
+            natural = text::display_width(props.columns[static_cast<size_t>(i)]);
+        for (const auto& row : props.rows)
+            if (i < static_cast<int>(row.size()))
+                natural = std::max(natural, text::display_width(row[static_cast<size_t>(i)]));
+        widths[static_cast<size_t>(i)] = natural;
+    }
+    constexpr int kGap = 2;
+    int total = kGap * (n - 1);
+    for (int w : widths) total += w;
+    if (available > total && n > 0) {
+        const int extra = (available - total) / n;
+        for (int& w : widths) w += extra;
+        widths.back() += (available - total) % n;
+    }
+    return widths;
+}
+
 Size measure(Node& node, int avail_w, const Theme& theme) {
     const Props& props = node.props;
     int content_w = 0;
@@ -100,6 +130,16 @@ Size measure(Node& node, int avail_w, const Theme& theme) {
                 width = std::max(width, text::display_width(item) + props.indent);
             content_w = props.width > 0 ? props.width : width;
             content_h = props.height > 0 ? props.height : static_cast<int>(props.items.size());
+            break;
+        }
+        case Kind::table: {
+            const auto widths = table_column_widths(props, 0);
+            int width = 0;
+            for (size_t i = 0; i < widths.size(); ++i)
+                width += widths[i] + (i > 0 ? 2 : 0);
+            content_w = props.width > 0 ? props.width : width;
+            const int header = props.columns.empty() ? 0 : 2;  // 表头 + 分隔线
+            content_h = header + static_cast<int>(props.rows.size());
             break;
         }
         case Kind::stat: {

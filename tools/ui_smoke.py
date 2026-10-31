@@ -60,6 +60,11 @@ def main() -> int:
         checks.check("move" in text and "next" in text, "hint 渲染键位提示")
         checks.check("STATUS" in text, "侧栏（surface=panel）独立渲染")
 
+        print("  -- 表格 --")
+        checks.check("RANK" in text and "SCORE" in text, "表头渲染")
+        checks.check("ALPHA" in text and "1200" in text and "GAMMA" in text, "数据行渲染")
+        checks.check("─" in text, "表头分隔线")
+
         print("  -- 焦点与事件 --")
         checks.check(debug.get("focus") == "demo_list", f"初始焦点在列表（{debug.get('focus')}）")
         host.key("down")

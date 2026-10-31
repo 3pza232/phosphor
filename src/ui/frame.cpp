@@ -452,6 +452,48 @@ void paint_node(Screen& screen, const Node& node, const Theme& theme, const Stat
                           fg, bg);
             break;
         }
+        case Kind::table: {
+            if (node.inner.w <= 0 || node.inner.h <= 0) break;
+            const auto widths = table_column_widths(node.props, node.inner.w);
+            if (widths.empty()) break;
+            Surface surface(screen, node.inner.x, node.inner.y, node.inner.w, node.inner.h);
+            const Color bg = node.props.opaque ? resolve_bg(node, theme) : kKeepBg;
+            const Color row_fg = node.props.has_fg ? node.props.fg : theme.text;
+            const int columns = static_cast<int>(widths.size());
+            const auto column_x = [&](int index) {
+                int x = 0;
+                for (int i = 0; i < index; ++i) x += widths[static_cast<size_t>(i)] + 2;
+                return x;
+            };
+            int y = 0;
+            const auto paint_row = [&](const std::vector<std::string>& cells, Color fg) {
+                for (int i = 0; i < columns; ++i) {
+                    const int width = widths[static_cast<size_t>(i)];
+                    if (width <= 0) continue;
+                    const std::string cell =
+                        i < static_cast<int>(cells.size()) ? cells[static_cast<size_t>(i)]
+                                                          : std::string();
+                    const Align align = i < static_cast<int>(node.props.col_align.size())
+                                            ? node.props.col_align[static_cast<size_t>(i)]
+                                            : Align::start;
+                    const std::string shown = fit_line(cell, width, node.props.overflow);
+                    const int gap = std::max(0, width - text::display_width(shown));
+                    int left = 0;
+                    if (align == Align::center) left = gap / 2;
+                    else if (align == Align::end) left = gap;
+                    surface.print(column_x(i) + left, y, shown, fg, bg);
+                }
+                ++y;
+            };
+            if (!node.props.columns.empty()) {
+                paint_row(node.props.columns, theme.text_dim);
+                for (int x = 0; x < node.inner.w; ++x)
+                    surface.put(x, y, U'\u2500', theme.border, bg);
+                ++y;
+            }
+            for (const auto& row : node.props.rows) paint_row(row, row_fg);
+            break;
+        }
         case Kind::stat: {
             if (node.inner.w <= 0) break;
             Surface surface(screen, node.inner.x, node.inner.y, node.inner.w, node.inner.h);

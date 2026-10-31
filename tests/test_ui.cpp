@@ -44,6 +44,38 @@ TEST(ui_layout_column_and_padding) {
     CHECK_EQ(b->rect.y, 8);
 }
 
+TEST(ui_table_column_widths) {
+    ui::Props props;
+    props.columns = {"A", "SCORE"};
+    props.rows = {{"1", "1200"}, {"2", "90"}};
+    const auto natural = ui::table_column_widths(props, 0);
+    CHECK_EQ(natural.size(), 2u);
+    CHECK_EQ(natural[0], 1);
+    CHECK_EQ(natural[1], 5);
+
+    const auto stretched = ui::table_column_widths(props, 20);
+    int total = 2;  // 列间固定 2 格
+    for (int width : stretched) total += width;
+    CHECK_EQ(total, 20);  // 余量均摊后铺满可用宽度
+
+    props.widths = {3, 0};
+    const auto fixed = ui::table_column_widths(props, 0);
+    CHECK_EQ(fixed[0], 3);
+    CHECK_EQ(fixed[1], 5);
+}
+
+TEST(ui_table_measure) {
+    ui::Theme theme;
+    ui::Node root = ui::make_root("root");
+    ui::Node& table = root.add_table("t");
+    table.props.columns = {"RANK", "NAME"};
+    table.props.rows = {{"1", "A"}, {"2", "B"}};
+    ui::Rect area{0, 0, 40, 10};
+    ui::measure(root, area.w, theme);
+    CHECK_EQ(table.natural_h, 4);  // 表头 + 分隔线 + 2 行
+    CHECK_EQ(table.natural_w, 4 + 2 + 4);  // RANK / NAME 各 4，列间 2
+}
+
 TEST(ui_layout_grow_distributes_leftover) {
     ui::Theme theme;
     ui::Node root = ui::make_root("root");

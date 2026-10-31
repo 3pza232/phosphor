@@ -422,6 +422,7 @@ pending = phos.ui.render{
 | `bar` | 进度条（`ratio` 0..1） | — |
 | `button` | 按钮行 | A → `activated` |
 | `hint` | 页脚键位提示（`items` 为 `[键, 说明]` 交替） | — |
+| `table` | 表格：`columns` 表头 + `rows` 数据，列宽/对齐可指定（表头下自动画分隔线） | — |
 
 **元素字段**
 
@@ -445,6 +446,10 @@ pending = phos.ui.render{
 | `text` | string | — | text / option / button / stat 的正文；field 的**占位提示** |
 | `value` | string | — | stat 的右值；field 的**初始内容**（只在首次出现时写入） |
 | `items` | string[] | — | list 的行；hint 的 `[键, 说明]` 交替 |
+| `columns` | string[] | — | table 的表头（空 = 无表头；有表头时自动加一条分隔线） |
+| `rows` | table[] | — | table 的数据行：每行一个字符串数组；数字单元格按整数/两位小数转文本 |
+| `widths` | integer[] | — | table 各列固定宽度；0 或缺省 = 按内容自适应（余量均摊铺满可用宽度） |
+| `col_align` | string[] | start | table 各列对齐：`left` / `center` / `right` |
 | `disabled` | table? | — | list 中不可选的行：下标数组 `{2, 5}` 或等长布尔数组 |
 | `ratio` | number | 0 | bar 的比例（0..1，越界按 0/1 画） |
 | `checked` | boolean | false | checkbox 的**初值**；之后以用户操作为准 |
@@ -453,6 +458,14 @@ pending = phos.ui.render{
 | `indent` / `text_gap` | integer | 0 / 1 | 选中标记的缩进、正文相对标记的间距 |
 | `label_w` | integer | 0 | stat 的标签列宽；0 = 主题默认（16） |
 | `absolute` / `x` / `y` | boolean / integer | false / 0 | true = 相对父内容区定位，不参与流式布局 |
+
+表格示例（表头 + 右对齐数值列）：
+
+```lua
+{ kind = "table", columns = { "RANK", "NAME", "SCORE" }, widths = { 4, 8, 6 },
+  col_align = { "left", "left", "right" },
+  rows = { { "1", "ALPHA", "1200" }, { "2", "BETA", "900" } } },
+```
 
 **交互与焦点**
 
@@ -915,8 +928,3 @@ function update(dt)
   name:feed()                       -- 每帧一次；同一帧重复调用是幂等的
   if phos.input.pressed("start") then submit(name.value) end
 end
-
--- name.value     当前文本（UTF-8，永远是完整的码点序列）
--- name.count     已录入的**码点**数（中文与半角同样算 1）
--- name:clear()   清空
-```

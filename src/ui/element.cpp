@@ -70,6 +70,12 @@ Node& Node::add_field(std::string child_id, std::string text) {
     return node;
 }
 
+Node& Node::add_table(std::string child_id) {
+    Node& node = add(Kind::table, std::move(child_id));
+    node.focusable = false;
+    return node;
+}
+
 Node& Node::add_bar(std::string child_id, float ratio) {
     Node& node = add(Kind::bar, std::move(child_id));
     node.props.ratio = ratio;

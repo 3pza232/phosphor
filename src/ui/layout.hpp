@@ -18,6 +18,10 @@ Size measure(Node& node, int avail_w, const Theme& theme);
 /// 排布：把 node 放到 rect（含边框，不含 margin），递归写 children 的 rect/inner。
 void arrange(Node& node, Rect rect, const Theme& theme);
 
+/// 表格列宽：显式宽度优先，其余按内容自适应；available > 0 时把余量均摊到各列。
+/// 测量与绘制共用这一份，避免"画出来和量出来不一致"。
+std::vector<int> table_column_widths(const Props& props, int available);
+
 /// 按**视觉顺序**收集可聚焦元素（受 enabled 约束）。输入导航与 agent 观测共用它。
 void collect_focusables(Node& node, std::vector<Node*>& out);
 

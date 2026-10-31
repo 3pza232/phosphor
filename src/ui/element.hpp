@@ -24,7 +24,8 @@ enum class Kind {
     field,     ///< 文本输入框
     bar,       ///< 进度条
     button,    ///< 按钮行（确认触发）
-    hint       ///< 页脚键位提示（items 为 [键, 说明] 交替）
+    hint,      ///< 页脚键位提示（items 为 [键, 说明] 交替）
+    table      ///< 表格：columns 表头（可空）+ rows 数据，列宽可指定
 };
 
 enum class Align { start, center, end, stretch };
@@ -85,6 +86,12 @@ struct Props {
     std::vector<bool> disabled;        ///< list 中不可选的行（与 items 对齐）
     float ratio = 0.0f;                ///< bar 的比例 0..1
 
+    // ---- 表格 ----
+    std::vector<std::string> columns;              ///< 表头（空 = 无表头）
+    std::vector<std::vector<std::string>> rows;    ///< 每行的单元格（不足补空）
+    std::vector<int> widths;                       ///< 各列固定宽度；0 = 按内容自适应
+    std::vector<Align> col_align;                  ///< 各列对齐（缺省 start）
+
     // ---- 定位 ----
     bool absolute = false;  ///< true = 用 x/y 相对父内容区定位，不参与流式布局
     int x = 0, y = 0;
@@ -124,6 +131,7 @@ struct Node {
     Node& add_bar(std::string child_id, float ratio);
     Node& add_stat(std::string child_id, std::string label, std::string value);
     Node& add_hint(std::string child_id);
+    Node& add_table(std::string child_id);
 };
 
 /// 根节点：永远是 column（宿主只填它，不改种类）。
