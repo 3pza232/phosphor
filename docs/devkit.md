@@ -66,7 +66,7 @@ phosphor --pack carts/mygame --json         # 机器可读结果
 ## 模板填空表
 
 `--new` 生成的就是这个模板。它刻意保持"空"——不演示任何玩法，只把骨架摆好，
-并把需要你改的地方标了「填」。五个文件各管一件事：
+并把需要你改的地方标了「填」。五个文件加一个可选资源目录，各管一件事：
 
 | 文件 | 你要改什么 |
 |------|-----------|
@@ -255,7 +255,8 @@ function debug_state()
 end
 ```
 
-主机在 `state.query` 时会把它一并带上。值支持 number / string / boolean 与一层表。
+主机在 `state.query` 时会把它一并带上。值支持 number / string / boolean 与表：主机按
+**深度 4** 递归序列化（纯数组写成 JSON 数组），超过深度的表只留 `{"__table":N}` 占位。
 
 一次性验证可以用更轻的方式：
 
@@ -267,7 +268,8 @@ phosphor --cart carts/mygame --headless --frames 300 --seed 42 --dump-screen
 
 ```bash
 phosphor --cart carts/mygame --headless --frames 120 --screenshot shots/f120.png
-# 尺寸 = 网格(84x51) x 字号(默认 16px)；随主题（skin）几何与字号设置变化
+# 尺寸 = 整机网格 × 字号：截图含外壳；默认皮肤 84x51 格（内容区 80x45 + 外壳）→ 1344x816。
+# 随主题（skin）几何与字号设置变化
 ```
 
 文本画面 `screen.read` / `--dump-screen` 是零误差的，

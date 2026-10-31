@@ -37,8 +37,8 @@ Lua 侧（卡带 API、示例、注解文件）一律 `snake_case`，与 C++ 侧
 
 ```cpp
 /// 将卡带加载进沙箱并执行 init。
-/// 失败时返回错误信息且主机状态保持不变。
-std::expected<void, std::string> load(const std::filesystem::path& cart);
+/// 失败时返回 false 并把原因写进 err，主机状态保持不变。
+bool load(const std::string& cart_path, std::string& err);
 ```
 
 - 实现文件内只在"不明显的取舍、绕过的坑、遗留的妥协"处留注释
@@ -51,23 +51,35 @@ std::expected<void, std::string> load(const std::filesystem::path& cart);
   - ✓ `// 控制通道可能未启动，command 队列此时为空`
   判断标准：新加入的协作者读到这条注释，需要知道"不能这么改"，还是只需要知道"以前错过"？
   后者属于提交信息与文档，不属于代码。
+- **唯一允许记录"变更"的地方是发行日志**：`core/version.hpp` 的版本号上方按版本列出能力变化
+  （它就是 CHANGELOG）；其他文件一律不写改动史，提交信息与 git 才是它的归宿。
 - 不用注释写日记（"2026-10-08 修改了 xxx"——这是 git 的事）
 
 ## 四、错误处理
 
 - **外部输入一律不可信**：卡带、内容包、配置文件、控制通道消息——
   解析失败必须返回错误并安全降级，详见架构铁律"主机永不因卡带而死"
-- 可恢复错误：返回 `std::expected`（或带错误信息的 `optional`），不抛异常穿过模块边界
+- 可恢复错误：返回 `bool` + 错误串出参（`std::string& err`），或 `std::optional<T>` 表示
+  "没有值"（如文件不存在、键不存在）；不抛异常穿过模块边界
 - 异常仅用于"继续运行已无意义"的主机自身致命错误
 - 卡带 Lua 错误：捕获 → 屏幕显示错误画面（红字报错也是主题体验的一部分）→ 可返回系统菜单
-- 配置/内容包错误：静默回退默认 + 日志警告
+- 配置/内容包错误：回退默认并继续运行，不弹错、不退出；解析失败与损坏包写日志
+  （"选中项不存在"的回退粒度见 [`content-packs.md`](../content-packs.md)）
 
 ## 五、C++ 使用约定
 
 - 标准锁定 **C++17**，不使用更新特性（保持工具链兼容预期）
 - RAII 管理一切资源（GL 对象、文件句柄、Lua state），禁止裸 `new/delete`
 - 优先 `std::string_view` 传参只读字符串；所有权用 `unique_ptr`，共享需理由才能用 `shared_ptr`
-- 不使用全局可变状态；跨模块共享的上下文集中在 `App` 并以引用注入
+- **不新增全局可变状态**；跨模块共享的上下文集中在 `App` 并以引用注入。现存（已知债务，
+  改动时同步本节）：
+  - `core/log.cpp`：日志文件句柄、互斥量、当前帧号（`log::` 命名空间级，全工程都在写日志）
+  - `platform/window.cpp`：`g_handlers`（GLFW 回调的输入出口；单窗口假设）
+  - `core/mods.cpp`：`registry()` 里的覆盖表与 mod 启停列表（启动期一次性喂入，之后只读）
+  两个"不承载应用状态"的受控例外：`agent/control_channel.cpp` 的 `WinsockGuard`
+  （进程级一次 `WSAStartup`，之后不变）与 `api/lua_guard.cpp` 的 `thread_local` 脚本预算
+  （脚本只在主线程跑，随 `BudgetScope` 成对进出）。迁移目标：日志与 mod 表收进 `App` 持有的
+  对象、按引用注入；窗口回调出口随 `Window` 实例（GLFW user pointer）走。
 - 不用 `using namespace std;`（头文件中禁止一切 `using namespace`）
 - 第三方头文件只允许出现在对应封装模块内（见 architecture.md 铁律 5）
 

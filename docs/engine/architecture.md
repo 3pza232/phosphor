@@ -7,24 +7,34 @@
 ## 一、分层与依赖铁律
 
 ```
-┌─────────────────────────────────────────┐
-│ shell    外壳层：待机界面 / 系统菜单 / 氛围装饰 │
-├─────────────────────────────────────────┤
-│ api      Lua 桥：Host API（卡带与主机插件的唯一入口）│
-├──────────────┬──────────────┬───────────┤
-│ cart         │ pack         │ agent     │
-│ 卡带加载/沙箱  │ 内容包加载     │ 控制通道/CLI │
-├──────────────┴──────────────┴───────────┤
-│ core     核心层：App 主循环 / Screen 网格 / Input │
-├──────────┬──────────┬──────────┬─────────┤
-│ render   │ audio    │ net      │ platform │
-│ OpenGL   │ miniaudio│ 局域网联机 │ OS 相关封装│
-│ 渲染      │          │ TCP/UDP  │ socket   │
-└──────────┴──────────┴──────────┴─────────┘
+┌──────────────────────────────────────────────────────────────┐
+│ shell    外壳层：待机界面 / 系统菜单 / 氛围装饰              │
+├──────────────────────────────────────────────────────────────┤
+│ api      Lua 桥：Host API（卡带与主机插件的唯一入口）        │
+├──────────────────────────────────────────────────────────────┤
+│ cart · pack · agent    同层；互不依赖（见第 4 条）           │
+├──────────────────────────────────────────────────────────────┤
+│ net      局域网：TCP 房间 + UDP 发现（依赖 core / platform） │
+├──────────────────────────────────────────────────────────────┤
+│ render   渲染：Screen / CrtParams → OpenGL / 离屏 PNG        │
+├──────────────────────────────────────────────────────────────┤
+│ core     Screen / Surface / Input / ui / audio / text        │
+├──────────────────────────────────────────────────────────────┤
+│ platform OS 封装：窗口 / socket / 重启自身                   │
+└──────────────────────────────────────────────────────────────┘
 ```
 
-> `net` 只**向下**依赖 `platform/socket`；`api/net_api` 向上把 `net` 包成 `phos.net`；
-> `core/app` 是组装点（持有 `Net` 并注入 `HostContext`）。设计见 `networking.md`。
+> **组装点**：`App`（`core/app.*`）是唯一允许知道全部层的单元——它持有 `shell` / `api` / `cart` /
+> `pack` / `agent` / `net` 的对象并负责注入，因此 `core/app.hpp` 反向 include 这些层的头文件。
+> 图中 `core` 一行指**其余** core 单元（`screen` / `surface` / `input` / `text` / `ui` /
+> `audio` / `crt` …），它们不得向上 include。
+>
+> `render` 消费 core 的 `Screen` / `CrtParams`（render → core），`core/display` 又调用
+> `Renderer`：两者在文件级**互相依赖**；门禁对这对方向都放行（不把 `render` 当作 core 的上层），
+> 收口方向见「演进预留」。
+>
+> `net` 只**向下**依赖 `core/`（日志 / JSON）与 `platform/socket`；`api/net_api` 向上把
+> `net` 包成 `phos.net`。设计见 `networking.md`。
 
 **依赖约束（本文件描述现状与设计意图，不是立法）：**
 
@@ -33,18 +43,33 @@
 > 不允许的是**代码与本文档互相不一致**却没人发现。因此每条都写成可机械核查的形式。
 
 
-1. **依赖方向向下**。唯一例外是**组装点**：`core/app.*` 必须知道所有层才能把它们接起来；
-   其余 `core/` 单元（`screen` / `surface` / `input` / `text` / `ui` / `audio` / `crt`…）不得 include 上层。
-   跨层向上通信用回调/接口注入
+1. **依赖方向向下**。主要例外是**组装点**：`core/app.*` 必须知道所有层才能把它们接起来。
+   禁止表与 `tools/check_includes.py` 逐条对应，可机械核查：
+   - `core/` 不得 include `api/` / `cart/` / `pack/` / `shell/` / `agent/` / `net/`
+     （`core/app.*` 是组装点，白名单放行）
+   - `render/` 不得 include `shell/` / `api/` / `cart/` / `pack/` / `agent/` / `net/`
+   - `shell/` 不得 include `cart/` / `pack/` / `agent/` / `net/`（现存 4 处
+     `cart/` include 在门禁白名单内，原因与 TODO 写在那里）
+   跨层向上通信用回调/接口注入。`core` 与 `render` 互相 include（`Screen` / `Renderer`），
+   门禁对这对方向都放行——收口见「演进预留」。
 2. **Lua 类型只出现在 `api/`、`cart/`、`pack/`、`devkit/`**：前两者是 Lua 的宿主（装载并运行脚本），
    第三个要核对注解与实现。`core/`、`render/`、`shell/`、`platform/` 出现 `sol.hpp` / `lua.hpp` 即违规
 3. **OpenGL 只出现在 `render/` 与 `platform/window.cpp`**：前者是渲染后端，
    后者创建上下文并加载函数指针。其他模块出现 `glad.h` 即违规
-4. `cart/`、`pack/`、`agent/` 三者互不依赖，都只依赖 `core/`；
-   其中 `cart/`、`pack/` 还可以复用 `api/lua_value.hpp`（纯值读取：`{r,g,b}` → `Color`）——
-   它们都要把脚本里的表读成引擎类型，规则必须唯一，否则同一份颜色在不同地方
-   越界行为不一致
+4. `cart/`、`pack/`、`agent/` 三者互不依赖，都只依赖 `core/`；把脚本里的表读成引擎类型时
+   可复用 `api/lua_value.hpp`（纯值读取：`{r,g,b}` → `Color`——越界规则只写一份）。
+   **现状有三处例外**（已知债务，清单只减不增）：
+   - `cart/cartridge.hpp` include `api/host_api.hpp`，而后者 include `cart/save_store.hpp`
+     ——`cart` ↔ `api` 成环。`Cartridge` 只需要 `HostContext&` 与 `SaveStore*`，两侧各用
+     前置声明即可断开；目标：`cart/` 只依赖 `core/` 与 `api/lua_value.hpp`
+   - `pack/pack.cpp` include `render/font.hpp` 并调 `collect_font_files`（字体文件的默认
+     回退顺序）——`pack` → `render` 反向依赖；目标见「pack」与「render/font」两节
+   - `agent/cart_json.hpp` include `cart/cartridge.hpp`，实际只用 `CartInfo`（纯数据）——
+     改 include `cart/cart_info.hpp` 即可断开，或把 `cart_json` 移进 `cart/`
 5. 第三方库 include 只允许出现在对应封装模块内，禁止散布全工程
+
+`tools/check_includes.py` 机械核查第 1–3、5 条（core / render / shell 的禁止表、Lua、OpenGL）；
+第 4 条（`cart` / `pack` / `agent`）尚未进门禁，按上面的例外清单人工守。
 
 若某条约束已经不成立，可以改代码去满足它（当它确实更优），
 也可以改本章去记录新的现状（当新做法确实更满足约束）——两者都可以，含糊其辞地留着不行。
@@ -59,7 +84,7 @@
 | `Screen` | 字符网格：游戏画面的**逻辑抽象**，与渲染完全解耦 |
 | `Display` | 三块显示面（卡带纹理视图 `screen` / 合成前底图 `base` / 主机 chrome `chrome`）与它们的合成顺序（`present`） |
 | `Surface` | 网格上的一块**可写矩形**（内容区 / 侧栏面板 / 卡带绘制区域）：越界裁剪、透明底、宽字符占格的**唯一一份规则** |
-| `Input` | 统一输入队列。物理键盘/手柄/agent 注入的输入在此汇流，消费者无从分辨来源 |
+| `Input` | 统一输入队列。物理键盘与 agent 注入在此汇流（**没有手柄支持**），消费者无从分辨来源 |
 | `Audio` | 音频子系统：软件混音（波形/包络/扫频/噪声/音序器/采样），三层音量 |
 | `ui` | 界面绘制原语：边框/菜单/进度条/正文/精灵/导航（主机与卡带共用） |
 | `effects` | 仪式感动效：插卡电压闪烁、拔卡画面收缩 |
@@ -102,8 +127,13 @@ net / input / host / control 多个协作者、且依赖 `HostContext`（api 层
 
 ### render —— 渲染层
 
-读取 `Screen` 网格 → 字体图集采样 → 全屏 CRT 后处理（扫描线/辉光/暗角/畸变）。
-后处理参数来自当前激活的 palette 内容包，渲染器自身不硬编码任何"风格数值"。
+读取 `Screen` 网格 → 字体图集采样 → 全屏 CRT 后处理：**扫描线 / 孔径格栅 / 字符辉光 /
+亮度补偿 / 色调**（没有暗角与几何畸变）。
+
+三条强度由机器档位给出（`core/crt.cpp` 的档位表）；palette 内容包可声明自己的扫描线强度
+（`> 0` 时优先）与整体色调 `tint`，所以换主题会换质感。扫描线周期、暗线相位、亮度损失
+系数这类结构常量集中在 `core/crt.hpp`，CPU 与 GL 两条光栅路径共用。渲染器自身不硬编码
+任何"风格数值"。
 
 ### api —— Lua 桥
 
@@ -123,10 +153,13 @@ net / input / host / control 多个协作者、且依赖 `HostContext`（api 层
 但卡带因生命周期复杂而独立成 `cart/`。
 
 `ContentLibrary`（`pack/content_library.hpp`）持有"本机有哪些内容包、各自选中哪一个"，
-连同扫描规则与两个兜底不变量（`palettes[0]` = raw、`sounds[0]` = silent）。App 只负责把
-选中项**应用出去**（要动渲染 / 音频设备，是主机行为）——于是"列清单 / 按 id 定位 /
-由主题解析色板"不再散落在 App 的各成员里。字体方案**不在**其中：字体链的发现与装载属
-`render/font`，`pack/` 不向上依赖 `render/`（见第一节第 4 条）。
+连同扫描规则与"索引 0 恒有效"的兜底（`palettes[0]` = raw、`sounds[0]` = SILENT，
+skin / boot 列表为空时插入内置项）。App 只负责把选中项**应用出去**（要动渲染 / 音频设备，
+是主机行为）——于是"列清单 / 按 id 定位 / 由主题解析色板"不再散落在 App 的各成员里。
+
+字体方案是**现状例外**：`FontScheme` 与 `scan_font_schemes` 在 `pack/`，而文件回退顺序规则
+（`collect_font_files`）在 `render/font`，于是 `pack/pack.cpp` 反向 include `render/font.hpp`
+（见第一节第 4 条）。目标：`FontScheme` 与扫描整体移入 `render/font`，`pack/` 只做内容包。
 
 ### render/font —— 字体链与全角字符
 
@@ -297,8 +330,14 @@ PHOSPHOR/
 └── config.json            # 机台配置（激活的主题选择、屏幕参数等）
 ```
 
-资源查找顺序：`theme/ 内容包 → 内置硬编码兜底`（各类型自带默认包，
-磁盘上一个都没有也能开机）。任何一级缺失都安静降级并留日志，绝不报错退出。
+资源查找顺序：`theme/<类型>/`（用户区，出厂默认也在这里）→ `system/<类型>/`（固件区，
+当前发行版不含，预留给将来）→ 主机内置硬编码兜底。兜底保证"索引 0 恒有效"：色板 = raw
+（不做色调）、音效 = SILENT（彻底静音）、皮肤 = 内置出厂皮肤、启动动画 = 内置空项
+（不加载脚本，走文字自检屏）。卡带架样式是例外：内置样式（`list` / `window`）不是包，
+没有索引 0。
+
+包目录存在但脚本损坏 → 扫描期跳过并写日志；配置里选中的包不存在 → 回退到索引 0，
+**除卡带架样式会 warn 一次外，其余类型当前不留日志**。任何内容缺失都不报错退出。
 
 ## 五、构建约定
 
@@ -312,7 +351,11 @@ PHOSPHOR/
 
 ## 六、演进预留（现在不做，但不许堵死）
 
-- 渲染后端抽象：render 内部接口按"可换成 Vulkan"设计
+- 渲染后端抽象（**目标，未做**）：当前是具体的 `Renderer` 类，直接绑定 OpenGL 与内联
+  shader；对外只有 `draw(Screen)` / `draw_layers` / `draw_overlay` / `read_frame` 这类
+  网格级方法，没有"后端接口"这一层抽象。换 Vulkan 需先把"网格 → 顶点 / 纹理"的中间层抽出来
+- 分层收口：断开 `cart` ↔ `api` 头文件环、把字体方案归入 `render/font`（第一节第 4 条）；
+  `core/display` 对 `Renderer` 的调用改为注入窄接口或移出 core，解除 core ↔ render 互依
 - API 注册表开放：为主机插件（Lua Plugin）预留
 - Input 多源已完成于架构期（agent 需求倒逼），不得退化为直接读 GLFW
 - 控制通道协议版本号从 v1 开始携带，便于日后兼容演进

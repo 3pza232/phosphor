@@ -51,8 +51,3 @@ mod 出厂附带但**默认不启用**（如 towerdef-build-pause），要玩家
 想改身份请直接改原文件。
 
 规范见 docs/content-packs.md 的「Mod 体系」。
-
-唯一例外：卡带的 manifest.lua 不可覆盖（身份必须稳定，否则扫描/打包/运行会认知不一）。
-想改身份请直接改原文件。
-
-规范见 docs/content-packs.md 的「Mod 体系」。

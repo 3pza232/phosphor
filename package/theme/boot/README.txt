@@ -18,6 +18,9 @@
   helix         HELIX：双螺旋——两条正弦链缠绕、碱基对逐个点亮，合拢后产品名亮起
   circuit       CIRCUIT：电路板通电——正交走线逐段点亮、电流亮点沿线流动、焊盘闪烁
   globe         GLOBE：线框地球——经线随自转流动、陆地扫描、轨道卫星掠过
+  sonar         SONAR：深潜——下潜（深度计/气泡/光柱）→ 声呐脉冲 → 生物荧光 → 产品名上浮
+  calligraphy   CALLIGRAPHY：翰墨——毛笔逐笔书写产品名，湿墨渐干、落朱砂印
+  clockwork     CLOCKWORK：上发条 → 齿轮咬合走时 → 表盘开启露出产品名
 
 动画是一段 Lua 脚本（main.lua），用 phos.screen / phos.color / phos.ui 逐帧作画，
 能力与游戏卡带完全相同 —— 想做多夸张都行。
@@ -27,7 +30,8 @@
       （在 theme/sound/ 里定义，换音效包即换开机提示音）。
 
 时长与跳过：**时长由动画自己声明**——脚本顶层写 `duration = <秒>`（也可写函数
-      `function duration() ... end`），未声明则用出厂 3.2 秒；任意键可立即跳过。
+      `function duration() ... end`），未声明则用出厂 3.2 秒。动画期按 **A 或 Esc** 跳过；
+      内置文字自检屏按 Enter 或 Esc 跳过。
 
 怎么做：复制 default 文件夹（或 static-rain），改名，编辑 main.lua。
       脚本接口见 docs/content-packs.md 与 docs/api-reference.md。

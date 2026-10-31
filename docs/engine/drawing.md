@@ -88,7 +88,11 @@
 - `Cell` 本身不变：笔迹与子位累积走 `Screen` 的稀疏表，不叠笔、不落半格的卡带零开销。
 - `blend` / `back` / `back_rect` / `plot` / `quadrant` / `cell_of` 已注册为 API 并配注解，
   `--check-api` 逐项一致。
-- GL 渲染与 CPU 光栅化**两条路都按笔绘制**、合成顺序相同 —— 截图与开窗画的是同一张图。
+- GL 渲染与 CPU 光栅化**两条路都按笔绘制**，合成顺序相同（底 → 各层按 z 升序 → 主机 chrome），
+  截图与开窗画的是同一张图。
+- **当前差异**：CPU 侧的图层合成跳过续格 / 被缩放块覆盖格上的笔迹（`render/screen_image.cpp`
+  的层循环直接 `continue`），GL 侧仍绘制这些格上的笔迹 —— 于是落在续格上的 `blend` 在窗口
+  可见、在 `screenshot` 里消失。底层（不含图层）两路已一致。
 - 层合成把下层字形压成笔迹：同一格里"下层的字 + 上层的字"是叠加，不是顶替。
 - 门禁 `tools/draw_smoke.py`（八项，含叠画上限）；样板卡带 `package/devkit/examples/inks/`。
 - `carts/worms` 用这套原语画天空、降水、地形：**位序与字形表只有引擎一份**。
