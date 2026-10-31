@@ -18,7 +18,6 @@
 local Game = require("game")
 local Panel = require("panel")
 local Sfx = require("sfx")
-local Scores = require("scores")
 local Music = require("music")
 
 -- 界面文案：跟随机器的界面语言（新增语言加一列即可）
@@ -45,6 +44,7 @@ local WELL_X, WELL_Y = 21, 2
 local FLOAT_TIME = 0.9
 
 local game
+local board           -- 排行榜（引擎负责排序/截断/存档键）
 local paused, reported
 local r_piece, r_fx, r_overlay
 local floats = {}          -- 加分浮字：{ text, x, y, t }
@@ -54,17 +54,53 @@ local trail = nil          -- 硬降拖尾：{ x, from, to, t }
 local function report_score()
   if reported then return end
   reported = true
-  if Scores.submit(game.score) then phos.sys.log(string.format("new record: %d", game.score)) end
+  local before = board:best()
+  board:add(game.score)
+  if game.score > 0 and board:best() > before then
+    phos.sys.log(string.format("new record: %d", game.score))
+  end
+end
+
+local function restart()
+  phos.scene.clear()
+  game:restart()
+  paused, reported = false, false
+  floats, trail = {}, nil
+end
+
+-- 暂停浮窗交给场景栈：pause_world 冻结世界、audio_pause 暂停音频，出栈自动恢复
+local function pause_update(dt)
+  if phos.input.pressed("start") or phos.input.pressed("b") then
+    phos.scene.pop()
+  elseif phos.input.pressed("select") then
+    phos.scene.clear()
+    restart()
+  end
+end
+
+local function pause_draw()
+  local words = phos.lang.shared()
+  phos.ui.render{
+    screen = "pause", rect = { x = WELL_X - 2, y = WELL_Y + 14, w = 24, h = 8 },
+    kind = "box", title = words.paused, border = "single", opaque = true, bg = "black",
+    children = {
+      { kind = "stat", text = words.score, value = phos.text.score(game.score), label_w = 7 },
+      { kind = "stat", text = words.best, value = phos.text.score(board:best()), label_w = 7 },
+      { kind = "divider", fg = "dark_gray" },
+      { kind = "hint", items = { phos.input.key_name("start"), "resume",
+                                 phos.input.key_name("select"), "restart" } },
+    },
+  }
 end
 
 function init()
-  Scores.load()
+  board = phos.score.new{ max = 1, key = "best" }
   game = Game.new()
   -- 把本卡带的可调常数交给 `~` 调试台（见 phos.debug.number）
   for _, t in ipairs(Game.tunables()) do
     phos.debug.number(t.name, t.get, t.set, { min = t.min, max = t.max, step = t.step })
   end
-  paused, reported = false, false
+  reported = false
   floats, trail, repeat_timer = {}, nil, 0
 
   -- 取用分层的全部成本：建层 + 把绘制区域锚定到层
@@ -77,6 +113,32 @@ function init()
   r_overlay = phos.ui.region(WELL_X - 2, WELL_Y + 14, 24, 8, { layer = "overlay" })
 
   phos.audio.music(Music)
+  phos.observe{
+    state = function() return game.state end,
+    paused = function() return phos.scene.depth() > 0 and 1 or 0 end,
+    score = function() return game.score end,
+    best = function() return math.max(board:best(), game.score) end,
+    level = function() return game.level end,
+    lines = function() return game.lines end,
+    next_kind = function() return game.next_kind end,
+    piece = function()
+      if not game.piece then return nil end
+      local cells = {}
+      for i, c in ipairs(game.piece.cells) do cells[i] = { c[1], c[2] } end
+      return { kind = game.piece.kind, x = game.piece.x, y = game.piece.y,
+               cells = cells, ghost_y = game:ghost_y() }
+    end,
+    board = function()
+      local rows = {}
+      for y = 1, Game.H do
+        local line = {}
+        for x = 1, Game.W do line[x] = game.board[y][x] or "." end
+        rows[y] = table.concat(line)
+      end
+      return rows
+    end,
+    layers = function() return #phos.layer.order() end,
+  }
 end
 
 -- 左右移动：点按走一格，按住先慢后快。连发的"快慢"直接取主机的按住时长，
@@ -122,15 +184,13 @@ local function play(ev)
 end
 
 function update(dt)
-  if phos.input.pressed("start") then
-    paused = not paused
-    phos.audio.beep(paused and 300 or 700, 0.05, { wave = "square", volume = 0.18 })
+  if phos.input.pressed("start") and phos.scene.depth() == 0 then
+    phos.scene.push{
+      id = "pause", modal = true, pause_world = true, audio_pause = true,
+      update = pause_update, draw = pause_draw,
+    }
   end
-  if phos.input.pressed("select") then
-    game:restart()
-    paused, reported = false, false
-    floats, trail = {}, nil
-  end
+  if phos.input.pressed("select") then restart() end
 
   -- 浮字与拖尾按真实时间衰减：暂停时也让它走完，免得残在画面上
   for i = #floats, 1, -1 do
@@ -143,14 +203,8 @@ function update(dt)
     if trail.t <= 0 then trail = nil end
   end
 
-  if paused then return end
-
   if game.state == "gameover" then
-    if phos.input.pressed("a") then
-      game:restart()
-      reported = false
-      floats, trail = {}, nil
-    end
+    if phos.input.pressed("a") then restart() end
     return
   end
 
@@ -275,16 +329,11 @@ end
 -- 铺底板用 `clear`（恒写底色 → 整块不透明），于是这一块真的把世界挡住了
 local function draw_overlay()
   local C = phos.color
-  if paused then
-    r_overlay:clear(C.gray, C.dark_gray)
-    r_overlay:frame(L().paused)
-    r_overlay:print(2, 3, string.format(L().score, game.score), C.white)
-    r_overlay:print(2, 5, L().resume:format(phos.input.key_name("start")), C.cyan)
-  elseif game.state == "gameover" then
+  if game.state == "gameover" then
     r_overlay:clear(C.gray, C.dark_gray)
     r_overlay:frame(L().over)
     r_overlay:print(2, 3, string.format(L().score, game.score), C.white)
-    if game.score >= Scores.best() and game.score > 0 then
+    if game.score >= board:best() and game.score > 0 then
       r_overlay:print(2, 5, string.format(L().record, game.score), C.yellow)
     end
     r_overlay:print(2, 6, L().restart:format(phos.input.key_name("a")), C.cyan)
@@ -298,40 +347,9 @@ function draw()
   draw_overlay()    -- 层：浮窗（整块挡住）
 
   Panel.draw({
-    score = game.score, best = math.max(Scores.best(), game.score),
+    score = game.score, best = math.max(board:best(), game.score),
     level = game.level, lines = game.lines, next_kind = game.next_kind,
   })
 end
 
--- agent / 自测观察口：棋盘逐行、当前块与下一块、等级分数都报出来。
--- 棋盘用字符串数组（每行 W 个字符：`.` 空 / 字母 = 已落定的那块），
--- agent 想算"这块该放哪"不必去读画面反推
-function debug_state()
-  local rows = {}
-  for y = 1, Game.H do
-    local line = {}
-    for x = 1, Game.W do line[x] = game.board[y][x] or "." end
-    rows[y] = table.concat(line)
-  end
-  -- 当前块连**四个格子的方框坐标**一起报：旋转与踢墙都会挪方块，
-  -- 只报 kind + x/y 的调用方还得自己推形状与朝向，推错了就白算
-  local piece = nil
-  if game.piece then
-    local cells = {}
-    for i, c in ipairs(game.piece.cells) do cells[i] = { c[1], c[2] } end
-    piece = { kind = game.piece.kind, x = game.piece.x, y = game.piece.y,
-              cells = cells, ghost_y = game:ghost_y() }
-  end
-  return {
-    state = game.state,
-    paused = paused and 1 or 0,
-    score = game.score,
-    best = math.max(Scores.best(), game.score),
-    level = game.level,
-    lines = game.lines,
-    next_kind = game.next_kind,
-    piece = piece,
-    board = rows,
-    layers = #phos.layer.order(),
-  }
-end
+-- 观测在 init 里用 phos.observe 声明（字段为函数，查询时求值；棋盘逐行用字符串数组）

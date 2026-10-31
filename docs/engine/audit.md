@@ -126,14 +126,15 @@
 | U10 | 精灵语义与文档不一致 | `ui::icon` 的 `step` 仍是**降采样步长**（`core/ui.cpp`），文档已按实现改写（`api-reference.md` 与 `devkit/phos.lua`）；绑定层仍硬编码亮度 1.0，语义统一未做 | ⚠ **文档已对齐、代码待统一** |
 | U11 | 参数与单位校验缺失 | `ui::bar` 对 NaN 仍直接 `static_cast<int>`（`core/ui.cpp`）；`ui.sprite` 的宽高仍按字节算（`api/ui_api.cpp`） | ❌ **仍待修** |
 
-**内容侧试点（snake / runner / bricks）**：新栈已用进真实卡带——侧栏改 `phos.ui.render`（无坐标、
+**内容侧试点（snake / runner / bricks / tetris）**：新栈已用进真实卡带——侧栏改 `phos.ui.render`（无坐标、
 宽度运行时变化不用重算）、排行榜换 `phos.score`（删除自写的 `scores.lua` 与逗号串
 编解码）、观测换 `phos.observe`（不再维护手写快照）、通用词走 `phos.lang.shared`；
 runner 的暂停浮窗改用 `phos.scene`（`pause_world`/`audio_pause` 由引擎负责，卡带不再自己
 维护 paused 与音频开关）。两卡 `--check-cart` 0 error / 0 warning，control/cart 门禁全过；
 迁移还反向暴露并修掉引擎的"压栈帧误关"问题（`scene_smoke` 有回归）。
 bricks 又验证了一遍同一路径（最高分 `phos.score{max=1}`、`phos.text.clock`、场景栈暂停），
-三卡 `--check-cart` 均 0 error/0 warning。这说明"组件与工具层"已经足以承接真实内容，
+tetris 还验证了"组件布局 + 预留绘制区"可以共存（下一块预览在 spacer 里逐格画），
+四卡 `--check-cart` 均 0 error/0 warning。这说明"组件与工具层"已经足以承接真实内容，
 而不只是样板。
 
 ### 3.4 卡带工具链与内容（P2：负担最终落在作者身上）

@@ -187,7 +187,10 @@ E 从 A 开始持续，不等其它阶段。
 > 会被同一帧误关）；`scene_smoke` 已加回归。
 > bricks：侧栏组件化（`stat` 行 + `phos.text.clock`）、最高分换 `phos.score{max=1}`
 > （删除 `scores.lua`）、暂停换场景栈、观测换 `phos.observe`。三卡均 0 error/0 warning。
-> 下一张：`tetris`（`table` 计分/下一块预览）、`life`。
+> tetris：侧栏统计组件化、"下一块"预览在预留 spacer 区里逐格绘、最高分换 `phos.score{max=1}`
+> （删除 `scores.lua`）、暂停浮窗换场景栈（世界冻结/音频暂停）、观测换 `phos.observe`
+> （棋盘逐行仍以字符串数组报出，agent 可直接定位每一格）。
+> 四卡均 0 error/0 warning。下一张：`life` / `chomp`。
 
 ### M4 卡带工具层（3–4 周，可与 M3 部分并行）
 
