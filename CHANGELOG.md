@@ -12,7 +12,7 @@
   性能预算与像素基线（非门禁）报告。
 - 文本 golden（外壳 8 屏）+ 像素 golden（7 场景，含设置/Mod/磁带码/UI 示例）作为回归对照。
 - `--check-cart`（manifest/入口/隐式全局/阻塞调用）与 `--check-packs`（六类内容包 error/warn，
-  退出码 2）静态检查。
+  退出码 2）静态检查；`tools/release_check.py` 汇总发布前检查。
 
 ### 声明式 UI（`phos.ui` v2）
 
@@ -21,7 +21,8 @@
 - 焦点二维导航、按键重复（300ms + 3 帧/格）、模态捕获、`input=false` 只读屏。
 - Scroll：纵向/横向（`scroll`/`scroll_x`）、视口裁剪、焦点自动跟随、位置指示条（可关）。
 - Table：列宽基数 + 自适应列摊余量、列对齐、超长省略；Grid：`cols` 等宽分行、margin 语义。
-- `phos.ui.toast`、`phos.ui.line/outline/circle` 几何原语（预裁剪/有界半径）、sprite 亮度。
+- `phos.ui.toast`、`phos.ui.line/outline/circle` 几何原语（预裁剪/有界半径）、sprite 亮度；
+  skin.lua 可选 `ui` 字形/度量覆盖（UI 主题包）。
 - 外壳 7 屏（开机/卡带架/设置/暂停/Mod/磁带码/错误）全部由组件树绘制；`ui::ScreenStack` 表达浮层导航。
 
 ### 场景与卡带
@@ -46,8 +47,10 @@
 
 ### 输入与外壳
 
-- 窗口失焦释放全部按键；F2 设置、F1 关于、F12 截图（`screenshots/`）、反引号键打开调试台。
+- 窗口失焦释放全部按键；F2 设置、F1 关于、F3 存档管理、F5 内容包热重载、F12 截图（`screenshots/`）、
+  反引号键打开调试台。
 - 设置搜索（`/` 过滤、Esc 先退搜索）；关于页（版本/按键/内容根/致谢）。
+- 手柄：GLFW 标准布局 → 现有虚拟键（摇杆死区 0.35、热插拔、键盘/手柄共存、失焦释放）。
 - 磁带码集中入口、存档管理入口（本版新增）。
 
 ### 内部结构

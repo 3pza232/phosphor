@@ -66,7 +66,7 @@ python ../tools/perf_budget.py             # 性能预算报告（非门禁）
 ## M5 体验与子系统（进行中）
 
 已完成：
-- 输入：窗口失焦释放按键；按键重复参数化；scroll 焦点跟随/滚动条。
+- 输入：窗口失焦释放按键；scroll 焦点跟随/滚动条；**手柄**（GLFW 标准布局、热插拔、键盘共存）；按键重复参数化。
 - 音频：6ms 暂停/恢复/stop 淡出；声部优先级/抢占（48 + 8 尾巴）；三路总线（music/sfx/ui）；
   ducking；`music_state()`；主机事件音分档。
 - 绘制/精灵：line/outline/circle（预裁剪/有界半径）+ Region 同名方法；sprite step=降采样、
