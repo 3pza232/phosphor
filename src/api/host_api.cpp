@@ -11,6 +11,7 @@
 #include "api/score_api.hpp"
 #include "api/scene_api.hpp"
 #include "api/ui_api.hpp"
+#include "api/ui_options.hpp"
 #include "cart/cartridge.hpp"
 #include "core/defaults.hpp"
 #include "core/format.hpp"
@@ -40,6 +41,11 @@ Surface content_surface(HostContext& host) {
 Surface panel_surface(HostContext& host) {
     return Surface(*host.screen, host.panel_origin_x(), host.content_y, host.panel_w,
                    host.content_h);
+}
+
+/// screen / panel 两张面的唯一选择点：绑定里只差 is_panel 一处
+Surface surface_for(HostContext& host, bool is_panel) {
+    return is_panel ? panel_surface(host) : content_surface(host);
 }
 
 // 默认取色 helper 在 lua_value 里（区域绑定也用同一份），这里只是引入名字
@@ -81,52 +87,52 @@ std::vector<Localized> read_group_path(const sol::object& object) {
 void bind_surface_api(sol::table& t, HostContext& host, bool is_panel) {
     t["put"] = [&host, is_panel](int x, int y, const sol::object& ch, sol::object fg,
                                  sol::object bg, sol::optional<int> scale) {
-        Surface s = is_panel ? panel_surface(host) : content_surface(host);
-        s.put(x, y, api::read_char(ch, U' '), api::read_color(fg, default_fg(host)),
-              api::read_background(bg), api::read_scale(scale));
+        Surface s = surface_for(host, is_panel);
+        s.put(x, y, api::parse_ch(ch, U' '), api::parse_fg(fg, default_fg(host)),
+              api::parse_bg(bg, default_bg(host), true), api::read_scale(scale));
     };
     t["print"] = [&host, is_panel](int x, int y, const std::string& text, sol::object fg,
                                    sol::object bg, sol::optional<int> scale) {
-        Surface s = is_panel ? panel_surface(host) : content_surface(host);
-        s.print(x, y, text, api::read_color(fg, default_fg(host)), api::read_background(bg),
-                api::read_scale(scale));
+        Surface s = surface_for(host, is_panel);
+        s.print(x, y, text, api::parse_fg(fg, default_fg(host)),
+                api::parse_bg(bg, default_bg(host), true), api::read_scale(scale));
     };
     // fill / clear：省略底色 = 本面的默认底色（screen=色板 black；panel=主题面板色）。
     // 清屏若按"保留背景"来就变成什么都不做
-    t["fill"] = [&host, is_panel](int x, int y, int w, int h, const sol::object& ch, sol::object fg,
-                                  sol::object bg) {
-        Surface s = is_panel ? panel_surface(host) : content_surface(host);
-        s.fill(x, y, w, h, api::read_char(ch, U' '), api::read_color(fg, default_fg(host)),
-               api::read_color(bg, is_panel ? host.panel_bg : default_bg(host)));
+    t["fill"] = [&host, is_panel](int x, int y, int w, int h, const sol::object& ch,
+                                  sol::object fg, sol::object bg) {
+        // 默认底色必须**调用时**取：panel_bg 跟着主题热更新，注册时缓存会画错色
+        const Color fallback_bg = is_panel ? host.panel_bg : default_bg(host);
+        surface_for(host, is_panel)
+            .fill(x, y, w, h, api::parse_ch(ch, U' '), api::parse_fg(fg, default_fg(host)),
+                  api::parse_bg(bg, fallback_bg, false));
     };
     t["clear"] = [&host, is_panel](sol::object fg, sol::object bg) {
-        (is_panel ? panel_surface(host) : content_surface(host))
-            .clear(api::read_color(fg, default_fg(host)),
-                   api::read_color(bg, is_panel ? host.panel_bg : default_bg(host)));
+        const Color fallback_bg = is_panel ? host.panel_bg : default_bg(host);
+        surface_for(host, is_panel)
+            .clear(api::parse_fg(fg, default_fg(host)), api::parse_bg(bg, fallback_bg, false));
     };
     // blit / back / back_rect：省略底色 = 激活色板的 black（与 screen 同组，不随面板色）——
     // 这族是"整块搬运 / 只改一块底色"，默认与内容区一致
     t["blit"] = [&host, is_panel](int x, int y, sol::object rows, sol::object fg, sol::object bg) {
-        (is_panel ? panel_surface(host) : content_surface(host))
-            .blit(x, y, api::read_rows(rows), api::read_color(fg, default_fg(host)),
-                  api::read_color(bg, default_bg(host)));
+        surface_for(host, is_panel)
+            .blit(x, y, api::read_rows(rows), api::parse_fg(fg, default_fg(host)),
+                  api::parse_bg(bg, default_bg(host), false));
     };
     // 叠一笔 / 只改底色 / 落半格：前两件与 put 同组（底色省略 = 保留），第三件没有底色参数
     t["blend"] = [&host, is_panel](int x, int y, sol::object ch, sol::object fg) {
-        return (is_panel ? panel_surface(host) : content_surface(host))
-            .blend(x, y, api::read_char(ch, U' '), api::read_color(fg, default_fg(host)));
+        return surface_for(host, is_panel)
+            .blend(x, y, api::parse_ch(ch, U' '), api::parse_fg(fg, default_fg(host)));
     };
     t["back"] = [&host, is_panel](int x, int y, sol::object bg) {
-        (is_panel ? panel_surface(host) : content_surface(host))
-            .back(x, y, api::read_color(bg, default_bg(host)));
+        surface_for(host, is_panel).back(x, y, api::parse_bg(bg, default_bg(host), false));
     };
     t["back_rect"] = [&host, is_panel](int x, int y, int w, int h, sol::object bg) {
-        (is_panel ? panel_surface(host) : content_surface(host))
-            .back_rect(x, y, w, h, api::read_color(bg, default_bg(host)));
+        surface_for(host, is_panel)
+            .back_rect(x, y, w, h, api::parse_bg(bg, default_bg(host), false));
     };
     t["plot"] = [&host, is_panel](int x, int y, sol::object fg) {
-        (is_panel ? panel_surface(host) : content_surface(host))
-            .plot(x, y, api::read_color(fg, default_fg(host)));
+        surface_for(host, is_panel).plot(x, y, api::parse_fg(fg, default_fg(host)));
     };
 }
 

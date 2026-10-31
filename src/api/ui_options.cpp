@@ -2,6 +2,7 @@
 
 #include "api/host_api.hpp"
 #include "api/lua_value.hpp"
+#include "core/palette.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -12,8 +13,18 @@ char32_t parse_ch(const sol::object& object, char32_t fallback) {
     return read_char(object, fallback);
 }
 
-Color parse_fg(const sol::object& object, Color fallback) {
+Color parse_color(const sol::object& object, Color fallback, const Palette* palette) {
+    if (palette != nullptr && object.is<std::string>()) {
+        const std::string name = object.as<std::string>();
+        for (size_t i = 0; i < kPaletteSlots; ++i)
+            if (name == kPaletteSlotNames[i]) return palette->slots[i];
+        return fallback;
+    }
     return read_color(object, fallback);
+}
+
+Color parse_fg(const sol::object& object, Color fallback) {
+    return parse_color(object, fallback);
 }
 
 Color parse_bg(const sol::object& object, Color fallback, bool keep_when_omitted) {

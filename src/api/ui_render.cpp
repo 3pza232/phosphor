@@ -2,6 +2,7 @@
 
 #include "api/host_api.hpp"
 #include "api/lua_value.hpp"
+#include "api/ui_options.hpp"
 #include "core/json_lite.hpp"
 #include "core/log.hpp"
 #include "ui/element.hpp"
@@ -120,21 +121,6 @@ ui::FieldFilter filter_from_name(const std::string& name) {
     if (name == "letters") return ui::FieldFilter::letters;
     if (name == "any") return ui::FieldFilter::any;
     return ui::FieldFilter::printable;
-}
-
-Color color_field(const HostContext& host, const sol::table& t, const char* key, Color fallback) {
-    sol::object value = t[key];
-    if (value.is<std::string>()) {
-        // 允许用色板槽名（"green" / "dark_gray"…），与 phos.color.* 同一套名字
-        const std::string name = value.as<std::string>();
-        if (host.palette) {
-            for (size_t i = 0; i < kPaletteSlots; ++i)
-                if (name == kPaletteSlotNames[i])
-                    return host.palette->slots[i];
-        }
-        return fallback;
-    }
-    return api::read_color(value, fallback);
 }
 
 std::vector<std::string> strings_field(const sol::table& t, const char* key) {
@@ -357,11 +343,11 @@ struct Builder {
         out.opaque = bool_field(t, "opaque", out.opaque);
         if (has_field(t, "bg")) {
             out.has_bg = true;
-            out.bg = color_field(host, t, "bg", out.bg);
+            out.bg = api::parse_color(t["bg"], out.bg, host.palette);
         }
         if (has_field(t, "fg")) {
             out.has_fg = true;
-            out.fg = color_field(host, t, "fg", out.fg);
+            out.fg = api::parse_color(t["fg"], out.fg, host.palette);
         }
         out.border = border_from_name(str_field(t, "border"));
         out.title = str_field(t, "title");
