@@ -195,6 +195,15 @@ bool Screen::blend(int x, int y, char32_t ch, Color fg) {
     }
     const int index = index_of(x, y);
     Cell& cell = cells_[static_cast<size_t>(index)];
+    // 续格与缩放块的覆盖格没有自己的字形槽：笔迹只能落在头格上（那里的字形才参与合成）。
+    // 收下却画不出/画出来又会被宽字覆盖，等于给调用方一个看不见的成功
+    if (cell.cols == 0 || cell.scale == 0) {
+        if (!warned_blend_slot_) {
+            warned_blend_slot_ = true;
+            log::warn("blend 落在无字形槽的格上（宽字续格/缩放块覆盖格），这一笔被忽略");
+        }
+        return false;
+    }
     if (cell.ch == U' ') {
         // 这一格原本没有字形：新的一笔直接成为最前面那一笔（不进笔迹表）
         cell.ch = ch;

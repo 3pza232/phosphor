@@ -206,7 +206,13 @@ std::optional<ScreenImage> render_screen_image(const Screen& screen,
             for (int cy = 0; cy < src.height(); ++cy) {
                 for (int cx = 0; cx < src.width(); ++cx) {
                     const Cell& cell = src.at(cx, cy);
-                    if (cell.cols == 0 || cell.scale == 0) continue;  // 续格 / 被缩放块覆盖
+                    // 续格 / 被缩放块覆盖：不铺底（宽字/大字由头格画完），但笔迹照画——
+                    // 与 GL 的 pens 趟一致，否则截图会丢掉 blend 到这些格上的那一笔
+                    if (cell.cols == 0 || cell.scale == 0) {
+                        draw_pens(src, cx, cy, (origin_x + cx) * cell_w, (origin_y + cy) * cell_h,
+                                  1);
+                        continue;
+                    }
                     const int x0 = (origin_x + cx) * cell_w;
                     const int y0 = (origin_y + cy) * cell_h;
                     const int sc = cell.scale < 1 ? 1 : cell.scale;
@@ -224,7 +230,11 @@ std::optional<ScreenImage> render_screen_image(const Screen& screen,
         for (int cy = 0; cy < overlay->height(); ++cy) {
             for (int cx = 0; cx < overlay->width(); ++cx) {
                 const Cell& cell = overlay->at(cx, cy);
-                if (cell.cols == 0 || cell.scale == 0) continue;
+                if (cell.cols == 0 || cell.scale == 0) {
+                    draw_pens(*overlay, cx, cy, (origin_x + cx) * cell_w, (origin_y + cy) * cell_h,
+                              1);
+                    continue;
+                }
                 const int x0 = (origin_x + cx) * cell_w;
                 const int y0 = (origin_y + cy) * cell_h;
                 const int sc = cell.scale < 1 ? 1 : cell.scale;

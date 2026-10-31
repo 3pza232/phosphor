@@ -183,6 +183,8 @@ private:
 
     /// 叠画上限的日志只报一次：满了是密处的常态，逐条写会把日志冲成噪声
     bool warned_ink_cap_ = false;
+    /// "blend 落在无字形槽的格上"只报一次：密集画面里会频繁触发
+    bool warned_blend_slot_ = false;
 
     // 默认构造后是"0x0 空网格"：读尺寸的调用方拿到的是确定的 0，而不是未初始化的值
     int w_ = 0, h_ = 0;

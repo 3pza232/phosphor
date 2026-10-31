@@ -475,6 +475,18 @@ TEST(screen_cell_of) {
     CHECK_EQ(Screen::cell_of(2, 0).x, 1);         // 第三列 = 第 1 格
 }
 
+TEST(screen_blend_rejects_cells_without_glyph_slot) {
+    Screen s(6, 2);
+    s.put(0, 0, U'中');                      // 宽字：0 是头格、1 是续格（无字形槽）
+    CHECK_EQ(int(s.at(1, 0).cols), 0);
+    CHECK(!s.blend(1, 0, U'#', Color::white));  // 续格收不下笔迹
+    CHECK(s.blend(0, 0, U'#', Color::white));   // 头格可以叠
+
+    s.put(0, 1, U'A', Color::white, kKeepBg, 2);  // 缩放块：覆盖格无字形槽
+    CHECK_EQ(int(s.at(1, 1).scale), 0);
+    CHECK(!s.blend(1, 1, U'#', Color::white));
+  }
+
 TEST(screen_put_clips_and_keeps_bg) {
     Screen s(4, 2);
     s.put(-1, 0, U'X');  // 越界一律静默丢弃
