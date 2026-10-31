@@ -105,6 +105,7 @@
 | `Display` | 三块显示面（`screen` / `base` / `chrome`）与合成顺序（`present`） | 只依赖 core 与 `Renderer`（向下），**不吃 `HostContext`**，故是纯展示单元 |
 | `App::AgentSession` | agent 控制通道的**会话语义**（单步推进 / 待回包的请求 / 注入按键的定时释放） | 纯数据；与通道的 I/O（`ControlChannel`）分开 |
 | `SoundState` | 事件音优先级/播放、采样解码缓存、音量应用 | sound_index/config 持久化仍归 ContentLibrary/App；不依赖 HostContext |
+| `TapeGlue` | 磁带码视图与存档交互胶水：save_of/open/import/apply_save_dir | 界面状态机/绘制仍在 shell/tape_view；--save-dir 覆盖只赋值 |
 | `BootSequence` | 开机已过时间/目标时长/完成判定（start 内 0.5s 下限） | 脚本装载/回退、模式切换、Esc 跳过仍归 App |
 | `DisplayState` | 三块显示面（screen/base/chrome）与 CRT 当前参数；resize/reset_chrome/apply_crt 纯状态部分 | present/Renderer/窗口尺寸仍由 App 调用；不依赖 render 类型 |
 | `AgentController` | agent 命令语义与状态：21 分支分发、40+ 字段状态快照、单步/取消/frame.read 会话胶水、观察 JSON | 协议 I/O 在 `agent/ControlChannel`；App 只构造 AgentServices 回调并采集 AgentState；DebugConsole 生命周期仍归 App |

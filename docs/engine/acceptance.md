@@ -9,7 +9,7 @@
 
 ```sh
 ninja -j16                                  # 构建
-./phosphor_tests.exe                        # 127 用例 / 1,374 断言
+./phosphor_tests.exe                        # 128 用例 / 1,389 断言
 python ../tools/run_checks.py --gui         # 14 项无头 + 2 项开窗门禁
 ./phosphor.exe --check-api                 # 150/150
 ./phosphor.exe --check-packs --root ../package   # 45 包 0 error / 0 warning
@@ -17,7 +17,7 @@ python ../tools/pixel_golden.py            # 7 场景像素基线（非门禁）
 python ../tools/perf_budget.py             # 性能预算报告（非门禁）
 ```
 
-当前基线：**14 门禁全绿、127 单测 / 1,374 断言、150/150 API、45 包 0/0、像素 7/7**。
+当前基线：**14 门禁全绿、128 单测 / 1,389 断言、150/150 API、45 包 0/0、像素 7/7**。
 性能预算（本机，headless）：11 张出厂卡带 p95 update 均 ≤ 3.13 ms（life 最高，预算 16.67 ms）。
 
 ## M0 止血与纠偏
@@ -78,8 +78,8 @@ python ../tools/perf_budget.py             # 性能预算报告（非门禁）
 1. 音频：流式采样（大文件不整读）。
 2. 渲染：三条合成路径收口（`FrameComposer`：底图 + 层 + chrome → 绘制列表 + 文本投影）；
    先以像素 golden 守住语义，再动合成顺序。
-3. 系统功能：帮助/关于页、截图快捷键、主题预览（设置搜索已做）。
-4. S1 尾项：Tape/SaveGlue；BootSequence 已抽出，App 之后只剩主循环编排。
+3. 系统功能：主题预览；帮助/关于页、截图快捷键已做。
+4. S1：BootSequence/Tape-SaveGlue 已抽出，App 只剩组装根 + 主循环分派 + ImGui 调试台胶水。
 5. 内容包：依赖/版本、UI 主题包、包预览/热重载。
 6. 契约清理：嵌套 scroll 滚动条同格覆盖的文档化；table 宽度语义已按"固定宽 + 自适应列吃余量"钉住。
 
@@ -100,5 +100,5 @@ python ../tools/perf_budget.py             # 性能预算报告（非门禁）
 - [x] M2 7 屏组件化 + 文本 golden 稳定
 - [x] M3 声明式 UI/场景栈 + 11 卡迁移
 - [x] M4 工具层（存档 v2/表值/槽位/score/observe/静态检查/异步联机）
-- [ ] M5 体验项（流式采样、合成器收口、帮助/截图）
+- [ ] M5 体验项（流式采样、合成器收口、主题预览/存档管理入口）
 - [ ] 验收文档化：本文件与 audit/roadmap 的最终对账

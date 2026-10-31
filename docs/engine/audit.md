@@ -25,7 +25,7 @@
 | 内容包 | skin 11 · palette 11 · boot 16 · sound 8 · shelf 2 · font 1 套方案（另有 icon） |
 | 卡带内容 | 11 张出厂卡带，17,694 行 Lua；最大 `worms/main.lua` 3,271 行 |
 | 文档 | 发行文档 7 篇 + 引擎文档 8 篇（含本文件与 roadmap.md），4,983 行；双层（发行 / 引擎）分界清楚 |
-| 测试 | `tests/` 127 个用例 / 1,374 条断言；`tools/` 24 个 Python 脚本共 3,624 行，无头门禁 14 项全绿（含 packs 内容包校验） |
+| 测试 | `tests/` 128 个用例 / 1,389 条断言；`tools/` 24 个 Python 脚本共 3,624 行，无头门禁 14 项全绿（含 packs 内容包校验） |
 | API 世代 | `kVersion = 0.9.0`，`kPhosApiVersion = 7`，`--check-api` 134/134 一致 |
 
 一句话形态：**一台把"字符网格 + 内容包 + Lua 沙箱 + agent 控制通道"做得很扎实的字符主机；
@@ -90,7 +90,7 @@
 
 | # | 现象 | 证据 | 后果 |
 |---|---|---|---|
-| S1 | `App` 是 2,179 行 / 7 个 TU / 54 方法的上帝对象，且**住在最低层** `core/` | 旧：`core/app.hpp` 反向 include cart/pack/shell/agent/net/api，于是 core 头文件把 sol2 拉进整棵依赖树 | 任何接触 App 的 TU 都编译 Lua 宿主；"可替换子系统"实际上被 App 焊死 | 🟡 **部分修复（阶段一/二）**：7 TU 已迁 `app/` 组装层，core 不再反向 include 上层；`App::Mode` 三态互斥（S2）；已抽出 `Display`、`CartTiming`、`AgentSession`、`HostCartBinding`、`FontState`；App 仍是组装点（下一步 ShelfPlayback/SoundState/AgentController）；@AgentController@ 二期完成（21 分支分发 + AgentState 快照 + AgentServices 回调，App 仅接线）；@DisplayState@ 已抽出（三块面/CRT 纯状态；present 仍 App）；@BootSequence@（开机时序）已抽出，剩 Tape/SaveGlue |
+| S1 | `App` 是 2,179 行 / 7 个 TU / 54 方法的上帝对象，且**住在最低层** `core/` | 旧：`core/app.hpp` 反向 include cart/pack/shell/agent/net/api，于是 core 头文件把 sol2 拉进整棵依赖树 | 任何接触 App 的 TU 都编译 Lua 宿主；"可替换子系统"实际上被 App 焊死 | 🟡 **部分修复（阶段一/二）**：7 TU 已迁 `app/` 组装层，core 不再反向 include 上层；`App::Mode` 三态互斥（S2）；已抽出 `Display`、`CartTiming`、`AgentSession`、`HostCartBinding`、`FontState`；App 仍是组装点（下一步 ShelfPlayback/SoundState/AgentController）；@AgentController@ 二期完成（21 分支分发 + AgentState 快照 + AgentServices 回调，App 仅接线）；@DisplayState@ 已抽出（三块面/CRT 纯状态；present 仍 App）；@BootSequence@（开机时序）已抽出，剩 Tape/SaveGlue；@TapeGlue@ 抽出后 App 只剩组装根 + 主循环分派 + 控制台胶水 |
 | S2 | 模式不是状态机 | 旧：`in_boot_` / `playing_` / `quit_` 与 ShellMode 由多处分别写 | 非法状态组合可表示；状态查询不可信 | ✅ **已修复**：`App::Mode`（boot / shelf / playing）三态互斥，全部写点集中为 9 处直接赋值；读点用 `in_boot()/playing()`；旧 (true,false)/(false,true)/(false,false) 与新三态一一映射（(true,true) 无产生路径）。`quit_` 保留为独立请求标志（不是模式） |
 | S3 | 选择状态有 3~4 份副本 | `Config` 字符串、`ContentLibrary` 下标、`Shell` 自带名字/下标（`shell/shell.hpp:271-286`）、字体状态 4 处 | 每次改设置手工三方同步，17 处 `save_config_now()` 即其症状 |
 | S4 | `HostContext` 是 15 个裸指针的手工生命周期 | 旧：`api/host_api.hpp`；`clear_host_cart()` 有 9 个手工调用点 | 新增子系统就要再加一处"记得清空"；错一次就是悬垂指针 | ✅ **已修复**：`HostCartBinding` 持有 `unique_ptr<Cartridge>` 并统一装/清 HostContext（析构顺序：先清指针、再销毁卡带）；`replace_cart()` 处理 reload/开机期插卡；`App::cart_` 已删除（46 处引用改 `cart()`），不存在单独的 `cart_.reset()`；`clear_host_cart()` 10→5 且剩余点只清未绑定会话（开机/架子脚本仍 App 持有，生命周期与卡带不重叠） |
