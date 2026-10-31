@@ -306,7 +306,13 @@ Window::Window(Window&& other) noexcept
       handlers_(std::move(other.handlers_)) {
     other.window_ = nullptr;
     other.ime_context_ = nullptr;
-    if (window_) glfwSetWindowUserPointer(window_, handlers_.get());
+    if (window_) {
+        glfwSetWindowUserPointer(window_, handlers_.get());
+        // handlers_ 里的键盘/手柄按下集指针原本指向 other 的成员；移动后必须重绑到 this，
+        // 否则第一次物理按键就会往已析构的 set 里插入（0xC0000005）
+        handlers_->keyboard_down = &keyboard_keys_;
+        handlers_->gamepad_down = &gamepad_keys_;
+    }
 }
 
 Window& Window::operator=(Window&& other) noexcept {
@@ -317,7 +323,11 @@ Window& Window::operator=(Window&& other) noexcept {
         handlers_ = std::move(other.handlers_);
         other.window_ = nullptr;
         other.ime_context_ = nullptr;
-        if (window_) glfwSetWindowUserPointer(window_, handlers_.get());
+        if (window_) {
+            glfwSetWindowUserPointer(window_, handlers_.get());
+            handlers_->keyboard_down = &keyboard_keys_;
+            handlers_->gamepad_down = &gamepad_keys_;
+        }
     }
     return *this;
 }
