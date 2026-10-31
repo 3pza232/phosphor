@@ -827,6 +827,12 @@ function phos.cart.info() end
 -- 也照样能调。注册随卡带生命周期，拔卡即清；未插卡时安全无效。
 -- ─────────────────────────────────────────────────────────────────────────
 
+---声明式观测：登记一份给 agent 的字段表（推荐替代手写 debug_state）。
+---每个字段可以是值，也可以是函数——引擎在 state.query 时求值，观测因此永远与真实状态一致。
+---例：phos.observe{ score = function() return score end, hp = function() return hp end }
+---@param spec table
+function phos.observe(spec) end
+
 ---@class phos.debug
 phos.debug = {}
 

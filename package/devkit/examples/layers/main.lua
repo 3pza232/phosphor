@@ -8,7 +8,7 @@
 -- （见 core/ui.cpp 的 cart style：卡带的浮窗压在游戏画面上时不该糊成黑板）。
 -- 显式铺底色的地方才真的不透，这一条与"只写字形就透出世界"是同一套规则的两面
 
-local SIZE_W, SIZE_H = phos.screen.size()
+local _, _, SIZE_W, SIZE_H = phos.screen.playfield()  -- 已扣掉侧栏：画过去不会被挡住
 
 local hud_layer, window_layer
 local hud, window          -- 两块绑定到层的绘制区域

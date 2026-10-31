@@ -13,6 +13,7 @@
 phosphor --new mygame --id mygame --name "My Game" --author "你"   # 只给名字：建到 carts/ 下
 phosphor --cart carts/mygame                       # 改完存盘直接跑，卡带不需要编译
 phosphor --pack carts/mygame                       # 产出 dist/mygame.phos
+phosphor --check-cart carts/mygame                 # 不运行它，先静态检查一遍
 ```
 
 要改的东西在 `manifest.lua`（身份）与 `main.lua`（入口，标了「填」）。
@@ -80,6 +81,22 @@ phosphor --pack carts/mygame --json         # 机器可读结果
 | `panel.lua` | 右栏内容，用 `phos.ui.render{ surface = "panel", input = false }` 声明（只显示，输入归主画面）；面板宽度运行时可变，每次 draw 重新声明即可 |
 | `README.txt` | 该改哪里的速查（随卡带走，给接手的人看） |
 | `assets/` | 可选：分语言文本示例（`motd.zh.txt` / `motd.en.txt`，取不到回落 `motd.txt`） |
+
+## 静态检查：`--check-cart`
+
+写完先跑一遍（不运行卡带、无窗口、结果可复现）：
+
+```bash
+phosphor --check-cart carts/mygame          # 人读
+phosphor --check-cart carts/mygame --json   # 机器可读
+```
+
+它查的是**高置信度**问题：manifest / 入口脚本是否有效、顶层隐式全局（会跨卡带与
+热重载泄漏）、用 `phos.screen.size()` 当可玩宽（会被侧栏挡掉一截）、把阻塞的
+`phos.net.discover()` 放进 `update()`（会撞 100ms 看门狗）、`require` 指向不存在的模块、
+以及既没有 `debug_state()` 也没有 `phos.observe`（agent 看不到玩法状态）。
+有 error 退出码 `2`；warning 只报告不阻塞——静态检查只看字面写法，宁可漏报不误报。
+门禁脚本 `tools/cart_lint.py` 会对全部出厂卡带跑同一套检查。
 
 ## 几条常见出错点
 

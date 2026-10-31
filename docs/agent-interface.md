@@ -51,6 +51,7 @@ DevKit：
   --new <dir> [--id s] [--name s] [--author s]
                         从 devkit/template 生成卡带骨架（id 缺省用目录名，name 缺省用 id）
   --check-api            校验 devkit/phos.lua 注解与实装是否一致（含字段级）
+  --check-cart <dir>     静态检查一张卡带（manifest/入口/隐式全局/可玩区/阻塞调用/观测声明）
   --json                 机器可读输出使用 JSON 格式
 
 其它：
@@ -118,7 +119,7 @@ phosphor --pack carts/snake --json
 | 命令 | 参数 | 说明 |
 |------|------|------|
 | `ping` | — | 连通性探测 |
-| `state.query` | `path?` | 主机与卡带状态（字段见下方「state.query 字段表」）；带 `path` 时另返回卡带 Lua 全局值（点分路径），卡带定义 `debug_state()` 时另返回其内容（见下节） |
+| `state.query` | `path?` | 主机与卡带状态（字段见下方「state.query 字段表」）；带 `path` 时另返回卡带 Lua 全局值（点分路径），卡带用 `debug_state()` 或 `phos.observe` 声明观测时另返回其内容（见下节） |
 | `screen.read` | `layer?` | 当前屏幕网格：`layer`（读的是哪一份）/`width`/`height`/`frame` + `lines`（逐行文本数组）。不带 `layer` 读**合并结果**（= 整屏，与以前一致）；`layer = "screen"` 读的也是合并后的整屏，只是把"我读的是整屏"明说出来；带层名读该层自己的内容（内容区局部坐标）。**底层没有"合并前"的单独读法**——层是就地合并进底层的；"只想看世界"时让卡带把层隐起来（`layers` 里能看到，或卡带自己给开关） |
 | `screenshot` | `path` | 当前画面写成 PNG（**CPU 光栅化**，无头可用；含扫描线/色调等后处理），返回像素尺寸 |
 | `frame.read` | `path?` | 读回**当前帧缓冲的真实像素**（`glReadPixels`，含着色器与逐层叠画）——与 CPU 的 `screenshot` 互补，是 GL 渲染路唯一的像素出口。**仅窗口路径可用**（无头报错）。返回 `width`/`height`/`lit_ratio`（亮像素占比）/`mean_luma`；带 `path` 时另写一张 PNG（行序翻转成与 `screenshot` 同向，可直接对照）。`tools/gl_smoke.py` 用它核对"不是全黑""同格两笔""半格""逐层叠画" |
@@ -179,7 +180,7 @@ phosphor --pack carts/snake --json
 | `seed` / `host_time` | 本次随机种子 / 卡带眼里的运行秒数 |
 | `last_error` | 最近一次卡带错误（**命令失败本身即时以 `error` 回包，不写入这里**） |
 | `path` / `value` | 仅当请求带 `path` 时：所查路径与其 Lua 值（不可序列化的值表示为 `{"__type": "…"}`） |
-| `debug` | 仅当卡带定义 `debug_state()` 时：它返回的内容 |
+| `debug` | 仅当卡带声明了观测（`debug_state()` 或 `phos.observe`）时：观测内容 |
 
 ### 界面：读控件树、按 id 操作
 
@@ -291,7 +292,7 @@ input.inject 注入按键  →  time.step 精确推进若干帧
 | 方式 | 适用 | 说明 |
 |------|------|------|
 | `screen.read` | 任何卡带 | 字符屏幕本身就是纯文本，零 OCR、零视觉模型；代价是要自己解析 |
-| `state.query` 的 `debug` | 卡带声明了 `debug_state()` | 直接拿到玩法状态（坐标、分数、血量…），步骤最少；卡带报了 `(x, y)` 时用它可免去从画面反推地形 |
+| `state.query` 的 `debug` | 卡带声明了 `debug_state()` 或 `phos.observe` | 直接拿到玩法状态（坐标、分数、血量…），步骤最少；卡带报了 `(x, y)` 时用它可免去从画面反推地形 |
 | `state.query` 的 `ui` | 卡带用声明式界面（`phos.ui.render`） | 读控件 id / label / state，用 `ui.activate` 按 id 操作——不必数按键 |
 
 `state.query` 还支持按路径读卡带全局变量：
@@ -438,5 +439,5 @@ PHOSPHOR - agent :7731 [stepping]     agent 接管，单步推进（画面只在
 ```
 
 一次典型的闭环：**改代码 → `cart.reload` → `input.inject` → `time.step` →
-`screen.read` → 判断 → 再改**。只要卡带实现了 `debug_state()`，
+`screen.read` → 判断 → 再改**。只要卡带声明了 `debug_state()` 或 `phos.observe`，
 `state.query` 里就带着玩法状态，判断这一步不必去解析画面。

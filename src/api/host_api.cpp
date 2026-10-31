@@ -502,6 +502,13 @@ void register_host_api(sol::state& lua, HostContext& host) {
         return out;
     };
 
+    // --- phos.observe：给 agent 的声明式观测表 ---
+    // 每个字段可以是值，也可以是函数（每次 state.query 时求值）；比手写 debug_state
+    // 少一份"快照会过期"的维护。老写法 debug_state() 仍优先，两者可共存一个迁移周期
+    phos["observe"] = [&host](sol::table spec) {
+        if (host.cart) host.cart->set_observe(spec);
+    };
+
     // --- phos.cart：卡带自己的身份（来自 manifest.lua） ---
     // 有了它，卡带不必把标题之类的身份再抄一份到 Lua 里：作者在 manifest.lua 改
     // `name`，标题画面与关于页立刻跟着变。取一次存起来即可，别每帧调用

@@ -80,8 +80,13 @@ public:
     int lua_memory_kb() const;
 
     /// agent 观测：卡带可选定义全局函数 `debug_state()`，返回其结果的 JSON 片段；
-    /// 未定义或调用出错时返回空串（观测失败绝不影响主机与卡带）
+    /// 未定义时用 `phos.observe{...}` 登记的字段（每个字段可为函数，查询时求值）；
+    /// 都没有或调用出错时返回空串（观测失败绝不影响主机与卡带）
     std::string debug_state_json();
+
+    /// phos.observe 的落点：登记一份"查询时求值"的观测表
+    void set_observe(sol::table spec) { observe_ = spec; }
+    bool has_observe() const { return observe_.valid(); }
     /// agent 观测：读取卡带 Lua 全局变量（点分路径，如 `score`、`cfg.level`）；
     /// 不存在或不可序列化时返回空串
     std::string global_json(const std::string& path);
@@ -136,6 +141,7 @@ private:
     sol::state lua_;
     /// 场景栈声明在 lua_ 之后：析构时先于 Lua 状态销毁，回调引用不会悬空
     SceneStack scenes_;
+    sol::table observe_;  ///< phos.observe 登记的表（同上：晚于 lua_ 声明，先于它销毁）
     std::map<std::string, sol::object> module_cache_;  // 声明在 lua_ 之后：先于 state 析构
     sol::protected_function init_fn_;
     sol::protected_function update_fn_;

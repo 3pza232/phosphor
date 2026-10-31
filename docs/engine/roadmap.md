@@ -189,10 +189,10 @@ E 从 A 开始持续，不等其它阶段。
 | 共享词表/格式化 | `phos.lang.shared()`（18 词 zh/en）+ `text.score/clock/percent`（`core/format` 唯一实现，单测覆盖）；`money` 暂未做（留待按需） | 617 行文案表、24 处 pad |
 | 观测 schema | `phos.observe{ score=..., units={...} }`：一次登记，`state.query` 稳定字段 | worms 约 200 行、towerdef/crawl 各约 60 行 |
 | 键位提示 | `ui.hint` 自动取 `key_name` + 宽度裁剪 + 可重绑定 | 11 份键位提示块 |
-| 卡带 lint | `--check-cart`：全局变量、硬编码面板宽、`screen.size()` 误用、重复文案键、`rgb` 直写 | K8 类缺陷 |
+| 卡带 lint | `--check-cart`（已完成）：manifest/入口、顶层隐式全局、`screen.size()` 误用、阻塞 `discover()`、`require` 缺模块、观测声明；`tools/cart_lint.py` 作为门禁（12 项之一） | K8 类缺陷 |
 
 **验收**：`phos.save` v2 有掉电/损坏/迁移用例；三张样板卡带合计再降 ≥500 行；
-`--check-cart` 能报出已知的 `menu_rows`/`fire` 全局；文档与注解同步。
+`--check-cart` 已能报出隐式全局/可玩区误用/阻塞调用；出厂卡带与示例当前 0 error、0 warning（联机 discover 属已知 API 债，见 C14）。
 
 ### M5 体验与子系统（持续，按季度排）
 

@@ -28,6 +28,16 @@ end
 function init()
   shared = phos.lang.shared()
   board = phos.score.new{ max = 5, key = "toolkit_scores" }
+  -- 给 agent 的观测：字段可以是值，也可以是"查询时求值"的函数。
+  -- 引擎在 state.query 时调用，于是观测永远与真实状态一致（不必维护快照）
+  phos.observe{
+    points = function() return points end,
+    best = function() return board:best() end,
+    list = function() return board:list() end,
+    available = function() return board:available() end,
+    formatted = function() return fmt() end,
+    shared_score = function() return shared.score or "" end,
+  }
 end
 
 function update(dt)
@@ -71,14 +81,4 @@ function draw()
   }
 end
 
-function debug_state()
-  local t = fmt()
-  return {
-    points = points,
-    best = board:best(),
-    list = board:list(),
-    available = board:available(),
-    formatted = t,
-    shared_score = shared.score or "",
-  }
-end
+-- 观测由 phos.observe 声明（见 init）；不再需要手写 debug_state

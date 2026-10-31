@@ -41,8 +41,7 @@ local function refresh_regions()
 	-- 底层也走区域：于是所有绘制函数都拿到"一块画布"，
 	-- 内部统一用冒号调用（phos.screen 的方法是普通函数，区域的方法是方法，包一层就统一了）
 	if not r_base then
-		local cw, ch = phos.screen.size()
-		r_base = phos.ui.region(0, 0, cw, ch)
+		r_base = phos.ui.region(0, 0, pw, ph_)
 	end
 	r_fx = phos.ui.region(0, 0, pw, ph_, { layer = "fx" })
 	r_aim = phos.ui.region(0, 0, pw, ph_, { layer = "aim" })

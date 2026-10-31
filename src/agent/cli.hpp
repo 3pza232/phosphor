@@ -16,6 +16,7 @@ struct CliOptions {
     std::optional<std::string> config;    // 配置路径（默认 config.json；工具脚本据此隔离实测配置）
     std::optional<std::string> recent;    // 最近打开记录路径（默认 recent.txt；工具脚本据此隔离架子顺序）
     bool check_api = false;             // 校验 API 注解与实装是否一致
+    std::optional<std::string> check_cart;  // 静态检查一张卡带（DevKit）
     std::optional<std::string> id;      // 新建卡带的 id（缺省取目录名）
     std::optional<std::string> name;    // 新建卡带的显示名（缺省与 id 相同）
     std::optional<std::string> author;  // 新建卡带的作者（缺省沿用模板里的占位作者）

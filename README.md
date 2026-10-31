@@ -75,7 +75,7 @@ cmake -G Ninja -DPHOSPHOR_SANITY=ON ../    # 自检构建：慢，只用于排�
 
 | 脚本 | 用途 | 跑法 |
 |---|---|---|
-| `run_checks.py` | **一键跑全部门禁并汇总**：默认无头门禁 **11 项**（includes/api/unit/control/draw/layer/ui/scene/toolkit/cart/net），`--gui` 再加开窗门禁（gl/window）。测试逻辑仍在各自脚本里，它只管调度与汇总 | `python ../tools/run_checks.py [--gui]` |
+| `run_checks.py` | **一键跑全部门禁并汇总**：默认无头门禁 **12 项**（includes/api/unit/control/draw/layer/ui/scene/toolkit/lint/cart/net），`--gui` 再加开窗门禁（gl/window）。测试逻辑仍在各自脚本里，它只管调度与汇总 | `python ../tools/run_checks.py [--gui]` |
 | `unit_smoke.py` | 纯逻辑单元测试：跑 `phosphor_tests`（C++，源码在 `tests/`），覆盖颜色/文本/配置/色板/主题/UI 布局与焦点等不依赖 GL·Lua 的核心——无窗口无显卡即可跑（需构建时 `-DPHOSPHOR_BUILD_TESTS=ON`）。单跑时未启用则**跳过**；但 `run_checks.py` 的 `unit` 门禁会检查产物，**缺失即判失败**（跳过不算通过，免得掩盖红灯） | `python ../tools/unit_smoke.py` |
 | `control_test.py` | 控制通道契约：握手 / 单步精确 / 读屏 / 注入 / 热重载 / 退出 | `python ../tools/control_test.py` |
 | `window_smoke.py` | 窗口路径冒烟：菜单→开局→按键→单步 →**实时浸泡**→干净退出（确定性部分全走单步，只有最后几秒实时；需要图形环境） | `python ../tools/window_smoke.py [--seconds 3] [--cart carts/x]` |
@@ -84,6 +84,7 @@ cmake -G Ninja -DPHOSPHOR_SANITY=ON ../    # 自检构建：慢，只用于排�
 | `draw_smoke.py` | 叠加与半格契约：跑 devkit 的叠加示例卡带，读像素核对"同格两笔的墨都在""`back_rect` 铺到字形之外""`plot` 的墨落在指定子位"，并核对叠画上限（需要 Pillow） | `python ../tools/draw_smoke.py` |
 | `scene_smoke.py` | 场景栈契约：压栈 / 冻结世界 / 音频暂停 / 出栈恢复（卡带样板 `devkit/examples/scene`） |
 | `toolkit_smoke.py` | 卡带工具层契约：排行榜持久化、共享词表、数值格式化（样板 `devkit/examples/toolkit`） |
+| `cart_lint.py` | 卡带静态检查门禁：对出厂卡带与 devkit 示例跑 `--check-cart`（manifest/入口/隐式全局/`screen.size()`/阻塞 discover/观测声明），错误即失败、警告列出跟踪 |
 | `ui_smoke.py` | 声明式界面契约：跑 `devkit/examples/ui` 样板卡带，核对组件渲染、焦点顺序、事件语义（`index` / `checked` / `text`）与"侧栏 `input = false` 不抢按键"；agent 侧核对 `state.query.ui` 列表与按 id 激活 | `python ../tools/ui_smoke.py` |
 | `shell_golden.py` | 外壳界面**文本基线**：驱动 7 个外壳屏，把 `screen.read` 结果与 `tests/golden/shell/` 逐字节比对；界面有意改变时用 `--write` 重生成（迁移/改布局前后都拿它对照） | `python ../tools/shell_golden.py [--write]` |
 | `gl_smoke.py` | GL 渲染路像素门禁：开窗用 `frame.read` 读回真实帧，核对"不是全黑""同格两笔""半格""逐层叠画"——`screenshot` 走 CPU 光栅化，覆盖不到着色器与图层叠画（需要图形环境与 Pillow） | `python ../tools/gl_smoke.py` |

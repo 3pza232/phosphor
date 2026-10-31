@@ -134,10 +134,10 @@
 | K2 | 存档是字符串 KV（键 ≤64、值 ≤4096、条目 ≤256），无结构/版本/槽位 | `cart/save_store.hpp`；代价是 towerdef 约 220 行 RLE 编解码 + 19 字段记录（`carts/towerdef/game.lua:567-888`） | ◐ **部分缓解**：`phos.score` 收走了 6 份最高分实现；结构化存档 v2（版本/槽位/CRC）仍未做 |
 | K3 | Mod 只能整文件覆盖 | `mods/towerdef-build-pause/main.lua` 是 646 行整文件 fork（本体 617 行），只改约 10 行；mod 自己头部承认会腐烂 |
 | K4 | 没有共享词表/格式化 | 11 张卡带各写 `SCORE/BEST/PAUSED/RESTART` 两列，617 行；没有 `phos.text.score/clock`，没有键位提示组件 | ✅ **已提供**：`phos.lang.shared()`（18 个常用词，zh/en）、`phos.text.score/clock/percent`（`core/format`，与主机展示同源）；键位提示仍归各卡带（`hint` 组件可替代大部分） |
-| K5 | 没有结构化观测约定 | `debug_state()` 各卡手搓（worms 约 200 行、towerdef/crawl 各约 60 行），字段名无约束 |
+| K5 | 没有结构化观测约定 | `debug_state()` 各卡手搓（worms 约 200 行、towerdef/crawl 各约 60 行），字段名无约束 | ✅ **已提供**：`phos.observe{字段 = 值/函数}`（查询时求值，深度 4 序列化，单字段报错不拖垮整份）；`debug_state()` 仍兼容 |
 | K6 | 层上限 6 已被用满 | worms 已用 6 层（`carts/worms/main.lua:532-537`）；再加"UI/调试覆盖层"就是错误 |
 | K7 | `--check-api` 只比对"名字" | `devkit/api_check.cpp:159-171`：实装/注解的函数名与 `@field` 名一致即通过，无法发现语义漂移（`center_text` 忽略可玩区、`sprite` 丢亮度参数） |
-| K8 | 卡带内仍允许隐式全局 | `carts/towerdef/main.lua:20` 的 `menu_rows`、`carts/worms/main.lua:1010` 的 `fire`；无 lint 拦截 |
+| K8 | 卡带内仍允许隐式全局 | 旧：towerdef 的 `menu_rows`、worms 的 `fire`；无 lint 拦截 | ✅ **已提供**：`phosphor --check-cart` 静态检查（manifest/入口/隐式全局/`screen.size()`/阻塞 discover/require/观测声明），门禁 `tools/cart_lint.py` 覆盖全部出厂卡带与示例；已有隐式全局已改为 local |
 
 > **第二轮状态**：K1 部分缓解（模板 `panel.lua` 已改用声明式界面；`main.lua` 仍是"十条约定"）；
 > K2–K6、K8 仍在；K7 未变（`--check-api` 仍只校验名字与 `@field` 名，不校验语义）。

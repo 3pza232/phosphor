@@ -376,16 +376,35 @@ bool Cartridge::call_guard(const char* phase, sol::protected_function& fn) {
 }
 
 std::string Cartridge::debug_state_json() {
-    sol::object candidate = lua_["debug_state"];
-    if (!candidate.is<sol::function>()) return {};
-    sol::protected_function call = candidate;
     lua_guard::BudgetScope guard;  // 观测入口也执行卡带代码（死循环一样不该拖死主机）
-    const sol::protected_function_result result = call();
-    if (!result.valid()) return {};  // 观测失败不报错、不留痕
-    // 深度 4：debug_state 常见的形状是"若干实体的若干字段"（表里套数组、数组里套表），
-    // 深度 2 会把实体字段截成 {"__table":N}，agent 就看不到幽灵/敌人的位置了。
-    // 递归带循环引用保护，给深一点是安全的
-    return lua_value_to_json(result.get<sol::object>(), 4);
+
+    // 1) 显式 debug_state()：老卡带的写法，语义最自由
+    sol::object candidate = lua_["debug_state"];
+    if (candidate.is<sol::function>()) {
+        sol::protected_function call = candidate;
+        const sol::protected_function_result result = call();
+        if (!result.valid()) return {};  // 观测失败不报错、不留痕
+        return lua_value_to_json(result.get<sol::object>(), 4);
+    }
+
+    // 2) phos.observe{...}：声明式写法——字段可以是值，也可以是"查询时求值"的函数。
+    //    于是卡带不必为了给 agent 看而维护一份手写快照（也不会与真实状态脱节）
+    if (!observe_.valid()) return {};
+    sol::table snapshot = lua_.create_table();
+    for (const auto& entry : observe_) {
+        if (!entry.first.is<std::string>()) continue;
+        const std::string key = entry.first.as<std::string>();
+        sol::object value = entry.second;
+        if (value.is<sol::function>()) {
+            sol::protected_function getter = value;
+            const sol::protected_function_result called = getter();
+            if (!called.valid()) continue;  // 单个字段失败不拖垮整份观测
+            value = called.get<sol::object>();
+        }
+        snapshot[key] = value;
+    }
+    // 深度 4：常见形状是"若干实体的若干字段"（表里套数组、数组里套表）
+    return lua_value_to_json(snapshot, 4);
 }
 
 std::string Cartridge::global_json(const std::string& path) {

@@ -2,6 +2,7 @@
 #include "agent/cli.hpp"
 #include "core/json_lite.hpp"
 #include "cart/cart_scanner.hpp"
+#include "devkit/cart_lint.hpp"
 #include "core/app.hpp"
 #include "core/log.hpp"
 #include "core/version.hpp"
@@ -27,6 +28,44 @@ static int run_scan(const std::string& dir, bool json) {
         }
     }
     return 0;
+}
+
+/// --check-cart：静态检查一张卡带（不运行它）。有 error 时退出码 2；warning 只报告
+static int run_check_cart(const std::string& dir, bool json) {
+    const phos::devkit::LintReport report = phos::devkit::lint_cart(dir);
+    const auto severity_name = [](phos::devkit::LintSeverity severity) -> const char* {
+        switch (severity) {
+            case phos::devkit::LintSeverity::error: return "error";
+            case phos::devkit::LintSeverity::warning: return "warn";
+            default: return "info";
+        }
+    };
+    if (json) {
+        std::printf("{\"ok\":%s,\"id\":\"%s\",\"path\":\"%s\",\"errors\":%d,\"warnings\":%d,\"issues\":[",
+                    report.ok() ? "true" : "false", phos::json::escape(report.cart_id).c_str(),
+                    phos::json::escape(report.path).c_str(), report.errors(), report.warnings());
+        bool first = true;
+        for (const auto& issue : report.issues) {
+            if (!first) std::printf(",");
+            std::printf("{\"severity\":\"%s\",\"where\":\"%s\",\"line\":%d,\"message\":\"%s\"}",
+                        severity_name(issue.severity), phos::json::escape(issue.where).c_str(),
+                        issue.line, phos::json::escape(issue.message).c_str());
+            first = false;
+        }
+        std::printf("]}\n");
+    } else {
+        for (const auto& issue : report.issues) {
+            const std::string where = issue.line > 0
+                                          ? issue.where + ":" + std::to_string(issue.line)
+                                          : (issue.where.empty() ? "<cart>" : issue.where);
+            std::printf("%-5s %-30s %s\n", severity_name(issue.severity), where.c_str(),
+                        issue.message.c_str());
+        }
+        std::printf("%s: %d error(s), %d warning(s)\n",
+                    report.cart_id.empty() ? dir.c_str() : report.cart_id.c_str(), report.errors(),
+                    report.warnings());
+    }
+    return report.ok() ? 0 : 2;
 }
 
 /// --pack：把卡带目录打包成 .phos
@@ -175,6 +214,7 @@ int main(int argc, char** argv) {
                 "  --config <文件>      配置路径（默认 config.json；测试据此隔离实测配置）\n"
                 "  --recent <文件>      「最近打开」记录路径（默认 recent.txt；测试据此让卡带架顺序可复现）\n"
                 "  --check-api          核对 devkit/phos.lua 与已注册 API 是否一致\n"
+                "  --check-cart <目录>  静态检查一张卡带（manifest/入口/常见错误写法）\n"
                 "  --json               机器可读输出\n"
                 "\n"
                 "信息：\n"
@@ -197,6 +237,7 @@ int main(int argc, char** argv) {
     if (opts.pack) return run_pack(*opts.pack, opts.out.value_or(""), opts.json);
     if (opts.create) return run_create(opts, "devkit/template");
     if (opts.check_api) return run_check_api("devkit/phos.lua", opts.json);
+    if (opts.check_cart) return run_check_cart(*opts.check_cart, opts.json);
 
     phos::App app;
     return app.run(opts);

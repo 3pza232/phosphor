@@ -17,7 +17,7 @@ local PANEL_W = 22
 
 -- 菜单行号登记表：每一项都是一个可选行（漏登记 = 那一行永远选不到，DESIGN §5.0）。
 -- 用命名常量而不是裸数字，改行序时只改这里。
-menu_rows = { DIFF = 1, MAP = 2, ENDLESS = 3, START = 4, CONTINUE = 5 }
+local menu_rows = { DIFF = 1, MAP = 2, ENDLESS = 3, START = 4, CONTINUE = 5 }
 
 local Text = {
 	zh = {

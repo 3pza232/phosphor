@@ -26,6 +26,7 @@ phos.save     -- 存档（需 manifest 声明 save = true）
 phos.assets   -- 包内资源读取（文本 / 按行 / 存在性 / 大小 / 列表）
 phos.debug    -- 可调参数篮子：注册数值，用 `~` 调试台实时微调（见下节）
 phos.score    -- 卡带排行榜：TOP N 分数（排序/截断/存档键/坏档容错在引擎侧）
+phos.observe  -- 给 agent 的声明式观测表（字段可为函数，查询时求值）
 phos.sys      -- 系统信息与工具
 phos.cart     -- 当前卡带的身份（id / 标题 / 版本 / 作者 / 简介）
 phos.net      -- 局域网联机：开房 / 加入 / 收发消息 / 发现（见下节）
@@ -1032,6 +1033,27 @@ cart.desc     -- 简介（按当前界面语言取；英文缺失时回落中文
 卡带的身份以 `manifest.lua` 为**唯一来源**：标题画面、关于页、标题栏都从这里读；
 在 Lua 里再抄一份字符串时，改了 manifest 就会留下对不上的旧文案。
 未插卡时（主机脚本，例如出厂启动动画）各项为空串。
+
+## phos.observe
+
+给 agent 看的玩法状态用**声明式观测**声明一次：每个字段可以是值，也可以是函数，
+引擎在 `state.query` 时求值——观测因此永远与真实状态一致，不必维护一份会过期的手写快照。
+
+```lua
+function init()
+  phos.observe{
+    score = function() return score end,
+    hp = function() return hp end,
+    units = function() return summarize_units() end,   -- 返回表也可以（深度 4 序列化）
+    wave = wave,                                        -- 固定值直接写
+  }
+end
+```
+
+- 在 `init()` 里登记一次即可；之后 `state.query` 的 `debug` 字段自动带上这些键
+- 字段可以是 number/string/boolean/表（数组写成 JSON 数组；超过深度 4 的嵌套截断）
+- 单个字段求值报错只跳过该字段，不影响整份观测；登记了 `debug_state()` 的卡带仍以它为准
+- 老写法 `debug_state()` 继续有效；新卡带推荐 `phos.observe`（少一份手写快照）
 
 ## phos.debug
 

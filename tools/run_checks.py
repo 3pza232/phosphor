@@ -86,6 +86,7 @@ HEADLESS_GATES = [
     ("ui", "声明式界面契约（组件/焦点/事件/主题；卡带样板）", partial(run_script, "ui_smoke.py")),
     ("scene", "场景栈契约（压栈/冻结世界/音频暂停/出栈恢复）", partial(run_script, "scene_smoke.py")),
     ("toolkit", "卡带工具层（排行榜/共享词表/数值格式化）", partial(run_script, "toolkit_smoke.py")),
+    ("lint", "卡带静态检查（manifest/入口/隐式全局/可玩区/阻塞调用）", partial(run_script, "cart_lint.py")),
     ("cart", "出厂卡带：跑得完 / 不报错 / 同种子可复现", partial(run_script, "cart_smoke.py")),
     ("net", "局域网联机契约（两进程 + 发现）", partial(run_script, "net_smoke.py")),
 ]

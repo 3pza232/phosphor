@@ -55,6 +55,9 @@ std::optional<std::string> parse_cli(int argc, char** argv, CliOptions& out) {
         } else if (arg == "--recent") {
             if (auto err = need_value("--recent")) return err;
             out.recent = argv[++i];
+        } else if (arg == "--check-cart") {
+            if (auto err = need_value("--check-cart")) return err;
+            out.check_cart = argv[++i];
         } else if (arg == "--check-api") {
             out.check_api = true;
         } else if (arg == "--control") {
