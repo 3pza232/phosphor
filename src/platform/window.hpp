@@ -2,6 +2,7 @@
 
 #include "core/input.hpp"
 
+#include <memory>
 #include <string>
 
 struct GLFWwindow;
@@ -53,6 +54,8 @@ public:
 private:
     Window() = default;
     GLFWwindow* window_ = nullptr;
+    /// 本窗口的回调上下文：存在 user pointer 里，多个窗口各一份（不再用文件级全局）
+    std::unique_ptr<WindowHandlers> handlers_;
     /// 系统给的输入法上下文（Windows 的 HIMC，用 void* 存以保持头文件平台无关）；
     /// 关输入法前记住它，开回来时原样还给它
     void* ime_context_ = nullptr;

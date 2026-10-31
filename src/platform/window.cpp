@@ -20,7 +20,9 @@ namespace phos {
 namespace {
 
 /// 转发回调所需的用户指针（WindowHandlers 的副本）
-WindowHandlers g_handlers{};  // NOTE: 单窗口假设，多窗口时需重构为映射表
+WindowHandlers* handlers_for(GLFWwindow* window) {
+    return static_cast<WindowHandlers*>(glfwGetWindowUserPointer(window));
+}
 
 /// GLFW 物理键 → 虚拟键名。这是**唯一权威映射**：卡带提示里的键名（phos.input.key_name）
 /// 用的就是这里的名字，两边必须一起改。
@@ -96,55 +98,62 @@ std::string key_name_from_glfw(int glfw_key) {
     }
 }
 
-void key_callback(GLFWwindow*, int key, int, int action, int) {
+void key_callback(GLFWwindow* window, int key, int, int action, int) {
+    WindowHandlers* handlers = handlers_for(window);
+    if (!handlers) return;
     if (key == GLFW_KEY_ESCAPE) {
         // 卡带声明"接管 Esc"（phos.sys.capture_escape）时，Esc 作为普通键交给卡带，
         // 主机不再拿它做暂停/返回；否则维持主机保留键语义
-        if ((action == GLFW_PRESS || action == GLFW_RELEASE) && g_handlers.capture_escape &&
-            *g_handlers.capture_escape) {
-            g_handlers.input->set_key("escape", action == GLFW_PRESS);
+        if ((action == GLFW_PRESS || action == GLFW_RELEASE) && handlers->capture_escape &&
+            *handlers->capture_escape) {
+            handlers->input->set_key("escape", action == GLFW_PRESS);
             return;
         }
-        if (action == GLFW_PRESS) *g_handlers.escape_flag = true;
+        if (action == GLFW_PRESS) *handlers->escape_flag = true;
         return;
     }
     if (key == GLFW_KEY_GRAVE_ACCENT && action == GLFW_PRESS) {
-        *g_handlers.console_flag = true;
+        *handlers->console_flag = true;
         return;
     }
     // 设置键用 F2 而不是字母：字母会被卡带的文本输入吃掉（F2 不产生字符）
     if (key == GLFW_KEY_F2 && action == GLFW_PRESS) {
-        *g_handlers.settings_flag = true;
+        *handlers->settings_flag = true;
         return;
     }
-    if (*g_handlers.input_block) return;  // 调试台打开期间输入不注入游戏
+    if (*handlers->input_block) return;  // 调试台打开期间输入不注入游戏
 
     // 退格：GLFW 的字符回调不为它触发，所以这里补一次 '\b' 给**文本通道**
     // （磁带码输入、卡带的文本框靠它，见 worms 昵称框）。**不 return**——下面的通用键映射
     // 照常把 "backspace" 也交给卡带当功能键（如象棋悔棋）
     if (key == GLFW_KEY_BACKSPACE && (action == GLFW_PRESS || action == GLFW_REPEAT)) {
-        g_handlers.input->push_text(std::string(1, text::kBackspace));
+        handlers->input->push_text(std::string(1, text::kBackspace));
     }
 
     if (action == GLFW_PRESS || action == GLFW_RELEASE) {
         const std::string name = key_name_from_glfw(key);
-        if (!name.empty()) g_handlers.input->set_key(name, action == GLFW_PRESS);
+        if (!name.empty()) handlers->input->set_key(name, action == GLFW_PRESS);
     }
 }
 
-void focus_callback(GLFWwindow*, int focused) {
+void focus_callback(GLFWwindow* window, int focused) {
     // 失焦时物理按键的 release 事件可能根本收不到（Alt+Tab / 点别的窗口）：
     // 不释放就会"卡键"——回到游戏还在往一个方向走。这里直接把所有键松开。
-    if (!focused && g_handlers.input) g_handlers.input->release_all();
+    if (!focused) {
+        if (WindowHandlers* handlers = handlers_for(window); handlers && handlers->input)
+            handlers->input->release_all();
+    }
 }
 
-void char_callback(GLFWwindow*, unsigned int codepoint) {
-    if (*g_handlers.input_block) return;
+void char_callback(GLFWwindow* window, unsigned int codepoint) {
+    WindowHandlers* handlers = handlers_for(window);
+    if (!handlers) return;
+    if (*handlers->input_block) return;
     // 按 UTF-8 编码整段交给输入层，中文等全角字符也走这里。
     // 注意：退格**不会**经过这个回调（它不是字符），见 key_callback 里的显式转发。
     std::string utf8;
     text::append_utf8(utf8, static_cast<char32_t>(codepoint));
-    g_handlers.input->push_text(std::move(utf8));
+    handlers->input->push_text(std::move(utf8));
 }
 
 /// 窗口与任务栏图标。取路径的约定与字体、主题相同：**相对运行目录**
@@ -170,7 +179,6 @@ void apply_window_icon(GLFWwindow* window, const std::string& path) {
 
 Window Window::create(int width, int height, const std::string& title,
                       const WindowHandlers& handlers, std::string& err) {
-    g_handlers = handlers;
 
     if (!glfwInit()) {
         err = "GLFW 初始化失败";
@@ -189,6 +197,10 @@ Window Window::create(int width, int height, const std::string& title,
         glfwTerminate();
         return {};
     }
+
+    // 回调上下文挂在窗口自己的 user pointer 上：多个窗口各一份，不再有文件级全局
+    win.handlers_ = std::make_unique<WindowHandlers>(handlers);
+    glfwSetWindowUserPointer(win.window_, win.handlers_.get());
 
     apply_window_icon(win.window_, "theme/icon/phos_icon.jpg");
 
@@ -213,9 +225,12 @@ Window::~Window() {
     }
 }
 
-Window::Window(Window&& other) noexcept : window_(other.window_), ime_context_(other.ime_context_) {
+Window::Window(Window&& other) noexcept
+    : window_(other.window_), ime_context_(other.ime_context_),
+      handlers_(std::move(other.handlers_)) {
     other.window_ = nullptr;
     other.ime_context_ = nullptr;
+    if (window_) glfwSetWindowUserPointer(window_, handlers_.get());
 }
 
 Window& Window::operator=(Window&& other) noexcept {
@@ -223,8 +238,10 @@ Window& Window::operator=(Window&& other) noexcept {
         if (window_) glfwDestroyWindow(window_);
         window_ = other.window_;
         ime_context_ = other.ime_context_;
+        handlers_ = std::move(other.handlers_);
         other.window_ = nullptr;
         other.ime_context_ = nullptr;
+        if (window_) glfwSetWindowUserPointer(window_, handlers_.get());
     }
     return *this;
 }
