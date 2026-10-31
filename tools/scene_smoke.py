@@ -97,6 +97,19 @@ def main() -> int:
         checks.check(debug.get("depth") == 1 and debug.get("entered") == 2,
                      "第二次压栈成功且 on_enter 再执行")
 
+        print("  -- 压栈那一帧不调 update（同一个键开/关不误触）--")
+        host.key("b")          # 先关掉上一段的暂停场景
+        host.step(4)
+        checks.check((host.state().get("debug") or {}).get("depth") == 0, "暂停场景已关闭")
+        host.key("x")          # 同一个键：开门
+        host.step(2)
+        debug = host.state().get("debug") or {}
+        checks.check(debug.get("depth") == 1 and debug.get("top") == "quick",
+                     f"x 压入 quick 且没有被同一帧关掉（{debug.get('top')}/{debug.get('depth')}）")
+        host.key("x")          # 同一个键：关门
+        host.step(2)
+        checks.check((host.state().get("debug") or {}).get("depth") == 0, "再按 x 关闭 quick")
+
         print("  -- 退出 --")
     checks.check(host.exited_cleanly, "宿主干净退出")
     return checks.finish()

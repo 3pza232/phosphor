@@ -33,6 +33,7 @@ bool SceneStack::push(SceneEntry entry, std::string& err) {
         return false;
     }
     if (!call_void(entry.on_enter, err)) return false;
+    entry.skip_update = true;
     scenes_.push_back(std::move(entry));
     return true;
 }
@@ -87,6 +88,7 @@ void SceneStack::drain(std::string& err) {
             } else if (!call_void(op.entry.on_enter, err)) {
                 ok = false;
             } else {
+                op.entry.skip_update = true;
                 scenes_.push_back(std::move(op.entry));
             }
         } else {
@@ -115,6 +117,11 @@ bool SceneStack::wants_audio_pause() const {
 bool SceneStack::update(float dt, std::string& err) {
     SceneEntry* scene = top();
     if (!scene || !scene->update.valid()) return true;
+    if (scene->skip_update) {
+        // 压栈那一帧按键还停在"按下"状态：此刻调 update 会立刻把同一个键当成关闭
+        scene->skip_update = false;
+        return true;
+    }
     sol::protected_function callback = scene->update;  // 拷贝一份：回调里可能出栈
     ++busy_;
     lua_guard::BudgetScope budget;

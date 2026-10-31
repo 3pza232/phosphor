@@ -16,7 +16,9 @@ namespace phos {
 /// ——场景的 draw 里通常调用 phos.ui.render，update 里读事件/按键。
 struct SceneEntry {
     std::string id;
-    bool modal = false;        ///< 语义标记：压在下面的场景不该再响应输入（卡带自判）
+    bool modal = false;
+    /// 压入的那一帧不调 update：否则"用同一个键开菜单"会被同一帧再关掉
+    bool skip_update = true;        ///< 语义标记：压在下面的场景不该再响应输入（卡带自判）
     bool pause_world = false;  ///< 栈顶为真时，引擎跳过卡带 update（世界冻结）
     bool audio_pause = false;  ///< 栈上存在时为真时，引擎暂停音频（出栈后恢复）
     sol::protected_function update;

@@ -36,11 +36,31 @@ local function pause_draw()
   for i = 1, #events do pending[#pending + 1] = events[i] end
 end
 
+-- QUICK：演示"同一个键开、同一个键关"。压栈的那一帧引擎**不调** update，
+-- 否则开门的那一下会被当成关门（按键在那一帧仍是按下状态）。
+local function quick_update(dt)
+  if phos.input.pressed("x") then phos.scene.pop() end
+end
+
+local function quick_draw()
+  phos.ui.render{
+    screen = "quick",
+    rect = { x = 24, y = 18, w = 32, h = 6 },
+    kind = "box", title = "QUICK", border = "single", opaque = true, bg = "black",
+    children = {
+      { kind = "text", text = "press X to close" },
+      { kind = "text", text = "world keeps running", dim = true },
+    },
+  }
+end
+
 function init() end
 
 function update(dt)
   ticks = ticks + 1
-  if phos.input.pressed("start") and phos.scene.depth() == 0 then
+  if phos.input.pressed("x") and phos.scene.depth() == 0 then
+    phos.scene.push{ id = "quick", modal = true, update = quick_update, draw = quick_draw }
+  elseif phos.input.pressed("start") and phos.scene.depth() == 0 then
     phos.scene.push{
       id = "pause",
       modal = true,
