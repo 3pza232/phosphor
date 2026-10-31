@@ -442,6 +442,13 @@ function phos.audio.music_volume(v) end
 ---@return number
 function phos.audio.sfx_volume(v) end
 
+---
+-- 临时压低音乐（ducking，例如剧情对白/菜单提示时）。
+-- 只影响音乐声部，音效不受影响；切换走 ~6ms 斜坡。
+-- @param level number 目标倍率 0..1（0 = 静音，1 = 恢复）
+-- @param seconds number 保持秒数（<=0 = 立即取消）
+function phos.audio.duck(level, seconds) end
+
 ---@param pause boolean|nil
 ---@return boolean
 function phos.audio.paused(pause) end

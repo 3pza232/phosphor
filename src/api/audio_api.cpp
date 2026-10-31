@@ -7,6 +7,7 @@
 
 #include <sol/sol.hpp>
 
+#include <algorithm>
 #include <cmath>
 #include <sstream>
 #include <string>
@@ -203,6 +204,17 @@ void register_audio_api(sol::state& lua, HostContext& host) {
     };
     audio["stop_music"] = [&host]() {
         if (host.audio) host.audio->stop_music();
+    };
+    // 音乐 ducking：level 0..1（目标倍率），seconds 保持秒数；非有限值按取消/默认处理
+    audio["duck"] = [&host](sol::object level, sol::object seconds) {
+        if (!host.audio) return;
+        double target = level.is<double>() ? level.as<double>() : 1.0;
+        double hold = seconds.is<double>() ? seconds.as<double>() : 0.0;
+        if (!std::isfinite(target)) target = 1.0;
+        if (!std::isfinite(hold)) hold = 0.0;
+        target = std::clamp(target, 0.0, 1.0);
+        hold = std::clamp(hold, 0.0, 3600.0);
+        host.audio->duck(static_cast<float>(target), static_cast<float>(hold));
     };
     audio["paused"] = [&host](sol::object value) -> bool {
         if (!host.audio) return false;

@@ -249,6 +249,12 @@ void Audio::set_paused(bool paused) {
     paused_.store(paused);
 }
 
+void Audio::duck(float level, float seconds) {
+    duck_level_.store(std::clamp(level, 0.0f, 1.0f));
+    duck_seconds_.store(seconds);
+    duck_seq_.fetch_add(1);
+}
+
 int TunePattern::rows() const {
     int count = 0;
     for (const auto& track : tracks)
@@ -641,6 +647,28 @@ void Audio::mix(float* out, uint32_t frames) {
     const float sfx_gain = sfx_volume_.load();
     const float dt = 1.0f / static_cast<float>(sample_rate_);
 
+    // ducking：主线程只发布请求；音频线程在这里锁存一次，并按 kFadeSeconds 做逐样本斜坡。
+    // 保持时间按音频帧倒计时，避免用墙钟（暂停时不该消耗保持时间）
+    if (duck_seen_seq_ != duck_seq_.load(std::memory_order_relaxed)) {
+        duck_seen_seq_ = duck_seq_.load(std::memory_order_relaxed);
+        const float level = std::clamp(duck_level_.load(std::memory_order_relaxed), 0.0f, 1.0f);
+        const float seconds = std::max(0.0f, duck_seconds_.load(std::memory_order_relaxed));
+        duck_frames_left_ = static_cast<uint64_t>(seconds * static_cast<float>(sample_rate_));
+        duck_target_ = duck_frames_left_ > 0 ? level : 1.0f;
+    }
+    const float duck_target_now = duck_frames_left_ > 0 ? duck_target_ : 1.0f;
+    const uint32_t duck_fade_frames =
+        std::max(1u, static_cast<uint32_t>(kFadeSeconds * static_cast<float>(sample_rate_)));
+    duck_start_ = duck_gain_;
+    duck_step_ = (duck_target_now - duck_gain_) / static_cast<float>(duck_fade_frames);
+    const auto duck_at = [this, duck_target_now, duck_fade_frames](uint32_t frame) {
+        const uint32_t index = std::min(frame, duck_fade_frames);
+        const float value = duck_start_ + duck_step_ * static_cast<float>(index);
+        if (duck_step_ > 0.0f) return std::min(value, duck_target_now);
+        if (duck_step_ < 0.0f) return std::max(value, duck_target_now);
+        return duck_target_now;
+    };
+
     auto gain_of = [music_gain, sfx_gain](const Voice& voice) {
         return voice.is_music ? music_gain : sfx_gain;
     };
@@ -673,7 +701,8 @@ void Audio::mix(float* out, uint32_t frames) {
                 }
                 const float left = voice.sample->pcm[static_cast<size_t>(voice.pos) * 2];
                 const float right = voice.sample->pcm[static_cast<size_t>(voice.pos) * 2 + 1];
-                const float gain = voice.volume * gain_of(voice) * voice.stop_fade;
+                float gain = voice.volume * gain_of(voice) * voice.stop_fade;
+                if (voice.is_music) gain *= duck_at(i);
                 out[i * 2] += left * gain;
                 out[i * 2 + 1] += right * gain;
                 ++voice.pos;
@@ -725,8 +754,8 @@ void Audio::mix(float* out, uint32_t frames) {
             if (voice.phase >= 1.0f) voice.phase -= 1.0f;
             voice.t += dt;
 
-            const float sample =
-                value * envelope * voice.volume * gain_of(voice) * voice.stop_fade;
+            float sample = value * envelope * voice.volume * gain_of(voice) * voice.stop_fade;
+            if (voice.is_music) sample *= duck_at(i);
             out[i * 2] += sample;
             out[i * 2 + 1] += sample;
             if (voice.stop_fade_step > 0.0f)
@@ -742,6 +771,11 @@ void Audio::mix(float* out, uint32_t frames) {
         out[i * 2] *= gain;
         out[i * 2 + 1] *= gain;
     }
+
+    // 记录本块结束时的 duck 增益，并推进保持时间（按音频帧，暂停时不消耗）
+    duck_gain_ = duck_at(frames > 0 ? frames - 1 : 0);
+    duck_frames_left_ = duck_frames_left_ > frames ? duck_frames_left_ - frames : 0;
+    if (duck_frames_left_ == 0) duck_target_ = 1.0f;
 
     // 软限幅，避免叠加削波爆音
     for (uint32_t i = 0; i < frames * 2; ++i)

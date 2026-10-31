@@ -96,6 +96,10 @@ public:
     void set_sfx_volume(float volume);
     float sfx_volume() const { return sfx_volume_.load(); }
 
+    /// 临时压低音乐（ducking）：level 为目标倍率（0..1，0 = 静音），seconds 为保持秒数（<=0 = 取消）。
+    /// 切换走 kFadeSeconds 斜坡；只影响音乐声部，音效不受影响。主线程调用，只写原子请求。
+    void duck(float level, float seconds);
+
     // --- 即时音（主线程只入队，不触碰声部表） ---
     /// 一条合成音：波形/频率/包络由 ToneSpec 给出
     void play_tone(const ToneSpec& spec);
@@ -211,6 +215,17 @@ private:
     std::atomic<float> sfx_volume_{kDefaultSfxVolume / 100.0f};
     std::atomic<bool> paused_{false};
     std::atomic<bool> host_paused_{false};  // 主机级暂停（调试台），与 paused_ 取或
+
+    // ducking 请求（主线程写、音频线程取）：seq 变化才重新锁存；其余为音频线程独占
+    std::atomic<uint32_t> duck_seq_{0};
+    std::atomic<float> duck_level_{1.0f};
+    std::atomic<float> duck_seconds_{0.0f};
+    uint32_t duck_seen_seq_ = 0;
+    float duck_gain_ = 1.0f;
+    float duck_start_ = 1.0f;
+    float duck_step_ = 0.0f;
+    float duck_target_ = 1.0f;
+    uint64_t duck_frames_left_ = 0;
 
     // 输出增益斜坡（音频线程独占的普通成员，不加锁；主线程只写上面的 atomic）。
     // "该静音"与 master 音量在音频线程收成同一条逐样本斜坡，暂停/恢复/音量突变因此
