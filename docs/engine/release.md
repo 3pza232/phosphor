@@ -16,12 +16,30 @@
 | 配置 | 命令 | 说明 |
 |---|---|---|
 | Release（发行） | `cmake --preset release && cmake --build --preset release` | 产物在 `build/`，可直接分发 |
-| Dev（测试） | `cmake --preset dev` / `sanity` | 开测试目标、带调试信息 |
+| Dev（测试） | `cmake --preset dev` | 开测试目标、带调试信息 |
+| Sanity（容器断言） | `cmake --preset sanity` | Release + PHOSPHOR_SANITY：容器边界断言/栈保护，慢 |
 | 干净重建 | 删 `build/` 后重跑 release | 验证内容同步（carts/docs/theme/devkit/mods） |
 | Debug（断言） | `cmake --preset debug && cmake --build --preset debug` | `build-debug/`：NDEBUG 关掉、assert 生效，跑一遍单测/门禁 |
 
-发布目录必须包含：`phosphor.exe`、`carts/ theme/ devkit/ mods/ docs/`、`lib*.dll`（如有）。
+发布目录必须包含：`phosphor.exe`、`carts/ theme/ devkit/ mods/ docs/`、`lib*.dll`（如有）；打包见下节。
+仓库根的 `LICENSE` / `CHANGELOG.md` / `README.md` 由 `tools/package_release.py` 一并放进发行 zip。
 CI 额外跑 `--gui` 门禁（gl/window），release_check 只跑无头（跨机稳定）。
+
+## 打包（发行 zip）
+
+把 `build/` 里的运行包收成一个可直接分发的 zip（只读收集，不改 `build/`；输出在 `dist/`）：
+
+    python tools/package_release.py                           # dist/phosphor-<version>-win64.zip
+    python tools/package_release.py --out dist/x.zip --force  # 换输出路径 / 覆盖同名 zip
+    python tools/package_release.py --build build-dev         # 换构建目录
+
+- 收：`phosphor.exe`、构建目录根的 `*.dll`（如有）、`carts/ theme/ devkit/ mods/ docs/`。
+- 不收：`tests/`、`saves/`、`config.json`、`recent.txt`、日志/临时物、`*.a`、CMake 产物、开发脚本——白名单收集天然排除，写完 zip 还会再核对一遍。
+- zip 根含 `README.txt`（玩法与包内容）与 `MANIFEST.txt`（逐文件字节数 + SHA-256）；脚本打印 zip 总大小与 SHA-256。
+- 版本默认读 `src/core/version.hpp`，并跑 `phosphor.exe --version` 对表；不一致直接失败（避免发出旧构建）。
+- 同名 zip 已存在时拒绝覆盖，`--force` 才覆盖。
+
+发布时把脚本打印的 zip SHA-256 贴进 Release 说明，供下载者核对。
 
 ## 人工验收
 
