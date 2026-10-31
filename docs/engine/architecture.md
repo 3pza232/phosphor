@@ -104,6 +104,7 @@
 | `App::CartTiming` | 卡带逐帧耗时（update / draw / 峰值 / 图层合成） | 纯数据；换卡 / 拔卡一次 `reset()` |
 | `Display` | 三块显示面（`screen` / `base` / `chrome`）与合成顺序（`present`） | 只依赖 core 与 `Renderer`（向下），**不吃 `HostContext`**，故是纯展示单元 |
 | `App::AgentSession` | agent 控制通道的**会话语义**（单步推进 / 待回包的请求 / 注入按键的定时释放） | 纯数据；与通道的 I/O（`ControlChannel`）分开 |
+| `SoundState` | 事件音优先级/播放、采样解码缓存、音量应用 | sound_index/config 持久化仍归 ContentLibrary/App；不依赖 HostContext |
 | `ShelfPlayback` | 架子包脚本与动画时钟：`reset/load/tick/draw/active` | Shell 画家/配置/packs 仍归 App；不持有回退策略 |
 | `FontState` | 字体方案状态与加载：方案表/名字列表/当前字体链/声明字号与 min-max；`scan/load_chain/effective_px/clamp_px` | 只注入字体目录与配置值，不碰 Renderer/Window；字号=窗口尺寸仍归 App |
 | `HostCartBinding` | 卡带会话在 `HostContext` 上的 RAII 绑定：持有 `unique_ptr<Cartridge>`，构造挂入口、析构先清 HostContext 再销毁卡带 | 只依赖 `HostContext` + 回调；清理本体在 `App::unbind_host_cart`；开机/架子脚本仍由 App 持有（生命周期不重叠） |
