@@ -96,25 +96,56 @@ local best_wave, wins, best_score
 -- 继续存档：menu_save 非 nil = 有档可续；menu_save_used = 本次已用过（变灰）
 local menu_save, menu_save_used = nil, false
 
--- 菜单显示的"继续"状态从存档现读（每次回菜单都刷新，别缓存过期状态）
-local function refresh_menu_save()
-	menu_save = phos.save.read("save")
-	if menu_save == "" then menu_save = nil end
-	menu_save_used = (phos.save.read("save_used") == "1")
+-- 存档值的兼容读取层（DESIGN §9）：v2 写入什么类型就读回什么类型；旧档与旧 mod 写的是
+-- 文本（"123" / "1" / "0"），这里按"类型优先、文本兜底"读，迁移期不需要区分两种存档。
+local function read_number(key, default)
+	local v = phos.save.read(key)
+	if type(v) == "number" then return v end
+	if type(v) == "string" then return tonumber(v) or default end
+	return default
 end
 
--- 消耗存档：一局结束 / 主动结算 / 载入时调用（写失败无所谓，只是不让"继续"再亮）
+local function read_flag(key, default)
+	local v = phos.save.read(key)
+	if type(v) == "boolean" then return v end
+	if type(v) == "number" then return v ~= 0 end
+	if type(v) == "string" then return v == "1" or v == "true" end
+	return default
+end
+
+local function read_text(key, default)
+	local v = phos.save.read(key)
+	return (type(v) == "string" and v ~= "") and v or default
+end
+
+-- 对局快照：v2 是表；v1 是字符串（旧 RLE 快照，交给 Game.restore 的兼容解码）
+local function read_snapshot()
+	local v = phos.save.read("save")
+	if type(v) == "table" then return v end
+	if type(v) == "string" and v ~= "" then return v end
+	return nil
+end
+
+-- 菜单显示的"继续"状态从存档现读（每次回菜单都刷新，别缓存过期状态）
+local function refresh_menu_save()
+	menu_save = read_snapshot()
+	menu_save_used = read_flag("save_used", false)
+end
+
+-- 消耗存档：一局结束 / 主动结算 / 载入时调用（写失败无所谓，只是不让"继续"再亮）。
+-- 这个标记保持文本 "0"/"1"：它是存档观测面（dev/ 用例与既有 .sav）读的哨兵值，
+-- 与玩法数值无关；改成布尔会让旧读取方误判。
 local function mark_save_used()
 	if phos.save.available() then phos.save.write("save_used", "1") end
 end
 
 local function clamp(v, lo, hi) return v < lo and lo or (v > hi and hi or v) end
 
--- 存盘只在**刷新纪录 / 改设置**时发生，不每帧 IO（DESIGN §9）
+-- 存盘只在**刷新纪录 / 改设置**时发生，不每帧 IO（DESIGN §9）；数字按 number 存
 local function bump_best_wave(w)
 	if w > best_wave then
 		best_wave = w
-		phos.save.write("best_wave", tostring(best_wave))
+		phos.save.write("best_wave", best_wave)
 	end
 end
 
@@ -125,7 +156,7 @@ local function settle_score()
 	local sc = game.peak_credits + game.wave * 100
 	if sc > best_score then
 		best_score = sc
-		phos.save.write("best_score", tostring(best_score))
+		phos.save.write("best_score", best_score)
 	end
 end
 
@@ -140,12 +171,11 @@ local function to_menu()
 	refresh_menu_save()  -- 回菜单即重读：新存的档要立刻能"继续"，用过的档要立刻变灰
 end
 
--- S：把当前对局打成单行快照写进 save，回菜单（一次存档一次继续，见 DESIGN §9）。
--- 写失败（无存档权限）也照常回菜单——不写就等于没有档，"继续"不会亮。
+-- S：把当前对局写成 v2 表存进 save，回菜单（一次存档一次继续，见 DESIGN §9）。
+-- 写失败（无存档权限 / 超过单值上限）也照常回菜单——不写就等于没有档，"继续"不会亮。
 local function save_and_menu()
-	local snap = game:snapshot()
 	if phos.save.available() then
-		phos.save.write("save", snap)
+		phos.save.write("save", game:snapshot())
 		phos.save.write("save_used", "0") -- 新档未消费：菜单里"继续"可点
 	end
 	phos.audio.beep(880, 0.08, { wave = "triangle", volume = 0.16 })
@@ -154,11 +184,12 @@ local function save_and_menu()
 end
 
 -- 菜单"继续"：从 save 重建那一局。载入即写 save_used="1"（消耗掉，一次机会）。
+-- save 是 v2 表；旧档（v1 字符串）由 Game.restore 内部解码，两种都能继续。
 local function load_save()
-	local str = phos.save.read("save")
-	if not str or str == "" then return end
+	local data = read_snapshot()
+	if not data then return end
 	phos.panel.resize(PANEL_W) -- 先定侧栏，playfield() 才是对局尺寸（restore 靠它取 MW/MH）
-	local g = Game.restore(str)
+	local g = Game.restore(data)
 	if not g then
 		phos.panel.resize(0)
 		phos.audio.beep(120, 0.06, { wave = "square", volume = 0.14 })
@@ -174,10 +205,10 @@ end
 
 local function new_game()
 	phos.panel.resize(PANEL_W) -- 对局需要侧栏
-	-- 开局即把"上次难度/地图"写盘（DESIGN §9：菜单确认时写）
+	-- 开局即把"上次难度/地图/无尽"写盘（DESIGN §9：菜单确认时写）；数值/布尔按原类型存
 	phos.save.write("diff", menu.diff)
 	phos.save.write("map", menu.map)
-	phos.save.write("endless", menu.endless and "1" or "0")
+	phos.save.write("endless", menu.endless)
 	game = Game.new(menu.diff, menu.map, menu.endless)
 	mode = "play"
 	paused = false
@@ -185,24 +216,72 @@ local function new_game()
 	phos.audio.music(Music)
 end
 
+-- 观测用的列表构造（字段与旧 debug_state 一致：agent 与 dev/ 自测直接读这些字段）
+local function observe_towers(g)
+	local out = {}
+	for _, t in ipairs(g.towers) do
+		local _, _, interval = Towers.stats(t, t.aura)
+		out[#out + 1] = { x = t.x, y = t.y, type = t.type, level = t.level,
+			kills = t.kills, priority = t.priority, hp = t.hp, max_hp = t.max_hp,
+			powered = (t.powered ~= false), draw = t.draw or 0, srcs = t.srcs or {},
+			interval = interval, thick = Towers.by(Towers.TYPES[t.type].thickness_by, t.level, 0) }
+	end
+	return out
+end
+
+local function observe_enemies(g)
+	local out = {}
+	for _, e in ipairs(g.enemies) do
+		local d = g.map:dist_at(math.floor(e.x), math.floor(e.y))
+		local tg = e.target
+		out[#out + 1] = { x = e.x, y = e.y, type = e.type, hp = e.hp, max_hp = e.max_hp,
+			fly = e.fly, dist = d, mode = e.mode, reason = e.reason,
+			tx = tg and tg.x or nil, ty = tg and tg.y or nil }
+	end
+	return out
+end
+
+local function observe_sources(g)
+	local out = {}
+	for i, s in ipairs(g.sources or {}) do
+		out[#out + 1] = { index = i, x = s.x, y = s.y, kind = s.kind, supply = s.supply,
+			used = s.used, remaining = s.supply - s.used, radius = s.radius }
+	end
+	return out
+end
+
+-- 基地供电圆内是否无岩石/水（生成期 protect 保证；这里给观测口径）
+local function observe_core_clear(g)
+	local cr = Towers.CORE_RADIUS
+	for dy = -cr, cr do
+		for dx = -cr, cr do
+			if dx * dx + dy * dy <= cr * cr then
+				local v = g.map:get(g.map.core.x + dx, g.map.core.y + dy)
+				if v == 1 or v == 2 then return false end -- Map.ROCK / Map.WATER
+			end
+		end
+	end
+	return true
+end
+
 function init()
 	cart = phos.cart.info()
 	phos.panel.resize(0) -- 菜单不需要侧栏：留着会压住标题
-	best_wave = tonumber(phos.save.read("best_wave") or "0") or 0
-	wins = tonumber(phos.save.read("wins") or "0") or 0
-	best_score = tonumber(phos.save.read("best_score") or "0") or 0
-	speed = clamp(tonumber(phos.save.read("speed") or "1") or 1, 1, SPEED_MAX)
-	local diff = phos.save.read("diff") or "NORMAL"
+	-- 记录与偏好：v2 写什么类型读回什么类型；旧档/旧 mod 写的是文本，由兼容读取层兜底
+	best_wave = read_number("best_wave", 0)
+	wins = read_number("wins", 0)
+	best_score = read_number("best_score", 0)
+	speed = clamp(read_number("speed", 1), 1, SPEED_MAX)
+	local diff = read_text("diff", "NORMAL")
 	if not ({ EASY = true, NORMAL = true, HARD = true })[diff] then diff = "NORMAL" end
-	local map = phos.save.read("map") or "RANDOM"
+	local map = read_text("map", "RANDOM")
 	if not ({ OPEN = true, CANALS = true, MAZE = true, RANDOM = true })[map] then map = "RANDOM" end
-	-- 无尽模式沿用上次选择（"1"/"0"）；与 best_wave/best_score 共用一格纪录，不另开键
-	local endless = (phos.save.read("endless") == "1")
-
+	-- 无尽模式沿用上次选择（boolean；旧档写的是 "1"/"0"，同一层兼容读取也认得）
+	local endless = read_flag("endless", false)
 	menu = { row = menu_rows.DIFF, diff = diff, map = map, endless = endless }
 	refresh_menu_save() -- "继续"行是否出现 / 是否变灰，由存档现况决定
 
-	-- 把几个关键旋钮挂到 `~` 调试台（DESIGN §12 第三刀）：边打边调
+	-- 把几个关键旋钮挂到调试台（~ 键，DESIGN §12 第三刀）：边打边调
 	local PACING = { zh = "节奏", en = "PACING" }
 	phos.debug.number({ zh = "布防时长(秒)", en = "Build time (s)" },
 		function() return Game.BUILD_TIME end, function(v) Game.BUILD_TIME = v end,
@@ -225,6 +304,59 @@ function init()
 				{ min = 0, max = 300, step = 1, group = GRP })
 		end
 	end
+
+	-- 观测（DESIGN §10）：声明式，state.query 时逐字段求值（不再维护会过期的手写快照）。
+	-- 字段与旧 debug_state 对齐：菜单期只给菜单字段，对局字段返回 nil（= 该键不输出）；
+	-- 记录值（best_wave / wins / best_score）两种模式都可读。
+	local function play_only(fn)
+		return function()
+			if mode ~= "play" or not game then return nil end
+			return fn(game)
+		end
+	end
+	local function menu_only(fn)
+		return function()
+			if mode ~= "menu" then return nil end
+			return fn()
+		end
+	end
+	phos.observe{
+		phase = function() return (mode == "play" and game) and game.phase or "menu" end,
+		best_wave = function() return best_wave end,
+		wins = function() return wins end,
+		best_score = function() return best_score end,
+		speed = function() return speed end,
+		endless = function() return (mode == "play" and game) and game.endless or menu.endless end,
+		menu_row = menu_only(function() return menu.row end),
+		has_save = menu_only(function() return menu_save ~= nil end),
+		save_used = menu_only(function() return menu_save_used end),
+		wave = play_only(function(g) return g.wave end),
+		wave_total = play_only(function(g) return g.wave_total end),
+		diff = play_only(function(g) return g.diff end),
+		map_style = play_only(function(g) return g.map_style end),
+		core_hp = play_only(function(g) return g.core_hp end),
+		core_max = play_only(function(g) return g.core_max end),
+		core_x = play_only(function(g) return g.map.core.x end),
+		core_y = play_only(function(g) return g.map.core.y end),
+		core_radius = play_only(function() return Towers.CORE_RADIUS end),
+		core_power_clear = play_only(observe_core_clear),
+		credits = play_only(function(g) return g.credits end),
+		power = play_only(observe_sources),
+		active_waves = play_only(function(g) return g:active_waves() end),
+		next_in = play_only(function(g) return g.next_in end),
+		enemies_alive = play_only(function(g) return #g.enemies end),
+		selected_type = play_only(function(g) return g:selected_name() end),
+		cursor_x = play_only(function(g) return g.cx end),
+		cursor_y = play_only(function(g) return g.cy end),
+		airstrike_cd = play_only(function(g) return g.airstrike_cd end),
+		buildable = play_only(function(g) return g:can_build(g.cx, g.cy) end),
+		heals = play_only(function(g) return g.heal_count end),
+		towers_lost = play_only(function(g) return g.towers_lost end),
+		towers = play_only(observe_towers),
+		enemies = play_only(observe_enemies),
+		path_ok = play_only(function(g) return g.map:ground_path_exists() end),
+		grid = play_only(function(g) return { w = g.MW, h = g.MH } end),
+		}
 
 	game = nil
 	mode = "menu"
@@ -269,7 +401,7 @@ end
 -- 循环让每次按键都有反馈，再配一声短促提示音把"手感"落到实处。
 local function set_speed(v)
 	speed = ((v - 1) % SPEED_MAX) + 1
-	phos.save.write("speed", tostring(speed))
+	phos.save.write("speed", speed) -- 数字存档：读回是 number
 	phos.audio.beep(520 + speed * 140, 0.05, { wave = "square", volume = 0.14 })
 end
 
@@ -349,7 +481,7 @@ local function menu_input(dt)
 			phos.save.write("map", menu.map)
 		elseif menu.row == menu_rows.ENDLESS then
 			menu.endless = not menu.endless
-			phos.save.write("endless", menu.endless and "1" or "0")
+			phos.save.write("endless", menu.endless) -- 布尔存档：读回是 boolean
 		end
 	end
 
@@ -421,7 +553,7 @@ function update(dt)
 	end
 	if ev.won then
 		wins = wins + 1
-		phos.save.write("wins", tostring(wins))
+		phos.save.write("wins", wins) -- 数字存档：读回是 number
 		bump_best_wave(game.wave_total)
 	end
 	if ev.over then bump_best_wave(game.wave) end
@@ -546,71 +678,5 @@ function draw()
 	end
 end
 
--- ── 给 agent / 自测的结构化状态（DESIGN §10）────────────────────────
-
-function debug_state()
-	if mode == "menu" or not game then
-		return { phase = "menu", best_wave = best_wave, wins = wins, best_score = best_score,
-			speed = speed, endless = menu.endless,
-			-- 菜单可观测：当前高亮行（menu_rows 常量）/ 是否出现"继续" / 是否已用
-			menu_row = menu.row, has_save = (menu_save ~= nil), save_used = menu_save_used }
-	end
-	local g = game
-	local towers = {}
-	for _, t in ipairs(g.towers) do
-		local _, _, interval = Towers.stats(t, t.aura)
-		towers[#towers + 1] = { x = t.x, y = t.y, type = t.type, level = t.level,
-			kills = t.kills, priority = t.priority, hp = t.hp, max_hp = t.max_hp,
-			-- 范围供电：是否通电 / 本型本级耗电 / 由哪些电源（下标）分摊
-			powered = (t.powered ~= false), draw = t.draw or 0, srcs = t.srcs or {},
-			-- 有效攻速（连续塔 0）与线宽（激光用、其余 0）：供自测核对升级数值
-			interval = interval, thick = Towers.by(Towers.TYPES[t.type].thickness_by, t.level, 0) }
-	end
-	-- 基地供电圆内是否无岩石/水（生成期 protect 保证；这里给观测口径）
-	local core_clear = true
-	local CR = Towers.CORE_RADIUS
-	for dy = -CR, CR do
-		for dx = -CR, CR do
-			if dx * dx + dy * dy <= CR * CR then
-				local v = g.map:get(g.map.core.x + dx, g.map.core.y + dy)
-				if v == 1 or v == 2 then core_clear = false end -- Map.ROCK / Map.WATER
-			end
-		end
-	end
-	local sources = {}
-	for i, s in ipairs(g.sources or {}) do
-		sources[#sources + 1] = { index = i, x = s.x, y = s.y, kind = s.kind,
-			supply = s.supply, used = s.used, remaining = s.supply - s.used,
-			radius = s.radius }
-	end
-	local enemies = {}
-	for _, e in ipairs(g.enemies) do
-		local d = g.map:dist_at(math.floor(e.x), math.floor(e.y))
-		local tg = e.target
-		enemies[#enemies + 1] = { x = e.x, y = e.y, type = e.type, hp = e.hp,
-			max_hp = e.max_hp, fly = e.fly, dist = d, mode = e.mode, reason = e.reason,
-			tx = tg and tg.x or nil, ty = tg and tg.y or nil }
-	end
-	return {
-		phase = g.phase,
-		wave = g.wave, wave_total = g.wave_total, endless = g.endless,
-		diff = g.diff, map_style = g.map_style,
-		core_hp = g.core_hp, core_max = g.core_max,
-		core_x = g.map.core.x, core_y = g.map.core.y,
-		core_radius = Towers.CORE_RADIUS, core_power_clear = core_clear,
-		credits = g.credits,
-		power = sources, -- 电源（反应堆 + 基地）：供应/已用/剩余/半径
-		active_waves = g:active_waves(),
-		speed = speed, next_in = g.next_in,
-		enemies_alive = #g.enemies,
-		selected_type = g:selected_name(),
-		cursor_x = g.cx, cursor_y = g.cy,
-		airstrike_cd = g.airstrike_cd,
-		buildable = g:can_build(g.cx, g.cy),
-		heals = g.heal_count, towers_lost = g.towers_lost,
-		towers = towers,
-		enemies = enemies,
-		path_ok = g.map:ground_path_exists(),
-		grid = { w = g.MW, h = g.MH },
-	}
-end
+-- ── 观测（DESIGN §10）──────────────────────────────────────────────
+-- 声明式观测 phos.observe 在 init 里登记：字段是函数，查询时求值，没有手写快照可过期。

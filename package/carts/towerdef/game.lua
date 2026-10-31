@@ -564,41 +564,80 @@ function Game:track_peak()
 	if self.credits > self.peak_credits then self.peak_credits = self.credits end
 end
 
--- ── 存档快照（单行字符串，交给 phos.save）─────────────────────────────
--- 格式：记录用 ';' 分、字段用 ',' 分；浮点一律 %.3f（往返一致：存档值经一次取整，
--- 再存一次仍是同一串）。类型/优先级/目标都存**下标**而不是名字——省字节，值长上限 4096。
--- 地图格值 0..5 用 RLE：`<值数字><游程>`，游程写成 a..z 的双射 26 进制（'a'=1、'z'=26、
--- 'aa'=27…）。数字与字母不相交，因此无需分隔符即可逐段解析（行数=MW*MH 由 restore 校验）。
-local f = function(x) return string.format("%.3f", x or 0) end
--- 零值/默认值留空：敌人动辄几十只，省下的字节直接决定快照能否塞进 4096。
--- tonumber("") == nil，restore 侧本就 `or 默认值`，故空串天然回落默认。
-local fz = function(x) if not x or x == 0 then return "" end return f(x) end
-local function iz(x) if not x or x == 0 then return "" end return tostring(x) end
+-- ── 存档快照（结构化表 → phos.save 的 v2 值类型）──────────────────────
+-- 版本 2。顶层字段具名；浮点一律存"毫单位整数"（q3 写出 / u3 读回，与旧格式 %.3f 的精度
+-- 等价），否则 JSON 的 17 位有效数字会把"每个值 4096 字节"的额度吃光（api-reference phos.save）。
+-- 实体/波次用位置数组 + 末尾默认值截断：常见的"无护盾 / 无燃烧 / 无锁定"只占一行短数字。
+-- 地图 2565 格放不进数组（纯数字就 >5KB）：map.runs 是 (游程, 值) 对的扁平整数数组，按
+-- count*8+value 打包（值 0..5 → count = floor(code/8)、value = code%8）。
+--
+-- 兼容：v1 的"整串 RLE 快照"仍可恢复——decode_v1 把它读成与 v2 同构的表，再走同一条
+-- restore 路径；写出 v2 表后旧字符串自然被覆盖。v1 只读不写：RLE 文本**解码**仅在此保留，
+-- 旧的单行快照编码已删除。
+local SNAP_VERSION = 2
+
+-- 定点：×1000 取整 / 逆变换
+local function q3(x) return math.floor((x or 0) * 1000 + 0.5) end
+local function u3(m) return (m or 0) / 1000 end
+
+-- 存档的整数读回是 JSON 双精度：传给 phos.* / sol 接口且要求 integer 的字段，
+-- 必须先显式转回整数（严格类型检查会拒收 4.0 这类"整值浮点"，如 screen.blend / sys.seed）。
+local function i(v, default)
+	v = v or default or 0
+	return math.tointeger(v) or math.floor(v)
+end
 
 local E_INDEX, T_INDEX, P_INDEX = {}, {}, {}
 for i, k in ipairs(Enemies.ORDER) do E_INDEX[k] = i end
 for i, k in ipairs(Towers.ORDER) do T_INDEX[k] = i end
 for i, k in ipairs(Towers.PRIORITIES) do P_INDEX[k] = i end
 
--- 游程编码（值 0..5 + 双射 26 进制游程长度）。
-local function encode_cells(cells, n)
-	local out, i = {}, 0
+-- 格值（0..5）→ 游程数组，元素 = 游程*8 + 值
+local function encode_runs(cells, n)
+	local runs, i = {}, 0
 	while i < n do
-		local v = cells[i]
+		local v = cells[i] or 0
 		local j = i + 1
 		while j < n and cells[j] == v do j = j + 1 end
-		local x, s = j - i, ""
-		while x > 0 do
-			s = string.char(97 + (x - 1) % 26) .. s
-			x = math.floor((x - 1) / 26)
-		end
-		out[#out + 1] = tostring(v) .. s
+		runs[#runs + 1] = (j - i) * 8 + v
 		i = j
 	end
-	return table.concat(out)
+	return runs
 end
 
-local function decode_cells(str, n)
+-- 游程数组 → 格数组（多余游程截断，绝不越过 w*h）
+local function decode_runs(runs, n)
+	local cells, idx = {}, 0
+	for _, code in ipairs(runs or {}) do
+		local count = math.floor(code / 8)
+		local v = code % 8
+		for _ = 1, count do
+			if idx >= n then return cells end
+			cells[idx] = v
+			idx = idx + 1
+		end
+	end
+	return cells
+end
+
+-- 行 = 定长数组去掉末尾默认值（缺 = 默认）：默认值表只列非 0 的列
+local function row(values, defaults)
+	local n = #values
+	while n > 0 and values[n] == (defaults[n] or 0) do n = n - 1 end
+	local out = {}
+	for i = 1, n do out[i] = values[i] end
+	return out
+end
+
+-- 塔行：类型下标,x,y,级,cd,击杀,优先级下标,投入,hp,max_hp,受击计时,锁定数,[敌人下标,热量]…
+local TOWER_DEFAULTS = { [4] = 1, [7] = 1 }
+-- 敌人行：类型下标,x,y,hp,max_hp,速度,赏金,护盾,护盾cd,减速剩余,减速系数,燃烧dps,燃烧剩余,
+--         波号,mode,reason,重定向计时,标记,目标塔下标
+local ENEMY_DEFAULTS = { [11] = 1000 } -- 减速系数 1.0 = 没被减速
+
+-- ── v1 兼容：旧单行快照 → v2 同构表（只读路径）──────────────────────────
+-- 旧格式定义见 dev/DESIGN.md §9.1。格仍是同一套 RLE 文本，故解码函数保留在这一段。
+local function decode_v1_cells(str, n)
 	local cells, idx, i, len = {}, 0, 1, #str
 	while i <= len do
 		local v = tonumber(string.sub(str, i, i))
@@ -620,264 +659,334 @@ local function decode_cells(str, n)
 	return cells
 end
 
-local function split(s, sep)
-	local out, i = {}, 1
-	while true do
-		local j = string.find(s, sep, i, true)
-		if not j then out[#out + 1] = string.sub(s, i); break end
-		out[#out + 1] = string.sub(s, i, j - 1)
-		i = j + 1
+-- v1 里按 %.3f 存的字段（其余是整数）
+local V1_FIXED = { [2] = true, [3] = true, [4] = true, [5] = true, [6] = true, [8] = true,
+	[9] = true, [10] = true, [11] = true, [12] = true, [13] = true, [17] = true }
+
+local function decode_v1(str)
+	local rec = {}
+	for part in string.gmatch(str, "([^;]+)") do rec[string.sub(part, 1, 1)] = part end
+	if not (rec.H and rec.M and rec.C) then return nil end
+	local function split(s, sep)
+		local out, i = {}, 1
+		while true do
+			local j = string.find(s, sep, i, true)
+			if not j then out[#out + 1] = string.sub(s, i); break end
+			out[#out + 1] = string.sub(s, i, j - 1)
+			i = j + 1
+		end
+		return out
+	end
+	local function qf(text) local v = tonumber(text); return v and q3(v) end
+
+	local out = { v = SNAP_VERSION }
+	local H = split(rec.H, ",")
+	out.diff, out.map_style = H[2], H[3]
+	out.endless = (H[4] == "1")
+	out.core_max = tonumber(H[5]) or 0
+	out.core_hp = tonumber(H[6]) or 0
+	out.credits = tonumber(H[7]) or 0
+	out.peak_credits = tonumber(H[8]) or 0
+	out.phase = H[9]
+	out.wave = tonumber(H[10]) or 0
+	out.wave_total = tonumber(H[11]) or Waves.TOTAL
+	out.build_timer = qf(H[12]) or 0
+	out.next_in = qf(H[13]) or 0
+	out.airstrike_cd = qf(H[14]) or 0
+	out.heal_count = tonumber(H[15]) or 0
+	out.towers_lost = tonumber(H[16]) or 0
+	out.build_index = tonumber(H[17]) or 1
+	out.cx = tonumber(H[18]) or 1
+	out.cy = tonumber(H[19]) or 1
+	out.banner = qf(H[20]) or 0
+	out.rng_seed = tonumber(H[21]) or 0
+
+	local M = split(rec.M, ",")
+	local mw, mh = tonumber(M[2]) or 0, tonumber(M[3]) or 0
+	if mw * mh <= 0 then local _, _, pw, ph = phos.screen.playfield(); mw, mh = pw, ph end
+	local cells = decode_v1_cells(string.sub(rec.C, 3), mw * mh)
+	local gates = {}
+	local G = split(rec.G or "", ",")
+	for k = 1, (tonumber(G[2]) or 0) do
+		gates[#gates + 1] = { x = tonumber(G[3 + (k - 1) * 2]) or 0,
+			y = tonumber(G[4 + (k - 1) * 2]) or 0 }
+	end
+	out.map = { core = { x = tonumber(M[4]) or 0, y = tonumber(M[5]) or 0 },
+		version = tonumber(M[6]) or 0, gates = gates, runs = encode_runs(cells, mw * mh) }
+
+	local T = split(rec.T or "", ",")
+	local ti = 3
+	out.towers = {}
+	for _ = 1, (tonumber(T[2]) or 0) do
+		local r = { tonumber(T[ti]) or 0, q3(tonumber(T[ti + 1])), q3(tonumber(T[ti + 2])),
+			tonumber(T[ti + 3]) or 1, q3(tonumber(T[ti + 4])), tonumber(T[ti + 5]) or 0,
+			tonumber(T[ti + 6]) or 1, tonumber(T[ti + 7]) or 0, q3(tonumber(T[ti + 8])),
+			q3(tonumber(T[ti + 9])), q3(tonumber(T[ti + 10])) }
+		local nl = tonumber(T[ti + 11]) or 0
+		r[#r + 1] = nl
+		ti = ti + 12
+		for _ = 1, nl do
+			r[#r + 1] = tonumber(T[ti]) or 0
+			r[#r + 1] = q3(tonumber(T[ti + 1]))
+			ti = ti + 2
+		end
+		out.towers[#out.towers + 1] = r
+	end
+
+	local E = split(rec.E or "", ",")
+	local ei = 3
+	out.enemies = {}
+	for _ = 1, (tonumber(E[2]) or 0) do
+		local r = {}
+		for f = 1, 19 do
+			local raw = tonumber(E[ei + f - 1])
+			if raw ~= nil then
+				r[f] = V1_FIXED[f] and q3(raw) or raw
+			elseif f == 11 then
+				r[f] = 1000
+			end
+		end
+		ei = ei + 19
+		out.enemies[#out.enemies + 1] = r
+	end
+
+	local S = split(rec.S or "", ",")
+	local si = 3
+	out.schedules = {}
+	for _ = 1, (tonumber(S[2]) or 0) do
+		local r = { tonumber(S[si]) or 0, q3(tonumber(S[si + 1])), q3(tonumber(S[si + 2])),
+			q3(tonumber(S[si + 3])) }
+		local ng = tonumber(S[si + 4]) or 0
+		r[5] = ng
+		si = si + 5
+		for _ = 1, ng do
+			r[#r + 1] = tonumber(S[si]) or 0
+			r[#r + 1] = tonumber(S[si + 1]) or 0
+			r[#r + 1] = q3(tonumber(S[si + 2]))
+			r[#r + 1] = (S[si + 3] == "-") and 0 or (tonumber(S[si + 3]) or 0)
+			r[#r + 1] = tonumber(S[si + 4]) or 0
+			r[#r + 1] = q3(tonumber(S[si + 5]))
+			si = si + 6
+		end
+		out.schedules[#out.schedules + 1] = r
+	end
+
+	local K = split(rec.K or "", ",")
+	local ki = 3
+	out.strikes = {}
+	for _ = 1, (tonumber(K[2]) or 0) do
+		out.strikes[#out.strikes + 1] = { q3(tonumber(K[ki])), q3(tonumber(K[ki + 1])),
+			q3(tonumber(K[ki + 2])) }
+		ki = ki + 3
 	end
 	return out
 end
 
+-- 当前状态 → v2 表（phos.save.write 直接收表）
 function Game:snapshot()
-	local parts = {}
 	local tidx, eidx = {}, {}
 	for i, t in ipairs(self.towers) do tidx[t] = i end
 	for i, e in ipairs(self.enemies) do eidx[e] = i end
 
-	parts[#parts + 1] = table.concat({ "H", self.diff, self.map_style,
-		self.endless and 1 or 0, tostring(self.core_max), tostring(self.core_hp),
-		tostring(self.credits), tostring(self.peak_credits), self.phase,
-		tostring(self.wave), tostring(self.wave_total), f(self.build_timer),
-		f(self.next_in), f(self.airstrike_cd), tostring(self.heal_count),
-		tostring(self.towers_lost), tostring(self.build_index), tostring(self.cx),
-		tostring(self.cy), f(self.banner), tostring(self.rng_seed or 0) }, ",")
-
-	parts[#parts + 1] = table.concat({ "M", tostring(self.MW), tostring(self.MH),
-		tostring(self.map.core.x), tostring(self.map.core.y),
-		tostring(self.map.version) }, ",")
-
-	parts[#parts + 1] = "C," .. encode_cells(self.map.cells, self.MW * self.MH)
-
-	local G = { "G", tostring(#self.map.gates) }
-	for _, ga in ipairs(self.map.gates) do
-		G[#G + 1] = tostring(ga.x); G[#G + 1] = tostring(ga.y)
-	end
-	parts[#parts + 1] = table.concat(G, ",")
-
-	local S = { "S", tostring(#self.schedules) }
-	for _, s in ipairs(self.schedules) do
-		S[#S + 1] = tostring(s.wave)
-		S[#S + 1] = f(s.factors.hp); S[#S + 1] = f(s.factors.speed); S[#S + 1] = f(s.factors.reward)
-		S[#S + 1] = tostring(#s.groups)
-		for _, gr in ipairs(s.groups) do
-			S[#S + 1] = tostring(E_INDEX[gr.type] or 0)
-			S[#S + 1] = tostring(gr.count)
-			S[#S + 1] = f(gr.interval)
-			S[#S + 1] = gr.gate and tostring(gr.gate) or "-"
-			S[#S + 1] = tostring(gr.spawned)
-			S[#S + 1] = f(gr.timer)
-		end
-	end
-	parts[#parts + 1] = table.concat(S, ",")
-
-	local T = { "T", tostring(#self.towers) }
+	local towers = {}
 	for _, t in ipairs(self.towers) do
-		T[#T + 1] = tostring(T_INDEX[t.type] or 0)
-		T[#T + 1] = tostring(t.x); T[#T + 1] = tostring(t.y)
-		T[#T + 1] = tostring(t.level)
-		T[#T + 1] = f(t.cd); T[#T + 1] = tostring(t.kills or 0)
-		T[#T + 1] = tostring(P_INDEX[t.priority] or 1)
-		T[#T + 1] = tostring(t.spent or 0)
-		T[#T + 1] = f(t.hp); T[#T + 1] = f(t.max_hp); T[#T + 1] = f(t.hit_t)
+		local values = { T_INDEX[t.type] or 0, q3(t.x), q3(t.y), t.level, q3(t.cd),
+			t.kills or 0, P_INDEX[t.priority] or 1, t.spent or 0, q3(t.hp), q3(t.max_hp),
+			q3(t.hit_t) }
 		local locked = t.locked or {}
-		T[#T + 1] = tostring(#locked)
+		values[#values + 1] = #locked
 		for _, L in ipairs(locked) do
-			T[#T + 1] = tostring(eidx[L.e] or 0)
-			T[#T + 1] = f(L.heat or 0)
+			values[#values + 1] = eidx[L.e] or 0
+			values[#values + 1] = q3(L.heat)
 		end
+		towers[#towers + 1] = row(values, TOWER_DEFAULTS)
 	end
-	parts[#parts + 1] = table.concat(T, ",")
 
-	local E = { "E", tostring(#self.enemies) }
+	local enemies = {}
 	for _, e in ipairs(self.enemies) do
-		E[#E + 1] = tostring(E_INDEX[e.type] or 0)
-		E[#E + 1] = f(e.x); E[#E + 1] = f(e.y)
-		E[#E + 1] = f(e.hp); E[#E + 1] = f(e.max_hp)
-		E[#E + 1] = f(e.speed); E[#E + 1] = tostring(e.bounty or 0)
-		E[#E + 1] = fz(e.shield); E[#E + 1] = fz(e.shield_cd)
-		E[#E + 1] = fz(e.slow_t)
-		E[#E + 1] = (e.slow_factor == 1) and "" or f(e.slow_factor)
-		E[#E + 1] = fz(e.burn_dps); E[#E + 1] = fz(e.burn_t)
-		E[#E + 1] = tostring(e.wave or 0)
-		E[#E + 1] = (e.mode == "tower") and 1 or ""
-		E[#E + 1] = (e.reason == "block") and 1 or (e.reason == "reactor" and 2 or "")
-		E[#E + 1] = fz(e.retarget_t)
-		E[#E + 1] = iz((e.dead and 1 or 0) + (e.leaked and 2 or 0))
-		E[#E + 1] = iz(tidx[e.target])
+		local values = { E_INDEX[e.type] or 0, q3(e.x), q3(e.y), q3(e.hp), q3(e.max_hp),
+			q3(e.speed), e.bounty or 0, q3(e.shield), q3(e.shield_cd), q3(e.slow_t),
+			q3(e.slow_factor == nil and 1 or e.slow_factor), q3(e.burn_dps), q3(e.burn_t),
+			e.wave or 0, (e.mode == "tower") and 1 or 0,
+			(e.reason == "block" and 1) or (e.reason == "reactor" and 2) or 0,
+			q3(e.retarget_t), (e.dead and 1 or 0) + (e.leaked and 2 or 0), tidx[e.target] or 0 }
+		enemies[#enemies + 1] = row(values, ENEMY_DEFAULTS)
 	end
-	parts[#parts + 1] = table.concat(E, ",")
 
-	local K = { "K", tostring(#self.strikes) }
+	local schedules = {}
+	for _, s in ipairs(self.schedules) do
+		local factors = s.factors or {}
+		local values = { s.wave, q3(factors.hp), q3(factors.speed), q3(factors.reward),
+			#s.groups }
+		for _, gr in ipairs(s.groups) do
+			values[#values + 1] = E_INDEX[gr.type] or 0
+			values[#values + 1] = gr.count
+			values[#values + 1] = q3(gr.interval)
+			values[#values + 1] = gr.gate or 0
+			values[#values + 1] = gr.spawned
+			values[#values + 1] = q3(gr.timer)
+		end
+		schedules[#schedules + 1] = values
+	end
+
+	local strikes = {}
 	for _, s in ipairs(self.strikes) do
-		K[#K + 1] = f(s.x); K[#K + 1] = f(s.y); K[#K + 1] = f(s.t)
+		strikes[#strikes + 1] = { q3(s.x), q3(s.y), q3(s.t) }
 	end
-	parts[#parts + 1] = table.concat(K, ",")
 
-	return table.concat(parts, ";")
+	local gates = {}
+	for _, ga in ipairs(self.map.gates) do
+		gates[#gates + 1] = { x = ga.x, y = ga.y }
+	end
+
+	return {
+		v = SNAP_VERSION,
+		-- 对局头（数字/布尔/字符串按原类型存，读回同类型）
+		diff = self.diff, map_style = self.map_style, endless = self.endless and true or false,
+		core_max = self.core_max, core_hp = self.core_hp,
+		credits = self.credits, peak_credits = self.peak_credits, phase = self.phase,
+		wave = self.wave, wave_total = self.wave_total,
+		build_timer = q3(self.build_timer), next_in = q3(self.next_in),
+		airstrike_cd = q3(self.airstrike_cd),
+		heal_count = self.heal_count, towers_lost = self.towers_lost,
+		build_index = self.build_index, cx = self.cx, cy = self.cy,
+		banner = q3(self.banner), rng_seed = self.rng_seed or 0,
+		-- 地图（核心/刷怪口是对象与数组；格是打包游程）
+		map = { core = { x = self.map.core.x, y = self.map.core.y },
+			version = self.map.version, gates = gates,
+			runs = encode_runs(self.map.cells, self.MW * self.MH) },
+		schedules = schedules, towers = towers, enemies = enemies, strikes = strikes,
+	}
 end
 
--- 从快照重建一局。非法/缺失一律安全降级（返回 nil 或置 nil），绝不崩。
--- 注意：地图不走 generate（不消耗随机）；建完最后 seed(rng_seed)，让续局后的随机可复现。
--- **做不到**精确续流（主机没有读取当前 RNG 状态的接口），DESIGN §9 已如实写明。
-function Game.restore(str)
-	if type(str) ~= "string" or str == "" then return nil end
-	local rec = {}
-	for part in string.gmatch(str, "([^;]+)") do rec[string.sub(part, 1, 1)] = part end
-	if not (rec.H and rec.M and rec.C) then return nil end
+-- 从快照重建一局；参数是 v2 表（也接受 v1 字符串，内部经 decode_v1 转成同构表）。
+-- 非法/缺失一律安全降级（返回 nil），绝不崩；地图不走 generate（不消耗随机）。
+-- 注意：做不到精确续流（主机没有读当前 RNG 状态的接口），建完最后 seed(rng_seed)。
+function Game.restore(data)
+	if type(data) == "string" then data = decode_v1(data) end
+	if type(data) ~= "table" or type(data.map) ~= "table" then return nil end
+	if data.v ~= nil and data.v ~= SNAP_VERSION then return nil end
+	if type(data.map.runs) ~= "table" then return nil end
 
 	local self = setmetatable({}, Game)
-	local H = split(rec.H, ",")
-	self.diff = H[2]; self.map_style = H[3]; self.endless = (H[4] == "1")
-	self.core_max = tonumber(H[5]) or 0
-	self.core_hp = tonumber(H[6]) or 0
-	self.credits = tonumber(H[7]) or 0
-	self.peak_credits = tonumber(H[8]) or 0
-	self.phase = H[9]
-	self.wave = tonumber(H[10]) or 0
-	self.wave_total = tonumber(H[11]) or Waves.TOTAL
-	self.build_timer = tonumber(H[12]) or 0
-	self.next_in = tonumber(H[13]) or 0
-	self.airstrike_cd = tonumber(H[14]) or 0
-	self.heal_count = tonumber(H[15]) or 0
-	self.towers_lost = tonumber(H[16]) or 0
-	self.build_index = tonumber(H[17]) or 1
-	self.cx = tonumber(H[18]) or 1
-	self.cy = tonumber(H[19]) or 1
-	self.banner = tonumber(H[20]) or 0
-	local rng_seed = tonumber(H[21]) or 0
-	self.rng_seed = rng_seed -- 存回，重复 snapshot 才逐字一致
+	self.diff = data.diff or "NORMAL"
+	self.map_style = data.map_style or "RANDOM"
+	self.endless = (data.endless == true or data.endless == 1 or data.endless == "1")
+	self.core_max = i(data.core_max)
+	self.core_hp = i(data.core_hp)
+	self.credits = i(data.credits)
+	self.peak_credits = i(data.peak_credits)
+	self.phase = data.phase or "build"
+	self.wave = i(data.wave)
+	self.wave_total = i(data.wave_total, Waves.TOTAL)
+	self.build_timer = u3(data.build_timer)
+	self.next_in = u3(data.next_in)
+	self.airstrike_cd = u3(data.airstrike_cd)
+	self.heal_count = i(data.heal_count)
+	self.towers_lost = i(data.towers_lost)
+	self.build_index = i(data.build_index, 1)
+	self.cx = i(data.cx, 1)
+	self.cy = i(data.cy, 1)
+	self.banner = u3(data.banner)
+	local rng_seed = i(data.rng_seed)
+	self.rng_seed = rng_seed
 
 	local _, _, w, h = phos.screen.playfield() -- MW/MH 现取（同硬件恒定）
 	self.MW, self.MH = w, h
 
-	local M = split(rec.M, ",")
-	local core = { x = tonumber(M[4]) or 0, y = tonumber(M[5]) or 0 }
-	local version = tonumber(M[6]) or 0
-	local cells = decode_cells(string.match(rec.C, "^C,(.*)$") or "", w * h)
-
+	local map_data = data.map
+	local core = map_data.core or {}
 	local gates = {}
-	if rec.G then
-		local G = split(rec.G, ",")
-		local n = tonumber(G[2]) or 0
-		for k = 1, n do
-			gates[#gates + 1] = { x = tonumber(G[3 + (k - 1) * 2]) or 0,
-				y = tonumber(G[4 + (k - 1) * 2]) or 0 }
-		end
+	for _, ga in ipairs(map_data.gates or {}) do
+		gates[#gates + 1] = { x = i(ga.x), y = i(ga.y) }
 	end
-	self.map = Map.from_snapshot(w, h, self.map_style, core, gates, cells, version)
+	local cells = decode_runs(map_data.runs, w * h)
+	self.map = Map.from_snapshot(w, h, self.map_style, { x = i(core.x), y = i(core.y) },
+		gates, cells, i(map_data.version))
 
 	self.schedules = {}
-	if rec.S then
-		local S = split(rec.S, ",")
-		local n, i = tonumber(S[2]) or 0, 3
-		for _ = 1, n do
-			local s = { wave = tonumber(S[i]) or 0, groups = {},
-				factors = { hp = tonumber(S[i + 1]) or 1, speed = tonumber(S[i + 2]) or 1,
-					reward = tonumber(S[i + 3]) or 1 } }
-			local ng = tonumber(S[i + 4]) or 0
-			i = i + 5
-			for _ = 1, ng do
-				local gt = tonumber(S[i]) or 0
-				s.groups[#s.groups + 1] = {
-					type = Enemies.ORDER[gt] or "grunt",
-					count = tonumber(S[i + 1]) or 0,
-					interval = tonumber(S[i + 2]) or 0.1,
-					gate = (S[i + 3] == "-") and nil or tonumber(S[i + 3]),
-					spawned = tonumber(S[i + 4]) or 0,
-					timer = tonumber(S[i + 5]) or 0,
-				}
-				i = i + 6
-			end
-			self.schedules[#self.schedules + 1] = s
+	for _, r in ipairs(data.schedules or {}) do
+		local s = { wave = i(r[1]), groups = {},
+			factors = { hp = u3(r[2]), speed = u3(r[3]), reward = u3(r[4]) } }
+		local ng = i(r[5])
+		local k = 6
+		for _ = 1, ng do
+			local gate = i(r[k + 3])
+			s.groups[#s.groups + 1] = {
+				type = Enemies.ORDER[i(r[k])] or "grunt",
+				count = i(r[k + 1]),
+				interval = u3(r[k + 2]),
+				gate = (gate == 0) and nil or gate,
+				spawned = i(r[k + 4]),
+				timer = u3(r[k + 5]),
+			}
+			k = k + 6
 		end
+		self.schedules[#self.schedules + 1] = s
 	end
 
 	self.towers = {}
 	local locked_refs = {}
-	if rec.T then
-		local T = split(rec.T, ",")
-		local n, i = tonumber(T[2]) or 0, 3
-		for _ = 1, n do
-			local t = {
-				type = Towers.ORDER[tonumber(T[i]) or 0] or "GUN",
-				x = tonumber(T[i + 1]) or 0, y = tonumber(T[i + 2]) or 0,
-				level = tonumber(T[i + 3]) or 1,
-				cd = tonumber(T[i + 4]) or 0,
-				kills = tonumber(T[i + 5]) or 0,
-				priority = Towers.PRIORITIES[tonumber(T[i + 6]) or 1] or "FIRST",
-				spent = tonumber(T[i + 7]) or 0,
-				hp = tonumber(T[i + 8]) or 0, max_hp = tonumber(T[i + 9]) or 0,
-				hit_t = tonumber(T[i + 10]) or 0,
-			}
-			local nl = tonumber(T[i + 11]) or 0
-			local refs = {}
-			i = i + 12
-			for _ = 1, nl do
-				refs[#refs + 1] = { idx = tonumber(T[i]) or 0, heat = tonumber(T[i + 1]) or 0 }
-				i = i + 2
-			end
-			locked_refs[#self.towers + 1] = refs
-			self.towers[#self.towers + 1] = t
+	for _, r in ipairs(data.towers or {}) do
+		self.towers[#self.towers + 1] = {
+			type = Towers.ORDER[i(r[1])] or "GUN",
+			x = i(u3(r[2])), y = i(u3(r[3])), -- 格坐标：整数（phos.screen / ui 只收整数）
+			level = i(r[4], 1),
+			cd = u3(r[5]),
+			kills = i(r[6]),
+			priority = Towers.PRIORITIES[i(r[7], 1)] or "FIRST",
+			spent = i(r[8]),
+			hp = u3(r[9]), max_hp = u3(r[10]),
+			hit_t = u3(r[11]),
+		}
+		local refs = {}
+		for k = 1, i(r[12]) do
+			refs[#refs + 1] = { idx = i(r[12 + 2 * k - 1]), heat = u3(r[12 + 2 * k]) }
 		end
+		locked_refs[#self.towers] = refs
 	end
 
 	self.enemies = {}
-	if rec.E then
-		local E = split(rec.E, ",")
-		local n, i = tonumber(E[2]) or 0, 3
-		for _ = 1, n do
-			local kind = Enemies.ORDER[tonumber(E[i]) or 0] or "grunt"
-			-- 先按基础值造，再逐字段覆盖成存档值（Enemies.new 不碰随机，安全）
-			local e = Enemies.new(kind, tonumber(E[i + 1]) or 0, tonumber(E[i + 2]) or 0,
-				{ hp = 1, speed = 1, reward = 1 })
-			e.hp = tonumber(E[i + 3]) or e.hp
-			e.max_hp = tonumber(E[i + 4]) or e.max_hp
-			e.speed = tonumber(E[i + 5]) or e.speed
-			e.bounty = tonumber(E[i + 6]) or e.bounty
-			-- 空串 = 存档时该值为 0（fz 留空），不是"没存"：一律回落 0，
-			-- 别让 Enemies.new 给护盾型预置的 shield=40 顶掉"护盾已打光"的事实
-			e.shield = tonumber(E[i + 7]) or 0
-			e.shield_cd = tonumber(E[i + 8]) or 0
-			e.slow_t = tonumber(E[i + 9]) or 0
-			e.slow_factor = tonumber(E[i + 10]) or 1
-			e.burn_dps = tonumber(E[i + 11]) or 0
-			e.burn_t = tonumber(E[i + 12]) or 0
-			e.wave = tonumber(E[i + 13]) or 0
-			e.mode = (tonumber(E[i + 14]) == 1) and "tower" or "core"
-			local rc = tonumber(E[i + 15]) or 0
-			e.reason = (rc == 1) and "block" or (rc == 2 and "reactor" or nil)
-			e.retarget_t = tonumber(E[i + 16]) or 0
-			local flags = tonumber(E[i + 17]) or 0
-			e.dead = (flags % 2 == 1)
-			e.leaked = (flags >= 2)
-			e.target = self.towers[tonumber(E[i + 18]) or 0] or nil
-			i = i + 19
-			self.enemies[#self.enemies + 1] = e
-		end
+	for _, r in ipairs(data.enemies or {}) do
+		local kind = Enemies.ORDER[i(r[1])] or "grunt"
+		-- 先按基础值造，再逐字段覆盖成存档值（Enemies.new 不碰随机，安全）
+		local e = Enemies.new(kind, u3(r[2]), u3(r[3]), { hp = 1, speed = 1, reward = 1 })
+		e.hp = u3(r[4])
+		e.max_hp = u3(r[5])
+		e.speed = u3(r[6])
+		e.bounty = i(r[7])
+		-- 缺省 = 0（被截掉的默认值），不是"没存"：别让 Enemies.new 给护盾型的预置值顶掉
+		e.shield = u3(r[8])
+		e.shield_cd = u3(r[9])
+		e.slow_t = u3(r[10])
+		e.slow_factor = r[11] and u3(r[11]) or 1
+		e.burn_dps = u3(r[12])
+		e.burn_t = u3(r[13])
+		e.wave = i(r[14])
+		e.mode = (i(r[15]) == 1) and "tower" or "core"
+		local rc = i(r[16])
+		e.reason = (rc == 1) and "block" or (rc == 2 and "reactor" or nil)
+		e.retarget_t = u3(r[17])
+		local flags = i(r[18])
+		e.dead = (flags % 2 == 1)
+		e.leaked = (flags >= 2)
+		e.target = self.towers[i(r[19])] or nil
+		self.enemies[#self.enemies + 1] = e
 	end
 
 	-- 地狱塔锁定：敌人建好后再把下标解析回对象（非法下标直接丢弃）
 	for it, t in ipairs(self.towers) do
 		local locked = {}
-		for _, r in ipairs(locked_refs[it] or {}) do
-			local e = self.enemies[r.idx]
-			if e then locked[#locked + 1] = { e = e, heat = r.heat } end
+		for _, ref in ipairs(locked_refs[it] or {}) do
+			local e = self.enemies[ref.idx]
+			if e then locked[#locked + 1] = { e = e, heat = ref.heat } end
 		end
 		t.locked = locked
 	end
 
 	self.strikes = {}
-	if rec.K then
-		local K = split(rec.K, ",")
-		local n, i = tonumber(K[2]) or 0, 3
-		for _ = 1, n do
-			self.strikes[#self.strikes + 1] = { x = tonumber(K[i]) or 0,
-				y = tonumber(K[i + 1]) or 0, t = tonumber(K[i + 2]) or 0 }
-			i = i + 3
-		end
+	for _, r in ipairs(data.strikes or {}) do
+		self.strikes[#self.strikes + 1] = { x = i(u3(r[1])), y = i(u3(r[2])), t = u3(r[3]) }
 	end
 
 	self.fx = {}

@@ -126,7 +126,7 @@
 | U10 | 精灵语义与文档不一致 | `ui::icon` 的 `step` 仍是**降采样步长**（`core/ui.cpp`），文档已按实现改写（`api-reference.md` 与 `devkit/phos.lua`）；绑定层仍硬编码亮度 1.0，语义统一未做 | ⚠ **文档已对齐、代码待统一** |
 | U11 | 参数与单位校验缺失 | `ui::bar` 对 NaN 仍直接 `static_cast<int>`（`core/ui.cpp`）；`ui.sprite` 的宽高仍按字节算（`api/ui_api.cpp`） | ❌ **仍待修** |
 
-**内容侧试点（全部 10 张出厂卡带）**：新栈已用进真实卡带——侧栏改 `phos.ui.render`（无坐标、
+**内容侧试点（全部 11 张出厂卡带）**：新栈已用进真实卡带——侧栏改 `phos.ui.render`（无坐标、
 宽度运行时变化不用重算）、排行榜换 `phos.score`（删除自写的 `scores.lua` 与逗号串
 编解码）、观测换 `phos.observe`（不再维护手写快照）、通用词走 `phos.lang.shared`；
 runner 的暂停浮窗改用 `phos.scene`（`pause_world`/`audio_pause` 由引擎负责，卡带不再自己
@@ -140,7 +140,8 @@ crawl 用彩色 bar + 数字存档 + 嵌套观测（`world` 快照）验证了�
 ballbattle 验证了"排行榜组件 + 小地图自绘"的混排（组件布局与卡带像素各管一段）；
 xiangqi 验证了棋盘类卡带的菜单/对局双状态迁移（观察值按 screen 分派、暂停交给场景栈）；
 worms 验证了"组件布局 + 卡带侧计算"的复杂面板（两队血量/角色记号/武器两列网格）；
-十卡 `--check-cart` 均 0 error/0 warning。这说明"组件与工具层"已经足以承接真实内容，
+towerdef 用存档 v2 表值（旧 RLE 存档兼容解码）+ `phos.observe` 验证了最重卡带的迁移；
+十一卡 `--check-cart` 均 0 error/0 warning。这说明"组件与工具层"已经足以承接真实内容，
 而不只是样板。
 
 ### 3.4 卡带工具链与内容（P2：负担最终落在作者身上）
@@ -149,7 +150,7 @@ worms 验证了"组件布局 + 卡带侧计算"的复杂面板（两队血量/�
 |---|---|---|
 | K1 | 模板用 40 行"十条约定"解释绘制模型 | `devkit/template/main.lua:12-51`——学习成本被写进了骨架 |
 | K2 | 存档是字符串 KV（键 ≤64、值 ≤4096、条目 ≤256），无结构/版本/槽位 | `cart/save_store.hpp`；代价是 towerdef 约 220 行 RLE 编解码 + 19 字段记录 | ✅ **已修复**：v2 容器（magic+版本+卡带 id+CRC32、旧档升级 + `.v1` 备份、坏档只读、跨卡带拒绝）、值类型保真（文本/数字/布尔/**表**，表=嵌套对象/数组、深度≤8、非法值拒绝）、**槽位 0..9**；增量合并（merge）仍未做，属后续优化；`phos.score` 已收走 6 份最高分实现 |
-| K3 | Mod 只能整文件覆盖 | `mods/towerdef-build-pause/main.lua` 是 646 行整文件 fork（本体 617 行），只改约 10 行；mod 自己头部承认会腐烂 |
+| K3 | Mod 只能整文件覆盖 | `mods/towerdef-build-pause/main.lua` 是 646 行整文件 fork（本体 681 行），只改约 10 行；mod 自己头部承认会腐烂 |
 | K4 | 没有共享词表/格式化 | 11 张卡带各写 `SCORE/BEST/PAUSED/RESTART` 两列，617 行；没有 `phos.text.score/clock`，没有键位提示组件 | ✅ **已提供**：`phos.lang.shared()`（18 个常用词，zh/en）、`phos.text.score/clock/percent`（`core/format`，与主机展示同源）；键位提示仍归各卡带（`hint` 组件可替代大部分） |
 | K5 | 没有结构化观测约定 | `debug_state()` 各卡手搓（worms 约 200 行、towerdef/crawl 各约 60 行），字段名无约束 | ✅ **已提供**：`phos.observe{字段 = 值/函数}`（查询时求值，深度 4 序列化，单字段报错不拖垮整份）；`debug_state()` 仍兼容 |
 | K6 | 层上限 6 已被用满 | worms 已用 6 层（`carts/worms/main.lua:532-537`）；再加"UI/调试覆盖层"就是错误 |
