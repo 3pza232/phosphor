@@ -1,72 +1,12 @@
-#include "agent/cart_json.hpp"
-#include "core/json_lite.hpp"
-#include "cart/cart_scanner.hpp"
 #include "app/app.hpp"
+
+#include "core/json_lite.hpp"
 #include "core/log.hpp"
-#include "render/renderer.hpp"
-#include "render/screen_image.hpp"
 
 #include <cmath>
-#include <cstdio>
-#include <cstring>
 #include <sstream>
 
 namespace phos {
-
-namespace {
-
-/// 一次 time.step 最多推进多少逻辑帧：防止一个超大帧数把主机卡住，或 agent_.pending_steps 累加溢出
-constexpr int kMaxStepFrames = 100000;
-
-/// 图层清单 → JSON 数组（空数组 = 该卡带没建层）。
-/// 次序与合成一致（z 升序），agent 据此知道谁压在谁上面
-std::string layers_json(const LayeredScreen& layers) {
-    std::string out = "[";
-    bool first = true;
-    for (const Layer* layer : layers.ordered()) {
-        if (!first) out += ",";
-        out += "{\"name\":" + json::quote(layer->name) + ",\"z\":" + std::to_string(layer->z) +
-               ",\"visible\":" + (layer->visible ? "true" : "false") + "}";
-        first = false;
-    }
-    return out + "]";
-}
-
-/// 卡带场景栈清单 → JSON 数组（底 → 顶）：agent 据此知道压着几层界面、
-/// 世界是否被冻结、音频是否被场景暂停
-std::string scenes_json(const HostContext& host) {
-    std::string out = "[";
-    if (host.scenes != nullptr) {
-        bool first = true;
-        for (const SceneEntry& scene : host.scenes->entries()) {
-            if (!first) out += ",";
-            out += "{\"id\":" + json::quote(scene.id) +
-                   ",\"modal\":" + (scene.modal ? "true" : "false") +
-                   ",\"pause_world\":" + (scene.pause_world ? "true" : "false") +
-                   ",\"audio_pause\":" + (scene.audio_pause ? "true" : "false") + "}";
-            first = false;
-        }
-    }
-    return out + "]";
-}
-
-/// 屏幕文本 → JSON 字符串数组
-std::string screen_lines_json(const Screen& screen) {
-    std::istringstream stream(screen.to_text());
-    std::string line;
-    std::string out = "[";
-    bool first = true;
-    while (std::getline(stream, line)) {
-        if (!line.empty() && line.back() == '\r') line.pop_back();
-        if (!first) out += ",";
-        out += json::quote(line);
-        first = false;
-    }
-    out += "]";
-    return out;
-}
-
-} // namespace
 
 void App::poll_control() {
     if (!control_.running()) return;
@@ -106,13 +46,13 @@ std::string App::control_state_json() const {
         << ",\"ime\":" << (host_.ime_wanted ? "true" : "false")
         << ",\"language\":" << json::quote(lang_name(shell_.language()))
         << ",\"cursor\":" << (playing() ? -1 : shell_.cursor())
-        << ",\"shelf\":" << shelf_json()
+        << ",\"shelf\":" << agent_controller_.shelf_json(shell_)
         << ",\"crt_level\":" << config_.crt_level
         << ",\"fps\":" << config_.fps
         << ",\"render_fps\":" << host_.fps
         << ",\"merge_ms\":" << timing_.merge_ms
-        << ",\"layers\":" << layers_json(host_.layers)
-        << ",\"scenes\":" << scenes_json(host_)
+        << ",\"layers\":" << AgentController::layers_json(host_.layers)
+        << ",\"scenes\":" << AgentController::scenes_json(host_)
         // 卡带声明式界面的控件树（id/role/label/state）：agent 用它定位控件，
         // 不必解析文本画面；没有界面时为 null
         << ",\"ui\":" << (playing() && !host_.cart_ui_json.empty() ? host_.cart_ui_json : "null");
@@ -211,94 +151,16 @@ std::string App::control_state_json() const {
     return out.str();
 }
 
-std::string App::carts_json() const {
-    // 字段集与 `--scan --json` 共用一份实现（agent/cart_json.hpp）
-    // 这里刻意**重扫一次**目录而不是复用卡带架：控制通道是给工具用的，
-    // 它要的是"磁盘上现在有什么"（含目录顺序），而不是玩家眼里的排序结果
-    return "\"carts\":" + cart_list_json(scan_carts(kCartDir), config_.language == "en");
-}
-
-std::string App::shelf_json() const {
-    // 架上的顺序（玩家眼里的：最近打开优先），与 carts.scan 的目录顺序不同。
-    // 两者都暴露，是因为用途不同：扫描列表回答"磁盘上有什么"，
-    // 这一份回答"数到第几张能插进去哪张"——cursor 就是它的下标
-    std::string ids;
-    for (const auto& cart : shell_.carts()) {
-        if (!ids.empty()) ids += ",";
-        ids += json::quote(cart.id);
-    }
-    return "[" + ids + "]";
-}
-
 void App::complete_step_request() {
-    if (agent_.step_request_id < 0) return;
-    control_.reply(agent_.step_request_id, control_state_json());
-    agent_.step_request_id = -1;
+    agent_controller_.complete_step(control_, agent_, [this] { return control_state_json(); });
 }
 
 void App::complete_frame_read(Renderer* renderer) {
-    if (agent_.frame_read_id < 0) return;
-    const int id = agent_.frame_read_id;
-    const std::string path = agent_.frame_read_path;
-    agent_.frame_read_id = -1;
-    agent_.frame_read_path.clear();
-
-    // 无窗口（或渲染器尚未画过帧）时没有帧缓冲可读：如实报错，不静默返回空画面
-    int width = 0, height = 0;
-    std::vector<unsigned char> rgba;
-    if (!renderer || !renderer->read_frame(rgba, width, height)) {
-        control_.reply_error(id, "no framebuffer readable (frame.read needs the window path)");
-        return;
-    }
-
-    // 统计放在回包里："不是全黑"这类断言不必依赖 PNG 也能成立。
-    // 亮度阈值取 16：CRT 后处理会压暗，但真正的字形笔画远高于它
-    const size_t pixels = static_cast<size_t>(width) * static_cast<size_t>(height);
-    size_t lit = 0;
-    double luma_sum = 0.0;
-    for (size_t i = 0; i < pixels; ++i) {
-        const unsigned char* p = rgba.data() + i * 4;
-        const double luma = 0.299 * p[0] + 0.587 * p[1] + 0.114 * p[2];
-        luma_sum += luma;
-        if (luma > 16.0) ++lit;
-    }
-
-    std::ostringstream out;
-    out << "\"width\":" << width << ",\"height\":" << height
-        << ",\"lit_ratio\":" << (pixels ? static_cast<double>(lit) / pixels : 0.0)
-        << ",\"mean_luma\":" << (pixels ? luma_sum / pixels : 0.0);
-
-    if (!path.empty()) {
-        // 行序翻转：OpenGL 自下而上，PNG（以及 CPU 截图）自上而下 —— 翻过来才能与
-        // screenshot 的像素逐格对照
-        std::vector<unsigned char> flipped(pixels * 4);
-        const size_t stride = static_cast<size_t>(width) * 4;
-        for (int y = 0; y < height; ++y)
-            std::memcpy(flipped.data() + static_cast<size_t>(y) * stride,
-                        rgba.data() + static_cast<size_t>(height - 1 - y) * stride, stride);
-        ScreenImage image;
-        image.width = width;
-        image.height = height;
-        image.rgba = std::move(flipped);
-        std::string error;
-        if (!write_png(image, path, error)) {
-            control_.reply_error(id, error);
-            return;
-        }
-        out << ",\"path\":" << json::quote(path);
-    }
-    control_.reply(id, out.str());
+    agent_controller_.complete_frame_read(control_, agent_, renderer);
 }
 
 void App::release_expired_inputs() {
-    for (auto it = agent_.pending_releases.begin(); it != agent_.pending_releases.end();) {
-        if (--it->second <= 0) {
-            input_.set_key(it->first, false);
-            it = agent_.pending_releases.erase(it);
-        } else {
-            ++it;
-        }
-    }
+    agent_controller_.release_expired(agent_, input_);
 }
 
 void App::execute_control(const ControlCommand& command) {
@@ -332,7 +194,7 @@ void App::execute_control(const ControlCommand& command) {
         std::ostringstream payload;
         payload << "\"layer\":" << json::quote(label) << ",\"width\":" << source->width()
                 << ",\"height\":" << source->height() << ",\"frame\":" << frame_count_
-                << ",\"lines\":" << screen_lines_json(*source);
+                << ",\"lines\":" << AgentController::screen_lines_json(*source);
         control_.reply(command.id, payload.str());
         return;
     }
@@ -363,8 +225,7 @@ void App::execute_control(const ControlCommand& command) {
             control_.reply_error(command.id, "no framebuffer in headless mode (use screenshot)");
             return;
         }
-        agent_.frame_read_path = args.str("path");
-        agent_.frame_read_id = command.id;
+        agent_controller_.begin_frame_read(agent_, command.id, args.str("path"));
         return;
     }
 
@@ -416,7 +277,9 @@ void App::execute_control(const ControlCommand& command) {
     }
 
     if (name == "carts.scan") {
-        control_.reply(command.id, carts_json());
+        // 与 --scan --json 共用 cart_json 实现；英文标志跟当前界面语言
+        control_.reply(command.id,
+                       agent_controller_.carts_json(kCartDir, config_.language == "en"));
         return;
     }
 
@@ -449,38 +312,27 @@ void App::execute_control(const ControlCommand& command) {
     }
 
     if (name == "input.clear") {
-        input_.release_all();
-        agent_.pending_releases.clear();
+        agent_controller_.clear_pending_inputs(agent_, input_);
         control_.reply(command.id, "");
         return;
     }
 
     if (name == "time.step") {
-        // 同一时刻只允许一条 time.step 在途：回包是"推进完毕"的同步点，两个请求共用
-        // 一个回包 id 会让先到的那个永远等不到回包
-        if (agent_.step_request_id >= 0) {
-            control_.reply_error(command.id, "a time.step is already pending");
+        // 单步语义（在途判定/帧数钳制/登记回包 id）在 AgentController，这里只转错误
+        std::string error;
+        if (!agent_controller_.begin_step(agent_, args.integer("frames", 1), command.id, error)) {
+            control_.reply_error(command.id, error);
             return;
         }
-        int frames = args.integer("frames", 1);
-        if (frames < 1) frames = 1;
-        if (frames > kMaxStepFrames) frames = kMaxStepFrames;
-        agent_.stepping = true;
-        agent_.pending_steps += frames;
-        agent_.step_request_id = command.id;  // 全部推进完毕后再回包（确定性同步点）
         return;
     }
 
     if (name == "time.resume") {
         // 在途的 time.step 绝不能"消失"：它的发起方正在等"推进完毕"这个同步点。
         // 恢复实时 = 放弃剩余帧数，必须立刻回一个明确的错误，否则 agent 永久挂起
-        if (agent_.step_request_id >= 0) {
-            control_.reply_error(agent_.step_request_id,
-                                 "time.step abandoned by time.resume");
-        }
-        agent_.stepping = false;
-        agent_.pending_steps = 0;
-        agent_.step_request_id = -1;
+        const int abandoned = agent_controller_.abandon_step(agent_);
+        if (abandoned >= 0)
+            control_.reply_error(abandoned, "time.step abandoned by time.resume");
         control_.reply(command.id, control_state_json());
         return;
     }

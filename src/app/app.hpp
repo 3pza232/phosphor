@@ -1,5 +1,6 @@
 #pragma once
 
+#include "app/agent_controller.hpp"
 #include "app/font_state.hpp"
 #include "app/shelf_playback.hpp"
 #include "app/sound_state.hpp"
@@ -133,8 +134,6 @@ private:
     /// swap 之后即失效，读回时机只有那里是正确的
     void complete_frame_read(class Renderer* renderer);
     std::string control_state_json() const;
-    std::string carts_json() const;
-    std::string shelf_json() const;
     /// 时间是否由控制通道驱动（此时主循环只在 time.step 时推进逻辑帧）
     bool control_time_driven() const { return control_.running() && agent_.stepping; }
     /// 注入按键的定时释放
@@ -254,17 +253,11 @@ private:
 
     // 控制通道 + agent 会话状态
     ControlChannel control_;
-    /// agent 控制通道的**会话状态**（与通道的 I/O 分开：通道只管收发，这里管"会话语义"：
-    /// 单步推进、待回包的请求、注入按键的定时释放）。集中一处，见 app_control.cpp
-    struct AgentSession {
-        bool stepping = false;        // 时间由 agent 驱动：只在 time.step 时推进逻辑帧
-        int pending_steps = 0;        // 待推进的逻辑帧数
-        int step_request_id = -1;     // 待回包的 time.step 请求 id
-        int frame_read_id = -1;       // 待回包的 frame.read 请求 id（<0 = 无）
-        std::string frame_read_path;  // frame.read 的落盘路径（空 = 只回统计）
-        std::vector<std::pair<std::string, int>> pending_releases;  // 注入按键的定时释放（按名字记）
-    };
+    /// agent 控制通道的会话语义（单步/待回包/按键定时释放）：定义与实现见
+    /// app/agent_controller.hpp；保留为 App 成员，因为主循环与换卡路径都直接读写它
     AgentSession agent_;
+    /// 控制通道的语义侧：单步回包 / frame.read 落地 / 按键定时释放 / 观察面 JSON
+    AgentController agent_controller_;
     std::string cart_path_;  // 当前卡带路径（供 cart.reload）
 
     /// 当前宿主脚本会话的 RAII 绑定（见 api/host_api.hpp 的 HostCartBinding）。
