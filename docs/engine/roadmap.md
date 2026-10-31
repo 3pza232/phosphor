@@ -194,7 +194,10 @@ E 从 A 开始持续，不等其它阶段。
 > （棋盘逐行仍以字符串数组报出，agent 可直接定位每一格）。
 > life：侧栏组件化 + 观测换 `phos.observe`（无存档、无暂停场景、无排行榜——验证纯展示型卡带）。
 > chomp：侧栏组件化（动态幽灵图鉴/心形生命）、最高分换 `phos.score{max=1}`、暂停换场景栈、
-> 观测换 `phos.observe`（幽灵状态随查询求值）。六卡均 0 error/0 warning。下一张：`crawl` / `xiangqi`。
+> 观测换 `phos.observe`（幽灵状态随查询求值）。
+> crawl：侧栏组件化（HP/灯油/经验三条彩色 bar——组件新增 fg 覆盖填充色）、数字存档按 number
+> 读写（去掉 tonumber/tostring）、观测换 `phos.observe`（返回 `world` 调试快照）。
+> 七卡均 0 error/0 warning。下一张：`xiangqi` / `ballbattle`。
 
 ### M4 卡带工具层（3–4 周，可与 M3 部分并行）
 

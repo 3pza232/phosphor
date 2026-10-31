@@ -1,9 +1,7 @@
 -- panel.lua —— 右侧栏（DESIGN §12.2）。
 --
--- 只读状态：HP / 灯油条 + 光照半径 / 攻防 / 等级与经验 / 金币 / 装备 /
--- 深度与最高纪录 / 背包 8 格 / 底部键位。颜色一律取主题色板。
--- 坐标为**面板局部**；定宽文案一律过 phos.text.fit，绝不写死列号（汉字占 2 列）。
-
+-- 只读状态：HP / 灯油条 + 光照 / 攻防 / 等级与经验 / 金币 / 装备 / 深度与最高纪录 /
+-- 背包 8 格 / 底部键位。声明式组件：对齐/裁剪/宽度由引擎负责。
 local Panel = {}
 
 local Text = {
@@ -18,93 +16,78 @@ local Text = {
          none_w = "BARE", none_a = "CLOTH", keys = "KEYS", down = "DOWN", take = "TAKE",
          move = "ARROWS move/attack", help = "HELP" },
 }
-
 local SLOT_LETTER = { "a", "b", "c", "d", "e", "f", "g", "h" }
-
 local function L() return phos.lang.dict(Text) end
-local function slot_color(C, name) return C[name] or C.white end
-
--- 一条实心条：n 格填色 + 其余暗格。颜色由调用方给（血条/油条各有分档）。
-local function bar(P, C, x, y, w, frac, col)
-  local n = math.floor(math.max(0, math.min(1, frac)) * w + 0.5)
-  P.print(x, y, string.rep("=", n), col)
-  P.print(x + n, y, string.rep("-", w - n), C.dark_gray)
-end
-
--- 血条配色：高绿 / 中黄 / 低红。油条另有一套（高青 / 中黄 / 低红，归零闪烁）。
-local function hp_color(C, frac)
-  if frac > 0.5 then return C.green elseif frac > 0.25 then return C.yellow else return C.red end
-end
-local function fuel_color(C, frac, fuel, turn)
-  if fuel == 0 then
-    return ((turn % 20) < 10) and C.red or C.dark_gray
-  end
-  if frac > 0.5 then return C.cyan elseif frac > 0.2 then return C.yellow else return C.red end
-end
+local function KEY(name) return "[" .. phos.input.key_name(name) .. "]" end
 
 function Panel.draw(world, cart)
-  local P, C = phos.panel, phos.color
-  local pw, ph = P.size()
+  local pw = phos.panel.size()
   if pw == 0 then return end
+
   local t = L()
   local p = world.p
-  local iw = pw - 2
-
-  P.clear()
-  P.print(1, 1, phos.text.fit(cart.name or "CRAWL", iw), C.yellow)
-  P.print(1, 2, string.rep("-", iw), C.dark_gray)
-
-  -- HP
   local hf = p.max_hp > 0 and p.hp / p.max_hp or 0
-  P.print(1, 4, phos.text.pad(t.hp, iw - 4), C.gray)
-  P.print(pw - 4, 4, phos.text.pad_left(tostring(p.hp), 3), C.white)
-  bar(P, C, 1, 5, iw, hf, hp_color(C, hf))
-
-  -- 灯油 + 光照半径
+  local hp_fg = hf > 0.5 and "green" or (hf > 0.25 and "yellow" or "red")
   local ff = p.fuel / 100
-  P.print(1, 7, phos.text.pad(t.fuel, iw - 4), C.gray)
-  P.print(pw - 4, 7, phos.text.pad_left(tostring(p.fuel), 3), C.white)
-  bar(P, C, 1, 8, iw, ff, fuel_color(C, ff, p.fuel, world.turn))
-  P.print(1, 9, phos.text.pad(t.light .. " " .. tostring(world.radius or 0), iw), C.white)
-
-  -- 攻/防/等级
-  P.print(1, 11, phos.text.pad(t.atk .. " " .. tostring(math.floor(world.p.atk + (p.weapon and p.weapon.bonus or 0))), iw // 2), C.white)
-  P.print(1 + iw // 2, 11, phos.text.pad(t.def .. " " .. tostring(math.floor(world.p.def + (p.armor and p.armor.bonus or 0))), iw - iw // 2), C.white)
-  P.print(1, 12, phos.text.pad(t.lv .. " " .. tostring(p.level) .. "/15", iw), C.white)
-  bar(P, C, 1, 13, iw, world:xp_progress(), C.magenta)
-
-  -- 金币
-  P.print(1, 15, phos.text.pad(t.gold .. " " .. tostring(p.gold), iw), C.yellow)
-
-  -- 装备（缺省"空手 / 布衣"）
-  local wn = p.weapon and phos.lang.pick(p.weapon.name) or t.none_w
-  local an = p.armor and phos.lang.pick(p.armor.name) or t.none_a
-  P.print(1, 17, phos.text.fit(t.weapon .. " " .. wn, iw), p.weapon and C.white or C.dark_gray)
-  P.print(1, 18, phos.text.fit(t.armor .. " " .. an, iw), p.armor and C.white or C.dark_gray)
-
-  -- 深度 / 最高纪录
-  P.print(1, 20, phos.text.pad(t.depth .. " " .. tostring(world.depth) .. "/10", iw), C.gray)
-  P.print(1, 21, phos.text.fit(t.best .. " " .. tostring(world.best_score), iw), C.white)
-
-  -- 背包（8 格）
-  P.print(1, 23, t.pack, C.gray)
-  for i = 1, 8 do
-    local y = 23 + i
-    local spec = p.inv[i]
-    if spec then
-      local line = SLOT_LETTER[i] .. ") " .. spec.glyph .. " " .. phos.lang.pick(spec.name)
-      P.print(1, y, phos.text.fit(line, iw), slot_color(C, spec.color))
-    else
-      P.print(1, y, phos.text.fit(SLOT_LETTER[i] .. ") " .. t.empty, iw), C.dark_gray)
-    end
+  local fuel_fg
+  if p.fuel == 0 then
+    fuel_fg = ((world.turn % 20) < 10) and "red" or "dark_gray"
+  else
+    fuel_fg = ff > 0.5 and "cyan" or (ff > 0.2 and "yellow" or "red")
   end
 
-  -- 底部键位（详细键位都在这里；游戏区底部不再单独压一行。窄栏里每行最多两键，定宽一律过 fit）
-  local kn = phos.input.key_name
-  P.print(1, ph - 4, phos.text.fit(t.move, iw), C.dark_gray)
-  P.print(1, ph - 3, phos.text.fit(string.format("[%s] %s", kn("y"), t.down), iw), C.dark_gray)
-  P.print(1, ph - 2, phos.text.fit(string.format("[%s] %s  [%s] %s", kn("a"), t.take, kn("x"), t.pack), iw), C.dark_gray)
-  P.print(1, ph - 1, phos.text.fit(string.format("[%s] %s", kn("h"), t.help), iw), C.dark_gray)
+  local atk = math.floor(world.p.atk + (p.weapon and p.weapon.bonus or 0))
+  local def = math.floor(world.p.def + (p.armor and p.armor.bonus or 0))
+  local wn = p.weapon and phos.lang.pick(p.weapon.name) or t.none_w
+  local an = p.armor and phos.lang.pick(p.armor.name) or t.none_a
+
+  local rows = {
+    { kind = "text", text = cart.name or "CRAWL", accent = true },
+    { kind = "divider", fg = "dark_gray" },
+    { kind = "stat", text = t.hp, value = tostring(p.hp) .. "/" .. tostring(p.max_hp), label_w = 6 },
+    { kind = "bar", ratio = hf, fg = hp_fg },
+    { kind = "stat", text = t.fuel, value = tostring(p.fuel), label_w = 6 },
+    { kind = "bar", ratio = ff, fg = fuel_fg },
+    { kind = "text", text = t.light .. " " .. tostring(world.radius or 0) },
+    { kind = "divider", fg = "dark_gray" },
+    { kind = "stat", text = t.atk, value = tostring(atk), label_w = 6 },
+    { kind = "stat", text = t.def, value = tostring(def), label_w = 6 },
+    { kind = "stat", text = t.lv, value = tostring(p.level) .. "/15", label_w = 6 },
+    { kind = "bar", ratio = world:xp_progress(), fg = "magenta" },
+    { kind = "stat", text = t.gold, value = tostring(p.gold), label_w = 6, fg = "yellow" },
+    { kind = "text", text = t.weapon .. " " .. wn, fg = p.weapon and "white" or "dark_gray" },
+    { kind = "text", text = t.armor .. " " .. an, fg = p.armor and "white" or "dark_gray" },
+    { kind = "divider", fg = "dark_gray" },
+    { kind = "stat", text = t.depth, value = tostring(world.depth) .. "/10", label_w = 6 },
+    { kind = "stat", text = t.best, value = tostring(world.best_score), label_w = 6 },
+    { kind = "text", text = t.pack, dim = true },
+  }
+  for i = 1, 8 do
+    local spec = p.inv[i]
+    if spec then
+      rows[#rows + 1] = { kind = "text",
+                          text = SLOT_LETTER[i] .. ") " .. spec.glyph .. " " .. phos.lang.pick(spec.name),
+                          fg = spec.color or "white" }
+    else
+      rows[#rows + 1] = { kind = "text", text = SLOT_LETTER[i] .. ") " .. t.empty, dim = true }
+    end
+  end
+  rows[#rows + 1] = { kind = "spacer", grow = 1 }
+  rows[#rows + 1] = { kind = "text", text = t.move, dim = true }
+  rows[#rows + 1] = { kind = "text", text = KEY("y") .. " " .. t.down, dim = true }
+  rows[#rows + 1] = { kind = "text", text = KEY("a") .. " " .. t.take .. "  " .. KEY("x") .. " " .. t.pack,
+                      dim = true }
+  rows[#rows + 1] = { kind = "text", text = KEY("h") .. " " .. t.help, dim = true }
+
+  phos.ui.render{
+    screen = "panel",
+    surface = "panel",
+    input = false,
+    kind = "column",
+    padding = { x = 1, y = 1 },
+    gap = 0,
+    children = rows,
+  }
 end
 
 return Panel

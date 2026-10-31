@@ -81,17 +81,18 @@ end
 -- 这样主机 `--seed N` 仍能决定整局的随机序列（DESIGN §15）。
 local function new_run()
   local seed = phos.sys.random(1, 999999)
-  phos.save.write("last_seed", tostring(seed))
+  phos.save.write("last_seed", seed)  -- 数字存档：读回就是 number
   world = World.new({ seed = seed, best_score = best_score, best_depth = best_depth })
   modal, inv_sel, reported = "none", 0, false
 end
 
 function init()
   cart = phos.cart.info()
-  best_score = tonumber(phos.save.read("best_score") or "0") or 0
-  best_depth = tonumber(phos.save.read("best_depth") or "0") or 0
-  runs = (tonumber(phos.save.read("runs") or "0") or 0) + 1
-  phos.save.write("runs", tostring(runs))
+  -- 数字存档按 number 读写（v2），不必再 tonumber/tostring
+  best_score = phos.save.read("best_score") or 0
+  best_depth = phos.save.read("best_depth") or 0
+  runs = (phos.save.read("runs") or 0) + 1
+  phos.save.write("runs", runs)
   register_debug()
   new_run()
 
@@ -105,6 +106,14 @@ function init()
   end
 
   phos.audio.music(require("music"))
+  phos.observe{
+    world = function() return world:debug() end,
+    modal = function() return modal end,
+    inv_sel = function() return inv_sel end,  -- 背包光标（0 基）
+    best_score = function() return best_score end,
+    best_depth = function() return best_depth end,
+    runs = function() return runs end,
+  }
 end
 
 -- 结算：只在刷新纪录时写盘（不做每帧 IO）
@@ -112,13 +121,13 @@ local function settle()
   local sc = world:score()
   if sc > best_score then
     best_score = sc
-    phos.save.write("best_score", tostring(sc))
+    phos.save.write("best_score", sc)
   end
   local d = world.depth
   if world.won then d = 10 end
   if d > best_depth then
     best_depth = d
-    phos.save.write("best_depth", tostring(d))
+    phos.save.write("best_depth", d)
   end
   world.best_score = best_score
   world.best_depth = best_depth
@@ -383,13 +392,4 @@ function draw()
   elseif world.won then draw_end(S, C, true) end
 end
 
--- agent / 自测观察口（DESIGN §14.2）
-function debug_state()
-  local d = world:debug()
-  d.modal = modal
-  d.inv_sel = inv_sel              -- 背包光标（0 基）；信息窗跟随它，agent 可据此自检
-  d.best_score = best_score
-  d.best_depth = best_depth
-  d.runs = runs
-  return d
-end
+-- agent 观测：写在 init 里用 phos.observe 声明（字段为函数，查询时求值）

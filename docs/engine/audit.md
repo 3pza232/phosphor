@@ -126,7 +126,7 @@
 | U10 | 精灵语义与文档不一致 | `ui::icon` 的 `step` 仍是**降采样步长**（`core/ui.cpp`），文档已按实现改写（`api-reference.md` 与 `devkit/phos.lua`）；绑定层仍硬编码亮度 1.0，语义统一未做 | ⚠ **文档已对齐、代码待统一** |
 | U11 | 参数与单位校验缺失 | `ui::bar` 对 NaN 仍直接 `static_cast<int>`（`core/ui.cpp`）；`ui.sprite` 的宽高仍按字节算（`api/ui_api.cpp`） | ❌ **仍待修** |
 
-**内容侧试点（snake / runner / bricks / tetris / life / chomp）**：新栈已用进真实卡带——侧栏改 `phos.ui.render`（无坐标、
+**内容侧试点（snake / runner / bricks / tetris / life / chomp / crawl）**：新栈已用进真实卡带——侧栏改 `phos.ui.render`（无坐标、
 宽度运行时变化不用重算）、排行榜换 `phos.score`（删除自写的 `scores.lua` 与逗号串
 编解码）、观测换 `phos.observe`（不再维护手写快照）、通用词走 `phos.lang.shared`；
 runner 的暂停浮窗改用 `phos.scene`（`pause_world`/`audio_pause` 由引擎负责，卡带不再自己
@@ -136,7 +136,8 @@ bricks 又验证了一遍同一路径（最高分 `phos.score{max=1}`、`phos.te
 tetris 还验证了"组件布局 + 预留绘制区"可以共存（下一块预览在 spacer 里逐格画），
 life 验证了纯展示型卡带（无存档/无场景/无排行榜）只需组件 + 观测两件事；
 chomp 又把"动态图鉴/心形生命/带状态的对象列表"走了一遍同一套组件与观测；
-六卡 `--check-cart` 均 0 error/0 warning。这说明"组件与工具层"已经足以承接真实内容，
+crawl 用彩色 bar + 数字存档 + 嵌套观测（`world` 快照）验证了复杂 Rogue 类卡带的迁移面；
+七卡 `--check-cart` 均 0 error/0 warning。这说明"组件与工具层"已经足以承接真实内容，
 而不只是样板。
 
 ### 3.4 卡带工具链与内容（P2：负担最终落在作者身上）
