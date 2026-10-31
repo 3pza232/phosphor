@@ -197,7 +197,9 @@ E 从 A 开始持续，不等其它阶段。
 > 观测换 `phos.observe`（幽灵状态随查询求值）。
 > crawl：侧栏组件化（HP/灯油/经验三条彩色 bar——组件新增 fg 覆盖填充色）、数字存档按 number
 > 读写（去掉 tonumber/tostring）、观测换 `phos.observe`（返回 `world` 调试快照）。
-> 七卡均 0 error/0 warning。下一张：`xiangqi` / `ballbattle`。
+> ballbattle：排行榜/键位组件化、小地图仍在预留区自绘（组件布局 + 卡带像素的分工）、
+> 最高分换 `phos.score{max=1}`、观测换 `phos.observe`。
+> 八卡均 0 error/0 warning。下一张：`xiangqi` / `worms` 侧栏。
 
 ### M4 卡带工具层（3–4 周，可与 M3 部分并行）
 

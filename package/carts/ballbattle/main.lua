@@ -27,19 +27,16 @@ local function new_game()
   game = Game.new(rng)
 end
 
-local best = 0            -- 历史最高分（init 读盘一次，之后常驻内存）
+local board              -- 最高分排行榜（引擎负责排序/截断/存档键）
 
-local function best_score() return best end
+local function best_score() return board:best() end
 
 -- 结算：分数线只增不减（吃的 + 体格峰值）。**当前分一越过历史最高就记下并落盘**，
 -- 于是"主动退出"（拔卡 / 关机）与死亡走同一条路——高手不想玩了退出也不会白打。
 -- 生命期里只在刷新纪录时才写盘（吃一个食物才涨一次分），不会形成每帧 IO
 local function settle()
   local sc = game:status().score
-  if sc > best then
-    best = sc
-    phos.save.write("best", tostring(best))
-  end
+  if sc > board:best() then board:add(sc) end  -- 只增不减；写盘由 phos.score 负责
 end
 
 function init()
@@ -62,10 +59,15 @@ function init()
     function() return Game.MERGE_DELAY end, function(v) Game.MERGE_DELAY = v end,
     { min = 0, max = 30, step = 0.5, group = GRP })
   cart = phos.cart.info()
-  best = tonumber(phos.save.read("best") or "0") or 0
+  board = phos.score.new{ max = 1, key = "best" }  -- 旧 "best" 存档兼容读入
   view_scale, cam_wx, cam_wy = nil, nil, nil
   new_game()
   phos.audio.music(require("music"))
+  phos.observe{
+    status = function() return game:status() end,
+    view_scale = function() return view_scale end,
+    best = function() return board:best() end,
+  }
 end
 
 function update(dt)
@@ -238,11 +240,7 @@ function draw()
     phos.ui.center_text(by + 3, string.format(t.again, phos.input.key_name("a")))
   end
 
-  Panel.draw(game, cart, best_score)
+  Panel.draw(game, cart, best_score())
 end
 
-function debug_state()
-  local st = game:status()
-  st.view_scale = view_scale
-  return st
-end
+-- 观测在 init 里用 phos.observe 声明（字段为函数，查询时求值）
