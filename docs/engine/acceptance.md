@@ -9,7 +9,7 @@
 
 ```sh
 ninja -j16                                  # 构建
-./phosphor_tests.exe                        # 130 用例 / 1,421 断言
+./phosphor_tests.exe                        # 133 用例 / 1,459 断言
 python ../tools/run_checks.py --gui         # 14 项无头 + 2 项开窗门禁
 ./phosphor.exe --check-api                 # 150/150
 ./phosphor.exe --check-packs --root ../package   # 45 包 0 error / 0 warning
@@ -17,7 +17,7 @@ python ../tools/pixel_golden.py            # 7 场景像素基线（非门禁）
 python ../tools/perf_budget.py             # 性能预算报告（非门禁）
 ```
 
-当前基线：**14 门禁全绿、130 单测 / 1,421 断言、150/150 API、45 包 0/0、像素 7/7**。
+当前基线：**14 门禁全绿、133 单测 / 1,459 断言、150/150 API、45 包 0/0、像素 7/7**。
 性能预算（本机，headless）：11 张出厂卡带 p95 update 均 ≤ 3.13 ms（life 最高，预算 16.67 ms）。
 
 ## M0 止血与纠偏
@@ -69,8 +69,8 @@ python ../tools/perf_budget.py             # 性能预算报告（非门禁）
 - 输入：窗口失焦释放按键；scroll 焦点跟随/滚动条；**手柄**（GLFW 标准布局、热插拔、键盘共存）；按键重复参数化。
 - 音频：6ms 暂停/恢复/stop 淡出；声部优先级/抢占（48 + 8 尾巴）；三路总线（music/sfx/ui）；
   ducking；`music_state()`；主机事件音分档。
-- 绘制/精灵：line/outline/circle（预裁剪/有界半径）+ Region 同名方法；sprite step=降采样、
-  brightness 贯通；table/Region 几何裁剪。
+- 绘制/精灵：line/outline/circle（预裁剪/有界半径）+ Region 同名方法；sprite step/brightness/solid、
+  UTF-8 字符键；table/Region 几何裁剪。
 - 内容包：`--check-packs` 已进门禁（packs）。
 - 工程：`perf_budget.py`/`pixel_golden.py`（非门禁）、run_checks `--json` + CI 门禁摘要。
 
@@ -100,5 +100,5 @@ python ../tools/perf_budget.py             # 性能预算报告（非门禁）
 - [x] M2 7 屏组件化 + 文本 golden 稳定
 - [x] M3 声明式 UI/场景栈 + 11 卡迁移
 - [x] M4 工具层（存档 v2/表值/槽位/score/observe/静态检查/异步联机）
-- [ ] M5 体验项（流式采样、合成器收口、主题预览）
+- [ ] M5 体验项（流式采样、绘制列表/文本投影、主题预览、输入动作映射/重绑定）
 - [ ] 验收文档化：本文件与 audit/roadmap 的最终对账

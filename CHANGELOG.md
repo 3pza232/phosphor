@@ -24,6 +24,7 @@
 - `phos.ui.toast`、`phos.ui.line/outline/circle` 几何原语（预裁剪/有界半径）、sprite 亮度；
   skin.lua 可选 `ui` 字形/度量覆盖（UI 主题包）。
 - 外壳 7 屏（开机/卡带架/设置/暂停/Mod/磁带码/错误）全部由组件树绘制；`ui::ScreenStack` 表达浮层导航。
+- `sprite`：UTF-8 字符键、solid 实心模式（按显示宽度填色）、brightness/step 语义定稿。
 
 ### 场景与卡带
 
@@ -59,6 +60,7 @@
   AgentController（21 分支命令与状态快照）；core 不再反向 include 上层。
 - Screen 拆为 screen_store/screen_draw/screen_text；HostContext 脚本字段由 `HostCartBinding` 拥有卡带生命周期。
 - 存档 v2、`json_lite` 严格化（转义/代理对/数字/深度/非有限数拒绝）。
+- `FrameView` 统一 present/CPU 截图的「面/层/覆盖物」决策（绘制列表/文本投影仍待做）。
 
 ### 已知限制
 
