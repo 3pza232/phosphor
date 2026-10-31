@@ -1,6 +1,5 @@
 #include "cart/save_store.hpp"
 
-#include <cstdio>
 #include <filesystem>
 #include <fstream>
 
@@ -23,21 +22,43 @@ int hex_nibble(char c) {
     return -1;
 }
 
+/// 删掉半份写出的临时文件（失败路径的清理；删不掉也没有更好的补救）。
+/// 只删普通文件：临时文件位置被别的东西（例如目录）占住时不动它
+void discard_tmp(const std::string& tmp) {
+    std::error_code ec;
+    if (std::filesystem::is_regular_file(tmp, ec)) std::filesystem::remove(tmp, ec);
+}
+
+/// 目录可写性探针：临时文件都建不出来，就永远改不成 .sav，此时老实降级只读
+bool probe_writable(const std::string& tmp) {
+    std::ofstream probe(tmp, std::ios::trunc);
+    if (!probe) return false;
+    probe.close();
+    discard_tmp(tmp);
+    return true;
+}
+
 } // namespace
 
 bool SaveStore::open(const std::string& save_dir, const std::string& cart_id) {
     namespace fs = std::filesystem;
+    data_.clear();
+    path_ = (fs::path(save_dir) / (cart_id + ".sav")).string();
+    writable_ = false;
+
     std::error_code ec;
     fs::create_directories(save_dir, ec);
+    if (!ec) writable_ = probe_writable(path_ + ".tmp");
 
-    path_ = (fs::path(save_dir) / (cart_id + ".sav")).string();
-    // 目录建不出来（只读介质、权限不足）就让卡带以"只读存档"运行：
-    // 读仍可用，写会被拒绝并如实回报失败，而不是假装存下了
-    writable_ = !ec;
+    std::error_code exists_ec;
+    if (!fs::exists(path_, exists_ec)) return writable_;  // 新存档：空数据
 
     std::ifstream in(path_);
-    if (!in) return writable_;  // 新存档：空数据
-
+    if (!in) {
+        // 旧档存在却读不出（权限/介质错误）：只读运行，绝不用空数据覆盖未知内容
+        writable_ = false;
+        return false;
+    }
     std::string line;
     while (std::getline(in, line)) {
         if (!line.empty() && line.back() == '\r') line.pop_back();
@@ -60,31 +81,63 @@ std::optional<std::string> SaveStore::get(const std::string& key) const {
 
 bool SaveStore::set(const std::string& key, const std::string& value) {
     if (!writable_ || !entry_within_limits(key, value)) return false;
-    if (data_.size() >= kMaxEntries && data_.find(key) == data_.end()) return false;
-    data_[key] = value;
-    return flush();
+
+    auto it = data_.find(key);
+    if (it == data_.end()) {
+        if (data_.size() >= kMaxEntries) return false;
+        data_.emplace(key, value);
+        if (flush(data_)) return true;
+        data_.erase(key);  // 写盘失败：回滚，内存保持与磁盘一致
+        return false;
+    }
+    const std::string previous = it->second;
+    it->second = value;
+    if (flush(data_)) return true;
+    it->second = previous;
+    return false;
 }
 
 bool SaveStore::erase(const std::string& key) {
     if (!writable_) return false;
-    data_.erase(key);
-    return flush();
+    auto it = data_.find(key);
+    if (it == data_.end()) return true;  // 不在表里：磁盘上也没有它
+
+    auto node = data_.extract(it);
+    if (flush(data_)) return true;
+    data_.insert(std::move(node));  // 写盘失败：把节点放回去
+    return false;
 }
 
-bool SaveStore::flush() const {
-    std::ofstream out(path_, std::ios::trunc);
+bool SaveStore::flush(const std::map<std::string, std::string>& data) const {
+    const std::string tmp = path_ + ".tmp";
+    std::ofstream out(tmp, std::ios::trunc);
     if (!out) return false;
-    for (const auto& [k, v] : data_)
-        out << k << '=' << v << '\n';
-    return static_cast<bool>(out);
+    for (const auto& [key, value] : data) out << key << '=' << value << '\n';
+    out.flush();
+    if (!out) {
+        discard_tmp(tmp);
+        return false;
+    }
+    out.close();
+    if (!out) {
+        discard_tmp(tmp);
+        return false;
+    }
+
+    std::error_code ec;
+    std::filesystem::rename(tmp, path_, ec);
+    if (ec) {
+        discard_tmp(tmp);
+        return false;
+    }
+    return true;
 }
 
 std::string SaveStore::export_code() const {
     // 磁带码：key=value\n 拼接后的十六进制（保证纯文本可复制）
     static const char* kHex = "0123456789ABCDEF";
     std::string payload;
-    for (const auto& [k, v] : data_)
-        payload += k + "=" + v + "\n";
+    for (const auto& [k, v] : data_) payload += k + "=" + v + "\n";
 
     std::string code;
     code.reserve(payload.size() * 2);
@@ -134,8 +187,10 @@ bool SaveStore::import_code(const std::string& code) {
         begin = end + 1;
     }
 
+    // 先写盘、成功了才换内存：失败时原内存与旧档都还在
+    if (!flush(parsed)) return false;
     data_ = std::move(parsed);
-    return flush();
+    return true;
 }
 
 } // namespace phos

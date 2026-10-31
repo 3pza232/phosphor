@@ -25,6 +25,7 @@
 #include <algorithm>
 #include <filesystem>
 #include <fstream>
+#include <limits>
 #include <string>
 
 using namespace phos;
@@ -195,6 +196,153 @@ TEST(json_string_array) {
     CHECK(obj.string_array("s").empty());               // 字符串不是数组
     CHECK(obj.string_array("missing").empty());
     CHECK_EQ(obj.integer("x", 5), 5);  // 数组不干扰其它取值
+}
+
+// ---------------------------------------------------------------- json unicode / 数值 / 转义
+
+TEST(json_unicode_escape_decodes_to_utf8) {
+    json::Object obj;
+    std::string err;
+    // 基本平面：\u4E2D\u6587 = 中文
+    CHECK(obj.parse(R"({"t":"\u4E2D\u6587"})", err));
+    CHECK_EQ(obj.str("t"), std::string("中文"));
+    // 十六进制大小写都合法：\u00e9 = é
+    CHECK(obj.parse(R"({"t":"\u00e9"})", err));
+    CHECK_EQ(obj.str("t"), std::string("é"));
+    // \u0000 是合法的 NUL：按字节进 std::string，长度不因转义而变
+    CHECK(obj.parse(R"({"t":"a\u0000b"})", err));
+    CHECK_EQ(obj.str("t").size(), size_t(3));
+    CHECK_EQ(int(obj.str("t")[1]), 0);
+}
+
+TEST(json_unicode_surrogate_pair) {
+    json::Object obj;
+    std::string err;
+    // U+1F600 = F0 9F 98 80：代理对合并成一个 4 字节 UTF-8 码点，而不是两个坏字符
+    CHECK(obj.parse(R"({"e":"\uD83D\uDE00"})", err));
+    CHECK_EQ(obj.str("e"), std::string("\xF0\x9F\x98\x80"));
+    // 裸 UTF-8 与转义混写（标准 JSON 客户端可能逐段转义）
+    CHECK(obj.parse(R"({"e":"A\uD83D\uDE00中"})", err));
+    CHECK_EQ(obj.str("e"), std::string("A\xF0\x9F\x98\x80中"));
+}
+
+TEST(json_unicode_invalid_rejected) {
+    json::Object obj;
+    std::string err;
+    CHECK(!obj.parse(R"({"t":"\u12"})", err));     // 位数不够
+    CHECK(!obj.parse(R"({"t":"\uZZZZ"})", err));   // 非十六进制
+    CHECK(!obj.parse(R"({"t":"\uD800"})", err));   // 孤立高代理
+    CHECK(!obj.parse(R"({"t":"\uDE00"})", err));   // 孤立低代理
+    CHECK(!obj.parse(R"({"t":"\uD83Dx"})", err));  // 高代理后不是低代理
+    CHECK(!obj.parse(R"({"t":"\q"})", err));       // 未知转义
+    CHECK(!err.empty());
+}
+
+TEST(json_escape_table_roundtrip) {
+    // 八个标准转义各来一个：解析结果必须与对应的控制字符逐字节一致
+    json::Object obj;
+    std::string err;
+    CHECK(obj.parse(R"({"t":"\" \\ \/ \b \f \n \r \t"})", err));
+    CHECK_EQ(obj.str("t"), std::string("\" \\ / \b \f \n \r \t"));
+}
+
+TEST(json_number_grammar_is_strict) {
+    json::Object obj;
+    std::string err;
+    // 合法：负号 / 负零 / 小数 / 指数
+    CHECK(obj.parse(R"({"a":-5,"b":-0,"c":-1.5,"d":1e3,"e":0.25,"f":-2E-2})", err));
+    CHECK_EQ(obj.integer("a"), -5);
+    CHECK_EQ(obj.integer("b"), 0);
+    CHECK_EQ(obj.number("c"), -1.5);
+    CHECK_EQ(obj.integer("c"), -1);  // 向零截断
+    CHECK_EQ(obj.integer("d"), 1000);
+    CHECK_EQ(obj.number("e"), 0.25);
+    CHECK_EQ(obj.number("f"), -0.02);
+
+    // 非法字面量：NaN/Infinity 不是 JSON；strtod 会"宽容接受"的写法同样必须拒绝
+    const char* bad[] = {
+        R"({"a":NaN})",       R"({"a":nan})",  R"({"a":Infinity})", R"({"a":-Infinity})",
+        R"({"a":+1})",        R"({"a":01})",   R"({"a":.5})",       R"({"a":1.})",
+        R"({"a":1e})",        R"({"a":0x10})", R"({"a":})",         R"({"a":1e999})",
+        R"({"a":-1e999})",    R"({"a":[NaN]})", R"({"a":[1e999]})",
+    };
+    for (const char* text : bad) {
+        json::Object strict;
+        std::string bad_err;
+        CHECK(!strict.parse(text, bad_err));
+        CHECK(!bad_err.empty());
+    }
+}
+
+TEST(json_number_narrowing_is_clamped_not_ub) {
+    json::Object obj;
+    std::string err;
+    // 合法但超出 int 的数值：读取必须钳到端点（double → int 越界是 UB）
+    CHECK(obj.parse(R"({"big":1e30,"small":-1e30,"wide":123456789012345678901234567890})",
+                    err));
+    CHECK_EQ(obj.integer("big"), std::numeric_limits<int>::max());
+    CHECK_EQ(obj.integer("small"), std::numeric_limits<int>::min());
+    CHECK_EQ(obj.integer("wide"), std::numeric_limits<int>::max());
+    // 字符串形式的数值按 strtod 解析，但非有限文本不得传播成 inf/nan
+    CHECK(obj.parse(R"({"s":"inf","n":"12"})", err));
+    CHECK_EQ(obj.number("s", 7.0), 7.0);
+    CHECK_EQ(obj.integer("n", 9), 12);
+}
+
+TEST(json_escape_controls_and_invalid_utf8) {
+    // 全部控制字符都必须转义：输出里不能再出现裸控制字节
+    for (int code = 0; code < 0x20; ++code) {
+        const std::string raw(1, static_cast<char>(code));
+        CHECK(json::quote(raw).find(static_cast<char>(code)) == std::string::npos);
+    }
+    CHECK_EQ(json::escape(std::string("a\x01", 2)), std::string("a\\u0001"));
+    CHECK_EQ(json::escape("\b\f\n\r\t"), std::string("\\b\\f\\n\\r\\t"));
+    CHECK_EQ(json::escape("\x7F"), std::string("\\u007F"));      // DEL
+    CHECK_EQ(json::escape("\xC2\x85"), std::string("\\u0085"));  // C1 控制字符 U+0085
+
+    // 孤立代理（CESU-8 的 U+D800）与非法字节不能原样进 JSON
+    CHECK_EQ(json::quote("\xED\xA0\x80"), std::string("\"\\uFFFD\""));
+    CHECK_EQ(json::quote("\xFF"), std::string("\"\\uFFFD\""));
+    // 合法 UTF-8 原样保留：中文不转义成 \uXXXX
+    CHECK_EQ(json::escape("中文"), std::string("中文"));
+    CHECK_EQ(json::escape("A中\xF0\x9F\x98\x80"), std::string("A中\xF0\x9F\x98\x80"));
+}
+
+TEST(json_quote_roundtrips_arbitrary_text) {
+    const std::string samples[] = {
+        "plain",
+        "with \"quotes\" and \\backslash",
+        "中文与 emoji \xF0\x9F\x98\x80",
+        std::string("nul\0inside", 10),
+        "tab\tnewline\ncr\r",
+        "\x01\x1F\x7F",
+    };
+    for (const std::string& sample : samples) {
+        json::Object obj;
+        std::string err;
+        CHECK(obj.parse("{\"t\":" + json::quote(sample) + "}", err));
+        CHECK_EQ(obj.str("t"), sample);  // 转义 → 解析必须逐字节还原
+    }
+    // 孤立代理被替换成 U+FFFD，产出仍是合法 JSON
+    json::Object obj;
+    std::string err;
+    CHECK(obj.parse("{\"t\":" + json::quote("\xED\xA0\x80") + "}", err));
+    CHECK_EQ(obj.str("t"), std::string("\xEF\xBF\xBD"));
+}
+
+TEST(json_depth_limit_boundary) {
+    const auto nested = [](int levels) {
+        std::string text;
+        for (int i = 0; i < levels; ++i) text += "{\"a\":";
+        text += "1";
+        for (int i = 0; i < levels; ++i) text += "}";
+        return text;
+    };
+    json::Object obj;
+    std::string err;
+    CHECK(obj.parse(nested(json::Object::kMaxDepth), err));       // 上限内：能解析
+    CHECK(!obj.parse(nested(json::Object::kMaxDepth + 1), err));  // 超一层即拒绝
+    CHECK(!err.empty());
 }
 
 // ---------------------------------------------------------------- palette / builtin
@@ -625,6 +773,105 @@ TEST(config_font_size_scope_and_clamp) {
     std::filesystem::remove(path, ec);
 }
 
+TEST(config_escapes_special_names) {
+    namespace fs = std::filesystem;
+    const fs::path path = unit_scratch("config-escape.json");
+
+    Config c;
+    c.skin = "中\"\\\n\t";  // 中文 / 引号 / 反斜杠 / 换行 / 制表符
+    c.boot = "back\\slash";
+    c.sound = "夜间";
+    c.font = "f\"ont";
+    c.language = "en";
+    c.shelf_style = "window\"x";
+    c.mods_disabled = {"mod\"1", "back\\slash"};
+    save_config(path.string(), c);
+
+    // 落盘内容必须是合法 JSON：引号/反斜杠/换行都不能把配置写坏
+    std::ifstream in(path.string());
+    CHECK(in.good());
+    std::string text, line;
+    while (std::getline(in, line)) text += line + "\n";
+    in.close();
+    json::Object disk;
+    std::string err;
+    CHECK(disk.parse(text, err));
+    CHECK(disk.object("theme") != nullptr);
+    CHECK_EQ(disk.object("theme")->str("skin"), c.skin);
+
+    const Config r = load_config(path.string());
+    CHECK_EQ(r.skin, c.skin);
+    CHECK_EQ(r.boot, c.boot);
+    CHECK_EQ(r.sound, c.sound);
+    CHECK_EQ(r.font, c.font);
+    CHECK_EQ(r.language, c.language);
+    CHECK_EQ(r.shelf_style, c.shelf_style);
+    CHECK_EQ(r.mods_disabled.size(), size_t(2));
+    CHECK_EQ(r.mods_disabled[0], c.mods_disabled[0]);
+    CHECK_EQ(r.mods_disabled[1], c.mods_disabled[1]);
+
+    std::error_code ec;
+    fs::remove(path, ec);
+}
+
+TEST(config_atomic_write_keeps_old_on_failure) {
+    namespace fs = std::filesystem;
+    const fs::path path = unit_scratch("config-atomic.json");
+    const fs::path tmp = fs::path(path.string() + ".tmp");
+    std::error_code ec;
+    fs::remove_all(path, ec);
+    fs::remove_all(tmp, ec);
+
+    Config old_cfg;
+    old_cfg.skin = "old";
+    save_config(path.string(), old_cfg);
+    CHECK_EQ(load_config(path.string()).skin, std::string("old"));
+
+    // 掉电模拟：临时文件位置被目录占住 → 写不进去，旧配置必须原样保留
+    CHECK(fs::create_directory(tmp, ec));
+    Config new_cfg;
+    new_cfg.skin = "new";
+    save_config(path.string(), new_cfg);
+    CHECK_EQ(load_config(path.string()).skin, std::string("old"));
+
+    // 故障排除后写回：新值生效，旧文件被整份替换
+    fs::remove_all(tmp, ec);
+    save_config(path.string(), new_cfg);
+    CHECK_EQ(load_config(path.string()).skin, std::string("new"));
+
+    fs::remove_all(path, ec);
+}
+
+TEST(config_bad_json_falls_back_and_ignores_unknown) {
+    namespace fs = std::filesystem;
+    const fs::path path = unit_scratch("config-bad.json");
+    const auto load_text = [&path](const char* text) {
+        std::ofstream out(path.string());
+        out << text;
+        out.close();
+        return load_config(path.string());
+    };
+
+    // 截断的 JSON：解析失败 → 整体默认值（主机必须开得起来，绝不卡死在启动）
+    Config c = load_text(R"({"theme":{"skin":"broken")");
+    CHECK_EQ(c.skin, std::string("default"));
+    CHECK_EQ(c.language, std::string("zh"));
+
+    // 未知字段忽略，已知字段照读（手写配置常带超前字段）
+    c = load_text(R"({"theme":{"skin":"neon","future":true},)"
+                  R"("unknown":{"x":[1,2]},"fps":120})");
+    CHECK_EQ(c.skin, std::string("neon"));
+    CHECK_EQ(c.fps, 120);
+
+    // 旧配置的单个 volume 字段仍是两层音量的初值（兼容路径不变）
+    c = load_text(R"({"volume":55})");
+    CHECK_EQ(c.music_volume, 55);
+    CHECK_EQ(c.sfx_volume, 55);
+
+    std::error_code ec;
+    fs::remove(path, ec);
+}
+
 // ---------------------------------------------------------------- ui 组件
 
 TEST(ui_rect_centered) {
@@ -722,6 +969,161 @@ TEST(save_store_export_import_roundtrip) {
     CHECK_EQ(*b.get("best"), std::string("1337"));
 
     std::filesystem::remove_all(dir, ec);
+}
+
+TEST(save_store_failed_write_keeps_old_value) {
+    namespace fs = std::filesystem;
+    const fs::path dir = unit_scratch("saves-rollback");
+    std::error_code ec;
+    fs::remove_all(dir, ec);
+
+    SaveStore store;
+    CHECK(store.open(dir.string(), "power"));
+    CHECK(store.set("high", "9000"));
+
+    // 掉电模拟：目标位置被一个目录占住，rename 无法覆盖 → 写盘必须报告失败
+    const fs::path target = dir / "power.sav";
+    CHECK(fs::remove(target, ec));
+    CHECK(fs::create_directory(target, ec));
+
+    CHECK(!store.set("high", "100"));
+    CHECK_EQ(*store.get("high"), std::string("9000"));  // 失败后内存仍是磁盘上的旧值
+    CHECK(!store.erase("high"));
+    CHECK_EQ(*store.get("high"), std::string("9000"));
+    CHECK(!fs::exists(fs::path(target.string() + ".tmp"), ec));  // 半份临时文件已清掉
+
+    // 故障排除后同一个实例继续可用：失败不粘住
+    fs::remove_all(target, ec);
+    CHECK(store.set("high", "100"));
+    SaveStore reopened;
+    CHECK(reopened.open(dir.string(), "power"));
+    CHECK_EQ(*reopened.get("high"), std::string("100"));
+
+    fs::remove_all(dir, ec);
+}
+
+TEST(save_store_open_clears_previous_data) {
+    namespace fs = std::filesystem;
+    const fs::path dir = unit_scratch("saves-reopen");
+    std::error_code ec;
+    fs::remove_all(dir, ec);
+
+    SaveStore store;
+    CHECK(store.open(dir.string(), "alpha"));
+    CHECK(store.set("k", "1"));
+    // 复用同一个对象：再 open 必须从磁盘重新装载，不能叠加旧内容
+    CHECK(store.open(dir.string(), "alpha"));
+    CHECK_EQ(store.size(), size_t(1));
+    CHECK_EQ(*store.get("k"), std::string("1"));
+    // 换一张卡带：上一次的内容必须清空
+    CHECK(store.open(dir.string(), "beta"));
+    CHECK_EQ(store.size(), size_t(0));
+    CHECK(!store.get("k").has_value());
+    CHECK(store.set("k", "2"));
+    CHECK_EQ(*store.get("k"), std::string("2"));
+    // 旧卡带的档没有被污染
+    SaveStore alpha;
+    CHECK(alpha.open(dir.string(), "alpha"));
+    CHECK_EQ(*alpha.get("k"), std::string("1"));
+
+    fs::remove_all(dir, ec);
+}
+
+TEST(save_store_reads_legacy_text_format) {
+    namespace fs = std::filesystem;
+    const fs::path dir = unit_scratch("saves-legacy");
+    std::error_code ec;
+    fs::remove_all(dir, ec);
+    fs::create_directories(dir, ec);
+    {
+        // 既有 .sav 格式：key=value 换行文本，Windows 行尾，可能夹坏行
+        std::ofstream out(dir / "old.sav", std::ios::binary);
+        out << "high=42\r\nbest=7\r\nbroken-line\r\na=b=c\r\n";
+    }
+
+    SaveStore store;
+    CHECK(store.open(dir.string(), "old"));
+    CHECK_EQ(store.size(), size_t(3));  // broken-line 没有 '='：忽略
+    CHECK_EQ(*store.get("high"), std::string("42"));
+    CHECK_EQ(*store.get("best"), std::string("7"));
+    CHECK_EQ(*store.get("a"), std::string("b=c"));  // 值里可以带 '='
+
+    // 写入后仍是同名同路径的 key=value 文本，旧条目原样保留
+    CHECK(store.set("best", "8"));
+    std::ifstream in(dir / "old.sav");
+    std::string text, line;
+    while (std::getline(in, line)) text += line + "\n";
+    in.close();
+    CHECK(text.find("best=8") != std::string::npos);
+    CHECK(text.find("high=42") != std::string::npos);
+
+    fs::remove_all(dir, ec);
+}
+
+TEST(save_store_exact_limits_and_readonly) {
+    namespace fs = std::filesystem;
+    const fs::path dir = unit_scratch("saves-limits");
+    std::error_code ec;
+    fs::remove_all(dir, ec);
+
+    SaveStore store;
+    CHECK(store.open(dir.string(), "limits"));
+    // 上限是"含"：恰好等于上限必须接受
+    CHECK(store.set(std::string(SaveStore::kMaxKeyLength, 'k'),
+                    std::string(SaveStore::kMaxValueLength, 'v')));
+    CHECK(store.erase(std::string(SaveStore::kMaxKeyLength, 'k')));
+    // 换行会破坏 key=value 行格式：键与值都拒绝
+    CHECK(!store.set("a\nb", "x"));
+    CHECK(!store.set("a", "x\ny"));
+
+    // 存档目录位置被普通文件占住：open 只能只读，写入如实失败（不假装存下了）
+    const fs::path not_a_dir = unit_scratch("saves-not-a-dir");
+    fs::remove_all(not_a_dir, ec);
+    {
+        std::ofstream out(not_a_dir);
+        out << "not a directory";
+    }
+    SaveStore blocked;
+    CHECK(!blocked.open(not_a_dir.string(), "cart"));
+    CHECK_EQ(blocked.size(), size_t(0));
+    CHECK(!blocked.set("k", "v"));
+    CHECK(!blocked.erase("k"));
+    CHECK(!blocked.import_code("00"));
+    CHECK(blocked.export_code().empty());
+
+    // 已打开的存档：临时文件位置被目录占住 → 写失败，读到的仍是旧值
+    CHECK(store.set("k", "v"));
+    const fs::path tmp = dir / "limits.sav.tmp";
+    CHECK(fs::create_directory(tmp, ec));
+    CHECK(!store.set("k", "w"));
+    CHECK_EQ(*store.get("k"), std::string("v"));
+    fs::remove_all(tmp, ec);
+
+    fs::remove_all(dir, ec);
+    fs::remove_all(not_a_dir, ec);
+}
+
+TEST(save_store_readonly_target_rejects_write) {
+#ifdef _WIN32
+    // 只读文件属性在 Windows 上会让 rename 覆盖失败（POSIX 只检查目录权限，语义不同）
+    namespace fs = std::filesystem;
+    const fs::path dir = unit_scratch("saves-readonly-target");
+    std::error_code ec;
+    fs::remove_all(dir, ec);
+
+    SaveStore store;
+    CHECK(store.open(dir.string(), "ro"));
+    CHECK(store.set("high", "1"));
+    const fs::path target = dir / "ro.sav";
+    fs::permissions(target, fs::perms::owner_read, ec);
+    CHECK(!ec);
+
+    CHECK(!store.set("high", "2"));                    // 旧档只读：写不进去
+    CHECK_EQ(*store.get("high"), std::string("1"));    // 内存回滚到磁盘上的值
+
+    fs::permissions(target, fs::perms::owner_all, ec);
+    fs::remove_all(dir, ec);
+#endif
 }
 
 // ---------------------------------------------------------------- 内容库

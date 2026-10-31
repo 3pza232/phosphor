@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <cstdlib>
+#include <filesystem>
 #include <fstream>
 #include <sstream>
 #include <string>
@@ -17,6 +18,46 @@ namespace {
 
 /// 最近打开记录的保留条数：够覆盖一台机器的常用卡带即可
 constexpr size_t kMaxRecent = 24;
+
+/// 删掉半份写出的临时文件（失败路径的清理；删不掉也没有更好的补救）。
+/// 只删普通文件：临时文件位置被别的东西（例如目录）占住时不动它
+void discard_tmp(const std::string& tmp) {
+    std::error_code ec;
+    if (std::filesystem::is_regular_file(tmp, ec)) std::filesystem::remove(tmp, ec);
+}
+
+/// 原子写：先写 <path>.tmp，flush/close 成功后再改名覆盖。
+/// 任何一步失败都保留旧文件——设置丢了比写坏一份配置好查得多
+bool write_atomic(const std::string& path, const std::string& text, std::string& err) {
+    const std::string tmp = path + ".tmp";
+    std::ofstream out(tmp, std::ios::trunc);
+    if (!out) {
+        err = "cannot create " + tmp;
+        return false;
+    }
+    out << text;
+    out.flush();
+    if (!out) {
+        err = "write failed: " + tmp;
+        discard_tmp(tmp);
+        return false;
+    }
+    out.close();
+    if (!out) {
+        err = "close failed: " + tmp;
+        discard_tmp(tmp);
+        return false;
+    }
+
+    std::error_code ec;
+    std::filesystem::rename(tmp, path, ec);
+    if (ec) {
+        err = "rename failed: " + ec.message();
+        discard_tmp(tmp);
+        return false;
+    }
+    return true;
+}
 
 /// 取字符串：缺项或空串都用默认值（手写配置常把值留空）
 std::string pick(const json::Object* scope, const char* key, std::string fallback) {
@@ -120,35 +161,37 @@ Config load_config(const std::string& path) {
 }
 
 void save_config(const std::string& path, const Config& cfg) {
-    std::ofstream out(path, std::ios::trunc);
-    if (!out) {
-        // 写不进去必须留痕：否则用户改了设置却以为已保存，重启后才发现丢了
-        log::warn("cannot save config: " + path);
-        return;
-    }
-    out << "{\n"
-        << "  \"theme\": {\n"
-        << "    \"skin\": \"" << cfg.skin << "\",\n"
-        << "    \"boot\": \"" << cfg.boot << "\",\n"
-        << "    \"sound\": \"" << cfg.sound << "\",\n"
-        << "    \"font\": \"" << cfg.font << "\",\n"
-        << "    \"font_size\": " << cfg.font_size << ",\n"
-        << "    \"language\": \"" << cfg.language << "\"\n"
-        << "  },\n"
-        << "  \"shelf_style\": \"" << cfg.shelf_style << "\",\n"
-        << "  \"crt_level\": " << cfg.crt_level << ",\n"
-        << "  \"fps\": " << cfg.fps << ",\n"
-        << "  \"music_volume\": " << cfg.music_volume << ",\n"
-        << "  \"sfx_volume\": " << cfg.sfx_volume << ",\n"
-        << "  \"mods_disabled\": [";
+    // 所有字符串字段都走 json::quote：skin 名里一个引号或反斜杠都不能把配置文件写坏
+    std::string text;
+    text += "{\n";
+    text += "  \"theme\": {\n";
+    text += "    \"skin\": " + json::quote(cfg.skin) + ",\n";
+    text += "    \"boot\": " + json::quote(cfg.boot) + ",\n";
+    text += "    \"sound\": " + json::quote(cfg.sound) + ",\n";
+    text += "    \"font\": " + json::quote(cfg.font) + ",\n";
+    text += "    \"font_size\": " + std::to_string(cfg.font_size) + ",\n";
+    text += "    \"language\": " + json::quote(cfg.language) + "\n";
+    text += "  },\n";
+    text += "  \"shelf_style\": " + json::quote(cfg.shelf_style) + ",\n";
+    text += "  \"crt_level\": " + std::to_string(cfg.crt_level) + ",\n";
+    text += "  \"fps\": " + std::to_string(cfg.fps) + ",\n";
+    text += "  \"music_volume\": " + std::to_string(cfg.music_volume) + ",\n";
+    text += "  \"sfx_volume\": " + std::to_string(cfg.sfx_volume) + ",\n";
+    text += "  \"mods_disabled\": [";
     for (size_t i = 0; i < cfg.mods_disabled.size(); ++i)
-        out << (i == 0 ? "" : ", ") << json::quote(cfg.mods_disabled[i]);
-    out << "],\n"
-        << "  \"mods_enabled\": [";
+        text += (i == 0 ? "" : ", ") + json::quote(cfg.mods_disabled[i]);
+    text += "],\n";
+    text += "  \"mods_enabled\": [";
     for (size_t i = 0; i < cfg.mods_enabled.size(); ++i)
-        out << (i == 0 ? "" : ", ") << json::quote(cfg.mods_enabled[i]);
-    out << "]\n"
-        << "}\n";
+        text += (i == 0 ? "" : ", ") + json::quote(cfg.mods_enabled[i]);
+    text += "]\n";
+    text += "}\n";
+
+    std::string error;
+    if (!write_atomic(path, text, error)) {
+        // 写不进去必须留痕：否则用户改了设置却以为已保存，重启后才发现丢了
+        log::warn("cannot save config: " + path + " (" + error + ")");
+    }
 }
 
 std::vector<std::string> load_recent(const std::string& path) {
