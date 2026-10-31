@@ -5,6 +5,7 @@
 #include "harness.hpp"
 
 #include "core/color.hpp"
+#include "core/composition.hpp"
 #include "core/config.hpp"
 #include "core/crt.hpp"
 #include "core/format.hpp"
@@ -1421,6 +1422,82 @@ TEST(ui_icon_step_downsamples) {
              std::numeric_limits<int>::max(), 1.0f, Color::white);
     CHECK_EQ(huge.at(5, 5).ch, U'a');
     CHECK_EQ(huge.at(4, 5).ch, U' ');
+}
+
+
+TEST(ui_sprite_colors_utf8_keys_and_legacy_ascii) {
+    ui::SpriteColors colors;
+    colors.set(std::string_view("\u4e2d"), Color{200, 10, 20});  // 中
+    colors.set(std::string_view("#"), Color{10, 220, 30});
+    colors.set(std::string_view("\u4e2d\u6587"), Color{200, 10, 20});  // 多码点键取首码点（旧语义兼容）
+
+    const Color* cjk = colors.find(U'\u4e2d');
+    CHECK(cjk != nullptr);
+    CHECK_EQ(int(cjk->r), 200);
+    const Color* ascii = colors.find(U'#');
+    CHECK(ascii != nullptr);
+    CHECK_EQ(int(ascii->g), 220);
+    CHECK(colors.find(U'a') == nullptr);
+    CHECK(!colors.empty());
+
+    // ASCII 单字节键仍按旧表命中；多字节艺术字符按码点命中
+    Screen wide(12, 3);
+    const std::vector<std::string> art{"\u4e2d"};
+    ui::icon(wide, art, colors, 6, 1, 1, 1.0f, Color::white);
+    CHECK_EQ(wide.at(5, 1).ch, U'\u4e2d');
+    CHECK_EQ(int(wide.at(5, 1).fg.r), 200);
+    CHECK_EQ(int(wide.at(6, 1).cols), 0);  // 全角续格
+
+    Screen hash(12, 3);
+    ui::icon(hash, std::vector<std::string>{"#"}, colors, 6, 1, 1, 1.0f, Color::white);
+    CHECK_EQ(hash.at(6, 1).ch, U'#');
+    CHECK_EQ(int(hash.at(6, 1).fg.g), 220);
+
+    // 兼容层：直接传 map<string,Color> 也按首码点查表
+    const std::map<std::string, Color> string_map{{"中", Color{1, 2, 3}}};
+    Screen from_map(12, 3);
+    ui::icon(from_map, std::vector<std::string>{"中"}, string_map, 6, 1, 1, 1.0f,
+             Color::white);
+    CHECK_EQ(int(from_map.at(5, 1).fg.r), 1);
+
+    ui::SpriteColors empty;
+    CHECK(empty.empty());
+    CHECK(empty.find(U'\u4e2d') == nullptr);
+}
+
+TEST(ui_icon_solid_fills_color_block) {
+    ui::SpriteColors colors;
+    colors.set(std::string_view("#"), Color{200, 100, 50});
+
+    // 非空艺术字符不画字形：本格字符是空格、前景与底色都是映射色
+    Screen solid(8, 3);
+    ui::icon(solid, std::vector<std::string>{"#"}, colors, 4, 1, 1, 1.0f, Color::white, true);
+    CHECK_EQ(solid.at(4, 1).ch, U' ');
+    CHECK_EQ(int(solid.at(4, 1).fg.r), 200);
+    CHECK_EQ(int(solid.at(4, 1).bg.r), 200);
+    CHECK_EQ(int(solid.at(4, 1).bg.g), 100);
+
+    // '.' 透明；亮度只缩放填充色
+    Screen bright(8, 3);
+    ui::icon(bright, std::vector<std::string>{"#."}, colors, 4, 1, 1, 0.5f, Color::white, true);
+    CHECK_EQ(bright.at(3, 1).ch, U' ');
+    CHECK_EQ(int(bright.at(3, 1).bg.r), 100);
+    CHECK_EQ(bright.at(4, 1).ch, U' ');  // '.' 不画
+    CHECK_EQ(int(bright.at(4, 1).bg.r), 0);
+
+    // 没有映射时回退 fallback；solid 仍填充
+    Screen fallback(8, 3);
+    const Color base{10, 20, 30};
+    ui::icon(fallback, std::vector<std::string>{"@"}, colors, 4, 1, 1, 1.0f, base, true);
+    CHECK_EQ(int(fallback.at(4, 1).bg.g), 20);
+
+    // 全角艺术字符的实心块占满显示宽度（2 列）
+    ui::SpriteColors cjk;
+    cjk.set(std::string_view("中"), Color{30, 40, 50});
+    Screen wide(8, 3);
+    ui::icon(wide, std::vector<std::string>{"中"}, cjk, 4, 1, 1, 1.0f, Color::white, true);
+    CHECK_EQ(int(wide.at(3, 1).bg.b), 50);
+    CHECK_EQ(int(wide.at(4, 1).bg.b), 50);
 }
 
 TEST(ui_icon_brightness_clamped) {

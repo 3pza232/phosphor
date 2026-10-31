@@ -577,10 +577,15 @@ phos.ui.center_text(y, "GAME OVER")
 phos.ui.text(x, y, w, "long body text...", 3)   -- 最多 3 行，超出加省略号（max_lines 可省略，缺省 1 行）
 
 -- 像素精灵：rows 为字符画，colors 为 字符→颜色（'.' 与空格透明）
+-- 颜色键按 UTF-8 首码点读取：["#"] 与 ["中"]/["→"] 都可以；旧单字节键行为不变
 -- step 为**降采样步长**（缺省 1）：step=2 时源图每 2 行 / 2 列取一格，成品是源图的一半大小；
 -- 它不是放大倍数（< 1 钳到 1）
--- brightness 为亮度 0..1（可省略，缺省 1；非有限按 1，越界钳制）：只缩放前景色
+-- brightness 为亮度 0..1（可省略，缺省 1；非有限按 1，越界钳制）：只缩放前景色/填充色
+-- solid 为 true 时每个非空艺术字符不画字形，而用映射色（未命中用风格 accent）填满该格底：
+-- 该格前景与底色都置为映射色（覆盖原有底色）；缺省 false 时仍只画字形、保留原底色
 phos.ui.sprite(x, y, { "..##..", ".####." }, { ["#"] = { 80, 255, 120 } }, 1, 0.6)
+phos.ui.sprite(x, y, { "中##中" }, { ["中"] = { 80, 255, 120 }, ["#"] = { 255, 80, 80 } },
+               1, 1.0, true)   -- 实心色块
 
 -- 列表导航（内部复用输入抽象）：返回 新下标, 动作
 local index, action = phos.ui.nav(#items, selected)
@@ -675,7 +680,8 @@ win:circle(20, 6, 3, "o", phos.color.cyan)  -- 空心圆：单格半径，画在
 - 可用的绘制方法：`clear` / `put` / `print` / `fill` / `blit`（多行）/ `blend`（同格叠加）/
   `back` / `back_rect`（只写底色）/ `plot`（子格落笔）/ `frame` /
   `divider` / `bar` / `menu`（`h` 可省略，缺省按条目数）/ `body`（折行正文，
-  `max_lines` 可省略）/ `sprite`（`step` = 降采样步长、`brightness` = 0..1 亮度，均可省略）/
+  `max_lines` 可省略）/ `sprite`（`step` = 降采样步长、`brightness` = 0..1 亮度、
+  `solid` = 实心色块，均可省略）/
   `line` / `outline` / `circle`（几何原语：与 `phos.ui.*` 同名同参数，坐标相对区域、
   **自动裁在区域内**）。其中 `put` / `print` / `fill` / `blit` / `clear`
   省略 `bg` 时一律**保留背景**（"透明底"）；`blend` / `back` / `back_rect` / `plot`

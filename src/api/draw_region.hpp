@@ -63,9 +63,20 @@ public:
     void menu(int x, int y, int w, const std::vector<std::string>& items, int selected, int h);
     void body(int x, int y, int w, std::string_view text, int max_lines);
     /// 精灵：step = 降采样步长（1 = 逐字符；< 1 钳到 1）；brightness = 0..1 亮度
-    /// （非有限按 1，越界钳制），只改前景色
+    /// （非有限按 1，越界钳制），只改前景色/填充色。
+    /// colors 的键按 UTF-8 首码点读取（支持中文/箭头等多字节键）；solid = true 时
+    /// 非空艺术字符画成实心色块（填格底、不画字形）
     void sprite(int x, int y, const std::vector<std::string>& rows,
-                const std::map<char, Color>& colors, int step, float brightness = 1.0f);
+                const ui::SpriteColors& colors, int step, float brightness = 1.0f,
+                bool solid = false);
+    /// 兼容直接用 UTF-8 字符串键表的调用方（内部转 SpriteColors）
+    void sprite(int x, int y, const std::vector<std::string>& rows,
+                const std::map<std::string, Color>& colors, int step,
+                float brightness = 1.0f, bool solid = false);
+    /// 兼容旧单字节 char 键调用方（保持原逐字节查找）
+    void sprite(int x, int y, const std::vector<std::string>& rows,
+                const std::map<char, Color>& colors, int step, float brightness = 1.0f,
+                bool solid = false);
     /// 几何原语（局部坐标）：与 phos.ui.line/outline/circle 同源，越界由 Region 裁剪
     void line(int x1, int y1, int x2, int y2, char32_t ch, Color fg, Color bg);
     void outline(int x, int y, int w, int h, char32_t ch, Color fg, Color bg);

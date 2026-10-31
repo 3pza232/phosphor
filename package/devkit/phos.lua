@@ -325,13 +325,15 @@ function phos.ui.outline(x, y, w, h, ch, fg, bg) end
 function phos.ui.circle(cx, cy, r, ch, fg, bg) end
 
 ---像素精灵：rows 为字符画，colors 为 字符→颜色 映射（'.' 与空格透明）
+---颜色键按 UTF-8 首码点读取：["#"] 与 ["中"]/["→"] 等均可；旧单字节键不变
 ---@param x integer
 ---@param y integer
 ---@param rows string[]
 ---@param colors table<string, phos.Color|integer[]>
 ---@param step integer|nil 降采样步长（1 = 逐字符，2 = 每 2 行/列取一格、成品半尺寸；< 1 钳到 1；不是放大倍数）
----@param brightness number|nil 亮度 0..1（缺省 1；非有限按 1，越界钳制）：只缩放前景色
-function phos.ui.sprite(x, y, rows, colors, step, brightness) end
+---@param brightness number|nil 亮度 0..1（缺省 1；非有限按 1，越界钳制）：只缩放前景色/填充色
+---@param solid boolean|nil true = 每个非空字符用映射色填格底/前景（不画字形、覆盖原底色）；缺省 false
+function phos.ui.sprite(x, y, rows, colors, step, brightness, solid) end
 
 ---列表导航：返回新下标（0-based）与动作
 ---@param count integer
@@ -643,7 +645,7 @@ function phos.ui.region(x, y, w, h, opts) end
 ---@field bar fun(self: phos.Region, x: integer, y: integer, w: integer, ratio: number)
 ---@field menu fun(self: phos.Region, x: integer, y: integer, w: integer, items: string[], selected: integer, h: integer|nil)
 ---@field body fun(self: phos.Region, x: integer, y: integer, w: integer, text: string, max_lines: integer|nil)
----@field sprite fun(self: phos.Region, x: integer, y: integer, rows: string[], colors: table, step: integer|nil, brightness: number|nil) 降采样步长 / 亮度 0..1
+---@field sprite fun(self: phos.Region, x: integer, y: integer, rows: string[], colors: table, step: integer|nil, brightness: number|nil, solid: boolean|nil) 降采样步长 / 亮度 0..1 / solid 实心色块
 ---@field line fun(self: phos.Region, x1: integer, y1: integer, x2: integer, y2: integer, ch: string|integer|nil, fg: phos.Color|nil, bg: phos.Color|nil) 直线；坐标相对区域，自动裁在区域内
 ---@field outline fun(self: phos.Region, x: integer, y: integer, w: integer, h: integer, ch: string|integer|nil, fg: phos.Color|nil, bg: phos.Color|nil) 空心矩形；自动裁在区域内
 ---@field circle fun(self: phos.Region, cx: integer, cy: integer, r: integer, ch: string|integer|nil, fg: phos.Color|nil, bg: phos.Color|nil) 空心圆；自动裁在区域内

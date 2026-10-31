@@ -160,7 +160,7 @@ void DrawRegion::body(int x, int y, int w, std::string_view text, int max_lines)
 }
 
 void DrawRegion::sprite(int x, int y, const std::vector<std::string>& rows,
-                        const std::map<char, Color>& colors, int step, float brightness) {
+                        const ui::SpriteColors& colors, int step, float brightness, bool solid) {
     if (rows.empty()) return;
     int art_w = 0;
     for (const auto& row : rows)
@@ -170,7 +170,29 @@ void DrawRegion::sprite(int x, int y, const std::vector<std::string>& rows,
     // （api::parse_step / parse_brightness）归一化，core 对直接调用者仍兜底
     const ui::Rect area = bounds();
     ui::icon(screen(), rows, colors, area.x + x + art_w / 2, area.y + y + art_h / 2, step,
-             brightness, style().accent);
+             brightness, style().accent, solid);
+}
+
+void DrawRegion::sprite(int x, int y, const std::vector<std::string>& rows,
+                        const std::map<std::string, Color>& colors, int step, float brightness,
+                        bool solid) {
+    ui::SpriteColors palette;
+    for (const auto& [key, color] : colors)
+        palette.set(std::string_view(key), color);
+    sprite(x, y, rows, palette, step, brightness, solid);
+}
+
+void DrawRegion::sprite(int x, int y, const std::vector<std::string>& rows,
+                        const std::map<char, Color>& colors, int step, float brightness,
+                        bool solid) {
+    if (rows.empty()) return;
+    int art_w = 0;
+    for (const auto& row : rows)
+        art_w = std::max(art_w, text::display_width(row));
+    const int art_h = static_cast<int>(rows.size());
+    const ui::Rect area = bounds();
+    ui::icon(screen(), rows, colors, area.x + x + art_w / 2, area.y + y + art_h / 2, step,
+             brightness, style().accent, solid);
 }
 
 void DrawRegion::line(int x1, int y1, int x2, int y2, char32_t ch, Color fg, Color bg) {

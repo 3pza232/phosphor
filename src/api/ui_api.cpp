@@ -13,7 +13,6 @@
 #include <sol/sol.hpp>
 
 #include <algorithm>
-#include <map>
 #include <vector>
 
 namespace phos {
@@ -27,6 +26,22 @@ namespace {
 /// 局部坐标 + 内容区原点后的钳位范围：远在屏幕外，只用于避免 int 溢出；
 /// 真正的越界裁剪由 ui::line / outline / circle 自己做。
 constexpr long long kGridCoordLimit = 1 << 20;
+
+/// sprite 的 colors 表 → ui::SpriteColors。键按 UTF-8 首码点读取：
+/// 旧 ["#"] 与新 ["中"]/["→"] 都能命中；坏键/坏值保持旧行为（跳过）。
+ui::SpriteColors read_sprite_colors(const sol::object& object) {
+    ui::SpriteColors colors;
+    if (!object.is<sol::table>()) return colors;
+    const sol::table table = object.as<sol::table>();
+    for (auto& entry : table) {
+        if (!entry.first.is<std::string>()) continue;
+        const std::string key = entry.first.as<std::string>();
+        if (key.empty()) continue;
+        if (!entry.second.is<Color>() && !entry.second.is<sol::table>()) continue;
+        colors.set(std::string_view(key), api::read_color(entry.second, Color::white));
+    }
+    return colors;
+}
 
 } // namespace
 
@@ -135,16 +150,18 @@ void register_ui_api(sol::state& lua, HostContext& host) {
                            host.content_x, host.content_w);
     };
 
-    /// 像素精灵：rows 为字符画，colors 是 字符→颜色 映射（键必须是**单字节**字符，
-    /// 用 '█' 这类多字节字符查不到表、会退化成风格色）。只有 '.' 与空格透明。
+    /// 像素精灵：rows 为字符画，colors 是 字符→颜色 映射（键按 UTF-8 **首码点**读取：
+    /// "#" 与 "中"/"→" 都可以；旧单字节键行为不变）。只有 '.' 与空格透明。
     /// step = 降采样步长（1 = 逐字符，2 = 每 2 列/行取一个；< 1 钳到 1），
     /// brightness = 0..1 亮度（可省略，缺省 1；非有限按 1）。
+    /// solid = true 时每个非空艺术字符画成实心色块（用映射色/风格色填格底，不画字形）。
     /// 归一化在 api::parse_step/parse_brightness（Region 的同名参数也走这里）；core 对直接调用者仍兜底。
     ui["sprite"] = [&host, rect_at](int x, int y, sol::object rows, sol::object colors,
-                                    sol::optional<int> step, sol::optional<float> brightness) {
+                                    sol::optional<int> step, sol::optional<float> brightness,
+                                    sol::optional<bool> solid) {
         ui::Style style = cart_style(host);
         std::vector<std::string> art = api::read_rows(rows);
-        std::map<char, Color> palette = api::read_char_color_map(colors);
+        ui::SpriteColors palette = read_sprite_colors(colors);
         const int h = static_cast<int>(art.size());
         // 宽度按**显示宽度**算（一行"中"是 2 列、3 字节）：与 icon 的度量一致，
         // 按字节算会让多字节字符画偏宽，居中点也跟着算错
@@ -153,7 +170,7 @@ void register_ui_api(sol::state& lua, HostContext& host) {
         const ui::Rect r = rect_at(x, y, w, h);
         // 以左上角定位：icon 语义为居中，此处用中心点换算
         ui::icon(*host.screen, art, palette, r.x + w / 2, r.y + h / 2, api::parse_step(step),
-                 api::parse_brightness(brightness), style.accent);
+                 api::parse_brightness(brightness), style.accent, solid.value_or(false));
     };
 
     /// 列表导航：返回 (新下标, 动作)，动作为 "none" / "confirm" / "cancel"
@@ -254,9 +271,11 @@ void register_ui_api(sol::state& lua, HostContext& host) {
         },
         "sprite",
         [](DrawRegion& r, int x, int y, sol::object rows, sol::object colors,
-           sol::optional<int> step, sol::optional<float> brightness) {
-            r.sprite(x, y, api::read_rows(rows), api::read_char_color_map(colors),
-                     api::parse_step(step), api::parse_brightness(brightness));
+           sol::optional<int> step, sol::optional<float> brightness,
+           sol::optional<bool> solid) {
+            r.sprite(x, y, api::read_rows(rows), read_sprite_colors(colors),
+                     api::parse_step(step), api::parse_brightness(brightness),
+                     solid.value_or(false));
         });
 
     // 声明式界面：与主机外壳共用 ui/ 的组件树（见 api/ui_render.cpp）

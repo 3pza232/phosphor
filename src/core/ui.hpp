@@ -3,9 +3,11 @@
 #include "core/input.hpp"
 #include "core/screen.hpp"
 
+#include <array>
 #include <map>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 #include <vector>
 
 namespace phos {
@@ -69,12 +71,49 @@ void menu(Screen& screen, Rect rect, const std::vector<std::string>& items, int 
 /// 自动折行的正文
 void text_block(Screen& screen, int x, int y, int width, std::string_view body, int max_lines,
                 const Style& style);
+/// 精灵颜色表：UTF-8 字符 → 颜色。
+///
+/// 查找键是码点：ASCII（<128）走数组快速路径，中文/箭头/制表符等走哈希表；
+/// 因此既支持 ["#"] 这类旧单字节键，也支持 ["中"] / ["→"] 这类多字节键。
+/// 同一个字符在 icon 的字符画与 colors 表里都按码点比较，不再按 UTF-8 首字节。
+class SpriteColors {
+public:
+    /// 设置一个码点的颜色（ASCII 与多字节共用；后设的覆盖先设的）
+    void set(char32_t codepoint, Color color);
+    /// 从 UTF-8 字符串键设置：取**第一个码点**（空串忽略）。
+    /// 取首码点同时兼容旧的单字节表（"#x" 仍按 '#'）与多字节键（"中"）。
+    void set(std::string_view utf8_key, Color color);
+    /// 查表；未命中返回 nullptr（由 icon 回退到 fallback 风格色）
+    const Color* find(char32_t codepoint) const;
+    bool empty() const;
+
+private:
+    std::array<Color, 128> ascii_{};
+    std::array<bool, 128> ascii_set_{};
+    std::unordered_map<char32_t, Color> unicode_;
+};
+
 /// 像素图标（字符画）。step = **降采样步长**：1 = 逐字符，2 = 每 2 列/行取一个
 /// （成品是源图的一半，不是放大倍数；< 1 钳到 1）。brightness = 0..1 的亮度缩放
 /// （非有限按 1，越界钳制）；它只改前景色，图标仍按字形占据格子。
+/// solid = true 时每个非空艺术字符不画字形，而用该字符查到的颜色（未命中用 fallback）
+/// 填充该格底色；'.' 与空格仍透明。solid 模式下亮度同样缩放填充色。
+void icon(Screen& screen, const std::vector<std::string>& rows, const SpriteColors& colors,
+          int center_x, int center_y, int step, float brightness, Color fallback,
+          bool solid = false);
+
+/// 兼容旧调用：单字节 char 键（ASCII）。多字节键请用 SpriteColors；
+/// 该重载保持逐字节查找，因此旧卡带图标/中文键的既有行为不变。
 void icon(Screen& screen, const std::vector<std::string>& rows,
           const std::map<char, Color>& colors, int center_x, int center_y, int step,
-          float brightness, Color fallback);
+          float brightness, Color fallback, bool solid = false);
+
+/// 兼容想直接用字符串键表的调用方：内部转成 SpriteColors（ASCII 仍走数组路径）。
+/// 键取 UTF-8 首码点（与 Lua colors 表同一规则）。
+void icon(Screen& screen, const std::vector<std::string>& rows,
+          const std::map<std::string, Color>& colors, int center_x, int center_y, int step,
+          float brightness, Color fallback, bool solid = false);
+
 
 // --- 交互 ---
 enum class NavAction { none, confirm, cancel };

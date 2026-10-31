@@ -332,13 +332,47 @@ void text_block(Screen& screen, int x, int y, int width, std::string_view body, 
         print(screen, x, y + static_cast<int>(i), lines[i], style.fg, style.bg);
 }
 
-void icon(Screen& screen, const std::vector<std::string>& rows,
-          const std::map<char, Color>& colors, int center_x, int center_y, int step,
-          float brightness, Color fallback) {
+void SpriteColors::set(char32_t codepoint, Color color) {
+    if (codepoint < ascii_.size()) {
+        ascii_[static_cast<size_t>(codepoint)] = color;
+        ascii_set_[static_cast<size_t>(codepoint)] = true;
+        return;
+    }
+    unicode_[codepoint] = color;
+}
+
+void SpriteColors::set(std::string_view utf8_key, Color color) {
+    const std::vector<char32_t> codepoints = text::decode(utf8_key);
+    if (codepoints.empty()) return;
+    set(codepoints.front(), color);  // 取首码点：ASCII 旧键与多字节键都统一到码点空间
+}
+
+const Color* SpriteColors::find(char32_t codepoint) const {
+    if (codepoint < ascii_.size()) {
+        const size_t index = static_cast<size_t>(codepoint);
+        return ascii_set_[index] ? &ascii_[index] : nullptr;
+    }
+    const auto it = unicode_.find(codepoint);
+    return it == unicode_.end() ? nullptr : &it->second;
+}
+
+bool SpriteColors::empty() const {
+    for (bool has : ascii_set_)
+        if (has) return false;
+    return unicode_.empty();
+}
+
+namespace {
+
+/// icon 的公共实现：Lookup 返回该码点的颜色（nullptr = 回退风格色）。
+/// 拆成模板是为了让 ASCII 旧 map 与新 SpriteColors 共用同一段绘制/步进/亮度逻辑，
+/// 同时保持旧 map 的逐字节查找不变。
+template <typename Lookup>
+void draw_icon(Screen& screen, const std::vector<std::string>& rows, Lookup lookup, int center_x,
+               int center_y, int step, float brightness, Color fallback, bool solid) {
     if (rows.empty()) return;
     // step = 降采样步长：整数 >= 1（< 1 钳到 1，0 = 逐字符）。
-    // brightness = 0..1：非有限按 1，越界钳制；它只改前景色，图标仍按字形占格
-    // （brightness = 0 => 全黑，视觉上等于"画空"）。
+    // brightness = 0..1：非有限按 1，越界钳制；它只改前景色/填充色
     step = std::max(1, step);
     if (!std::isfinite(brightness)) brightness = 1.0f;
     brightness = std::clamp(brightness, 0.0f, 1.0f);
@@ -354,7 +388,7 @@ void icon(Screen& screen, const std::vector<std::string>& rows,
     const int x0 = center_x - draw_w / 2;
     const int y0 = center_y - draw_h / 2;
 
-    // 提亮/压暗：与指示灯呼吸、其它高亮共用 core/color.hpp 的 scale_color（钳位只有一份）
+    // 提亮/压暗：与指示灯呼吸、其它高亮共用 core/color.hpp 的 scale_color
     auto scale = [brightness](Color c) { return scale_color(c, brightness); };
 
     for (int dy = 0; dy < draw_h; ++dy) {
@@ -367,12 +401,51 @@ void icon(Screen& screen, const std::vector<std::string>& rows,
             if (sx >= static_cast<int>(glyphs.size())) break;
             const char32_t ch = glyphs[static_cast<size_t>(sx)];
             if (ch == U'.' || ch == U' ') continue;
-            auto it = colors.find(static_cast<char>(ch));
-            Color c = it != colors.end() ? it->second : fallback;
-            // 保留底色：图标压在卡带架/机身上，不该砸出一块黑底
-            screen.put(x0 + dx, y0 + dy, ch, scale(c), phos::kKeepBg);
+            const Color* mapped = lookup(ch);
+            const Color color = scale(mapped ? *mapped : fallback);
+            if (solid) {
+                // 实心块：不画艺术字符，直接用映射色填该字符的显示宽度（全角 2 格）；
+                // space 不产生字形，前景也置同色，文字视图/像素视图都是纯色块
+                Color fill = color;
+                fill.keep = false;  // 显式填底：即使调用方传了 kKeepBg 也不能保留原底色
+                const int cell_w = std::max(0, text::char_width(ch));
+                for (int i = 0; i < cell_w; ++i)
+                    screen.put(x0 + dx + i, y0 + dy, U' ', fill, fill);
+            } else {
+                // 保留底色：图标压在卡带架/机身上，不该砸出一块黑底
+                screen.put(x0 + dx, y0 + dy, ch, color, phos::kKeepBg);
+            }
         }
     }
+}
+
+} // namespace
+
+void icon(Screen& screen, const std::vector<std::string>& rows, const SpriteColors& colors,
+          int center_x, int center_y, int step, float brightness, Color fallback, bool solid) {
+    draw_icon(screen, rows, [&colors](char32_t ch) { return colors.find(ch); }, center_x,
+              center_y, step, brightness, fallback, solid);
+}
+
+void icon(Screen& screen, const std::vector<std::string>& rows,
+          const std::map<char, Color>& colors, int center_x, int center_y, int step,
+          float brightness, Color fallback, bool solid) {
+    draw_icon(
+        screen, rows,
+        [&colors](char32_t ch) -> const Color* {
+            auto it = colors.find(static_cast<char>(ch));
+            return it == colors.end() ? nullptr : &it->second;
+        },
+        center_x, center_y, step, brightness, fallback, solid);
+}
+
+void icon(Screen& screen, const std::vector<std::string>& rows,
+          const std::map<std::string, Color>& colors, int center_x, int center_y, int step,
+          float brightness, Color fallback, bool solid) {
+    SpriteColors palette;
+    for (const auto& [key, color] : colors)
+        palette.set(std::string_view(key), color);
+    icon(screen, rows, palette, center_x, center_y, step, brightness, fallback, solid);
 }
 
 int navigate(const Input& input, int count, int current, NavAction& action) {
