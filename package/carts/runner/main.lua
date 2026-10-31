@@ -40,7 +40,7 @@ local DUCK_ART = { "#######" }
 local game
 local cart = {}
 local view_w = 62                   -- 可玩宽度（内容区减去侧栏），init 里按实际量
-local paused, reported, flash, scroll = false, false, 0, 0
+local reported, flash, scroll = false, 0, 0
 
 local function palette(C)
   if game.night then
@@ -54,9 +54,36 @@ local function save_best()
 end
 
 local function restart()
+  phos.scene.clear()
   game:reset_run()
-  paused, reported, scroll = false, false, 0
-  phos.audio.paused(false)
+  reported, scroll = false, 0
+end
+
+-- 暂停浮窗交给场景栈：pause_world 冻结世界、audio_pause 暂停音频，出栈自动恢复。
+-- 卡带因此不再维护 paused 标志，也不会漏掉"恢复时该不该解除音频暂停"
+local function pause_update(dt)
+  if phos.input.pressed("start") or phos.input.pressed("b") then
+    phos.scene.pop()
+  elseif phos.input.pressed("select") then
+    phos.scene.clear()
+    restart()
+  end
+end
+
+local function pause_draw()
+  local words = phos.lang.shared()
+  local s = game:status()
+  phos.ui.render{
+    screen = "pause", rect = { x = 20, y = 12, w = 40, h = 12 },
+    kind = "box", title = words.paused, border = "single", opaque = true, bg = "black",
+    children = {
+      { kind = "stat", text = words.score, value = phos.text.score(s.score), label_w = 7 },
+      { kind = "stat", text = words.best, value = phos.text.score(s.best), label_w = 7 },
+      { kind = "divider", fg = "dark_gray" },
+      { kind = "hint", items = { phos.input.key_name("start"), "resume",
+                                 phos.input.key_name("select"), "restart" } },
+    },
+  }
 end
 
 function init()
@@ -71,6 +98,11 @@ function init()
   local saved = phos.save.read("best")
   if saved then game.best = tonumber(saved) or 0 end
   phos.audio.music(Music)
+  phos.observe{
+    status = function() return game:status() end,
+    paused = function() return phos.scene.depth() > 0 end,
+    view_w = view_w,
+  }
 end
 
 function update(dt)
@@ -85,12 +117,13 @@ function update(dt)
     return
   end
 
-  if phos.input.pressed("start") then
-    paused = not paused
-    phos.audio.paused(paused)
+  if phos.input.pressed("start") and phos.scene.depth() == 0 then
+    phos.scene.push{
+      id = "pause", modal = true, pause_world = true, audio_pause = true,
+      update = pause_update, draw = pause_draw,
+    }
   end
   if phos.input.pressed("select") then restart() end
-  if paused then return end
 
   -- 输入 → 意图：跳是"按住更高、松手更矮"，所以按下与松开各管一半
   if phos.input.pressed("up") or phos.input.pressed("a") then
@@ -203,9 +236,7 @@ end
 
 local function draw_state(S, C, t)
   local msg
-  if paused then
-    msg = t.paused
-  elseif game.state == "ready" then
+  if game.state == "ready" then
     msg = t.ready
   elseif game.state == "over" then
     msg = string.format(t.again, phos.input.key_name("start"))
@@ -224,13 +255,7 @@ function draw()
   draw_runner(S, C)
   draw_score(S, C, t)
   draw_state(S, C, t)
-  Panel.draw(game, t)
+  Panel.draw(game)
 end
 
--- agent 观察入口：主机在 state.query 时会把这里返回的表一并带上
-function debug_state()
-  local status = game:status()
-  status.paused = paused
-  status.view_w = view_w
-  return status
-end
+-- 观测在 init 里用 phos.observe 声明（字段为函数，查询时求值）

@@ -176,10 +176,14 @@ E 从 A 开始持续，不等其它阶段。
 **风险**：中高（API 设计 + 旧卡带兼容）。原则：**只增不改**；v2 与旧原语共存；
 样板迁移失败可只保留引擎能力、暂缓内容迁移。
 
-> **内容迁移进度**：出厂卡带 `snake` 已迁到新栈——侧栏改用 `phos.ui.render`（无坐标）、
-> 排行榜换 `phos.score`（删除自写 `scores.lua` 与逗号串编解码）、观测换 `phos.observe`、
-> 通用词走 `phos.lang.shared`；`--check-cart` 0 error/0 warning，control/cart 门禁全过。
-> 下一张：`runner`（侧栏 + 速度条 + 结束屏）。
+> **内容迁移进度**：出厂卡带 `snake`、`runner` 已迁到新栈。
+> snake：侧栏 `phos.ui.render`、排行榜 `phos.score`（删除自写 `scores.lua` 与逗号串编解码）、
+> 观测 `phos.observe`、通用词 `phos.lang.shared`。
+> runner：侧栏改为组件树（速度条用 `bar`、数值走 `text.score`）、**暂停浮窗改用场景栈**
+> （`pause_world` 冻结世界、`audio_pause` 暂停音频、出栈自动恢复，删除 `paused` 标志与手写音频开关），
+> 观测同样换 `phos.observe`。两卡 `--check-cart` 均 0 error/0 warning，cart/control 门禁全过。
+> 迁移过程中发现并修复引擎问题：**压栈那一帧不该调用新场景的 update**（否则"同一个键开/关"
+> 会被同一帧误关）；`scene_smoke` 已加回归。下一张：`life` / `tetris`（列表/表格类界面）。
 
 ### M4 卡带工具层（3–4 周，可与 M3 部分并行）
 

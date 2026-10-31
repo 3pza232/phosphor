@@ -224,8 +224,9 @@ local Panel = require("ui.panel")  -- ui/panel.lua
 `devkit/examples/inks/`（同一格叠两笔、只写底色、子位落笔、叠画上限）、
 `devkit/examples/scene/`（场景栈：暂停浮窗冻结世界、暂停音频、出栈恢复）、
 `devkit/examples/toolkit/`（卡带工具层：排行榜持久化 / 共享词表 / 数值格式化）、
-出厂卡带 `carts/snake/` 是把这些新能力用起来的参考实现：侧栏用 `phos.ui.render` 声明、
-排行榜用 `phos.score`、观测用 `phos.observe`、通用词用 `phos.lang.shared`。
+出厂卡带 `carts/snake/` 与 `carts/runner/` 是把这些新能力用起来的参考实现：
+侧栏用 `phos.ui.render` 声明、排行榜用 `phos.score`、暂停浮窗用 `phos.scene`、
+观测用 `phos.observe`、通用词用 `phos.lang.shared`。
 `devkit/examples/ui/`（声明式界面：列表 / 勾选 / 文本域 / 进度条 / 键位提示，以及侧栏
 `input = false` 不抢按键的写法）。
 
