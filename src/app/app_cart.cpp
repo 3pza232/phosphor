@@ -28,8 +28,7 @@ void App::load_cart_path(const std::string& path) {
     arm_script_binding(std::make_unique<Cartridge>());
     host_.time = 0.0;
     host_.layers.reset(host_.content_w, host_.content_h);  // 层随卡带：新卡带从零开始
-    display_.chrome.resize(host_.content_w, host_.content_h);  // 主机 chrome 铺满内容区（每帧重画）
-    display_.chrome.clear_transparent();
+    display_state_.reset_chrome(host_.content_w, host_.content_h);  // 主机 chrome 铺满内容区（每帧重画）
     input_.release_all();
     agent_.pending_releases.clear();
     capture_escape_ = false;    // Esc 接管随上一张卡带一起收（phos.sys.capture_escape）

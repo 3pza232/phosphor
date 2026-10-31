@@ -32,8 +32,8 @@ void App::fill_debug_info(DebugInfo& info) {
     info.mode = mode_name();
     info.playing = playing();
     info.host_time = host_.time;
-    info.grid_w = display_.screen.width();
-    info.grid_h = display_.screen.height();
+    info.grid_w = display_state_.display().screen.width();
+    info.grid_h = display_state_.display().screen.height();
     info.content_w = kContentW;
     info.content_h = kContentH;
     info.panel_w = host_.panel_w;
@@ -59,7 +59,7 @@ void App::fill_debug_info(DebugInfo& info) {
     info.music_volume = shell_.music_volume();
     info.sfx_volume = shell_.sfx_volume();
 
-    info.crt = &active_crt_;  // 仪表盘可直接调参，所以给的是可写指针
+    info.crt = &display_state_.crt();  // 仪表盘可直接调参，所以给的是可写指针
 
     // 卡带注册的可调参数（`phos.debug.number`）：调 get 取当前值，按**分组路径**搭一棵树供调试台
     // 递归渲染。文案按当前界面语言解析——切换语言后篮子文案跟着变
@@ -120,7 +120,7 @@ std::string App::window_title_for_state() const {
 
 void App::maybe_dump(const CliOptions& opts, long frame) const {
     if (opts.dump_every > 0 && frame % opts.dump_every == 0)
-        std::printf("----- frame %ld -----\n%s", frame, display_.screen.to_text().c_str());
+        std::printf("----- frame %ld -----\n%s", frame, display_state_.display().screen.to_text().c_str());
 }
 
 
@@ -129,13 +129,13 @@ bool App::write_screenshot(const std::string& path, int& width, int& height,
     ScreenImageOptions options;
     options.cell_w = font_px_;  // 字号 = 格边长：截图与窗口同一份
     options.cell_h = font_px_;
-    options.crt = active_crt_;
+    options.crt = display_state_.crt();
     // 截图必须与窗口所见一致：底 + 逐层叠画（像素级合成），
     // 而不是合成后的文本网格 —— 那条路一格只有一个字形，会把下层"顶掉"
     const bool layered = playing() && host_.layers.active();
-    const Screen& base = layered ? display_.base : display_.screen;
+    const Screen& base = layered ? display_state_.display().base : display_state_.display().screen;
     // 有图层的卡带，分隔线只在 chrome 里（base 快照在写分隔线之前），截图要补上才与窗口一致
-    const Screen* overlay = (layered && host_.panel_w > 0) ? &display_.chrome : nullptr;
+    const Screen* overlay = (layered && host_.panel_w > 0) ? &display_state_.display().chrome : nullptr;
     const auto image = render_screen_image(base, fonts_.files(), options, error,
                                            layered ? &host_.layers : nullptr,
                                            host_.content_x, host_.content_y, overlay);
@@ -149,7 +149,7 @@ bool App::write_screenshot(const std::string& path, int& width, int& height,
 
 void App::write_final_outputs(const CliOptions& opts) const {
     if (opts.dump_screen)
-        std::printf("%s", display_.screen.to_text().c_str());
+        std::printf("%s", display_state_.display().screen.to_text().c_str());
 
     if (!opts.screenshot) return;
     int width = 0, height = 0;

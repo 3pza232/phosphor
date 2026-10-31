@@ -1,6 +1,7 @@
 #pragma once
 
 #include "app/agent_controller.hpp"
+#include "app/display_state.hpp"
 #include "app/font_state.hpp"
 #include "app/shelf_playback.hpp"
 #include "app/sound_state.hpp"
@@ -173,8 +174,8 @@ private:
     static constexpr float kInsertFlashTime = 0.30f;
     static constexpr float kEjectCollapseTime = 0.35f;
 
-    /// 三块显示面（卡带纹理视图 / 合成前底图 / 主机 chrome）与合成顺序，见 core/display.hpp
-    Display display_;
+    /// 三块显示面与 CRT 参数（纯状态；合成/渲染交互仍由 App 执行），见 app/display_state.hpp
+    DisplayState display_state_;
     Input input_;
     HostContext host_;
     Shell shell_;
@@ -200,7 +201,6 @@ private:
     ContentLibrary packs_;
     /// 当前生效的色板副本：由主题的 skin.palette 解析而来，host_.palette 指向它
     Palette active_palette_;
-    CrtParams active_crt_;
 
     Audio audio_;
     /// 主机事件音与采样缓存（音效包索引仍在 packs_，配置持久化仍归 App）

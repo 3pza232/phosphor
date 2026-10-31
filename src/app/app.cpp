@@ -46,7 +46,7 @@ int App::run(const CliOptions& opts) {
     font_px_ = fonts_.effective_px(config_.font_size);  // 字号：用户设置 > 方案声明 > 出厂默认
     host_.cell_px = font_px_;                           // ink_box 的兜底宽度随格边长
 
-    host_.screen = &display_.screen;
+    host_.screen = &display_state_.display().screen;
     host_.input = &input_;
     host_.palette = &active_palette_;
     host_.language = config_.language;
@@ -151,8 +151,8 @@ void App::advance(float dt, Renderer* renderer, Window* window) {
         eject_collapse_ -= dt;
         const float progress =
             1.0f - std::max(0.0f, eject_collapse_ / kEjectCollapseTime);
-        shell_.draw_chassis(display_.screen);
-        effects::draw_eject_collapse(display_.screen, content_rect(), progress,
+        shell_.draw_chassis(display_state_.display().screen);
+        effects::draw_eject_collapse(display_state_.display().screen, content_rect(), progress,
                                      shell_.skin().accent);
         input_.next_frame();
         return;
@@ -161,7 +161,7 @@ void App::advance(float dt, Renderer* renderer, Window* window) {
     // 模式分派：三态互斥，一个 switch 说清"这一帧归谁"
     switch (mode_) {
         case Mode::boot:
-            shell_.draw(display_.screen);
+            shell_.draw(display_state_.display().screen);
             tick_boot(dt);
             if (boot_should_end()) end_boot();
             return;
@@ -210,12 +210,12 @@ void App::tick_playing(float dt) {
     }
     if (!frozen) host_.time += dt;
     if (!frozen) toasts_.update(dt);  // toast 计时跟逻辑帧走：暂停时冻结
-    shell_.draw_chassis(display_.screen);
+    shell_.draw_chassis(display_state_.display().screen);
     shell_.set_lamps_solid(true);
 
     // 主机 chrome（侧栏分隔线）每帧重画：它由渲染器画在**所有图层之上**——
     // 画在底层会被卡带的世界图层盖住（这正是"窗口里看不到分隔线"的原因）
-    display_.chrome.clear_transparent();
+    display_state_.display().chrome.clear_transparent();
     // 主题面板色交给卡带 API：`panel.clear()` 不带色时用它当底色 —— 右栏随主题，不透出游戏
     host_.panel_bg = shell_.skin().panel;
 
@@ -244,7 +244,7 @@ void App::tick_playing(float dt) {
     if (insert_flash_ > 0.0f) {
         insert_flash_ -= dt;
         // 插卡闪屏是主机外壳的瞬时效果，用主题色
-        effects::draw_insert_flash(display_.screen, content_rect(), shell_.skin().accent,
+        effects::draw_insert_flash(display_state_.display().screen, content_rect(), shell_.skin().accent,
                                    shell_.skin().frame, frame_count_);
     }
 
@@ -252,19 +252,19 @@ void App::tick_playing(float dt) {
     // 没建层的卡带 `active()` 为假，这一步不存在——不是"快路径等价"，是根本没有它。
     //
     // 这里做的是**文本视图**的合成（一格一个字形，取最上面那层）。**渲染不读它**：
-    // 渲染用 display_.base + 各图层逐层叠画，那是像素级叠加，一格能同时看见两层的笔画
+    // 渲染用 display_state_.display().base + 各图层逐层叠画，那是像素级叠加，一格能同时看见两层的笔画
     timing_.merge_ms = 0.0f;
     if (drawn && ok && host_.layers.active()) {
-        display_.base = display_.screen;
+        display_state_.display().base = display_state_.display().screen;
         const auto m0 = clock::now();
-        host_.layers.merge_over(display_.screen, host_.content_x, host_.content_y);
+        host_.layers.merge_over(display_state_.display().screen, host_.content_x, host_.content_y);
         timing_.merge_ms = std::chrono::duration<float, std::milli>(clock::now() - m0).count();
     }
 
     // toast：画在图层合成之后（压在世界与场景之上），但只在内容区底边，不接管输入
     if (!toasts_.empty()) {
         const ui::Theme toast_theme = ui::theme_from_palette(active_palette_);
-        toasts_.paint(display_.screen, toast_theme, content_rect());
+        toasts_.paint(display_state_.display().screen, toast_theme, content_rect());
     }
 
     timing_.update_ms = std::chrono::duration<float, std::milli>(t1 - t0).count();
@@ -293,8 +293,8 @@ void App::tick_playing(float dt) {
         const Color divider = shell_.skin().frame;   // 分隔线取主题边框色（不随内容色板走）
         const int lx = dx - host_.content_x;         // chrome 是内容区局部坐标
         for (int y = host_.content_y; y < host_.content_y + host_.content_h; ++y) {
-            display_.screen.put(dx, y, U'|', divider);  // 文本视图（agent 读 screen）
-            display_.chrome.put(lx, y - host_.content_y, U'|', divider);  // 窗口：画在所有图层之上
+            display_state_.display().screen.put(dx, y, U'|', divider);  // 文本视图（agent 读 screen）
+            display_state_.display().chrome.put(lx, y - host_.content_y, U'|', divider);  // 窗口：画在所有图层之上
         }
     }
     input_.next_frame();
@@ -336,7 +336,7 @@ void App::tick_shell(Renderer* renderer, Window* window) {
         }
     }
 
-    shell_.draw(display_.screen);
+    shell_.draw(display_state_.display().screen);
     shell_.set_lamps_solid(false);
 
     // 界面按键音：确认键与普通键区分。**音效行例外**——它的声音由 handle_intent 处理
@@ -516,7 +516,7 @@ int App::run_windowed(const CliOptions& opts) {
         std::fprintf(stderr, "ERROR: %s\n", error.c_str());
         return 3;
     }
-    renderer.set_crt(active_crt_);
+    renderer.set_crt(display_state_.crt());
     // 字形度量交给 API 层（phos.text.ink_box）：与绘制同一份图集度量。
     // 无头模式不装它，调用方退回整格宽
     host_.glyph_metrics = [&renderer](char32_t cp) { return renderer.ink_box(cp); };
@@ -606,7 +606,7 @@ int App::run_windowed(const CliOptions& opts) {
         // 底 + 逐层叠画 + 主机 chrome：顺序与原点收在 Display::present 一处
         const bool layered = playing() && host_.layers.active();
         const bool overlay = playing() && host_.panel_w > 0;
-        display_.present(renderer, host_.layers, host_.content_x, host_.content_y, layered,
+        display_state_.display().present(renderer, host_.layers, host_.content_x, host_.content_y, layered,
                          overlay);
         // frame.read 的读回点：本帧已画完、尚未 swap。放在调试台之前，
         // 读回的是卡带画面本身，不含仪表盘
@@ -615,7 +615,7 @@ int App::run_windowed(const CliOptions& opts) {
             DebugInfo info;
             fill_debug_info(info);
             console_.render(info);
-            renderer.set_crt(active_crt_);  // 仪表盘可直接调参并即时生效
+            renderer.set_crt(display_state_.crt());  // 仪表盘可直接调参并即时生效
             // 调试台改过的卡带参数：帧末写回（不在渲染中途改卡带状态）。
             // 参数在**分组树**里，递归收"改过的"叶子，按它们各自登记的下标写回
             if (cart()) {

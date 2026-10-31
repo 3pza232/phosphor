@@ -23,7 +23,7 @@ void App::apply_skin(int index, Window* window, Renderer* renderer) {
     skin.screen_w = kContentW;
     skin.screen_h = kContentH;
 
-    display_.screen.resize(skin.grid_w(), skin.grid_h());
+    display_state_.resize_screen(skin);
     host_.content_x = skin.screen_x;
     host_.content_y = skin.screen_y;
     host_.content_w = kContentW;
@@ -103,8 +103,8 @@ void App::init_audio() {
 
 
 void App::apply_crt(int level, Renderer* renderer) {
-    active_crt_ = crt_params_for_level(level, active_palette_);
-    if (renderer) renderer->set_crt(active_crt_);
+    display_state_.apply_crt(level, active_palette_);
+    if (renderer) renderer->set_crt(display_state_.crt());
 }
 
 
