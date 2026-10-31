@@ -66,18 +66,18 @@
 
 | # | 现象 | 证据 | 影响 | 状态 |
 |---|---|---|---|---|
-| C1 | `packs_.boots[0]` 未判空 | 旧：`core/app.cpp:119`、`core/app_intent.cpp:99`；`pack/content_library.cpp:54-56` 对 boots 没有内置兜底 | 从错误工作目录启动（或删掉 boot 包）→ 未定义行为，直接崩；与"磁盘上一个包都没有也能开机"相反 | ✅ **已修复**：`pack/content_library.cpp:58` 空表时插内置项（`dir` 为空）；`core/app.cpp:350` 空 dir 不加载脚本、走内置自检动画；启动日志因此不再越界 |
+| C1 | `packs_.boots[0]` 未判空 | 旧：`core/app.cpp:119`、`core/app_intent.cpp:99`；`pack/content_library.cpp:54-56` 对 boots 没有内置兜底 | 从错误工作目录启动（或删掉 boot 包）→ 未定义行为，直接崩；与"磁盘上一个包都没有也能开机"相反 | ✅ **已修复**：`pack/content_library.cpp:58` 空表时插内置项（`dir` 为空）；`app/app.cpp:350` 空 dir 不加载脚本、走内置自检动画；启动日志因此不再越界 |
 | C2 | 存档先改内存再整文件覆盖写 | 旧：`cart/save_store.cpp:61-88`（`set/erase` 先 `data_` 后 `flush`）、`flush` 用 `trunc` | 写失败/掉电：读到的值与磁盘不一致；写到一半崩会连同旧档一起毁掉 | ✅ **已修复**：`cart/save_store.cpp:111-130` 写 `.tmp` → flush/close → rename，失败保留旧档；用例 `save_store_failed_write_keeps_old_value` |
 | C3 | 配置写盘非原子，theme 字符串未转义 | 旧：`core/config.cpp:128-142`（直接拼 `"` + 值 + `"`，同路径截断） | 掉电丢设置；skin/boot 名带特殊字符即产出坏 JSON | ✅ **已修复**：`core/config.cpp:29-56` 原子写（tmp + rename）、`:164-186` 全部字符串走 `json::quote`；用例 `config_atomic_write_*` / `config_escapes_special_names` |
 | C4 | 卡带错误无 chunk 名、无 traceback | 旧：`cart/cartridge.cpp:318,354` 未传 chunk name；全工程无 traceback | 多文件卡带的报错只有源码前缀 + 行号，难以定位 | ✅ **已修复**：入口/模块脚本以 `"@<id>/<path>"` 作 chunk 名（`cartridge.cpp:36-37,292-293`；`pack.cpp` 同理）；实测运行时错误输出含 `<id>/lib.lua:2` 与完整 `stack traceback` |
 | C5 | 看门狗只护卡带 | 旧：只有 `cartridge.cpp:315` 挂 hook；`parse_manifest` 与 `pack/pack.cpp` 六类包脚本无 hook | manifest 里一个 `while true` 即可冻结启动/换卡 | ✅ **已修复**：`api/lua_guard`（指令计数钩子 + `BudgetScope`，100 ms/次）覆盖卡带入口、`manifest.lua`（`cartridge.cpp:34-35`）与全部内容包脚本（`pack.cpp:47-48` 及 6 处 `BudgetScope`） |
 | C6 | `time.step` 的在途回包可被丢弃 | `core/app_control.cpp:452-458`：`time.resume` 直接清零 `step_request_id`、`pending_steps` | agent 端的同步点永远等不到回包（挂起）；违反 `agent-interface.md:126-127` | ✅ **已修复**：`time.resume` 先给在途 `time.step` 回 `time.step abandoned by time.resume`，再退出单步；`control_test.py` 用两条在途命令覆盖（回包按 id 归档） |
 | C7 | 一帧由三条互不相同的合成路径产生 | `render/renderer.cpp:398-420`（GL 逐格/逐笔）；`render/screen_image.cpp`（CPU 截图）；`core/layered_screen.cpp`（文本投影） | 窗口里看得见的笔迹，在 `screenshot`/文本里消失 | ✅ **已修复**（273d090）：CPU 的底图 / 图层 / 主机 chrome 三条路径都按 GL 的 `pens` 趟画无字形槽格上的笔迹（`screen_image.cpp` 三处分支）；`drawing.md` 已改为"两路同规则" |
-| C8 | 每帧做文本投影 | `core/app.cpp:223-228`：建层卡带每帧 `display_.base = display_.screen` 深拷贝 + `merge_over`，而渲染不读它 | 有层卡带每帧白付一次全屏拷贝与合并；`merge_ms` 测的就是这份浪费 | ❌ **仍待修**（已限定在 `layers.active()`，但每帧仍做） |
+| C8 | 每帧做文本投影 | `app/app.cpp:223-228`：建层卡带每帧 `display_.base = display_.screen` 深拷贝 + `merge_over`，而渲染不读它 | 有层卡带每帧白付一次全屏拷贝与合并；`merge_ms` 测的就是这份浪费 | ❌ **仍待修**（已限定在 `layers.active()`，但每帧仍做） |
 | C9 | 字体热重载失败回滚不完整 | `render/renderer.cpp:224-245` 旧实现：打包成功后即改写 `fonts_`/`glyphs_`，随后 `glGenTextures` 失败只回滚纹理 | 失败后 UV 与旧纹理错位，字形乱码且无法自愈 | ✅ **已修复**：`build_font_atlas` 全部先算在局部（字形/度量/装箱），纹理创建、上传与 `glGetError` 校验都通过后才一次性提交；失败时旧字体链/UV/纹理一个都不动，`reload_fonts` 无需回滚（`renderer.cpp:247-330`） |
 | C10 | `Screen::blend` 不校验宽字续格/被覆盖格 | `core/screen.cpp:188-205`：宽字笔迹拒绝；目标格 `cols == 0` 或 `scale == 0`（无字形槽）也拒绝 | 同一笔"返回成功却只在窗口可见" | ✅ **已修复**（273d090）：无字形槽的格上 `blend` 直接返回 false、日志只报一次；契约写进 `drawing.md` §3.1（叠笔只能落在有字形槽的格上） |
-| C11 | 内容根 = 进程当前目录 | `pack/content_library.cpp:13-22`、`core/app.hpp:145-152`、`devkit` 路径 | 从资源管理器/CI/快捷方式以别的目录启动 → 无内容（并触发 C1）；与「绿色免安装、双击即用」的发行形态冲突 | ✅ **已修复**：运行模式下内容根按 **exe 目录**解析（`platform/paths` + `main.cpp` 的 `resolve_content_root`；CWD 本身是内容根时不动），`--root` 可显式覆盖；DevKit 资源（模板/注解）CWD 缺失时回退 exe 目录；新门禁 `tools/portable_smoke.py` 在外部 CWD 下验证启动/`--check-api`/`--root` |
-| C12 | 窗口模式下 `--cart` 装载失败仍返回 0 | 旧：`core/app.cpp:495` 之后无失败返回，结尾恒 `return 0` | 脚本无法用退出码判断失败 | ✅ **已修复**：`core/app.cpp:417-420`（无头）与 `:498-501`（窗口）装载失败均 `return 2` |
+| C11 | 内容根 = 进程当前目录 | `pack/content_library.cpp:13-22`、旧 `core/app.hpp:145-152`（现 `app/app.hpp`）、`devkit` 路径 | 从资源管理器/CI/快捷方式以别的目录启动 → 无内容（并触发 C1）；与「绿色免安装、双击即用」的发行形态冲突 | ✅ **已修复**：运行模式下内容根按 **exe 目录**解析（`platform/paths` + `main.cpp` 的 `resolve_content_root`；CWD 本身是内容根时不动），`--root` 可显式覆盖；DevKit 资源（模板/注解）CWD 缺失时回退 exe 目录；新门禁 `tools/portable_smoke.py` 在外部 CWD 下验证启动/`--check-api`/`--root` |
+| C12 | 窗口模式下 `--cart` 装载失败仍返回 0 | 旧：`core/app.cpp:495` 之后无失败返回，结尾恒 `return 0` | 脚本无法用退出码判断失败 | ✅ **已修复**：`app/app.cpp:417-420`（无头）与 `:498-501`（窗口）装载失败均 `return 2`（行号按迁移前，文件现位于 `app/`） |
 | C13 | NDJSON 里的 `\uXXXX` 转义被丢弃 | 旧：`core/json_lite.cpp:53-57` 直接跳过四位 | 标准 JSON 客户端注入中文时字符消失 | ✅ **已修复**：`core/json_lite.cpp:102-154` 解 `\uXXXX` 并按代理对合并（非法/孤立代理报错）；用例 `json_unicode_*` |
 | C14 | 联机的 `join`/`discover` 阻塞主线程 | `net/net.cpp` 旧实现：TCP 连接阻塞 3 s、发现阻塞到 timeout | 卡带在 update() 里调用即超 100 ms 看门狗 | ✅ **已修复**：`discover_async`/`discover_poll` 与 `join_async`（后台 TCP 连接线程，App 每帧 `Net::tick` 落地；成功→connected、失败→connect_failed+reason）均已提供；worms/夹具/门禁全部迁移，旧阻塞版保留但 lint 会告警；关停时后台线程在 50ms 分片内退出 |
 | C15 | 控制通道缺乏活性与背压 | `agent/control_channel.cpp` 旧实现：accept 失败即 break（通道假活）、backlog 1、queue 满回包在持锁时做（最多阻塞主线程 200ms）、单行上限判定在换行分支漏检 | 通道"看起来开着、实际已死"；慢客户端拖住命令处理；压线畸形行被当合法命令 | ✅ **已修复**：accept 失败区分瞬时/致命（瞬时继续等，致命标记 running=false）；backlog 改 SOMAXCONN；回包移到 queue_mutex 之外；行长按 newline 位置判上限（1 MiB），超限回错并断开；control_test 新增超大单行拒绝用例 |
@@ -90,17 +90,17 @@
 
 | # | 现象 | 证据 | 后果 |
 |---|---|---|---|
-| S1 | `App` 是 2,179 行 / 7 个 TU / 54 方法的上帝对象，且**住在最低层** `core/` | `core/app.hpp:3-20` 反向 include `cart/ pack/ shell/ agent/ net/ api/`，于是 core 头文件把 sol2 拉进整棵依赖树 | 任何接触 App 的 TU 都编译 Lua 宿主；"可替换子系统"实际上被 App 焊死 |
+| S1 | `App` 是 2,179 行 / 7 个 TU / 54 方法的上帝对象，且曾**住在最低层** `core/` | 旧：`core/app.hpp:3-20` 反向 include `cart/ pack/ shell/ agent/ net/ api/`，于是 core 头文件把 sol2 拉进整棵依赖树 | 任何接触 App 的 TU 都编译 Lua 宿主；"可替换子系统"实际上被 App 焊死 | 🟡 **部分修复（阶段一：搬家）**：App 与 7 个 TU 已迁到 `app/`（`app/app.hpp`），`core` 不再反向 include 上层；门禁新增"下层不得 include `app/`"并移除 `core/app*` 白名单。**App 仍是上帝对象、成员未拆**（阶段二：按内聚子系统拆分） |
 | S2 | 模式不是状态机 | 旧：`in_boot_` / `playing_` / `quit_` 与 ShellMode 由多处分别写 | 非法状态组合可表示；状态查询不可信 | ✅ **已修复**：`App::Mode`（boot / shelf / playing）三态互斥，全部写点集中为 9 处直接赋值；读点用 `in_boot()/playing()`；旧 (true,false)/(false,true)/(false,false) 与新三态一一映射（(true,true) 无产生路径）。`quit_` 保留为独立请求标志（不是模式） |
 | S3 | 选择状态有 3~4 份副本 | `Config` 字符串、`ContentLibrary` 下标、`Shell` 自带名字/下标（`shell/shell.hpp:271-286`）、字体状态 4 处 | 每次改设置手工三方同步，17 处 `save_config_now()` 即其症状 |
 | S4 | `HostContext` 是 15 个裸指针的手工生命周期 | 旧：`api/host_api.hpp`；`clear_host_cart()` 有 9 个手工调用点 | 新增子系统就要再加一处"记得清空"；错一次就是悬垂指针 | ◐ **部分修复**：新增 `HostCartBinding`（构造挂 cart/cart_info/save/scenes，析构经 `App::unbind_host_cart` 统一清）；`clear_host_cart()` 调用点 **10 → 5**（剩 eject、开机前置、架子包失败/装配 3 处，属未武装会话的兼容路径）；清理本体只有一份；`cart_files` 仍由 `Cartridge::assemble` 写入。绑定不拥有 `Cartridge`，彻底防漏需让绑定持有脚本对象（另立项） |
 | S5 | `cart` ↔ `api` 头文件环 | 旧：`cart/cartridge.hpp` include `api/host_api.hpp`，反向亦 include | 依赖方向与 `architecture.md:43-46` 相反 | ✅ **已断开**：两侧改用前向声明（`HostContext` / `SaveStore`），需要完整类型的 TU（`cartridge.cpp` / `score_api.cpp`）各自直接 include；`check_includes` 通过、构建与 12 项门禁全绿 |
 | S6 | 三份帧步进、三份沙箱、三份本地化解析 | 旧：`app.cpp` 三处 advance→计数→释放→回包→dump；cartridge/pack/host_api/devkit api_check 各一份沙箱或本地化 | 三处已开始分叉；改一处漏两处 | ✅ **已修复**：帧步进收口到 `App::step_frame`（advance 只剩一个调用点）；沙箱装配收口到 `api/lua_sandbox.hpp`（cart/pack/devkit api_check 共用）；manifest 本地化读取收口到 `lua_sandbox::read_localized`（cart/pack/host_api 共用）；环境节流/空闲外壳仍按各自循环保留 |
 | S7 | `Screen` 过载 | `core/screen.hpp:22-190`：存储 + 宽字续格 + 缩放块 + 稀疏笔迹 + 子位累积 + alpha + 文本导出 | 每个新绘制特性都要改它并同时改三条消费路径；不变式从公共写入口漏出（C10） |
-| S8 | 反向依赖 `pack → render` | 旧：`pack/pack.cpp` include `render/font.hpp`；`FontScheme` 定义在 `pack/pack.hpp` | 与 `architecture.md` 方向相反 | ✅ **已修复**：字体文件枚举与默认顺序下沉 `core/font_files`（纯路径）；`pack` 不再 include `render/`，`render/font` 只按路径加载、不再保留枚举入口；`core/app_settings.cpp` 的方案兜底也直接用 `core/font_files` |
+| S8 | 反向依赖 `pack → render` | 旧：`pack/pack.cpp` include `render/font.hpp`；`FontScheme` 定义在 `pack/pack.hpp` | 与 `architecture.md` 方向相反 | ✅ **已修复**：字体文件枚举与默认顺序下沉 `core/font_files`（纯路径）；`pack` 不再 include `render/`，`render/font` 只按路径加载、不再保留枚举入口；`app/app_settings.cpp` 的方案兜底也直接用 `core/font_files` |
 | S9 | 全局可变状态 | `core/log.cpp`、`platform/window.cpp`、`core/mods.cpp`、`cartridge.cpp` 的文件级 static | 与 `code-style.md` 冲突；不可重入，无法并行跑两台主机/两个测试 | ◐ **部分修复**：`platform/window.cpp` 的回调上下文 `g_handlers` 已移除——每窗口 `unique_ptr<WindowHandlers>` 存在 GLFW user pointer 里，移动构造/赋值会重挂指针（多窗口不再互相覆盖）；`log` 的帧号/时间、`mods` 缓存、`cartridge` 的静态表仍为全局，待后续 |
 | S10 | 底层健壮性未收口 | 旧：`core/config.cpp` 非原子写、`json_lite` 转义/窄化缺测试、`platform/socket` 无 SIGPIPE 处理 | 设置/日志/联机在异常路径的失败方式不可预测 | ◐ **部分修复**：json 严格性已补 5 组测试（8 转义/代理对/未闭合、数字文法与 17g 往返、空容器与 64 层边界、dump 稳定性与键序、double→int 边界钳制）并修掉 `Value::dump` 非有限数输出 inf/nan 的问题（Host 写存档先拒绝 NaN/inf，dump 兜底 null）；config 原子写与 socket SIGPIPE 仍待做；解析器对尾随逗号/裸控制字符的宽松容错未收紧（需与控制通道/配置容错一起决策） |
-| S11 | Lua 绑定层重复而非抽象 | `api/host_api.cpp:82-132`（screen/panel）、`api/ui_api.cpp:129-195`（region）、`api/ui_api.cpp:37-116`（顶层 ui）、`api/draw_region.cpp:122-162`（frame/divider/bar/menu/body/sprite 各写一遍） | 一处语义修正要改三到四处；`sprite.step` 的"缩放/downsample"分歧就是这么来的（`core/ui.cpp:149` vs `api-reference.md:300`） |
+| S11 | Lua 绑定层重复而非抽象 | 旧：`api/host_api.cpp`（screen/panel）、`api/ui_api.cpp`（顶层 ui 与 Region）、`api/draw_region.cpp` 各写一遍参数/坐标解析 | 一处语义修正要改三到四处 | ◐ **部分修复**：新增 `api/ui_options`（parse_ch / parse_fg / parse_bg / parse_inline / parse_step / parse_brightness），顶层 ui、Region 13 个方法与 draw_region 的坐标换算改调它（规则副本数 4→1，默认值/错误行为逐项核对不变）；`host_api.cpp` 的 screen/panel 绑定与 `ui_render.cpp` 的局部 color parser 默认值不同，留待阶段二 |
 
 ### 3.3 UI 层（第二轮：组件层已立，迁移进行中）
 
@@ -188,7 +188,7 @@ towerdef 用存档 v2 表值（旧 RLE 存档兼容解码）+ `phos.observe` 验
 | `architecture.md:105`：CRT 有暗角/畸变 | 着色器只有扫描线/孔径格栅/辉光/亮度补偿/色调（`render/renderer.cpp:49-100`） | ✅ **已修正** |
 | `architecture.md:127-129`：`pack/` 不向上依赖 `render/` | 旧：`pack/pack.cpp:9` include `render/font.hpp` | ✅ **已完成**：枚举规则移入 `core/font_files`，pack 只依赖 core/api |
 | `architecture.md:43-46`：`cart/` 只可复用 `api/lua_value.hpp` | `cart/cartridge.hpp:3` include `api/host_api.hpp`（头文件环） | ✅ **文档已记为债务**（S5）；代码仍待改 |
-| `architecture.md` 分层图（旧） | `core/app.hpp` 反向 include 全层；render ↔ core 互依 | ✅ **已修正**（本轮补 `ui` 层与组装点说明） |
+| `architecture.md` 分层图（旧） | 组装点曾以 `core/app.hpp` 反向 include 全层；render ↔ core 互依 | ✅ **已修正**：补 `ui` 层与组装点说明；S1 阶段一把组装层上移为 `app/`，`core` 不再含 App |
 | `architecture.md:315`：渲染后端按"可换 Vulkan"设计 | 接口是具体 `Renderer` + 内联 shader 字符串；无抽象缝 | ✅ **已修正**（改写为"目标，未做"） |
 | `drawing.md:91`：GL 与 CPU 画的是同一张图 | 旧：续格/被覆盖格上的笔迹 GL 画、CPU 跳过（C7） | ✅ **已修正**；C7 已修（273d090），两路同规则 |
 | `layers.md:66`：当前 API 世代 **5** | `core/version.hpp` 已到 **7** | ✅ **已修正**（世代 7） |
