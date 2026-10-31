@@ -112,6 +112,15 @@ struct Net::Impl {
     std::vector<Discovered> disc_result;
     bool disc_ready = false;
 
+    // 异步 join：后台线程做 TCP 连接（主线程不阻塞），结果由 tick() 落地
+    std::thread join_thread;
+    std::atomic<bool> joining{false};
+    std::mutex join_mtx;
+    net::Socket join_socket;
+    std::string join_error;
+    bool join_done = false;
+    std::string join_address;
+
     // 主线程可见快照
     mutable std::mutex state_mtx;
     std::string last_error;
@@ -147,9 +156,10 @@ struct Net::Impl {
         if (incoming.size() >= kMaxIncoming) incoming.pop_front();
         incoming.push_back(Message{from, kind, data});
     }
-    void push_event(const std::string& type, int peer, const std::string& name) {
+    void push_event(const std::string& type, int peer, const std::string& name,
+                    const std::string& reason = {}) {
         std::lock_guard<std::mutex> lock(ev_mtx);
-        events.push_back(Event{type, peer, name});
+        events.push_back(Event{type, peer, name, reason});
     }
 
     // ---- 发送 ----
@@ -589,6 +599,15 @@ struct Net::Impl {
             disc_ready = false;
             disc_result.clear();
         }
+        // 异步 join：后台 tcp_connect 最多等 1.5s；关停时把它等完再关句柄
+        joining.store(false);
+        if (join_thread.joinable()) join_thread.join();
+        {
+            std::lock_guard<std::mutex> lock(join_mtx);
+            join_socket.close();
+            join_done = false;
+            join_error.clear();
+        }
         listener.close();
         udp.close();
         wake.close();
@@ -671,6 +690,67 @@ bool Net::join(const std::string& address, const Options& opts, std::string& err
     impl_->start_worker();
     log::info("net: joining " + address + ":" + std::to_string(opts.port) + " as " + opts.name);
     return true;
+}
+
+bool Net::join_async(const std::string& address, const Options& opts, std::string& err) {
+    if (!impl_) return false;
+    if (impl_->role != Impl::Role::off || impl_->joining.exchange(true)) {
+        err = "net is busy";
+        return false;
+    }
+    impl_->opts = opts;
+    impl_->local_port = opts.port;
+    impl_->role = Impl::Role::connecting;
+    {
+        std::lock_guard<std::mutex> lock(impl_->join_mtx);
+        impl_->join_socket.close();
+        impl_->join_error.clear();
+        impl_->join_done = false;
+    }
+    impl_->join_address = address;
+    impl_->join_thread = std::thread([this, address, opts] {
+        std::string connect_err;
+        // 连接超时 1.5s：后台线程里等，主线程照常跑帧；FAIL 时不至于关服等太久
+        net::Socket sock = net::tcp_connect(address, opts.port, 1500, connect_err);
+        {
+            std::lock_guard<std::mutex> lock(impl_->join_mtx);
+            impl_->join_socket = std::move(sock);
+            impl_->join_error = connect_err;
+            impl_->join_done = true;
+        }
+        impl_->joining.store(false);
+    });
+    log::info("net: joining (async) " + address + ":" + std::to_string(opts.port));
+    return true;
+}
+
+void Net::tick() {
+    if (!impl_) return;
+    net::Socket sock;
+    std::string err;
+    {
+        std::lock_guard<std::mutex> lock(impl_->join_mtx);
+        if (!impl_->join_done) return;
+        impl_->join_done = false;
+        sock = std::move(impl_->join_socket);
+        err = impl_->join_error;
+    }
+    if (impl_->join_thread.joinable()) impl_->join_thread.join();
+
+    if (!sock.valid()) {
+        impl_->set_error(err);
+        impl_->role = Impl::Role::off;
+        impl_->push_event("connect_failed", 0, impl_->join_address, err);
+        return;
+    }
+    Impl::Peer host_peer;
+    host_peer.id = kHostId;
+    host_peer.sock = std::move(sock);
+    host_peer.address = impl_->join_address;
+    host_peer.last_seen = std::chrono::steady_clock::now();
+    impl_->conns[kHostId] = std::move(host_peer);
+    impl_->role = Impl::Role::connecting;
+    impl_->start_worker();
 }
 
 void Net::stop() {

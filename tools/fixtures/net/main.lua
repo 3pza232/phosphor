@@ -52,9 +52,9 @@ local function poll_discover()
     -- 找不到再退回本地回环（同机自测/单机演示都能用）
     join_discovered = #rooms > 0
     if join_discovered then
-      phos.net.join(rooms[1].address, { port = rooms[1].port, name = "P2" })
+      phos.net.join_async(rooms[1].address, { port = rooms[1].port, name = "P2" })
     else
-      phos.net.join("127.0.0.1", { port = PORT, name = "P2" })
+      phos.net.join_async("127.0.0.1", { port = PORT, name = "P2" })
     end
     role = phos.net.role()
   end

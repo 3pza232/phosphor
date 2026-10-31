@@ -160,6 +160,7 @@
 phos.net.host(opts?)            -- 开房。opts: { port=7770, name="P1", max_peers=8,
                                 --        discovery_port=45454, discoverable=true }
                                 -- 返回 true/false；失败原因见 phos.net.error()
+phos.net.join_async(address, opts?) -- 异步加入：不阻塞主线程，结果走事件
 phos.net.join(address, opts?)   -- 加入。opts: { port=7770, name="P2" }
 phos.net.stop()                 -- 离开 / 关房
 phos.net.status()               -- "off" | "hosting" | "connecting" | "connected" | "error"

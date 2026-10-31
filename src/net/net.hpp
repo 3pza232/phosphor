@@ -39,9 +39,10 @@ public:
     };
     /// 连接变化事件（与游戏消息分开队列）。
     struct Event {
-        std::string type;  // "connected" / "disconnected"
+        std::string type;  // "connected" / "disconnected" / "connect_failed"
         int peer = 0;
         std::string name;
+        std::string reason;  // connect_failed：失败原因（其余为空）
     };
     /// 发现到的一个房间。`open` = 房主是否还接受加入（开局后置 false）。
     struct Discovered {
@@ -59,8 +60,14 @@ public:
 
     /// 开始开房。失败返回 false 并填 err（端口占用等）。
     bool host(const Options& opts, std::string& err);
-    /// 连接到主机。失败返回 false 并填 err。
+    /// 连接到主机（**阻塞**到 TCP 连通或超时）。失败返回 false 并填 err。
+    /// 游戏帧内请用 join_async：它只发起连接，结果由 tick() 落地并通过事件通知。
     bool join(const std::string& address, const Options& opts, std::string& err);
+    /// 异步连接：返回 true = 请求已发起（此时 status() 为 "connecting"）。
+    /// 成功 → 事件 "connected"；失败 → 事件 "connect_failed"（reason 为原因）并回到 off。
+    bool join_async(const std::string& address, const Options& opts, std::string& err);
+    /// 每帧调用（App 负责）：把后台连接线程的结果落到网络状态机。
+    void tick();
     /// 离开 / 关房：关闭所有连接并停止后台线程。可重复调用。
     void stop();
 

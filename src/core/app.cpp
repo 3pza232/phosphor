@@ -180,6 +180,9 @@ void App::end_boot() {
 }
 
 void App::tick_playing(float dt) {
+    // 网络：把后台连接线程的结果落地（连接是异步的，主线程只管每帧收口）
+    net_.tick();
+
     // 调试台"打开即暂停"：**整机**冻结——卡带不推进、主机时间不走、声音也停（画面仍重绘、参数照调）
     const bool frozen = console_.open && pause_when_open_;
     audio_.set_host_paused(frozen);  // 主机级暂停（与卡带自己的 paused 各记一个，不互相盖）

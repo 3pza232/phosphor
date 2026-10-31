@@ -266,6 +266,7 @@ void register_net_api(sol::state& lua, HostContext& host) {
     if (!engine) {
         net["host"] = [](sol::optional<sol::table>) { return false; };
         net["join"] = [](const std::string&, sol::optional<sol::table>) { return false; };
+        net["join_async"] = [](const std::string&, sol::optional<sol::table>) { return false; };
         net["stop"] = []() {};
         net["status"] = []() { return std::string("off"); };
         net["error"] = []() { return std::string("networking unavailable"); };
@@ -295,6 +296,11 @@ void register_net_api(sol::state& lua, HostContext& host) {
     net["join"] = [engine](const std::string& address, sol::optional<sol::table> opts) {
         std::string err;
         return engine->join(address, read_options(opts), err);
+    };
+    // 异步连接：只发起，结果走事件（"connected" / "connect_failed"）。update() 里用这个
+    net["join_async"] = [engine](const std::string& address, sol::optional<sol::table> opts) {
+        std::string err;
+        return engine->join_async(address, read_options(opts), err);
     };
     net["stop"] = [engine]() { engine->stop(); };
     net["status"] = [engine]() { return engine->status(); };
@@ -360,6 +366,7 @@ void register_net_api(sol::state& lua, HostContext& host) {
             entry["type"] = event.type;
             entry["peer"] = event.peer;
             entry["name"] = event.name;
+            if (!event.reason.empty()) entry["reason"] = event.reason;
             out[index++] = entry;
         }
         return out;

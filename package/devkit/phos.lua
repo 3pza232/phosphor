@@ -878,6 +878,13 @@ function phos.net.host(opts) end
 ---@return boolean
 function phos.net.join(address, opts) end
 
+---异步加入主机：只发起连接，**不阻塞主线程**（update() 里用这个）。
+---成功 → 事件 "connected"；失败 → 事件 "connect_failed"（带 reason）并回到 off。
+---@param address string
+---@param opts? table
+---@return boolean 是否成功发起（"net is busy" 时为 false）
+function phos.net.join_async(address, opts) end
+
 ---离开 / 关房（可重复调用）
 function phos.net.stop() end
 
@@ -934,7 +941,8 @@ function phos.net.broadcast(kind, data) end
 ---@return table
 function phos.net.poll() end
 
----取连接变化事件：{ { type = "connected"|"disconnected", peer, name }, ... }（每次调用清空）
+---取连接变化事件：{ { type = "connected"|"disconnected"|"connect_failed", peer, name, reason? }, ... }
+---（每次调用清空）
 ---@return table
 function phos.net.events() end
 

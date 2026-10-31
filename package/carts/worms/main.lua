@@ -2476,6 +2476,9 @@ local function lan_recv(self)
 			end
 		elseif e.type == "disconnected" then
 			self.leave = true -- 房主掉线 / 被断开：回家
+		elseif e.type == "connect_failed" then
+			self.err = "join failed"
+			self.leave = true -- 连接没建立：回菜单重试
 		end
 	end
 	for _, m in ipairs(phos.net.poll()) do
@@ -2530,12 +2533,14 @@ local function lan_try_host(self)
 end
 
 local function lan_try_join(self, room)
-	if not phos.net.join(room.address, { port = room.port, name = nick() }) then
+	-- 异步连接：不阻塞主线程；成功/失败都通过 phos.net.events() 通知（见 lan_recv）
+	if not phos.net.join_async(room.address, { port = room.port, name = nick() }) then
 		self.err = "join failed"
 		return false
 	end
 	self.host, self.code, self.my_team, self.pick_team = false, room.port, nil, 1
 	self.phase = "room"
+	self.err = ""
 	return true
 end
 

@@ -785,6 +785,7 @@ end
 ```lua
 -- 开房 / 加入
 phos.net.host({ port = 7770, name = "P1" })        -- 成功返回 true
+phos.net.join_async("192.168.1.20", { port = 7770, name = "P2" })  -- 不阻塞；结果走事件
 phos.net.join("192.168.1.20", { port = 7770, name = "P2" })
 phos.net.stop()                                     -- 离开 / 关房
 
@@ -807,7 +808,8 @@ for _, m in ipairs(phos.net.poll()) do   -- 本帧收到的：{ from, kind, data
 end
 
 -- 连接变化事件（与消息分开，便于大厅 UI）
-for _, e in ipairs(phos.net.events()) do -- { type="connected"|"disconnected", peer, name }
+for _, e in ipairs(phos.net.events()
+-- 事件类型：connected / disconnected / connect_failed（带 reason）) do -- { type="connected"|"disconnected", peer, name }
   print(e.type, e.peer)
 end
 

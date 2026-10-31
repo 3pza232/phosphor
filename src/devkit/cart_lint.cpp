@@ -167,7 +167,12 @@ LintReport lint_cart(const std::string& cart_dir) {
                         "phos.screen.size() includes the sidebar; use phos.screen.playfield()");
                 if (line.find("phos.net.discover(") != std::string::npos)
                     add(report, LintSeverity::warning, entry, line_number,
-                        "phos.net.discover() blocks up to its timeout; keep calls out of update()");
+                        "phos.net.discover() blocks up to its timeout; use discover_async() + "
+                        "discover_poll()");
+                if (line.find("phos.net.join(") != std::string::npos)
+                    add(report, LintSeverity::warning, entry, line_number,
+                        "phos.net.join() blocks until TCP connects (up to 3s); use join_async() "
+                        "and handle the connect_failed event");
                 for (const std::string& module : required_modules(line)) {
                     std::string inner = module;
                     std::replace(inner.begin(), inner.end(), '.', '/');

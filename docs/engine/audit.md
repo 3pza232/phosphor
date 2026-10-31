@@ -79,7 +79,7 @@
 | C11 | 内容根 = 进程当前目录 | `pack/content_library.cpp:13-22`、`core/app.hpp:145-152`、`devkit` 路径 | 从资源管理器/CI/快捷方式以别的目录启动 → 无内容（并触发 C1）；与「绿色免安装、双击即用」的发行形态冲突 | ✅ **已修复**：运行模式下内容根按 **exe 目录**解析（`platform/paths` + `main.cpp` 的 `resolve_content_root`；CWD 本身是内容根时不动），`--root` 可显式覆盖；DevKit 资源（模板/注解）CWD 缺失时回退 exe 目录；新门禁 `tools/portable_smoke.py` 在外部 CWD 下验证启动/`--check-api`/`--root` |
 | C12 | 窗口模式下 `--cart` 装载失败仍返回 0 | 旧：`core/app.cpp:495` 之后无失败返回，结尾恒 `return 0` | 脚本无法用退出码判断失败 | ✅ **已修复**：`core/app.cpp:417-420`（无头）与 `:498-501`（窗口）装载失败均 `return 2` |
 | C13 | NDJSON 里的 `\uXXXX` 转义被丢弃 | 旧：`core/json_lite.cpp:53-57` 直接跳过四位 | 标准 JSON 客户端注入中文时字符消失 | ✅ **已修复**：`core/json_lite.cpp:102-154` 解 `\uXXXX` 并按代理对合并（非法/孤立代理报错）；用例 `json_unicode_*` |
-| C14 | 联机的 `join`/`discover` 阻塞主线程 | `net/net.cpp`：TCP 连接超时 3 s、发现阻塞到 timeout | 卡带在 update() 里调用即超 100 ms 看门狗 | ◐ **部分修复**：`discover_async`/`discover_poll`/`discovering` 已完成（后台扫描、50ms 分片可关停；worms/夹具/门禁均已迁移，lint 告警清零）；**`join` 仍是 3 s 有界阻塞**（TCP 连接状态机待做） |
+| C14 | 联机的 `join`/`discover` 阻塞主线程 | `net/net.cpp` 旧实现：TCP 连接阻塞 3 s、发现阻塞到 timeout | 卡带在 update() 里调用即超 100 ms 看门狗 | ✅ **已修复**：`discover_async`/`discover_poll` 与 `join_async`（后台 TCP 连接线程，App 每帧 `Net::tick` 落地；成功→connected、失败→connect_failed+reason）均已提供；worms/夹具/门禁全部迁移，旧阻塞版保留但 lint 会告警；关停时后台线程在 50ms 分片内退出 |
 | C15 | 控制通道缺乏活性与背压 | `agent/control_channel.cpp` 旧实现：accept 失败即 break（通道假活）、backlog 1、queue 满回包在持锁时做（最多阻塞主线程 200ms）、单行上限判定在换行分支漏检 | 通道"看起来开着、实际已死"；慢客户端拖住命令处理；压线畸形行被当合法命令 | ✅ **已修复**：accept 失败区分瞬时/致命（瞬时继续等，致命标记 running=false）；backlog 改 SOMAXCONN；回包移到 queue_mutex 之外；行长按 newline 位置判上限（1 MiB），超限回错并断开；control_test 新增超大单行拒绝用例 |
 | C16 | Lua `print` 并未重定向到主机日志 | 旧：沙箱未替换 `print`；文档却声明重定向到日志/控制台 | 卡带打印污染 `--dump-screen`/脚本管道输出 | ✅ **已修复**：`api/lua_guard.cpp:30-43,72-77` 把 `print` 换成 `[cart]`/`[pack]` 前缀的 `log::info`（`cartridge.cpp:289`、`pack.cpp:48`）；不再写 stdout |
 
@@ -197,7 +197,7 @@ chomp 又把"动态图鉴/心形生命/带状态的对象列表"走了一遍同�
 | `agent-interface.md:126-127`：`time.step` 推进完才回包 | `time.resume`/退出会丢弃在途回包（§3.1 C6） | ❌ **文档无误，仍待代码修** |
 | `theme/boot/README.txt`：13 个动画、任意键跳过 | 实际 16 个包；跳过是 A/Esc（自检屏 Enter/Esc） | ✅ **已修正** |
 | 代码注释引用"roadmap 第 8 条" | 原报告不存在（现 roadmap.md 也不是当时所指） | ❌ **代码注释仍待修**（`defaults.hpp`、`assets_api.cpp`、`audio.cpp`） |
-| `api-reference.md:462`、`networking.md:97`：联机在后台线程、主线程不阻塞 | `join`/`discover` 在主线程有界阻塞（C14） | ✅ **文档已修正**（如实写明有界阻塞）；C14 仍待代码修 |
+| `api-reference.md:462`、`networking.md:97`：联机在后台线程、主线程不阻塞 | `join`/`discover` 在主线程有界阻塞（C14） | ✅ **已完成**：异步 API（discover_async/join_async）落地并成为卡带/夹具默认用法，旧阻塞版仅保留兼容 |
 | `api-reference.md:611-612`：主机自带搜索框收不到中文 | `app.cpp:283` 在搜索编辑时置 `ime_wanted`，即**会**请求输入法 | ✅ **文档已修正**；`host_api.hpp` 注释仍待修 |
 | `cart-format.md:119`：Lua `print` 重定向到主机日志 | 旧：未替换 `print`（§3.1 C16） | ✅ **已修正**；C16 已修（`lua_guard`） |
 | `api-reference.md:300`：sprite 的 `step` 为缩放步长 | 实现是降采样（§3.3 U10） | ✅ **文档已按实现修正**；语义统一仍待代码（U10） |
