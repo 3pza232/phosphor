@@ -6747,13 +6747,10 @@ namespace sol {
 		/// one.
 		///
 		/// \group emplace
+		/// optional<T&> 没有存放 T 的存储，emplace 无法构造一个新对象；保留接口会依赖
+		/// 不存在的基类 construct()（GCC 15 直接报错）。引用版只支持 rebind，显式删除。
 		template <class... Args>
-		T& emplace(Args&&... args) noexcept {
-			static_assert(std::is_constructible<T, Args&&...>::value, "T must be constructible with Args");
-
-			*this = nullopt;
-			this->construct(std::forward<Args>(args)...);
-		}
+		T& emplace(Args&&...) = delete;
 
 		/// Swaps this optional with the other.
 		///
