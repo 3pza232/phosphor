@@ -191,7 +191,8 @@ E 从 A 开始持续，不等其它阶段。
 > tetris：侧栏统计组件化、"下一块"预览在预留 spacer 区里逐格绘、最高分换 `phos.score{max=1}`
 > （删除 `scores.lua`）、暂停浮窗换场景栈（世界冻结/音频暂停）、观测换 `phos.observe`
 > （棋盘逐行仍以字符串数组报出，agent 可直接定位每一格）。
-> 四卡均 0 error/0 warning。下一张：`life` / `chomp`。
+> life：侧栏组件化 + 观测换 `phos.observe`（无存档、无暂停场景、无排行榜——验证纯展示型卡带）。
+> 五卡均 0 error/0 warning。下一张：`chomp` / `crawl`。
 
 ### M4 卡带工具层（3–4 周，可与 M3 部分并行）
 

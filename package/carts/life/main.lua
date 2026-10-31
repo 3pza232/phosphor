@@ -52,6 +52,18 @@ function init()
                     function(v) GENERATION_TIME = v end,
                     { min = 0.02, max = 1.0, step = 0.01 })
   phos.audio.music(Music)  -- 缓慢环境音（主机在换卡/拔卡时会自动停）
+  phos.observe{
+    generation = function() return board.generation end,
+    population = function() return board.population end,
+    running = function() return running end,
+    cursor_x = function() return cursor_x end,
+    cursor_y = function() return cursor_y end,
+    grid_w = Board.W,
+    grid_h = Board.H,
+    patterns = function() return Patterns.count() end,
+    soup_density = SOUP_DENSITY,
+    cell_0_0 = function() return board:get(0, 0) end,
+  }
 end
 
 function update(dt)
@@ -145,17 +157,4 @@ function draw()
   })
 end
 
-function debug_state()
-  return {
-    generation = board.generation,
-    population = board.population,
-    running = running,
-    cursor_x = cursor_x,
-    cursor_y = cursor_y,
-    grid_w = Board.W,
-    grid_h = Board.H,
-    patterns = Patterns.count(),
-    soup_density = SOUP_DENSITY,
-    cell_0_0 = board:get(0, 0),
-  }
-end
+-- 观测在 init 里用 phos.observe 声明（字段为函数，查询时求值）
