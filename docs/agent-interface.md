@@ -241,7 +241,7 @@ phosphor --pack carts/snake --json
 - 发出第一个 `time.step` 后进入**单步模式**：逻辑帧只在收到 `time.step` 时推进，
   且每次回包代表"这 N 帧已经跑完"。agent 因此可以写出完全确定的
   "注入输入 → 推进 N 帧 → 读屏幕" 循环
-- `time.resume` 恢复实时；窗口模式下切回实时不会补跑积压帧（避免画面跳变）
+- `time.resume` 恢复实时；若此刻还有 `time.step` 在途，它会被立刻回以 `time.step abandoned by time.resume`（同步点不能消失）；窗口模式下切回实时不会补跑积压帧（避免画面跳变）
 
 ### 客户端示例（PowerShell）
 

@@ -60,6 +60,20 @@ def run() -> int:
         report.check(second.get("stepping") is True, "stepping mode is on after time.step")
         print(f"step    : 30 frames -> {first}, then 10 frames -> {second.get('frame')}")
 
+        # time.step 在途时 time.resume：在途请求必须收到明确回包（曾经被静默丢弃 → agent 永久挂起）。
+        # 走异步发送，让两条命令真正同时在途；先到的回包可能是任意一条，按 id 归档
+        step_id = host.send_async("time.step", frames=100000)
+        resume_id = host.send_async("time.resume")
+        replies: dict[int, dict] = {}
+        for _ in range(2):
+            reply = host.read_reply()
+            replies[int(reply.get("id", -1))] = reply
+        aborted = replies.get(step_id, {})
+        report.check(aborted.get("ok") is False and "abandoned" in str(aborted.get("error", "")),
+                     "time.resume replies to the in-flight time.step instead of dropping it")
+        report.check(replies.get(resume_id, {}).get("ok") is True, "time.resume succeeds")
+        host.step(2)  # 回到单步模式，后续用例照旧
+
         own_ui, cart_title = CART_WORDS.get(state.get("language", "zh"), CART_WORDS["zh"])
         screen = host.screen_text()
         report.check(own_ui in screen, "screen.read contains the cart's own UI")

@@ -164,6 +164,26 @@ class Host:
                 continue
             return message
 
+    def send_async(self, cmd: str, **args: Any) -> int:
+        """发一条命令但**不等回包**，返回请求 id。用于"同一时刻在途两条命令"的契约测试。"""
+        if self._sock is None:
+            raise HostError("通道已关闭")
+        command = {"id": self._next_id, "cmd": cmd, **args}
+        self._next_id += 1
+        self._sock.sendall((json.dumps(command, ensure_ascii=False) + "\n").encode("utf-8"))
+        return command["id"]
+
+    def read_reply(self) -> dict:
+        """读下一条回包（跳过主动事件）。与 send_async 配对使用。"""
+        while True:
+            line = self._read_line()
+            if line is None:
+                raise HostError("主机关闭了通道")
+            message = json.loads(line)
+            if "event" in message:
+                continue
+            return message
+
     def state(self) -> dict:
         return self.send("state.query")
 

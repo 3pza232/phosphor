@@ -472,6 +472,12 @@ void App::execute_control(const ControlCommand& command) {
     }
 
     if (name == "time.resume") {
+        // 在途的 time.step 绝不能"消失"：它的发起方正在等"推进完毕"这个同步点。
+        // 恢复实时 = 放弃剩余帧数，必须立刻回一个明确的错误，否则 agent 永久挂起
+        if (agent_.step_request_id >= 0) {
+            control_.reply_error(agent_.step_request_id,
+                                 "time.step abandoned by time.resume");
+        }
         agent_.stepping = false;
         agent_.pending_steps = 0;
         agent_.step_request_id = -1;
