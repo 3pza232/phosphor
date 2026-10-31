@@ -155,7 +155,7 @@ E 从 A 开始持续，不等其它阶段。
 
 > **状态（2026-10-31）**：**部分落地**。卡带侧 API 已发布：`phos.ui.render` + 查询
 > （`focus/checked/set_checked/field_text/reset`）+ agent 接口（`state.query.ui`、
-> `ui.list/focus/activate`），随 `phos_api = 7` / 0.9.0 发布；模板 `panel.lua` 已改用
+> `ui.list/focus/activate`），随 `phos_api = 7` / 1.0.0 发布；模板 `panel.lua` 已改用
 > 声明式界面；样板卡带 `devkit/examples/ui/` 已加，`ui_smoke.py` 覆盖组件/焦点/事件。
 > **已完成**：`phos.scene` 场景栈、11 张出厂卡带迁移、模板 `main.lua` 现代化（暂停/观测/toast）。
 > 验收里的"3 张卡带 UI 代码下降 ≥40%"未逐项量化（部分卡带把代码换成更清晰的结构，行数未必下降）。

@@ -9,7 +9,7 @@
 
 ```sh
 ninja -j16                                  # 构建
-./phosphor_tests.exe                        # 141 用例 / 1,626 断言
+./phosphor_tests.exe                        # 143 用例 / 1,636 断言
 python ../tools/run_checks.py --gui         # 14 项无头 + 2 项开窗门禁
 ./phosphor.exe --check-api                 # 150/150
 ./phosphor.exe --check-packs --root ../package   # 45 包 0 error / 0 warning
@@ -17,7 +17,7 @@ python ../tools/pixel_golden.py            # 10 场景像素基线（非门禁�
 python ../tools/perf_budget.py             # 性能预算报告（非门禁）
 ```
 
-当前基线：**14 门禁全绿、141 单测 / 1,626 断言、150/150 API、45 包 0/0、像素 10/10**。
+当前基线：**14 门禁全绿、143 单测 / 1,636 断言、150/150 API、45 包 0/0、像素 10/10**。
 性能预算（本机，headless）：11 张出厂卡带 p95 update 均 ≤ 3.13 ms（life 最高，预算 16.67 ms）。
 
 ## M0 止血与纠偏

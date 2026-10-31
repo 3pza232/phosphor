@@ -14,7 +14,9 @@ namespace phos {
 ///         改动后重启生效）；新增三个开机动画 + 主题（深海声呐 / 东方翰墨 / 黄铜机械）
 /// 0.9.0：卡带侧声明式界面（`phos.ui.render`）——与主机外壳共用一套组件、布局、焦点与主题；
 ///         卡带 API 进世代 7
-inline constexpr const char* kVersion = "0.9.0";
+/// 1.0.0：首个正式版——M0–M5 核心完成：UI 套件/外壳迁移/卡带工具层/存档 v2/音频/输入
+///         （手柄/动作映射/重绑定）/内容包/工程治理；磁带码支持 Y 复制 / P 粘贴
+inline constexpr const char* kVersion = "1.0.0";
 /// 产品名
 inline constexpr const char* kProductName = "PHOSPHOR";
 /// 卡带 API 世代：manifest 声明 `phos_api` 高于它就拒绝加载，
