@@ -286,13 +286,16 @@ void arrange(Node& node, Rect rect, const Theme& theme) {
         const int gap = std::max(0, node.props.gap);
         const int cell_w = std::max(0, (node.inner.w - gap * (cols - 1)) / cols);
         const int rows = (static_cast<int>(node.children.size()) + cols - 1) / cols;
+        // 行高按"内容高 + 上下外边距"取最大值：与 measure() 同一套尺寸语义，
+        // 否则子项的自然高不等时下一行会压到上一行的 margin 里
         std::vector<int> row_h(static_cast<size_t>(rows), 0);
         for (size_t i = 0; i < node.children.size(); ++i) {
             Node& child = node.children[i];
             const int row = static_cast<int>(i) / cols;
+            const int content_h = child.props.height > 0 ? child.props.height : child.natural_h;
             row_h[static_cast<size_t>(row)] =
                 std::max(row_h[static_cast<size_t>(row)],
-                         child.props.height > 0 ? child.props.height : child.natural_h);
+                         content_h + child.props.margin.t + child.props.margin.b);
         }
         int y = node.inner.y;
         for (int row = 0; row < rows; ++row) {
@@ -301,9 +304,11 @@ void arrange(Node& node, Rect rect, const Theme& theme) {
                                      static_cast<size_t>(col);
                 if (index >= node.children.size()) break;
                 Node& child = node.children[index];
-                const int x = node.inner.x + col * (cell_w + gap);
-                arrange(child,
-                        Rect{x, y, cell_w, std::max(0, row_h[static_cast<size_t>(row)])}, theme);
+                const int content_h = child.props.height > 0 ? child.props.height : child.natural_h;
+                // 外边距是"元素盒子之外"的间距：格宽/行高里扣掉它，元素矩形本身变小、位置内缩
+                const int child_w = std::max(0, cell_w - child.props.margin.l - child.props.margin.r);
+                const int x = node.inner.x + col * (cell_w + gap) + child.props.margin.l;
+                arrange(child, Rect{x, y + child.props.margin.t, child_w, content_h}, theme);
             }
             y += row_h[static_cast<size_t>(row)] + gap;
         }

@@ -420,3 +420,263 @@ TEST(ui_settings_geometry_matches_shell_layout) {
     CHECK_EQ(theme_row->rect.y, 12);  // 首行是分区标题，第一项在它下一行
     CHECK_EQ(theme_row->rect.x, 7);
 }
+
+TEST(ui_nested_scroll_clips_and_follows_levels) {
+    // 外层 scroll（视口 3 行）套内层 scroll（视口 2 行）：
+    // 内层自己滚自己的，外层只在焦点真的出到外层视口外时才跟着滚
+    ui::Theme theme;
+    ui::State state;
+    Input input;
+    ui::Frame frame("nested", state, theme, ui::Rect{0, 0, 10, 5}, &input);
+    ui::Node& outer = frame.root().add_scroll("outer", 3);
+    outer.props.gap = 0;
+    outer.add_text("head", "HEAD");
+    ui::Node& inner = outer.add_scroll("inner", 2);
+    inner.props.gap = 0;
+    for (int i = 0; i < 4; ++i)
+        inner.add(ui::Kind::button, "b" + std::to_string(i)).props.text = "B" + std::to_string(i);
+    outer.add_text("tail", "TAIL");
+    frame.run();
+    CHECK_EQ(frame.focused_id(), std::string("b0"));
+
+    auto press = [&](const char* key) {
+        input.set_key(key, true);
+        frame.run();
+        input.next_frame();
+        input.set_key(key, false);
+        input.next_frame();
+    };
+    auto& widgets = state.screen("nested").widgets;
+    CHECK_EQ(widgets["outer"].scroll, 0);
+    CHECK_EQ(widgets["inner"].scroll, 0);
+
+    // b0 → b1：两层都还在视口内，不滚
+    press("down");
+    CHECK_EQ(frame.focused_id(), std::string("b1"));
+    CHECK_EQ(widgets["outer"].scroll, 0);
+    CHECK_EQ(widgets["inner"].scroll, 0);
+
+    // b1 → b2：内层先滚 1 行；外层视口底边刚好被顶到，也滚 1 行
+    press("down");
+    CHECK_EQ(frame.focused_id(), std::string("b2"));
+    CHECK_EQ(widgets["inner"].scroll, 1);
+    CHECK_EQ(widgets["outer"].scroll, 1);
+
+    // b2 → b3：只内层再滚，外层停住（只在需要的层级滚）
+    press("down");
+    CHECK_EQ(frame.focused_id(), std::string("b3"));
+    CHECK_EQ(widgets["inner"].scroll, 2);
+    CHECK_EQ(widgets["outer"].scroll, 1);
+
+    Screen bottom(10, 5);
+    frame.paint(bottom);
+    const std::string bottom_text = bottom.to_text();
+    CHECK(bottom_text.find("B2") != std::string::npos);
+    CHECK(bottom_text.find("B3") != std::string::npos);
+    CHECK(bottom_text.find("B0") == std::string::npos);  // 两层裁剪叠加：内层顶出视口
+    CHECK(bottom_text.find("B1") == std::string::npos);
+    // 外层视口最右列是滚动条（内层条同列会被外层覆盖，这层语义由外层指示）
+    bool track = false, thumb = false;
+    for (int y = 0; y < 3; ++y) {
+        track = track || bottom.at(9, y).ch == theme.glyphs.scroll_track;
+        thumb = thumb || bottom.at(9, y).ch == theme.glyphs.scroll_thumb;
+    }
+    CHECK(track);
+    CHECK(thumb);
+
+    // 往回：b2→b1 时内层滚回 1、外层先回 0；回到 b0 两层都归 0
+    press("up");
+    CHECK_EQ(frame.focused_id(), std::string("b2"));
+    press("up");
+    CHECK_EQ(frame.focused_id(), std::string("b1"));
+    CHECK_EQ(widgets["inner"].scroll, 1);
+    CHECK_EQ(widgets["outer"].scroll, 0);
+    press("up");
+    CHECK_EQ(frame.focused_id(), std::string("b0"));
+    CHECK_EQ(widgets["inner"].scroll, 0);
+    CHECK_EQ(widgets["outer"].scroll, 0);
+
+    Screen top(10, 5);
+    frame.paint(top);
+    CHECK(top.to_text().find("HEAD") != std::string::npos);
+    CHECK(top.to_text().find("B0") != std::string::npos);
+}
+
+TEST(ui_grid_margins_and_unequal_row_heights) {
+    // cols=2 / gap=1；第一行有 2 行高 + 四边 margin 的 spacer，第二行是普通 text
+    ui::Theme theme;
+    ui::Node root = ui::make_root("root");
+    ui::Node& grid = root.add_grid("g", 2);
+    grid.props.gap = 1;
+    ui::Node& tall = grid.add(ui::Kind::spacer, "tall");
+    tall.props.height = 2;
+    tall.props.margin = ui::Insets{1, 1, 1, 1};
+    grid.add_text("b", "B");
+    grid.add_text("c", "C");
+    ui::Node& shifted = grid.add(ui::Kind::spacer, "shifted");
+    shifted.props.height = 1;
+    shifted.props.margin.l = 2;
+
+    const ui::Rect area{2, 1, 21, 10};
+    ui::measure(root, area.w, theme);
+    ui::arrange(root, area, theme);
+
+    // 行高取 max(内容高 + 上下 margin)：第一行 = 2+1+1 = 4，第二行 = 1，行间 gap = 1
+    CHECK_EQ(grid.natural_h, 6);
+    const ui::Node* t = find_node(root, "tall");
+    const ui::Node* b = find_node(root, "b");
+    const ui::Node* c = find_node(root, "c");
+    const ui::Node* s = find_node(root, "shifted");
+    CHECK_EQ(t->rect.x, 3);   // grid.x(2) + margin.l(1)
+    CHECK_EQ(t->rect.y, 2);   // grid.y(1) + margin.t(1)
+    CHECK_EQ(t->rect.w, 8);   // cell 10 - margin.l/r
+    CHECK_EQ(t->rect.h, 2);   // 内容高，不含 margin
+    CHECK_EQ(b->rect.x, 13);  // 第二列：2 + (10 + 1)
+    CHECK_EQ(b->rect.y, 1);
+    CHECK_EQ(c->rect.y, 6);   // 1 + 行高 4 + gap 1
+    CHECK_EQ(s->rect.x, 15);  // 13 + margin.l(2)
+    CHECK_EQ(s->rect.w, 8);   // cell 10 - margin.l(2)
+}
+
+TEST(ui_table_widths_and_alignment) {
+    // widths 是各列的**基数**：余量均摊到所有列（当前实现/文档示例的约定）
+    ui::Props props;
+    props.columns = {"A", "B"};
+    props.rows = {{"x", "12345"}};
+    props.widths = {4, 0};
+    const auto natural = ui::table_column_widths(props, 0);
+    CHECK_EQ(natural.size(), 2u);
+    CHECK_EQ(natural[0], 4);
+    CHECK_EQ(natural[1], 5);
+    const auto exact = ui::table_column_widths(props, 4 + 5 + 2);
+    CHECK_EQ(exact[0], 4);  // 刚够自然宽度：不摊
+    CHECK_EQ(exact[1], 5);
+
+    const auto stretched = ui::table_column_widths(props, 20);
+    // 20 - (4+5+2) = 9，均摊 4，余 1 给最后一列 → {8, 10}
+    CHECK_EQ(stretched[0], 8);
+    CHECK_EQ(stretched[1], 10);
+
+    // 对齐与截断：固定 4/4/4 三列，列间固定 2 格
+    ui::Theme theme;
+    ui::State state;
+    Input input;
+    ui::Frame frame("table", state, theme, ui::Rect{0, 0, 16, 5}, &input);
+    ui::Node& table = frame.root().add_table("tbl");
+    table.props.columns = {"A", "B", "C"};
+    table.props.widths = {4, 4, 4};
+    table.props.col_align = {ui::Align::start, ui::Align::center, ui::Align::end};
+    table.props.rows = {{"L", "M", "R"}, {"ABCDEFGH", "x", "12345"}};
+    frame.run();
+
+    Screen screen(16, 5);
+    frame.paint(screen);
+    CHECK_EQ(screen.at(0, 0).ch, U'A');
+    CHECK_EQ(screen.at(7, 0).ch, U'B');   // 6 + (4-1)/2
+    CHECK_EQ(screen.at(15, 0).ch, U'C');  // 12 + (4-1)
+    CHECK_EQ(screen.at(0, 2).ch, U'L');
+    CHECK_EQ(screen.at(7, 2).ch, U'M');
+    CHECK_EQ(screen.at(15, 2).ch, U'R');
+    // 超长单元格：width=4 时 ellipsis 截成 3 个字符 + '…'
+    CHECK_EQ(screen.at(0, 3).ch, U'A');
+    CHECK_EQ(screen.at(3, 3).ch, U'\u2026');
+    CHECK_EQ(screen.at(12, 3).ch, U'1');
+    CHECK_EQ(screen.at(15, 3).ch, U'\u2026');
+    // 表头下自动分隔线
+    CHECK_EQ(screen.at(0, 1).ch, U'\u2500');
+    CHECK_EQ(screen.at(15, 1).ch, U'\u2500');
+}
+
+TEST(ui_option_left_right_confirm_and_bounds) {
+    ui::Theme theme;
+    ui::State state;
+    Input input;
+    ui::Frame frame("opt", state, theme, ui::Rect{0, 0, 10, 2}, &input);
+    frame.root().add_option("quality", "QUALITY");
+    frame.run();
+    CHECK_EQ(frame.focused_id(), std::string("quality"));
+
+    auto press = [&](const char* key) {
+        input.set_key(key, true);
+        const auto events = frame.run();
+        input.next_frame();
+        input.set_key(key, false);
+        input.next_frame();
+        return events;
+    };
+    auto left = press("left");
+    CHECK_EQ(left.size(), 1u);
+    CHECK_EQ(int(left[0].kind), int(ui::EventKind::changed));
+    CHECK_EQ(left[0].delta, -1);
+    CHECK(!left[0].confirm);
+
+    auto right = press("right");
+    CHECK_EQ(right.size(), 1u);
+    CHECK_EQ(right[0].delta, 1);
+    CHECK(!right[0].confirm);
+
+    auto confirm = press("start");
+    CHECK_EQ(confirm.size(), 1u);
+    CHECK_EQ(confirm[0].delta, 1);
+    CHECK(confirm[0].confirm);  // 确认键是"进一档"，不是切换
+
+    // 左右同时按：方向不清，引擎不发事件（值由卡带持有，不存在越界加减）
+    input.set_key("left", true);
+    input.set_key("right", true);
+    const auto both = frame.run();
+    CHECK(both.empty());
+    input.next_frame();
+    input.set_key("left", false);
+    input.set_key("right", false);
+    input.next_frame();
+}
+
+TEST(ui_field_typing_limit_backspace_and_ime) {
+    ui::Theme theme;
+    ui::State state;
+    Input input;
+    ui::Frame frame("field", state, theme, ui::Rect{0, 0, 12, 1}, &input);
+    ui::Node& field = frame.root().add_field("name", "hint");
+    field.props.max_chars = 3;
+    field.props.width = 8;
+    frame.run();
+    CHECK_EQ(frame.focused_id(), std::string("name"));
+    CHECK(frame.ime_requested());  // 文本域聚焦：这一帧请求 IME
+
+    input.push_text("abcdef");  // max_chars=3：只收前三个码点
+    frame.run();
+    CHECK_EQ(frame.field_text("name"), std::string("abc"));
+    input.next_frame();
+
+    input.push_text("x\by");  // x 被限长拒绝；\b 删掉 c；y 追加
+    frame.run();
+    CHECK_EQ(frame.field_text("name"), std::string("aby"));
+    input.next_frame();
+
+    input.push_text("\b\u4E2D");  // 删掉 y 后追加一个全角字（按码点计数）
+    frame.run();
+    CHECK_EQ(frame.field_text("name"), std::string("ab\u4E2D"));
+    input.next_frame();
+
+    input.set_key("start", true);
+    const auto events = frame.run();
+    input.next_frame();
+    input.set_key("start", false);
+    input.next_frame();
+    CHECK_EQ(events.size(), 1u);
+    CHECK_EQ(int(events[0].kind), int(ui::EventKind::submitted));
+    CHECK_EQ(events[0].text, std::string("ab\u4E2D"));
+
+    // paint-only 帧（input == nullptr）：只排布/绘制，不能请求 IME，也不能消费文本
+    ui::Frame paint_only("field", state, theme, ui::Rect{0, 0, 12, 1}, nullptr);
+    ui::Node& paint_field = paint_only.root().add_field("name", "hint");
+    paint_field.props.max_chars = 3;
+    paint_field.props.width = 8;
+    paint_only.run();
+    CHECK(!paint_only.ime_requested());
+    CHECK_EQ(paint_only.field_text("name"), std::string("ab\u4E2D"));
+
+    Screen screen(12, 1);
+    paint_only.paint(screen);
+    CHECK(screen.to_text().find("ab\u4E2D") != std::string::npos);
+}
