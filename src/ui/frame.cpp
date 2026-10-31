@@ -593,11 +593,13 @@ void paint_node(Screen& screen, const Node& node, const Theme& theme, const Stat
             if (ratio > 1.0f) ratio = 1.0f;
             const int span = node.inner.w - 2;
             const int filled = static_cast<int>(ratio * static_cast<float>(span) + 0.5f);
+            // 填充色可由 fg 覆盖：血条/油条/经验条需要不同颜色，但形状仍是同一个组件
+            const Color fill = node.props.has_fg ? node.props.fg : theme.accent;
             surface.put(0, 0, U'[', theme.border, bg);
             surface.put(node.inner.w - 1, 0, U']', theme.border, bg);
             for (int i = 0; i < span; ++i) {
                 const bool on = i < filled;
-                surface.put(1 + i, 0, on ? U'#' : U'-', on ? theme.accent : theme.disabled, bg);
+                surface.put(1 + i, 0, on ? U'#' : U'-', on ? fill : theme.disabled, bg);
             }
             break;
         }
