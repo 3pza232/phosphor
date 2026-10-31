@@ -12,6 +12,11 @@ namespace phos::ui {
 
 namespace {
 
+// 方向键按住重复：先等约 300ms（18 帧）再以每 3 帧一格的节奏连发。
+// 按帧而不是秒：Frame 没有 dt，按帧实现也让单测可复现
+constexpr int kRepeatDelayFrames = 18;
+constexpr int kRepeatEveryFrames = 3;
+
 Color resolve_fg(const Node& node, const Theme& theme) {
     if (node.props.has_fg) return node.props.fg;
     if (node.props.danger) return theme.danger;
@@ -191,12 +196,35 @@ std::vector<Event> Frame::run() {
     }
 
     std::vector<Event> events;
-    const bool up = input_->pressed(keys_.up);
-    const bool down = input_->pressed(keys_.down);
+    // 方向键：点按立即生效；按住超过延迟后按固定帧间隔重复（列表翻长页时不必连点）
+    const auto nav = [&screen, this](const std::string& key, bool pressed) {
+        if (pressed) {
+            screen.repeat_key = key;
+            screen.repeat_frames = 0;
+            return true;
+        }
+        if (!input_->down(key)) {
+            if (screen.repeat_key == key) {
+                screen.repeat_key.clear();
+                screen.repeat_frames = 0;
+            }
+            return false;
+        }
+        if (screen.repeat_key != key) {
+            screen.repeat_key = key;
+            screen.repeat_frames = 0;
+            return false;
+        }
+        ++screen.repeat_frames;
+        if (screen.repeat_frames < kRepeatDelayFrames) return false;
+        return (screen.repeat_frames - kRepeatDelayFrames) % kRepeatEveryFrames == 0;
+    };
+    const bool up = nav(keys_.up, input_->pressed(keys_.up));
+    const bool down = nav(keys_.down, input_->pressed(keys_.down));
     const bool next_focus = input_->pressed(keys_.next_focus);
     const bool prev_focus = input_->pressed(keys_.prev_focus);
-    const bool left = input_->pressed(keys_.left);
-    const bool right = input_->pressed(keys_.right);
+    const bool left = nav(keys_.left, input_->pressed(keys_.left));
+    const bool right = nav(keys_.right, input_->pressed(keys_.right));
     const bool confirm = any_pressed(*input_, keys_.confirm);
     const bool cancel = any_pressed(*input_, keys_.cancel);
 

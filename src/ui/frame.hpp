@@ -29,6 +29,9 @@ struct WidgetState {
 struct ScreenState {
     std::string focus;
     std::map<std::string, WidgetState> widgets;
+    /// 方向键按住重复：记当前重复的键与已按住帧数（切屏/松键重置）
+    std::string repeat_key;
+    int repeat_frames = 0;
 };
 
 /// 全部屏的状态表。宿主持有一份，Frame 按 screen_id 定位本屏。

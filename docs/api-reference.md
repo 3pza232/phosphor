@@ -456,6 +456,8 @@ pending = phos.ui.render{
 **交互与焦点**
 
 - 按 **A 确认、B 取消**（卡带键位；主机的 Esc/F2 仍归主机）。**Tab 下一个焦点、Shift 上一个**。
+- 方向键**按住约 300ms 后每 3 帧连发一格**（长列表不必连点）；松开立即重置，
+  点按永远只走一格。帧数由 UI 层固定，与真实帧率无关的测试可复现
 - 初始焦点 = 声明顺序里第一个可聚焦且 `enabled` 的元素；焦点与滚动按 `screen` 跨帧保留。
 - 列表聚焦时，上下移动光标（循环、跳过 `disabled` 行），A 触发 `activated`。
 - 表单（option / checkbox / button / field）聚焦时，上下 / Tab / Shift 移动焦点，A 确认。

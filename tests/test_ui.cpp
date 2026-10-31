@@ -177,6 +177,50 @@ TEST(ui_list_cursor_wraps_and_scrolls) {
     CHECK_EQ(events[0].index, 3);
 }
 
+TEST(ui_list_hold_repeats) {
+    ui::Theme theme;
+    ui::State state;
+    Input input;
+    ui::Rect area{0, 0, 10, 4};
+    ui::Frame frame("t", state, theme, area, &input);
+    ui::Node& list = frame.root().add_list("list", {"0", "1", "2", "3", "4", "5", "6", "7", "8", "9"});
+    list.props.height = 4;
+    frame.run();
+    CHECK_EQ(frame.focused_id(), std::string("list"));
+
+    input.set_key("down", true);
+    frame.run();  // 点按那一帧：光标 0 → 1
+    CHECK_EQ(state.screen("t").widgets["list"].cursor, 1);
+
+    // 按住不足延迟：不再移动
+    for (int i = 0; i < 12; ++i) {
+        input.next_frame();
+        frame.run();
+    }
+    CHECK_EQ(state.screen("t").widgets["list"].cursor, 1);
+
+    // 到延迟后开始每 3 帧一格
+    for (int i = 0; i < 6; ++i) {
+        input.next_frame();
+        frame.run();
+    }
+    CHECK_EQ(state.screen("t").widgets["list"].cursor, 2);
+    for (int i = 0; i < 3; ++i) {
+        input.next_frame();
+        frame.run();
+    }
+    CHECK_EQ(state.screen("t").widgets["list"].cursor, 3);
+
+    // 松键后重复计时清零：再次点按只走一格
+    input.next_frame();
+    input.set_key("down", false);
+    frame.run();
+    input.next_frame();
+    input.set_key("down", true);
+    frame.run();
+    CHECK_EQ(state.screen("t").widgets["list"].cursor, 4);
+}
+
 TEST(ui_settings_geometry_matches_shell_layout) {
     SettingsContext ctx;
     ctx.lang = Lang::zh;
