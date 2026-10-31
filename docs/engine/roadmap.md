@@ -201,7 +201,8 @@ E 从 A 开始持续，不等其它阶段。
 > 最高分换 `phos.score{max=1}`、观测换 `phos.observe`。
 > xiangqi：棋谱/被吃子/键位组件化（棋谱行数按面板高度自适应）、暂停换场景栈、
 > 观测换 `phos.observe`（menu/play 两种状态在查询时求值）。
-> 九卡均 0 error/0 warning。下一张：`worms` 侧栏（LAN 大厅已用异步发现/加入）。
+> worms：两队血量/角色记号/武器两列网格改为组件（`row` 拼两列、血量档位色仍在卡带侧算），
+> LAN 大厅已用异步 discover/join。十卡全部迁完，均 0 error/0 warning。
 
 ### M4 卡带工具层（3–4 周，可与 M3 部分并行）
 
