@@ -302,7 +302,7 @@ void App::tick_playing(float dt) {
 
 void App::tick_boot(float dt) {
     host_.time += dt;
-    boot_elapsed_ += dt;
+    boot_sequence_.tick(dt);
     shell_.advance_boot(dt);   // Shell::update 在开机期间不被调用，自检的时钟由这里推进
     if (boot_script_ && (!boot_script_->update(dt) || !boot_script_->draw())) {
         // 动画脚本出错：回退内置自检，不中断开机流程。
@@ -351,7 +351,7 @@ void App::tick_shell(Renderer* renderer, Window* window) {
 bool App::boot_should_end() const {
     // 时长由**动画自己**决定（脚本顶层 `duration`），未声明则用出厂值 kBootDuration；
     // 任意键（A）即刻跳过
-    return boot_elapsed_ >= boot_len_ || input_.pressed(Key::a);
+    return boot_sequence_.finished() || input_.pressed(Key::a);
 }
 
 /// 按卡带架上的下标插卡（路径来自卡带列表，见 Shell::cart_path_at）
@@ -380,7 +380,7 @@ ui::Rect App::content_rect() const {
 }
 
 void App::start_boot_animation() {
-    boot_elapsed_ = 0.0f;
+    boot_sequence_.reset();  // 已过时间从 0 开始（目标时长在脚本装载后确定）
     mode_ = Mode::boot;
     clear_host_cart();   // 先清 HostContext（上一段会话，若有）
     boot_script_.reset();  // 再销毁上一段开机脚本（本函数只在启动时调用）
@@ -396,9 +396,9 @@ void App::start_boot_animation() {
             boot_script_.reset();     // 再销毁脚本；此后回退内置自检动画
         }
     }
-    // 开机时长：动画脚本可自报（`duration = 秒` 或 `function duration()`）；没写就用出厂值
-    boot_len_ = boot_script_ ? boot_script_->declared_seconds(kBootDuration) : kBootDuration;
-    if (boot_len_ < 0.5f) boot_len_ = 0.5f;   // 兜底：别让脚本声明成 0 秒
+    // 开机时长：动画脚本可自报（`duration = 秒` 或 `function duration()`）；没写就用出厂值；
+    // 过短由 BootSequence 钳到最短时长（别让脚本声明成 0 秒）
+    boot_sequence_.start(boot_script_ ? boot_script_->declared_seconds(kBootDuration) : kBootDuration);
     shell_.set_external_boot(boot_script_ != nullptr);
     shell_.to_boot();
 

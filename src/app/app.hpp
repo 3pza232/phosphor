@@ -1,6 +1,7 @@
 #pragma once
 
 #include "app/agent_controller.hpp"
+#include "app/boot_sequence.hpp"
 #include "app/display_state.hpp"
 #include "app/font_state.hpp"
 #include "app/shelf_playback.hpp"
@@ -192,8 +193,8 @@ private:
     /// 读点用这两个判据（与 enum 一一对应）；写点直接赋 mode_
     bool in_boot() const { return mode_ == Mode::boot; }
     bool playing() const { return mode_ == Mode::playing; }
-    float boot_elapsed_ = 0.0f;
-    float boot_len_ = kBootDuration;  // 本轮开机时长：动画脚本自己声明（见 Cartridge::declared_seconds），未声明则回退出厂值
+    /// 开机时序（已过时间/目标时长/完成判定）。脚本装载、模式切换、失败回退与 Esc 跳过仍由 App 编排
+    BootSequence boot_sequence_;
     bool quit_ = false;
 
     Config config_;
