@@ -114,6 +114,14 @@ def run() -> int:
         report.check(host.state().get("ime") is False, "IME released after the search closes")
         host.close()
 
+    # 超大单行：必须被拒绝并断开，而不是把内存吃光；断开后主机仍活着（之后可重连）
+    with Host(cart="carts/snake") as huge:
+        huge._sock.sendall(b'{"cmd":"state.query","id":1}' + b" " * (1 << 20) + b"\n")
+        reply = huge.read_reply()
+        report.check(reply.get("ok") is False and "line too long" in str(reply.get("error", "")),
+                     "oversized command line is rejected")
+        report.check(huge._proc.poll() is None, "oversized line does not kill the host")
+
     return report.finish()
 
 

@@ -637,7 +637,7 @@ phos.ui.field{ "name", label = t.name, field = field, on_submit = start_game }
 | 阶段 | 关闭的缺陷 |
 |---|---|
 | M0 | C1–C6、C9–C13、C16；C7（先统一为一条路径）；S5（一行前向声明）；E1 部分 |
-| M1 | S1–S4、S6–S8、S11（与 5.1/5.8 同批）；C14、C15；U1 部分（两屏） |
+| M1 | S1–S4、S6–S8、S11（与 5.1/5.8 同批）；C14（C15 已在 M0 修完）；U1 部分（两屏） |
 | M2 | U1、U5、U6、U7（外壳侧）；E3（外壳基线） |
 | M3 | U2–U4、U6、U7（卡带侧）；K1；`phos_api = 7` |
 | M4 | K2–K5、K7、K8；E2 部分 |

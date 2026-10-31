@@ -14,6 +14,8 @@
 #endif
 
 #include <atomic>
+#include <cerrno>
+#include <chrono>
 #include <cstdio>
 #include <cstring>
 #include <mutex>
@@ -67,6 +69,9 @@ LineResult read_line(Socket socket, std::string& buffer, std::string& line) {
     while (true) {
         const size_t newline = buffer.find('\n');
         if (newline != std::string::npos) {
+            // 换行可能和"把缓冲顶过上限"的那一批字节同时到达：先按行长判超限，
+            // 否则一条刚好压线的畸形行会被当成合法命令解析
+            if (newline > kMaxLineBytes) return LineResult::too_long;
             line = buffer.substr(0, newline);
             buffer.erase(0, newline + 1);
             if (!line.empty() && line.back() == '\r') line.pop_back();
@@ -150,14 +155,22 @@ struct ControlChannel::Impl {
                       ",\"ok\":false,\"error\":\"missing 'cmd'\"}");
             return;
         }
-        std::lock_guard<std::mutex> lock(queue_mutex);
-        if (queue.size() >= kMaxQueuedCommands) {
+        // 回包不能在持 queue_mutex 时做：send_line 最多会等 200ms 的可写窗口，
+        // 主线程的 take_commands() 会被一起卡住（画面掉帧）。先判断/入队，再放锁回包
+        bool queue_full = false;
+        {
+            std::lock_guard<std::mutex> lock(queue_mutex);
+            if (queue.size() >= kMaxQueuedCommands) {
+                queue_full = true;
+            } else {
+                queue.push_back(std::move(command));
+            }
+        }
+        if (queue_full) {
             // 队列满（命令突发而来、主线程还没排空）：明确回错，而不是无限堆积吃内存
             send_line("{\"id\":" + std::to_string(command.id) +
                       ",\"ok\":false,\"error\":\"command queue full\"}");
-            return;
         }
-        queue.push_back(std::move(command));
     }
 
     /// 后台线程：接受连接 → 逐行读取 → 断线后回到 accept
@@ -174,7 +187,29 @@ struct ControlChannel::Impl {
             socklen_t addr_len = sizeof(address);
 #endif
             Socket accepted = ::accept(listener, reinterpret_cast<sockaddr*>(&address), &addr_len);
-            if (accepted == kInvalidSocket) break;  // 监听套接字已关闭
+            if (accepted == kInvalidSocket) {
+                if (stopping.load()) break;  // stop() 关了监听套接字：正常退出
+                // 非 stop() 引起的 accept 失败：可能是一次瞬时错误（EINTR），也可能是
+                // 监听套接字真的坏了。瞬时错误继续等，别把整条通道静默弄死
+#ifdef _WIN32
+                const int error = WSAGetLastError();
+                const bool transient = error == WSAEINTR || error == WSAECONNABORTED ||
+                                       error == WSAEWOULDBLOCK;
+#else
+                const int error = errno;
+                const bool transient = error == EINTR || error == ECONNABORTED ||
+                                       error == EAGAIN || error == EWOULDBLOCK;
+#endif
+                if (transient) {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                    continue;
+                }
+                // 致命错误：明确标记通道已停，别让 running() 继续撒谎
+                log::warn("control: accept failed (" + std::to_string(error) + "), channel stopped");
+                connected.store(false);
+                running.store(false);
+                break;
+            }
 
             {
                 std::lock_guard<std::mutex> lock(client_mutex);
@@ -248,7 +283,9 @@ bool ControlChannel::start(uint16_t port, std::string& err) {
         impl_->listener = kInvalidSocket;
         return false;
     }
-    if (::listen(impl_->listener, 1) != 0) {
+    // backlog 给足：工具/脚本可能瞬时重连（上一次连接的 TIME_WAIT 期间），
+    // backlog=1 会让第二次连接被拒，表现为"控制通道偶尔连不上"
+    if (::listen(impl_->listener, SOMAXCONN) != 0) {
         err = "listen failed on port " + std::to_string(port);
         close_socket(impl_->listener);
         impl_->listener = kInvalidSocket;

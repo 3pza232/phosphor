@@ -80,7 +80,7 @@
 | C12 | 窗口模式下 `--cart` 装载失败仍返回 0 | 旧：`core/app.cpp:495` 之后无失败返回，结尾恒 `return 0` | 脚本无法用退出码判断失败 | ✅ **已修复**：`core/app.cpp:417-420`（无头）与 `:498-501`（窗口）装载失败均 `return 2` |
 | C13 | NDJSON 里的 `\uXXXX` 转义被丢弃 | 旧：`core/json_lite.cpp:53-57` 直接跳过四位 | 标准 JSON 客户端注入中文时字符消失 | ✅ **已修复**：`core/json_lite.cpp:102-154` 解 `\uXXXX` 并按代理对合并（非法/孤立代理报错）；用例 `json_unicode_*` |
 | C14 | 联机的 `join`/`discover` 阻塞主线程 | `net/net.cpp:641`（TCP 连接超时 3 s）、`:740-787`（发现阻塞到 timeout） | 卡带在 `update` 里调用即超 100 ms 看门狗 | ❌ **仍待修**（文档已改为如实描述"有界阻塞"） |
-| C15 | 控制通道缺乏活性与背压 | `agent/control_channel.cpp:176-177`（accept 失败即退出）、`:251`（backlog 1）、`:120-140`（回包持锁阻塞） | 通道"看起来开着、实际已死"；慢客户端拖住命令处理 | ❌ **仍待修** |
+| C15 | 控制通道缺乏活性与背压 | `agent/control_channel.cpp` 旧实现：accept 失败即 break（通道假活）、backlog 1、queue 满回包在持锁时做（最多阻塞主线程 200ms）、单行上限判定在换行分支漏检 | 通道"看起来开着、实际已死"；慢客户端拖住命令处理；压线畸形行被当合法命令 | ✅ **已修复**：accept 失败区分瞬时/致命（瞬时继续等，致命标记 running=false）；backlog 改 SOMAXCONN；回包移到 queue_mutex 之外；行长按 newline 位置判上限（1 MiB），超限回错并断开；control_test 新增超大单行拒绝用例 |
 | C16 | Lua `print` 并未重定向到主机日志 | 旧：沙箱未替换 `print`；文档却声明重定向到日志/控制台 | 卡带打印污染 `--dump-screen`/脚本管道输出 | ✅ **已修复**：`api/lua_guard.cpp:30-43,72-77` 把 `print` 换成 `[cart]`/`[pack]` 前缀的 `log::info`（`cartridge.cpp:289`、`pack.cpp:48`）；不再写 stdout |
 
 ### 3.2 结构与边界（P1：让每个新功能都变贵）
