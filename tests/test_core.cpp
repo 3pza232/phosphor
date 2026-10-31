@@ -1098,6 +1098,148 @@ TEST(ui_icon_width_uses_display_width) {
     CHECK_EQ(int(screen.at(6, 1).cols), 0);  // 宽字续格
 }
 
+// ---------------------------------------------------------------- ui 几何原语
+
+namespace {
+
+int count_cells(const Screen& screen, char32_t ch) {
+    int n = 0;
+    for (int y = 0; y < screen.height(); ++y)
+        for (int x = 0; x < screen.width(); ++x)
+            if (screen.at(x, y).ch == ch) ++n;
+    return n;
+}
+
+} // namespace
+
+TEST(ui_line_flat_steep_diagonal_and_reverse) {
+    // 平线 / 竖线：整段长度、端点外不画
+    Screen flat(12, 8);
+    ui::line(flat, 1, 2, 6, 2, U'#', Color::white, Color::black);
+    CHECK_EQ(count_cells(flat, U'#'), 6);
+    for (int x = 1; x <= 6; ++x) CHECK_EQ(flat.at(x, 2).ch, U'#');
+    CHECK_EQ(flat.at(0, 2).ch, U' ');
+    CHECK_EQ(flat.at(7, 2).ch, U' ');
+
+    Screen vertical(12, 8);
+    ui::line(vertical, 3, 0, 3, 4, U'|', Color::white, Color::black);
+    CHECK_EQ(count_cells(vertical, U'|'), 5);
+    for (int y = 0; y <= 4; ++y) CHECK_EQ(vertical.at(3, y).ch, U'|');
+
+    // 对角线：每格只写一次（5 格），反向线落在同一组格
+    Screen diag(12, 8);
+    ui::line(diag, 0, 0, 4, 4, U'/', Color::white, Color::black);
+    CHECK_EQ(count_cells(diag, U'/'), 5);
+    for (int i = 0; i <= 4; ++i) CHECK_EQ(diag.at(i, i).ch, U'/');
+
+    Screen reverse(12, 8);
+    ui::line(reverse, 4, 4, 0, 0, U'/', Color::white, Color::black);
+    CHECK_EQ(count_cells(reverse, U'/'), 5);
+    for (int i = 0; i <= 4; ++i) CHECK_EQ(reverse.at(i, i).ch, U'/');
+
+    // 陡线：每个扫描行恰好一格，单格不重复写
+    Screen steep(12, 8);
+    ui::line(steep, 0, 0, 2, 5, U'*', Color::white, Color::black);
+    CHECK_EQ(count_cells(steep, U'*'), 6);
+    CHECK_EQ(steep.at(0, 0).ch, U'*');
+    CHECK_EQ(steep.at(2, 5).ch, U'*');
+    for (int y = 0; y <= 5; ++y) {
+        int row = 0;
+        for (int x = 0; x < 12; ++x)
+            if (steep.at(x, y).ch == U'*') ++row;
+        CHECK_EQ(row, 1);
+    }
+}
+
+TEST(ui_line_clips_offscreen) {
+    // 屏幕外的超大端点：先裁到视口再光栅化，只画可见段且循环有界
+    Screen s(10, 6);
+    ui::line(s, -1000, 3, 1000, 3, U'#', Color::white, Color::black);
+    CHECK_EQ(count_cells(s, U'#'), 10);
+    CHECK_EQ(s.at(0, 3).ch, U'#');
+    CHECK_EQ(s.at(9, 3).ch, U'#');
+
+    Screen outside(10, 6);
+    ui::line(outside, -5, 0, -5, 5, U'#', Color::white, Color::black);
+    CHECK_EQ(count_cells(outside, U'#'), 0);
+}
+
+TEST(ui_outline_ring_and_degenerate) {
+    Screen ring(14, 10);
+    ui::outline(ring, 2, 2, 6, 4, U'#', Color::white, Color::black);
+    CHECK_EQ(count_cells(ring, U'#'), 16);  // 2*6 + 2*4 - 4 个角
+    for (int x = 2; x <= 7; ++x) {
+        CHECK_EQ(ring.at(x, 2).ch, U'#');
+        CHECK_EQ(ring.at(x, 5).ch, U'#');
+    }
+    for (int y = 3; y <= 4; ++y) {
+        CHECK_EQ(ring.at(2, y).ch, U'#');
+        CHECK_EQ(ring.at(7, y).ch, U'#');
+    }
+    CHECK_EQ(ring.at(3, 3).ch, U' ');  // 内部不画
+    CHECK_EQ(ring.at(6, 4).ch, U' ');
+
+    // w < 2 / h < 2：退化为单列 / 单行 / 单格
+    Screen column(10, 6);
+    ui::outline(column, 1, 0, 1, 6, U'|', Color::white, Color::black);
+    CHECK_EQ(count_cells(column, U'|'), 6);
+    Screen row(10, 6);
+    ui::outline(row, 0, 1, 6, 1, U'-', Color::white, Color::black);
+    CHECK_EQ(count_cells(row, U'-'), 6);
+    Screen dot(10, 6);
+    ui::outline(dot, 4, 4, 1, 1, U'+', Color::white, Color::black);
+    CHECK_EQ(count_cells(dot, U'+'), 1);
+
+    Screen none(10, 6);
+    ui::outline(none, 1, 1, 0, 4, U'#', Color::white, Color::black);
+    CHECK_EQ(count_cells(none, U'#'), 0);
+
+    // 屏幕只落在矩形内部（四条边都在屏外）：不画任何东西
+    Screen huge(10, 6);
+    ui::outline(huge, -2, -2, 20, 20, U'#', Color::white, Color::black);
+    CHECK_EQ(count_cells(huge, U'#'), 0);
+}
+
+TEST(ui_circle_symmetry_and_radius) {
+    Screen s(24, 24);
+    ui::circle(s, 10, 10, 3, U'o', Color::white, Color::black);
+    CHECK_EQ(count_cells(s, U'o'), 16);  // 3 个八分弧步：4 + 8 + 4
+    // 四向 + 八向对称
+    CHECK_EQ(s.at(13, 10).ch, U'o');
+    CHECK_EQ(s.at(7, 10).ch, U'o');
+    CHECK_EQ(s.at(10, 13).ch, U'o');
+    CHECK_EQ(s.at(10, 7).ch, U'o');
+    CHECK_EQ(s.at(11, 13).ch, U'o');
+    CHECK_EQ(s.at(9, 13).ch, U'o');
+    CHECK_EQ(s.at(11, 7).ch, U'o');
+    CHECK_EQ(s.at(9, 7).ch, U'o');
+    CHECK_EQ(s.at(13, 11).ch, U'o');
+    CHECK_EQ(s.at(7, 11).ch, U'o');
+    CHECK_EQ(s.at(12, 12).ch, U'o');
+    CHECK_EQ(s.at(8, 8).ch, U'o');
+    // 空心 + 半径边界
+    CHECK_EQ(s.at(10, 10).ch, U' ');
+    CHECK_EQ(s.at(14, 10).ch, U' ');
+
+    // r <= 0 画一格
+    Screen zero(8, 8);
+    ui::circle(zero, 5, 5, 0, U'.', Color::white, Color::black);
+    CHECK_EQ(count_cells(zero, U'.'), 1);
+    CHECK_EQ(zero.at(5, 5).ch, U'.');
+    ui::circle(zero, 2, 2, -3, U',', Color::white, Color::black);
+    CHECK_EQ(zero.at(2, 2).ch, U',');
+
+    // 半径远大于屏幕：有界且不画（圆心在屏内，整圆都在屏外）
+    Screen huge(12, 12);
+    ui::circle(huge, 5, 5, 1000000, U'x', Color::white, Color::black);
+    CHECK_EQ(count_cells(huge, U'x'), 0);
+
+    // 圆心在屏外、半径很大但弧穿过屏幕：仍能画到可见点（且循环有界）
+    Screen edge(12, 12);
+    ui::circle(edge, -1000, 5, 1000, U'x', Color::white, Color::black);
+    CHECK_EQ(edge.at(0, 5).ch, U'x');
+}
+
 // ---------------------------------------------------------------- save store
 
 TEST(save_store_roundtrip_and_limits) {

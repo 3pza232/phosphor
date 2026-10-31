@@ -567,6 +567,26 @@ local index, action = phos.ui.nav(#items, selected)
 -- action 为 "none" / "confirm" / "cancel"
 ```
 
+### 几何原语：line / outline / circle
+
+三个**无状态**几何绘制原语，坐标同为内容区局部坐标，越界部分静默裁剪
+（线段先与屏幕网格求交再光栅化，屏幕外的超大坐标不会变成无界循环）：
+
+```lua
+phos.ui.line(2, 2, 70, 30)                        -- 斜线：Bresenham，陡/平/反向都正确
+phos.ui.outline(10, 4, 20, 8, "#")                -- 空心框：1 格边线
+phos.ui.circle(40, 22, 6, "o", phos.color.cyan)   -- 空心圆：midpoint，八向对称
+
+-- 末尾参数：ch?, fg?, bg?
+-- ch 缺省：线/框 '-'、圆 'o'
+-- fg 缺省 = 激活色板的 white；bg 缺省 = 保留该格原有底色（不铺底）
+-- fg/bg 接受 phos.color.*（色板色）或 {r,g,b} 表
+```
+
+- `outline` 的 `w`/`h` < 2 时退化：单列 / 单行 / 单格；`circle` 的 `r <= 0` 只画一格
+- 三者都**只写字形，不铺底**（省略 `bg` = 透出下层）；要实底先 `fill` / `region:clear`
+- `line` 同一格只写一次；`circle` 只光栅化可见弧段，半径再大也不会把主机拖住
+
 **导航示例**（背包/设置浮窗的典型写法）：
 
 ```lua

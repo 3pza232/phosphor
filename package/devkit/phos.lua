@@ -234,7 +234,7 @@ function phos.panel.fill(x, y, w, h, ch, fg, bg) end
 ---@param bg phos.Color|nil
 function phos.panel.clear(fg, bg) end
 
----组件层：边框/浮窗/菜单/进度条/正文/精灵/导航（与系统界面同一套原语）
+---组件层：边框/浮窗/菜单/进度条/正文/精灵/导航/线·框·圆（与系统界面同一套原语）
 ---@class phos.ui
 phos.ui = {}
 
@@ -293,6 +293,36 @@ function phos.ui.text(x, y, w, body, max_lines) end
 ---@param y integer
 ---@param text string
 function phos.ui.center_text(y, text) end
+
+---直线：Bresenham 光栅化（陡线 / 平线 / 反向都正确），同一格只写一次；屏幕外部分静默裁剪。
+---@param x1 integer
+---@param y1 integer
+---@param x2 integer
+---@param y2 integer
+---@param ch string|integer|nil 字符（缺省 '-'）
+---@param fg phos.Color|nil 缺省 = 激活色板的 white
+---@param bg phos.Color|nil 缺省 = 保留该格原有底色（不铺底）
+function phos.ui.line(x1, y1, x2, y2, ch, fg, bg) end
+
+---空心矩形：1 格边线；w / h < 2 时退化为单行 / 单列 / 单格。
+---@param x integer
+---@param y integer
+---@param w integer
+---@param h integer
+---@param ch string|integer|nil 字符（缺省 '-'）
+---@param fg phos.Color|nil 缺省 = 激活色板的 white
+---@param bg phos.Color|nil 缺省 = 保留该格原有底色
+function phos.ui.outline(x, y, w, h, ch, fg, bg) end
+
+---空心圆：midpoint 算法、八向对称；r <= 0 时只在 (cx, cy) 画一格。
+---只光栅化屏幕内可能出现的弧段，半径再大也是有限循环。
+---@param cx integer
+---@param cy integer
+---@param r integer
+---@param ch string|integer|nil 字符（缺省 'o'）
+---@param fg phos.Color|nil 缺省 = 激活色板的 white
+---@param bg phos.Color|nil 缺省 = 保留该格原有底色
+function phos.ui.circle(cx, cy, r, ch, fg, bg) end
 
 ---像素精灵：rows 为字符画，colors 为 字符→颜色 映射（'.' 与空格透明）
 ---@param x integer

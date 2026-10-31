@@ -27,6 +27,10 @@ std::map<char, Color> color_map(const sol::object& obj) {
     return api::read_char_color_map(obj);
 }
 
+/// 局部坐标 + 内容区原点后的钳位范围：远在屏幕外，只用于避免 int 溢出；
+/// 真正的越界裁剪由 ui::line / outline / circle 自己做。
+constexpr long long kGridCoordLimit = 1 << 20;
+
 } // namespace
 
 void register_ui_api(sol::state& lua, HostContext& host) {
@@ -42,6 +46,15 @@ void register_ui_api(sol::state& lua, HostContext& host) {
     // 坐标一律为内容区局部坐标；内部偏移到网格坐标
     auto rect_at = [&host](int x, int y, int w, int h) {
         return ui::Rect{host.content_x + x, host.content_y + y, w, h};
+    };
+    // 几何原语用：同一套局部→网格偏移，先钳到安全范围（脚本可能传 ±INT_MAX）
+    const auto grid_x = [&host](int x) {
+        return static_cast<int>(std::clamp<long long>(static_cast<long long>(x) + host.content_x,
+                                                      -kGridCoordLimit, kGridCoordLimit));
+    };
+    const auto grid_y = [&host](int y) {
+        return static_cast<int>(std::clamp<long long>(static_cast<long long>(y) + host.content_y,
+                                                      -kGridCoordLimit, kGridCoordLimit));
     };
 
     ui["frame"] = [&host, rect_at](int x, int y, int w, int h, sol::object title) {
@@ -70,6 +83,25 @@ void register_ui_api(sol::state& lua, HostContext& host) {
         ui::Style style = cart_style(host);
         ui::Rect r = rect_at(x, y, w, 1);
         ui::divider(*host.screen, r.x, r.y, r.w, style.dim, style.bg);
+    };
+
+    // 几何原语（无状态，直接写当前网格）：ch 缺省 '-'（线/框）/'o'（圆）；
+    // fg 缺省 = 激活色板的 white；bg 缺省 = 保留原底色（与 screen.put 同组，不铺底）
+    ui["line"] = [&host, grid_x, grid_y](int x1, int y1, int x2, int y2, sol::object ch,
+                                         sol::object fg, sol::object bg) {
+        ui::line(*host.screen, grid_x(x1), grid_y(y1), grid_x(x2), grid_y(y2),
+                 api::read_char(ch, U'-'), api::read_color(fg, api::default_fg(host)),
+                 api::read_background(bg));
+    };
+    ui["outline"] = [&host, grid_x, grid_y](int x, int y, int w, int h, sol::object ch,
+                                            sol::object fg, sol::object bg) {
+        ui::outline(*host.screen, grid_x(x), grid_y(y), w, h, api::read_char(ch, U'-'),
+                    api::read_color(fg, api::default_fg(host)), api::read_background(bg));
+    };
+    ui["circle"] = [&host, grid_x, grid_y](int cx, int cy, int r, sol::object ch, sol::object fg,
+                                           sol::object bg) {
+        ui::circle(*host.screen, grid_x(cx), grid_y(cy), r, api::read_char(ch, U'o'),
+                   api::read_color(fg, api::default_fg(host)), api::read_background(bg));
     };
 
     // h 可省略：缺省按条目数（与 region:menu 同一语义；省略时行数由内容决定）
