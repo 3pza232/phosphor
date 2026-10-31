@@ -13,6 +13,7 @@
 #include "shell/shelf_view.hpp"
 #include "shell/tape_view.hpp"
 #include "ui/frame.hpp"
+#include "ui/screen_stack.hpp"
 #include "ui/theme.hpp"
 
 #include <string>
@@ -133,7 +134,7 @@ public:
     /// 当前菜单光标位置（-1 = 当前模式没有"可选项列表"）。供 agent 驱动界面时读回，
     /// 免得靠"按几下"去猜——菜单项一增减，猜的次数就全错。
     int cursor() const {
-        switch (mode_) {
+        switch (mode()) {
             case ShellMode::shelf: return shelf_cursor_;
             case ShellMode::paused: return pause_cursor_;
             case ShellMode::settings: return settings_cursor_;
@@ -174,7 +175,7 @@ public:
     /// （切换时放**新**音效包、Enter 试听当前），以免先响一次旧包的键音
     bool settings_on_sound_row() const;
 
-    ShellMode mode() const { return mode_; }
+    ShellMode mode() const;
     /// 当前卡带架样式候选项下标（0=list、1=window、2+i=第 i 个包）
     int shelf_index() const { return shelf_index_; }
     /// 当前主题（外壳）：转场特效等系统绘制取它的配色
@@ -200,6 +201,12 @@ public:
 
 private:
     // 布局常量见 shell/layout.hpp（ShellLayout）：外壳与各屏幕模块共用同一套边距
+
+    /// 屏栈：shelf/paused 是根（reset 进栈），settings/mods/tape/cart_error 是叠在上面的浮层。
+    /// boot→shelf 不是"返回"，用 reset；App 的 playing 不算 shell 屏，暂停时 reset(paused)。
+    void push_screen(ShellMode mode, bool modal = false);
+    void pop_screen();
+    void reset_screen(ShellMode mode, bool modal = false);
 
     Intent update_shelf(const Input& input);
     Intent update_settings(const Input& input);
@@ -254,7 +261,7 @@ private:
     /// UI 组件库的主题与跨帧状态（焦点/滚动/文本域值）。画布变了只换 token，控件代码不动
     ui::Theme ui_theme_;
     ui::State ui_state_;
-    ShellMode mode_ = ShellMode::boot;
+    ui::ScreenStack screens_{"boot"};
     float time_ = 0.0f;
     float boot_time_ = 0.0f;
     bool external_boot_ = false;

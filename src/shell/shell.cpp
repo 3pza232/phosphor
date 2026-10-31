@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
+#include <string_view>
 #include <utility>
 
 namespace phos {
@@ -92,7 +93,51 @@ int widget_cursor(const ui::State& state, const char* screen_id, const char* wid
     return widget == screen->second.widgets.end() ? 0 : widget->second.cursor;
 }
 
+
+/// ShellMode ↔ 屏栈 id：栈里只存字符串（ScreenStack 不依赖 shell），切换处做映射
+const char* shell_mode_id(ShellMode mode) {
+    switch (mode) {
+        case ShellMode::boot: return "boot";
+        case ShellMode::shelf: return "shelf";
+        case ShellMode::settings: return "settings";
+        case ShellMode::paused: return "paused";
+        case ShellMode::mods: return "mods";
+        case ShellMode::tape: return "tape";
+        case ShellMode::cart_error: return "cart_error";
+    }
+    return "shelf";
+}
+
+bool shell_mode_from(std::string_view id, ShellMode& mode) {
+    if (id == "boot") mode = ShellMode::boot;
+    else if (id == "shelf") mode = ShellMode::shelf;
+    else if (id == "settings") mode = ShellMode::settings;
+    else if (id == "paused") mode = ShellMode::paused;
+    else if (id == "mods") mode = ShellMode::mods;
+    else if (id == "tape") mode = ShellMode::tape;
+    else if (id == "cart_error") mode = ShellMode::cart_error;
+    else return false;
+    return true;
+}
+
 } // namespace
+
+ShellMode Shell::mode() const {
+    ShellMode mode = ShellMode::boot;
+    if (!shell_mode_from(screens_.top(), mode)) return ShellMode::boot;
+    return mode;
+}
+
+void Shell::push_screen(ShellMode mode, bool modal) {
+    screens_.push(shell_mode_id(mode), modal);
+}
+
+void Shell::pop_screen() {
+    // 正常路径总有根屏（shelf/paused）；空栈兜底回卡带架，避免 Shell 没有可画模式
+    if (!screens_.pop()) screens_.push(shell_mode_id(ShellMode::shelf));
+}
+
+void Shell::reset_screen(ShellMode mode, bool modal) { screens_.reset(shell_mode_id(mode), modal); }
 
 // ---------------------------------------------------------------- 状态
 
@@ -151,18 +196,18 @@ void Shell::set_mods(std::vector<ModOption> mods) {
 void Shell::open_settings() {
     // 设置只在**卡带架**（主机主界面）唤起。暂停/磁带码等是在运行中的卡带之上开的浮层，
     // 从那里跳进设置会让"关掉设置回哪去"变得含糊；卡带运行时读盘/换卡也不该被打断
-    if (mode_ != ShellMode::shelf) return;
-    mode_ = ShellMode::settings;
+    if (mode() != ShellMode::shelf) return;
+    push_screen(ShellMode::settings);
     settings_cursor_ = 0;
 }
 
 bool Shell::settings_on_sound_row() const {
-    return mode_ == ShellMode::settings &&
+    return mode() == ShellMode::settings &&
            static_cast<SettingId>(settings_cursor_) == SettingId::sound_pack;
 }
 
 void Shell::to_tape() {
-    mode_ = ShellMode::tape;
+    push_screen(ShellMode::tape);
     tape_.open();
     // 输入页的文本域状态也归零：不清的话上次没导完的码会留在框里（旧实现的 open 同样清缓冲）
     ui_state_.forget(kTapeScreen);
@@ -215,18 +260,19 @@ void Shell::focus_cart(const std::string& id) {
 
 void Shell::show_error(const std::string& message) {
     error_message_ = message;
-    mode_ = ShellMode::cart_error;
+    reset_screen(ShellMode::shelf);
+    push_screen(ShellMode::cart_error, true);
 }
 
 void Shell::to_boot() {
-    mode_ = ShellMode::boot;
+    reset_screen(ShellMode::boot);
     boot_time_ = 0.0f;
 }
 
-void Shell::to_shelf() { mode_ = ShellMode::shelf; }
+void Shell::to_shelf() { reset_screen(ShellMode::shelf); }
 
 void Shell::to_paused() {
-    mode_ = ShellMode::paused;
+    reset_screen(ShellMode::paused);
     pause_cursor_ = 0;
     // 光标由组件按元素 id 记着：进屏时显式归位，否则会停在上次退出的那一项
     ui_state_.screen(kPausedScreen).widgets[kPauseMenu].cursor = 0;
@@ -234,7 +280,7 @@ void Shell::to_paused() {
 
 void Shell::open_mods() {
     if (mods_.empty()) return;   // 没有 mod 就没有可管理的东西
-    mode_ = ShellMode::mods;
+    push_screen(ShellMode::mods);
     // 勾选态 = 当前有效启用态（由 App 从 default_off + 两个配置列表算好）；
     // 快照存下来，"关掉又开回"才不会误判成变化
     mods_checked_.assign(mods_.size(), true);
@@ -292,11 +338,11 @@ Shell::Intent Shell::update(const Input& input, float dt) {
     shelf_pos_ += (target - shelf_pos_) * (1.0f - std::exp(-10.0f * dt));
     if (std::fabs(target - shelf_pos_) < 0.001f) shelf_pos_ = target;
 
-    switch (mode_) {
+    switch (mode()) {
         case ShellMode::boot:
             boot_time_ += dt;
             if (boot_time_ > kBootDuration || input.pressed(Key::start))  // Enter 跳过自检
-                mode_ = ShellMode::shelf;
+                reset_screen(ShellMode::shelf);
             return {};
         case ShellMode::shelf: return update_shelf(input);
         case ShellMode::settings: return update_settings(input);
@@ -394,7 +440,7 @@ Shell::Intent Shell::update_settings(const Input& input) {
 
     for (const ui::Event& event : frame.run()) {
         if (event.kind == ui::EventKind::cancelled) {
-            mode_ = ShellMode::shelf;
+            pop_screen();
             break;
         }
         if (event.kind != ui::EventKind::changed && event.kind != ui::EventKind::activated) continue;
@@ -402,7 +448,7 @@ Shell::Intent Shell::update_settings(const Input& input) {
         const SettingId id = setting_from_key(std::string_view(event.id).substr(9));
         if (id == SettingId::count) continue;
         if (event.kind == ui::EventKind::activated) {
-            if (id == SettingId::back) mode_ = ShellMode::shelf;
+            if (id == SettingId::back) pop_screen();
             continue;
         }
 
@@ -622,7 +668,7 @@ Shell::Intent Shell::update_mods(const Input& input) {
     const int mods = static_cast<int>(mods_.size());
     const int items = mods + 1;  // 单列：N 个 mod 行 + 确认（取消由 Esc 承担）
     if (mods == 0) {             // 理论上不会（无 mod 打不开），兜底回架面
-        mode_ = ShellMode::shelf;
+        pop_screen();
         return intent;
     }
     // 首尾循环（与旧版一致）。方向键由宿主处理：光标要在会重排的滚动窗口里循环
@@ -657,7 +703,7 @@ Shell::Intent Shell::update_mods(const Input& input) {
                     }
                 }
             }
-            mode_ = ShellMode::shelf;
+            pop_screen();
         }
     }
     return intent;
@@ -715,7 +761,7 @@ void Shell::draw_chassis(Screen& screen) const { draw_bezel(screen); }
 
 void Shell::draw(Screen& screen) {
     draw_bezel(screen);
-    switch (mode_) {
+    switch (mode()) {
         case ShellMode::boot: draw_boot(screen); break;
         case ShellMode::shelf: draw_shelf(screen); break;
         case ShellMode::settings: draw_settings(screen); break;

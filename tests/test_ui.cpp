@@ -8,10 +8,12 @@
 #include "shell/messages.hpp"
 #include "shell/settings_view.hpp"
 #include "ui/frame.hpp"
+#include "ui/screen_stack.hpp"
 #include "ui/toast.hpp"
 #include "ui/layout.hpp"
 
 #include <string>
+#include <vector>
 
 using namespace phos;
 
@@ -679,4 +681,77 @@ TEST(ui_field_typing_limit_backspace_and_ime) {
     Screen screen(12, 1);
     paint_only.paint(screen);
     CHECK(screen.to_text().find("ab\u4E2D") != std::string::npos);
+}
+
+
+TEST(ui_screen_stack_push_pop_modal_and_clear) {
+    ui::ScreenStack stack;
+    CHECK(stack.empty());
+    CHECK_EQ(stack.depth(), 0);
+    CHECK(stack.top().empty());
+    CHECK(!stack.top_modal());
+    CHECK(!stack.pop());  // 空栈 pop 不回调、不崩
+
+    stack.push("shelf");
+    CHECK_EQ(stack.top(), std::string("shelf"));
+    CHECK_EQ(stack.depth(), 1);
+    CHECK(!stack.top_modal());
+
+    stack.push("settings");
+    stack.push("confirm", true);  // 模态只是标记，输入策略归调用方
+    CHECK_EQ(stack.depth(), 3);
+    CHECK_EQ(stack.top(), std::string("confirm"));
+    CHECK(stack.top_modal());
+    CHECK(stack.pop());
+    CHECK_EQ(stack.top(), std::string("settings"));
+    CHECK(!stack.top_modal());  // 模态标记跟着条目走
+    CHECK(stack.pop());
+    CHECK_EQ(stack.top(), std::string("shelf"));
+
+    stack.push("a");
+    stack.push("b");
+    stack.clear();
+    CHECK(stack.empty());
+    CHECK_EQ(stack.depth(), 0);
+    CHECK(stack.top().empty());
+    CHECK(!stack.top_modal());
+}
+
+TEST(ui_screen_stack_callbacks_order_and_reset) {
+    ui::ScreenStack stack;
+    std::vector<std::string> log;
+    stack.set_on_enter([&](const std::string& id) { log.push_back("+" + id); });
+    stack.set_on_exit([&](const std::string& id) { log.push_back("-" + id); });
+
+    stack.push("shelf");
+    stack.push("settings");
+    CHECK_EQ(log.size(), 2u);
+    CHECK_EQ(log[0], std::string("+shelf"));
+    CHECK_EQ(log[1], std::string("+settings"));
+
+    CHECK(stack.pop());
+    CHECK_EQ(log.size(), 3u);
+    CHECK_EQ(log[2], std::string("-settings"));
+
+    // reset = 清空（从栈顶向下逐个 exit）再压根屏（enter）
+    log.clear();
+    stack.reset("paused", true);
+    CHECK_EQ(stack.depth(), 1);
+    CHECK_EQ(stack.top(), std::string("paused"));
+    CHECK(stack.top_modal());
+    CHECK_EQ(log.size(), 2u);
+    CHECK_EQ(log[0], std::string("-shelf"));
+    CHECK_EQ(log[1], std::string("+paused"));
+
+    // 构造时带根屏：root 先入栈（回调晚于构造设置，不会收到 root 的 enter）
+    ui::ScreenStack rooted("boot");
+    CHECK_EQ(rooted.depth(), 1);
+    CHECK_EQ(rooted.top(), std::string("boot"));
+    std::vector<std::string> rooted_log;
+    rooted.set_on_exit([&](const std::string& id) { rooted_log.push_back(id); });
+    rooted.push("shelf");
+    rooted.clear();
+    CHECK_EQ(rooted_log.size(), 2u);
+    CHECK_EQ(rooted_log[0], std::string("shelf"));  // 栈顶先出
+    CHECK_EQ(rooted_log[1], std::string("boot"));
 }
