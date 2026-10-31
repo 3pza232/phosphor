@@ -84,7 +84,7 @@ cmake --preset sanity           # build-sanity/：自检构建，慢，只用于
 |---|---|---|
 | `portable_smoke.py` | 绿色免安装契约：在临时 CWD 启动构建产物，验证内容根按 exe 目录解析、`--check-api` 回退、`--root` 覆盖 | `python ../tools/portable_smoke.py` |
 | `check_includes.py` | 依赖铁律门禁：核查 `src/` 的 include 方向（对照 `docs/engine/architecture.md` 第一节）；纯源码检查，不需要构建目录，任意目录可跑 | `python tools/check_includes.py` |
-| `perf_budget.py` | 性能预算报告（非门禁）：逐张出厂卡带采样 update/draw/merge 的 p50/p95/max，按 p95 update 排序并提示超预算的一半 | `python ../tools/perf_budget.py` |
+| `perf_budget.py` | 性能预算报告（非门禁）：逐张出厂卡带采样 update/draw/merge 的 p50/p95/max，按 p95 update 排序并提示超预算的一半；`--json` 输出报告，`--baseline <json>` 对比上一次并标出 p95 update 回归 | `python ../tools/perf_budget.py [--json] [--baseline old.json]` |
 | `run_checks.py` | **一键跑全部门禁并汇总**：默认无头门禁 **14 项**（includes/api/unit/control/draw/layer/ui/scene/toolkit/lint/packs/portable/cart/net），`--gui` 再加开窗门禁（gl/window）。测试逻辑仍在各自脚本里，它只管调度与汇总 | `python ../tools/run_checks.py [--gui] [--json checks.json]` |
 | `unit_smoke.py` | 纯逻辑单元测试：跑 `phosphor_tests`（C++，源码在 `tests/`，当前 **127 个用例 / 1374 条断言**），覆盖颜色/文本/配置/色板/主题/存档/UI 布局与焦点等不依赖 GL·Lua 的核心——无窗口无显卡即可跑（需构建时 `-DPHOSPHOR_BUILD_TESTS=ON`，或 `cmake --preset dev`）。单跑时未启用则**跳过**；但 `run_checks.py` 的 `unit` 门禁会检查产物，**缺失即判失败**（跳过不算通过，免得掩盖红灯） | `python ../tools/unit_smoke.py` |
 | `control_test.py` | 控制通道契约：握手 / 单步精确 / 读屏 / 注入 / 热重载 / 退出 | `python ../tools/control_test.py` |

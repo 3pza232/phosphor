@@ -69,6 +69,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="PHOSPHOR 性能预算报告")
     parser.add_argument("--cart", help="只测一张（card id 或目录）；缺省跑全部出厂卡带")
     parser.add_argument("--json", action="store_true", help="输出 JSON")
+    parser.add_argument("--baseline", metavar="PATH", help="与上一次 --json 报告比较，标出 p95 update 回归")
     args = parser.parse_args()
 
     report, _ = reporter("perf budget")
@@ -95,9 +96,19 @@ def main() -> int:
         if item["update"]["p95"] > BUDGET_MS * WARN_RATIO:
             warnings.append(item["cart"])
 
+    baseline = {}
+    if args.baseline:
+        try:
+            previous = json.loads(Path(args.baseline).read_text(encoding="utf-8"))
+            baseline = {item["cart"]: item for item in previous.get("carts", [])}
+        except (OSError, json.JSONDecodeError) as error:
+            print(f"  WARN 基线读取失败（忽略比较）：{error}")
+
     if args.json:
+        # JSON 是给脚本/对比工具消费的：不混入 reporter 的 ok/汇总行
         print(json.dumps({"budget_ms": round(BUDGET_MS, 3), "warnings": warnings,
                           "carts": results}, ensure_ascii=False, indent=1))
+        return 0 if results else 1
     else:
         print(f"{'cart':12} {'update p50':>10} {'p95':>7} {'max':>7} "
               f"{'draw p95':>8} {'merge p95':>9}")
@@ -105,6 +116,20 @@ def main() -> int:
             print(f"{item['cart']:12} {item['update']['p50']:10.2f} {item['update']['p95']:7.2f} "
                   f"{item['update']['max']:7.2f} {item['draw']['p95']:8.2f} "
                   f"{item['merge']['p95']:9.2f}")
+        regressions = []
+        if baseline:
+            print()
+            print("对比基线（p95 update 变化）：")
+            for item in results:
+                old_item = baseline.get(item["cart"])
+                if not old_item:
+                    continue
+                delta = item["update"]["p95"] - old_item["update"]["p95"]
+                ratio = delta / old_item["update"]["p95"] if old_item["update"]["p95"] > 0 else 0.0
+                flag = "  ← 回归" if delta > max(1.0, old_item["update"]["p95"] * 0.25) else ""
+                print(f"  {item['cart']:12} {delta:+6.2f} ms ({ratio:+.0%}){flag}")
+                if flag:
+                    regressions.append(item["cart"])
         print()
         print(f"单帧预算 {BUDGET_MS:.2f} ms；提示线 = 预算的 {int(WARN_RATIO * 100)}%")
         if warnings:
