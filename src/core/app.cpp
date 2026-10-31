@@ -159,17 +159,20 @@ void App::advance(float dt, Renderer* renderer, Window* window) {
         return;
     }
 
-    if (in_boot_) {
-        shell_.draw(display_.screen);
-        tick_boot(dt);
-        if (boot_should_end()) end_boot();
-        return;
+    // 模式分派：三态互斥，一个 switch 说清"这一帧归谁"
+    switch (mode_) {
+        case Mode::boot:
+            shell_.draw(display_.screen);
+            tick_boot(dt);
+            if (boot_should_end()) end_boot();
+            return;
+        case Mode::playing:
+            tick_playing(dt);
+            return;
+        case Mode::shelf:
+            tick_shell(renderer, window);
+            return;
     }
-    if (playing_) {
-        tick_playing(dt);
-        return;
-    }
-    tick_shell(renderer, window);
 }
 
 void App::step_frame(const CliOptions& opts, Renderer* renderer, Window* window,
@@ -186,7 +189,7 @@ void App::step_frame(const CliOptions& opts, Renderer* renderer, Window* window,
 }
 
 void App::end_boot() {
-    in_boot_ = false;
+    mode_ = Mode::shelf;  // 开机结束进系统界面（卡带装载是另一条转换：直接进 playing）
     boot_script_.reset();
     clear_host_cart();  // 宿主动画脚本的 save / cart_files / cart_info / cart 注册随它一起收
     shell_.set_external_boot(false);
@@ -380,7 +383,7 @@ ui::Rect App::content_rect() const {
 
 void App::start_boot_animation() {
     boot_elapsed_ = 0.0f;
-    in_boot_ = true;
+    mode_ = Mode::boot;
     boot_script_.reset();
     clear_host_cart();  // 上一段动画脚本（若有）的 host 指针收干净
 
@@ -453,7 +456,7 @@ void App::apply_input_action(const InputAction& action, int hold_frames) {
 int App::run_headless(const CliOptions& opts) {
     if (opts.cart) {
         load_cart_path(*opts.cart);
-        if (!playing_) {
+        if (!playing()) {
             std::fprintf(stderr, "ERROR: cart load failed: %s\n", last_error_.c_str());
             return 2;
         }
@@ -532,7 +535,7 @@ int App::run_windowed(const CliOptions& opts) {
     if (opts.cart) {
         load_cart_path(*opts.cart);
         // 与无头路径同一约定：--cart 给了一个装不上的卡带就不是成功运行
-        if (!playing_) {
+        if (!playing()) {
             std::fprintf(stderr, "ERROR: cart load failed: %s\n", last_error_.c_str());
             return 2;
         }
@@ -601,8 +604,8 @@ int App::run_windowed(const CliOptions& opts) {
         // present 前重新对齐帧缓冲尺寸，否则这一帧的视口仍是旧尺寸，画面会露出一条黑边
         renderer.set_framebuffer_size(window.framebuffer_width(), window.framebuffer_height());
         // 底 + 逐层叠画 + 主机 chrome：顺序与原点收在 Display::present 一处
-        const bool layered = playing_ && host_.layers.active();
-        const bool overlay = playing_ && host_.panel_w > 0;
+        const bool layered = playing() && host_.layers.active();
+        const bool overlay = playing() && host_.panel_w > 0;
         display_.present(renderer, host_.layers, host_.content_x, host_.content_y, layered,
                          overlay);
         // frame.read 的读回点：本帧已画完、尚未 swap。放在调试台之前，

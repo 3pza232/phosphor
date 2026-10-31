@@ -9,8 +9,8 @@
 namespace phos {
 
 std::string App::mode_name() const {
-    if (in_boot_) return "BOOT";
-    if (playing_) return "PLAYING";
+    if (in_boot()) return "BOOT";
+    if (playing()) return "PLAYING";
     switch (shell_.mode()) {
         case ShellMode::boot: return "BOOT";
         case ShellMode::shelf: return "SHELF";
@@ -30,7 +30,7 @@ void App::fill_debug_info(DebugInfo& info) {
     info.frame = frame_count_;
     info.logic_hz = kLogicFps;
     info.mode = mode_name();
-    info.playing = playing_;
+    info.playing = playing();
     info.host_time = host_.time;
     info.grid_w = display_.screen.width();
     info.grid_h = display_.screen.height();
@@ -132,7 +132,7 @@ bool App::write_screenshot(const std::string& path, int& width, int& height,
     options.crt = active_crt_;
     // 截图必须与窗口所见一致：底 + 逐层叠画（像素级合成），
     // 而不是合成后的文本网格 —— 那条路一格只有一个字形，会把下层"顶掉"
-    const bool layered = playing_ && host_.layers.active();
+    const bool layered = playing() && host_.layers.active();
     const Screen& base = layered ? display_.base : display_.screen;
     // 有图层的卡带，分隔线只在 chrome 里（base 快照在写分隔线之前），截图要补上才与窗口一致
     const Screen* overlay = (layered && host_.panel_w > 0) ? &display_.chrome : nullptr;

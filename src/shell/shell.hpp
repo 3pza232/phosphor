@@ -160,7 +160,7 @@ public:
     void show_error(const std::string& message);
     /// 切到开机自检屏
     void to_boot();
-    /// 推进内置自检的动画时钟。开机由 App 驱动（App::in_boot_），期间 Shell::update
+    /// 推进内置自检的动画时钟。开机由 App 驱动（App::Mode::boot），期间 Shell::update
     /// 不会被调用 —— 时钟只能由 App 的 tick_boot 代为推进，否则自检永远停在第一行
     void advance_boot(float dt) { boot_time_ += dt; }
     /// 切到卡带架

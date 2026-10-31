@@ -80,7 +80,7 @@ void App::poll_control() {
 std::string App::control_state_json() const {
     std::ostringstream out;
     out << "\"frame\":" << frame_count_ << ",\"mode\":" << json::quote(mode_name())
-        << ",\"playing\":" << (playing_ ? "true" : "false")
+        << ",\"playing\":" << (playing() ? "true" : "false")
         << ",\"stepping\":" << (agent_.stepping ? "true" : "false")
         << ",\"pending_steps\":" << agent_.pending_steps
         << ",\"grid_w\":" << display_.screen.width()
@@ -105,7 +105,7 @@ std::string App::control_state_json() const {
         // 主机据此开关系统输入法（仅 Windows 实际生效），也给测试一个可读的信号
         << ",\"ime\":" << (host_.ime_wanted ? "true" : "false")
         << ",\"language\":" << json::quote(lang_name(shell_.language()))
-        << ",\"cursor\":" << (playing_ ? -1 : shell_.cursor())
+        << ",\"cursor\":" << (playing() ? -1 : shell_.cursor())
         << ",\"shelf\":" << shelf_json()
         << ",\"crt_level\":" << config_.crt_level
         << ",\"fps\":" << config_.fps
@@ -115,7 +115,7 @@ std::string App::control_state_json() const {
         << ",\"scenes\":" << scenes_json(host_)
         // 卡带声明式界面的控件树（id/role/label/state）：agent 用它定位控件，
         // 不必解析文本画面；没有界面时为 null
-        << ",\"ui\":" << (playing_ && !host_.cart_ui_json.empty() ? host_.cart_ui_json : "null");
+        << ",\"ui\":" << (playing() && !host_.cart_ui_json.empty() ? host_.cart_ui_json : "null");
 
     // 卡带注册的可调参数（phos.debug.number）当前值；无卡带或未注册为空数组
     out << ",\"debug_params\":[";
@@ -492,7 +492,7 @@ void App::execute_control(const ControlCommand& command) {
             return;
         }
         load_cart_path(path);
-        if (!playing_) {
+        if (!playing()) {
             control_.reply_error(command.id, last_error_.empty() ? "load failed" : last_error_);
             return;
         }
@@ -506,7 +506,7 @@ void App::execute_control(const ControlCommand& command) {
             return;
         }
         load_cart_path(cart_path_);
-        if (!playing_) {
+        if (!playing()) {
             control_.reply_error(command.id, last_error_.empty() ? "reload failed" : last_error_);
             return;
         }

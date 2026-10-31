@@ -91,7 +91,7 @@
 | # | 现象 | 证据 | 后果 |
 |---|---|---|---|
 | S1 | `App` 是 2,179 行 / 7 个 TU / 54 方法的上帝对象，且**住在最低层** `core/` | `core/app.hpp:3-20` 反向 include `cart/ pack/ shell/ agent/ net/ api/`，于是 core 头文件把 sol2 拉进整棵依赖树 | 任何接触 App 的 TU 都编译 Lua 宿主；"可替换子系统"实际上被 App 焊死 |
-| S2 | 模式不是状态机 | `playing_/in_boot_/quit_`（`app.hpp:172-176`）与 `ShellMode` 由 5 个文件分别写 | 非法状态组合可表示；`state.query.mode` 不可信；弹窗/暂停类功能只能继续加布尔量 |
+| S2 | 模式不是状态机 | 旧：`in_boot_` / `playing_` / `quit_` 与 ShellMode 由多处分别写 | 非法状态组合可表示；状态查询不可信 | ✅ **已修复**：`App::Mode`（boot / shelf / playing）三态互斥，全部写点集中为 9 处直接赋值；读点用 `in_boot()/playing()`；旧 (true,false)/(false,true)/(false,false) 与新三态一一映射（(true,true) 无产生路径）。`quit_` 保留为独立请求标志（不是模式） |
 | S3 | 选择状态有 3~4 份副本 | `Config` 字符串、`ContentLibrary` 下标、`Shell` 自带名字/下标（`shell/shell.hpp:271-286`）、字体状态 4 处 | 每次改设置手工三方同步，17 处 `save_config_now()` 即其症状 |
 | S4 | `HostContext` 是 15 个裸指针的手工生命周期 | `api/host_api.hpp:26-71`；`clear_host_cart()` 有 9 个手工调用点（`app.cpp:176,273,295,347,354` 等） | 新增子系统就要再加一处"记得清空"；错一次就是悬垂指针 |
 | S5 | `cart` ↔ `api` 头文件环 | 旧：`cart/cartridge.hpp` include `api/host_api.hpp`，反向亦 include | 依赖方向与 `architecture.md:43-46` 相反 | ✅ **已断开**：两侧改用前向声明（`HostContext` / `SaveStore`），需要完整类型的 TU（`cartridge.cpp` / `score_api.cpp`）各自直接 include；`check_includes` 通过、构建与 12 项门禁全绿 |

@@ -177,8 +177,15 @@ private:
     /// 架子不是卡带，不该借用卡带的时间线
     float shelf_time_ = 0.0f;
 
-    bool playing_ = false;
-    bool in_boot_ = true;
+    /// 主机所处的**唯一**顶层面：开机动画 / 系统界面 / 卡带运行。三者互斥，于是"同时开机
+    /// 又在玩"这类非法组合不可表示。系统界面内部的分支（设置 / 暂停 / Mod / 磁带码 /
+    /// 错误屏 / 卡带架）仍由 shell 的 ShellMode 表达——本枚举只决定 App::advance 分派到
+    /// 哪个 tick。默认 boot：run() 先播开机动画
+    enum class Mode { boot, shelf, playing };
+    Mode mode_ = Mode::boot;
+    /// 读点用这两个判据（与 enum 一一对应）；写点直接赋 mode_
+    bool in_boot() const { return mode_ == Mode::boot; }
+    bool playing() const { return mode_ == Mode::playing; }
     float boot_elapsed_ = 0.0f;
     float boot_len_ = kBootDuration;  // 本轮开机时长：动画脚本自己声明（见 Cartridge::declared_seconds），未声明则回退出厂值
     bool quit_ = false;

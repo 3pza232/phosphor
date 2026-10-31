@@ -14,16 +14,16 @@ void App::handle_escape() {
         console_.open = false;
         return;
     }
-    if (in_boot_) {
-        in_boot_ = false;
+    if (in_boot()) {
+        mode_ = Mode::shelf;
         boot_script_.reset();
         clear_host_cart();
         shell_.set_external_boot(false);
         shell_.to_shelf();
         return;
     }
-    if (playing_) {
-        playing_ = false;
+    if (playing()) {
+        mode_ = Mode::shelf;
         audio_.set_paused(true);  // 暂停：音乐随之冻结，恢复时原地续播
         shell_.to_paused();
         log::info("pause");
@@ -51,7 +51,7 @@ void App::handle_escape() {
             log::info("error screen dismissed -> shelf");
             break;
         case ShellMode::paused:
-            playing_ = true;
+            mode_ = Mode::playing;
             audio_.set_paused(false);  // 继续：音乐从冻结处续播
             log::info("resume");
             break;
@@ -123,7 +123,7 @@ void App::handle_intent(const Shell::Intent& intent, Renderer* renderer, Window*
         log::info("setting sfx_volume=" + std::to_string(config_.sfx_volume));
     }
     if (intent.resume) {
-        playing_ = true;
+        mode_ = Mode::playing;
         audio_.set_paused(false);
         shell_.to_shelf();
     }

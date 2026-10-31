@@ -36,10 +36,11 @@ void App::load_cart_path(const std::string& path) {
         last_error_ = cart_->error();
         cart_.reset();
         clear_host_cart();
-        // playing_ 也要落回 false：否则"正在玩时 reload 失败"会让下一帧 tick_playing 去
-        // cart_->update() 一个空指针。加载失败就该回到错误屏、不再推进卡带。
+        // 退出 playing：否则"正在玩时 reload 失败"会让下一帧 tick_playing 去 cart_->update()
+        // 一个空指针。加载失败就该回到错误屏、不再推进卡带。开机期间失败则保持 boot——
+        // 一张坏卡带不该打断开机动画。
         // （**不清 cart_path_**：一次失败的 reload 不该让后续 cart.reload 变成"没有卡带可重载"）
-        playing_ = false;
+        if (playing()) mode_ = Mode::shelf;
         shell_.show_error(last_error_);
         play_event("error");
         log_cart_error("load failed: " + last_error_);
@@ -49,8 +50,7 @@ void App::load_cart_path(const std::string& path) {
 
     cart_path_ = path;
     // 面板宽度由 Cartridge 在跑脚本之前设好（那里才是 manifest 已知的地方）
-    playing_ = true;
-    in_boot_ = false;
+    mode_ = Mode::playing;
     insert_flash_ = kInsertFlashTime;  // 插卡瞬间的电压闪烁（时长与闪烁共同构成仪式感）
     play_event("insert");
 
@@ -74,7 +74,8 @@ void App::eject_cart() {
     }
     cart_.reset();
     cart_path_.clear();
-    playing_ = false;
+    // 拔卡回到系统界面；开机期间拔卡保持 boot（不打断开机动画）
+    if (playing()) mode_ = Mode::shelf;
     capture_escape_ = false;  // Esc 接管随卡带一起收：否则拔卡后系统界面再也收不到 Esc
     host_.panel_w = 0;
     clear_host_cart();  // save / cart_files / cart_info / cart 全是指向这张卡带的指针，一并清
