@@ -112,6 +112,9 @@ private:
     /// 包缺失或本帧报错则当帧回退内置样式
     void draw_shelf_content(Screen& screen, const ui::Rect& content, const ShelfView& view,
                             const ui::Style& style);
+    /// F5 热重载：重扫内容包并重新应用当前 skin/boot/sound/font/shelf。
+    /// 当前卡带不重载；选中的包在新扫描里缺失/不可用时保留旧对象并记日志。
+    void reload_content_packs(class Renderer* renderer, class Window* window);
     void apply_crt(int level, class Renderer* renderer);
     void start_boot_animation();
     void save_config_now();

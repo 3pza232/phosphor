@@ -194,6 +194,165 @@ void App::draw_shelf_content(Screen& screen, const ui::Rect& content, const Shel
 }
 
 
+
+void App::reload_content_packs(Renderer* renderer, Window* window) {
+    log::info("content reload: rescanning skin/sound/boot/font/shelf");
+    const std::string old_skin = packs_.skin().id;
+    const std::string old_boot = packs_.boots[static_cast<size_t>(packs_.boot_index)].id;
+    const std::string old_sound = packs_.sounds[static_cast<size_t>(packs_.sound_index)].id;
+    const std::string old_font = fonts_.current();
+    const std::string old_shelf =
+        packs_.shelf_index >= 0 ? packs_.shelves[static_cast<size_t>(packs_.shelf_index)].id : "";
+    const std::string old_shelf_style = config_.shelf_style;
+    const FontState previous_fonts = fonts_;
+
+    ContentLibrary fresh;
+    fresh.scan(config_);  // 复用现有扫描入口；库对象是全新的，不会叠加旧列表
+
+    const auto find_id = [](const auto& items, const std::string& id, auto id_of) {
+        for (size_t i = 0; i < items.size(); ++i)
+            if (id_of(items[i]) == id) return static_cast<int>(i);
+        return -1;
+    };
+    bool kept_old = false;
+    const auto keep = [&kept_old](const char* kind, const std::string& id) {
+        kept_old = true;
+        log::warn(std::string("content reload: ") + kind + " '" + id +
+                  "' missing/unusable; keeping previously loaded selection");
+    };
+
+    int skin_index = fresh.skin_index;
+    if (fresh.skins[static_cast<size_t>(skin_index)].id != old_skin) {
+        const int previous =
+            find_id(packs_.skins, old_skin, [](const Skin& s) -> const std::string& { return s.id; });
+        if (previous >= 0) {
+            fresh.skins.push_back(packs_.skins[static_cast<size_t>(previous)]);
+            skin_index = static_cast<int>(fresh.skins.size()) - 1;
+            keep("skin", old_skin);
+        }
+    }
+    int boot_index = fresh.boot_index;
+    if (fresh.boots[static_cast<size_t>(boot_index)].id != old_boot) {
+        const int previous = find_id(
+            packs_.boots, old_boot, [](const BootPack& b) -> const std::string& { return b.id; });
+        if (previous >= 0) {
+            fresh.boots.push_back(packs_.boots[static_cast<size_t>(previous)]);
+            boot_index = static_cast<int>(fresh.boots.size()) - 1;
+            keep("boot", old_boot);
+        }
+    }
+    int sound_index = fresh.sound_index;
+    if (fresh.sounds[static_cast<size_t>(sound_index)].id != old_sound) {
+        const int previous = find_id(
+            packs_.sounds, old_sound, [](const SoundPack& s) -> const std::string& { return s.id; });
+        if (previous >= 0) {
+            fresh.sounds.push_back(packs_.sounds[static_cast<size_t>(previous)]);
+            sound_index = static_cast<int>(fresh.sounds.size()) - 1;
+            keep("sound", old_sound);
+        }
+    }
+
+    // 字体方案：新扫描里选中的方案不可用（或 current 被 load_chain 回退）→ 保留旧 FontState，
+    // 这样设置里仍显示旧方案、字形图集也不被不可用方案顶掉
+    fonts_.scan(kFontDir);
+    fonts_.load_chain(config_.font);
+    if (fonts_.names().empty() || fonts_.current() != old_font) {
+        fonts_ = previous_fonts;
+        keep("font", old_font);
+    }
+
+    // 卡带架样式包：新扫描找不到当前包时保留旧 pack 记录 + 已加载的 shelf 脚本/painter，
+    // 不调用 apply_shelf（否则会先卸旧脚本再失败回退 window）
+    int shelf_select = fresh.shelf_index >= 0
+                           ? fresh.shelf_index + 2
+                           : (config_.shelf_style == "list" ? 0 : 1);
+    bool keep_shelf = !old_shelf.empty() && old_shelf_style != "list" &&
+                      old_shelf_style != "window" && fresh.shelf_index < 0;
+    if (keep_shelf) {
+        const int previous = find_id(
+            packs_.shelves, old_shelf, [](const ShelfPack& s) -> const std::string& { return s.id; });
+        if (previous >= 0) {
+            fresh.shelves.push_back(packs_.shelves[static_cast<size_t>(previous)]);
+            fresh.shelf_index = static_cast<int>(fresh.shelves.size()) - 1;
+            shelf_select = fresh.shelf_index + 2;
+            keep("shelf", old_shelf);
+        } else {
+            keep_shelf = false;  // 旧索引失效：交给 apply_shelf 的既有回退路径
+        }
+    }
+
+    bool had_failure = kept_old;
+    packs_ = std::move(fresh);
+    packs_.skin_index = skin_index;
+    packs_.boot_index = boot_index;
+    packs_.sound_index = sound_index;
+
+    // 应用顺序：skin 先（几何/配色/CRT），再字体（图集/字号/窗口），最后音频/开机/架子。
+    // apply_* 内部保留原回退与日志；set_* 只同步 Shell 的选项列表。
+    apply_skin(packs_.skin_index, window, renderer);
+    const int font_index = find_id(fonts_.names(), fonts_.current(),
+                                   [](const std::string& s) -> const std::string& { return s; });
+    if (font_index >= 0)
+        apply_font_scheme(font_index, renderer, window);
+    else
+        apply_font_px(renderer, window);
+    apply_boot(packs_.boot_index);
+    apply_sound(packs_.sound_index);
+
+    if (keep_shelf) {
+        std::vector<ShelfOption> options;
+        options.reserve(packs_.shelves.size());
+        for (const ShelfPack& shelf : packs_.shelves) {
+            ShelfOption option;
+            option.zh = shelf.name_zh.empty() ? shelf.name : shelf.name_zh;
+            option.en = shelf.name_en.empty() ? option.zh : shelf.name_en;
+            option.cols = shelf.cols;
+            options.push_back(std::move(option));
+        }
+        shell_.set_shelves(std::move(options), shelf_select);
+        packs_.shelf_index = shelf_select >= 2 ? shelf_select - 2 : -1;
+    } else {
+        const std::string wanted =
+            shelf_select >= 2 ? packs_.shelves[static_cast<size_t>(shelf_select - 2)].id
+                              : std::string();
+        apply_shelf(shelf_select);
+        // apply_shelf 的既有回退：包在扫描里但脚本装载失败 → window；保留其日志，同时让重载提示报失败
+        if (!wanted.empty() && config_.shelf_style != wanted) had_failure = true;
+    }
+
+    // Shell 选项与当前项同步（焦点/设置光标按 id 保留，不重置；settings_cursor_ 不变）
+    std::vector<std::string> names;
+    names.reserve(packs_.skins.size());
+    for (const Skin& s : packs_.skins) names.push_back(s.name);
+    shell_.set_skins(std::move(names), packs_.skin_index);
+    names.clear();
+    for (const BootPack& b : packs_.boots) names.push_back(b.name);
+    shell_.set_boots(std::move(names), packs_.boot_index);
+    names.clear();
+    for (const SoundPack& s : packs_.sounds) names.push_back(s.name);
+    shell_.set_sounds(std::move(names), packs_.sound_index);
+    const int synced_font_index = find_id(
+        fonts_.names(), fonts_.current(),
+        [](const std::string& s) -> const std::string& { return s; });
+    shell_.set_fonts(fonts_.names(), synced_font_index >= 0 ? synced_font_index : 0);
+    shell_.set_font_size(font_px_, fonts_.min_px(), fonts_.max_px());
+
+    const bool english = config_.language == "en";
+    if (had_failure) {
+        toasts_.push(english ? "CONTENT RELOAD: some packs kept/fallback"
+                             : "内容重载：部分包不可用，保留原选择或回退",
+                     2.4f);
+    } else {
+        toasts_.push(english ? "CONTENT RELOADED" : "内容已重载", 1.6f);
+    }
+    log::info("content reload complete: skins=" + std::to_string(packs_.skins.size()) +
+              " sounds=" + std::to_string(packs_.sounds.size()) +
+              " boots=" + std::to_string(packs_.boots.size()) +
+              " fonts=" + std::to_string(fonts_.names().size()) +
+              " shelves=" + std::to_string(packs_.shelves.size()) +
+              (had_failure ? " (kept old selection/fallback)" : ""));
+}
+
 void App::play_event(const std::string& event) {
     // 薄转发：音效包选择、采样缓存与播放编排在 SoundState（见 app/sound_state.hpp）
     sound_state_.play_event(event, packs_, host_.cart_files, audio_);

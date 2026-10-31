@@ -365,6 +365,9 @@ void App::tick_boot(float dt) {
 
 void App::tick_shell(Renderer* renderer, Window* window) {
     const Shell::Intent intent = shell_.update(input_, kLogicStep);
+    // F5 热重载：先重扫/应用内容包，再走本帧的骨架绘制与其余 Intent。
+    // 当前卡带不重载；apply_* 内部保留原回退/日志。
+    if (intent.reload_content) reload_content_packs(renderer, window);
     // 卡带架的搜索框也要能收中文（与卡带声明 ime=true 的框走同一条路）：正在输入 → 开输入法。
     // 只认"正在输入"这一态——只显示不输入的确认态不该挂着输入法
     if (shell_.shelf_search().editing()) host_.ime_wanted = true;

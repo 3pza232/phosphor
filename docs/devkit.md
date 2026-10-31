@@ -136,6 +136,8 @@ phosphor --check-packs --root path/to/content
 phosphor --check-packs --json              # 机器可读
 ```
 
+改完内容包不必重启：设置里按 **F5** 重新扫描并应用当前 skin/boot/sound/font/shelf；当前卡带不重载，缺包/坏包保留旧选择并留日志。
+
 检查项（六类包：skin / palette / boot / sound / shelf / font）：
 
 - **必需脚本存在且能执行**：`skin.lua` / `palette.lua` / `boot/<id>/main.lua` /

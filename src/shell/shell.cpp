@@ -568,6 +568,9 @@ Shell::Intent Shell::update_settings(const Input& input) {
     if (saves_open()) return update_saves(input);  // 存档管理浮层有自己的选中/确认逻辑
     if (about_open()) return intent;  // 关于页只画/等 Esc；输入由 App 的 Esc 路由处理
 
+    // F5：请求 App 重扫内容包（skin/sound/boot/font/shelf）；当前卡带与卡带脚本不重载
+    if (input.pressed("f5")) intent.reload_content = true;
+
     // F3：打开存档管理（列表数据由 App 钩子注入；Esc 由 App 转到 to_shelf() 并 pop 回设置）
     if (input.pressed("f3")) {
         open_saves();

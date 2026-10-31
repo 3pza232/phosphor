@@ -85,6 +85,8 @@ public:
         std::string tape_code;     // 待导入的码（十六进制）
         bool language_changed = false;  // 界面语言已切换（App 读 shell_.language() 落盘）
         bool preview_sound = false;     // 音效行按 Enter：试听**当前**音效包（不切换）
+        /// 设置屏 F5：请求 App 重新扫描内容包并重新应用当前选择（当前卡带不重载）
+        bool reload_content = false;
         /// MODS 浮窗"确认"且启用集**确有变化**：App 写盘并重启。没变时这里恒为 false
         /// （关掉又开回算没变——用集合语义比较，不看按键历史）
         bool mods_applied = false;
