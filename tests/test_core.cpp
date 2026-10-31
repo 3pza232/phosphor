@@ -11,6 +11,7 @@
 #include "core/json_lite.hpp"
 #include "core/layered_screen.hpp"
 #include "core/palette.hpp"
+#include "core/screen_text.hpp"
 #include "core/skin.hpp"
 #include "core/surface.hpp"
 #include "core/text.hpp"
@@ -824,6 +825,22 @@ TEST(screen_scaled_cell_reserves_block) {
         for (int xx = 0; xx < 12; ++xx)
             if (w.at(xx, yy).scale == 0) orphan = true;
     CHECK(!orphan);
+}
+
+TEST(screen_text_forwarding_matches_export) {
+    // 转发断言：Screen::to_text 只是 screen_text::to_text 的一行转发，
+    // 全角续格与缩放块覆盖格的导出规则必须两边逐字节相同
+    Screen wide(4, 2);
+    wide.put(0, 0, U'A');
+    wide.put(1, 0, U'中');  // 全角：头格 + 续格
+    wide.put(0, 1, U'B');
+    CHECK_EQ(wide.to_text(), screen_text::to_text(wide));
+    CHECK_EQ(screen_text::to_text(wide), std::string("A中 \nB   \n"));
+
+    Screen scaled(4, 2);
+    scaled.put(1, 0, U'X', Color::white, Color::black, 2);  // 2x2 块：覆盖格导出空格
+    CHECK_EQ(scaled.to_text(), screen_text::to_text(scaled));
+    CHECK_EQ(screen_text::to_text(scaled), std::string(" X  \n    \n"));
 }
 
 TEST(layered_merge_normalizes_scaled_block) {
