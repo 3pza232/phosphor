@@ -25,7 +25,7 @@
 | 内容包 | skin 11 · palette 11 · boot 16 · sound 8 · shelf 2 · font 1 套方案（另有 icon） |
 | 卡带内容 | 11 张出厂卡带，17,694 行 Lua；最大 `worms/main.lua` 3,271 行 |
 | 文档 | 发行文档 7 篇 + 引擎文档 8 篇（含本文件与 roadmap.md），4,983 行；双层（发行 / 引擎）分界清楚 |
-| 测试 | `tests/` 128 个用例 / 1,389 条断言；`tools/` 24 个 Python 脚本共 3,624 行，无头门禁 14 项全绿（含 packs 内容包校验） |
+| 测试 | `tests/` 130 个用例 / 1,421 条断言；`tools/` 24 个 Python 脚本共 3,624 行，无头门禁 14 项全绿（含 packs 内容包校验） |
 | API 世代 | `kVersion = 0.9.0`，`kPhosApiVersion = 7`，`--check-api` 134/134 一致 |
 
 一句话形态：**一台把"字符网格 + 内容包 + Lua 沙箱 + agent 控制通道"做得很扎实的字符主机；
