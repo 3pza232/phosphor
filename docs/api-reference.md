@@ -509,7 +509,8 @@ pending = phos.ui.render{
 
 height 指定视口高度，scroll 指定内容偏移（行，从 0 起）。偏移由卡带显式控制
 （比如只显示日志尾部：scroll = max(0, #lines - height)）；超出视口的子项由
-引擎**裁剪绘制**，不会漏到视口外。焦点自动跟随滚动尚未实现（需要时先用显式偏移）。
+引擎**裁剪绘制**，不会漏到视口外。`scroll` 只在首次出现时作为初值；之后视口会**自动跟随焦点**
+（焦点移出可视区时滚动刚好够用的行数），与 checkbox 的 `checked` 初值同一套语义。
 
 ### 瞬时提示：phos.ui.toast(text, seconds?)
 

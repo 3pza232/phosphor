@@ -83,7 +83,7 @@ cmake --preset sanity           # build-sanity/：自检构建，慢，只用于
 | `portable_smoke.py` | 绿色免安装契约：在临时 CWD 启动构建产物，验证内容根按 exe 目录解析、`--check-api` 回退、`--root` 覆盖 | `python ../tools/portable_smoke.py` |
 | `check_includes.py` | 依赖铁律门禁：核查 `src/` 的 include 方向（对照 `docs/engine/architecture.md` 第一节）；纯源码检查，不需要构建目录，任意目录可跑 | `python tools/check_includes.py` |
 | `run_checks.py` | **一键跑全部门禁并汇总**：默认无头门禁 **13 项**（includes/api/unit/control/draw/layer/ui/scene/toolkit/lint/portable/cart/net），`--gui` 再加开窗门禁（gl/window）。测试逻辑仍在各自脚本里，它只管调度与汇总 | `python ../tools/run_checks.py [--gui]` |
-| `unit_smoke.py` | 纯逻辑单元测试：跑 `phosphor_tests`（C++，源码在 `tests/`，当前 **97 个用例 / 956 条断言**），覆盖颜色/文本/配置/色板/主题/存档/UI 布局与焦点等不依赖 GL·Lua 的核心——无窗口无显卡即可跑（需构建时 `-DPHOSPHOR_BUILD_TESTS=ON`，或 `cmake --preset dev`）。单跑时未启用则**跳过**；但 `run_checks.py` 的 `unit` 门禁会检查产物，**缺失即判失败**（跳过不算通过，免得掩盖红灯） | `python ../tools/unit_smoke.py` |
+| `unit_smoke.py` | 纯逻辑单元测试：跑 `phosphor_tests`（C++，源码在 `tests/`，当前 **98 个用例 / 961 条断言**），覆盖颜色/文本/配置/色板/主题/存档/UI 布局与焦点等不依赖 GL·Lua 的核心——无窗口无显卡即可跑（需构建时 `-DPHOSPHOR_BUILD_TESTS=ON`，或 `cmake --preset dev`）。单跑时未启用则**跳过**；但 `run_checks.py` 的 `unit` 门禁会检查产物，**缺失即判失败**（跳过不算通过，免得掩盖红灯） | `python ../tools/unit_smoke.py` |
 | `control_test.py` | 控制通道契约：握手 / 单步精确 / 读屏 / 注入 / 热重载 / 退出 | `python ../tools/control_test.py` |
 | `window_smoke.py` | 窗口路径冒烟：菜单→开局→按键→单步 →**实时浸泡**→干净退出（确定性部分全走单步，只有最后几秒实时；需要图形环境） | `python ../tools/window_smoke.py [--seconds 3] [--cart carts/x]` |
 | `cart_smoke.py` | 卡带冒烟：出厂卡带各跑一段，断言跑得完 / 不出错 / 有画面 / **同种子跑两遍逐字节一致**；不比对像素——画面本来就该随内容变 | `python ../tools/cart_smoke.py [--frames 3000] [--cart worms]` |

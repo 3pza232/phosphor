@@ -67,6 +67,36 @@ TEST(ui_scroll_viewport_clips_and_offsets) {
     CHECK(text.find("1") == std::string::npos);
 }
 
+TEST(ui_scroll_follows_focused_child) {
+    ui::Theme theme;
+    ui::State state;
+    Input input;
+    ui::Rect area{0, 0, 12, 10};
+    ui::Frame frame("t", state, theme, area, &input);
+    ui::Node& scroll = frame.root().add_scroll("sc", 3);
+    scroll.props.gap = 0;
+    for (int i = 0; i < 5; ++i) scroll.add(ui::Kind::button, "b" + std::to_string(i)).props.text =
+        std::to_string(i);
+    frame.run();
+    CHECK_EQ(frame.focused_id(), std::string("b0"));
+
+    for (int i = 0; i < 4; ++i) {
+        input.set_key("down", true);
+        frame.run();
+        input.next_frame();
+        input.set_key("down", false);
+        input.next_frame();
+    }
+    CHECK_EQ(frame.focused_id(), std::string("b4"));
+    CHECK_EQ(state.screen("t").widgets["sc"].scroll, 2);  // 视口 3 行：滚到 2..4
+
+    Screen screen(12, 10);
+    frame.paint(screen);
+    const std::string shown = screen.to_text();
+    CHECK(shown.find("4") != std::string::npos);
+    CHECK(shown.find("0") == std::string::npos);
+}
+
 TEST(ui_toast_push_expire_and_paint) {
     ui::Theme theme;
     ui::Toasts toasts;

@@ -164,11 +164,70 @@ bool any_pressed(const Input& input, const std::vector<std::string>& names) {
 
 } // namespace
 
+namespace {
+
+/// scroll：把状态里的偏移写回节点（首次用声明值初始化）；布局只认节点字段
+void sync_scroll_nodes(Node& node, State& state, const std::string& screen_id) {
+    if (node.kind == Kind::scroll) {
+        WidgetState& widget_state = state.screen(screen_id).widgets[node.id];
+        if (!widget_state.scroll_ready) {
+            widget_state.scroll = std::max(0, node.props.scroll);
+            widget_state.scroll_ready = true;
+        }
+        node.props.scroll = widget_state.scroll;
+    }
+    for (Node& child : node.children) sync_scroll_nodes(child, state, screen_id);
+}
+
+Node* find_descendant(Node& node, const std::string& id) {
+    if (node.id == id) return &node;
+    for (Node& child : node.children)
+        if (Node* found = find_descendant(child, id)) return found;
+    return nullptr;
+}
+
+/// 焦点进入 scroll 视口外时把它滚进来；返回是否发生变化（需要重新布局）
+bool follow_focus_scroll(Node& node, const std::string& focus, State& state,
+                         const std::string& screen_id) {
+    bool changed = false;
+    if (node.kind == Kind::scroll) {
+        Node* focused = find_descendant(node, focus);
+        if (focused && node.inner.h > 0) {
+            WidgetState& widget_state = state.screen(screen_id).widgets[node.id];
+            const int top = node.inner.y;
+            const int bottom = node.inner.y + node.inner.h;
+            int desired = widget_state.scroll;
+            if (focused->rect.y < top) {
+                desired -= top - focused->rect.y;
+            } else if (focused->rect.y + focused->rect.h > bottom) {
+                desired += focused->rect.y + focused->rect.h - bottom;
+            }
+            desired = std::max(0, desired);
+            if (!node.children.empty()) {
+                const Node& last = node.children.back();
+                const int content_bottom =
+                    last.rect.y + last.rect.h - (node.inner.y - widget_state.scroll);
+                desired = std::min(desired, std::max(0, content_bottom - node.inner.h));
+            }
+            if (desired != widget_state.scroll) {
+                widget_state.scroll = desired;
+                node.props.scroll = desired;
+                changed = true;
+            }
+        }
+    }
+    for (Node& child : node.children)
+        if (follow_focus_scroll(child, focus, state, screen_id)) changed = true;
+    return changed;
+}
+
+} // namespace
+
 std::vector<Event> Frame::run() {
+    ScreenState& screen = state_.screen(screen_id_);
+    sync_scroll_nodes(root_, state_, screen_id_);
     measure(root_, area_.w, theme_);
     arrange(root_, area_, theme_);
-
-    ScreenState& screen = state_.screen(screen_id_);
     std::vector<Node*> focusables;
     collect_focusables(root_, focusables);
 
@@ -236,6 +295,11 @@ std::vector<Event> Frame::run() {
     }
 
     handle_focus_nav(focusables, events, up, down, left, right, confirm, next_focus, prev_focus);
+    // 焦点若被滚出视口，把滚动偏移追上去并重新布局一次（只有真正变化才重排）
+    if (follow_focus_scroll(root_, focused_id_, state_, screen_id_)) {
+        measure(root_, area_.w, theme_);
+        arrange(root_, area_, theme_);
+    }
     return events;
 }
 
