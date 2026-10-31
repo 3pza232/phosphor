@@ -343,6 +343,46 @@ function phos.ui.field_text(id, screen) end
 ---清空界面状态（换屏/换场景时调用，避免旧焦点与滚动串到新界面）
 function phos.ui.reset() end
 
+---场景栈：卡带自己的"界面/模态层"。引擎按固定顺序推进（栈顶先 update）、绘制（底→顶），
+---栈上有 pause_world 时跳过卡带 update（世界冻结），有 audio_pause 时暂停音频（出栈恢复）。
+---输入仍由卡带解释：draw 里通常调用 phos.ui.render，update 里消费事件/按键。
+---@class phos.scene
+phos.scene = {}
+
+---压入一层场景。spec 字段：id（缺省 "scene"）/ modal / pause_world / audio_pause，
+---以及 update(dt) / draw() / on_enter() / on_exit(result) 四个可选函数。
+---@param spec table
+---@return boolean ok, string|nil err 栈满或 on_enter 报错时返回 false
+function phos.scene.push(spec) end
+
+---弹出栈顶并执行 on_exit(result)；result 可省略。
+---@param result any|nil
+---@return boolean ok, string|nil err
+function phos.scene.pop(result) end
+
+---清空整栈（不执行退出回调；换场景/重开一局时用）
+function phos.scene.clear() end
+
+---栈顶场景 id；空栈返回 nil
+---@return string|nil
+function phos.scene.top() end
+
+---栈深
+---@return integer
+function phos.scene.depth() end
+
+---栈上是否有场景要求冻结世界
+---@return boolean
+function phos.scene.pause_world() end
+
+---栈上是否有场景要求暂停音频
+---@return boolean
+function phos.scene.audio_pause() end
+
+---栈顶场景是否声明 modal（下层不应再响应输入）
+---@return boolean
+function phos.scene.modal() end
+
 ---音频：合成音 / 音符 / 打击乐 / 音序器音乐 / 采样
 ---@class phos.audio
 phos.audio = {}

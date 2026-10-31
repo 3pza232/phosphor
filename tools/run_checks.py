@@ -84,6 +84,7 @@ HEADLESS_GATES = [
     ("draw", "叠加/半格契约（CPU 像素；需要 Pillow）", partial(run_script, "draw_smoke.py")),
     ("layer", "图层合成契约（含不建层的零开销）", partial(run_script, "layer_smoke.py")),
     ("ui", "声明式界面契约（组件/焦点/事件/主题；卡带样板）", partial(run_script, "ui_smoke.py")),
+    ("scene", "场景栈契约（压栈/冻结世界/音频暂停/出栈恢复）", partial(run_script, "scene_smoke.py")),
     ("cart", "出厂卡带：跑得完 / 不报错 / 同种子可复现", partial(run_script, "cart_smoke.py")),
     ("net", "局域网联机契约（两进程 + 发现）", partial(run_script, "net_smoke.py")),
 ]

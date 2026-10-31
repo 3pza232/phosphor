@@ -218,6 +218,8 @@ private:
     bool pause_when_open_ = false;
     bool escape_flag_ = false;
     bool capture_escape_ = false;  // 卡带是否接管 Esc（phos.sys.capture_escape）
+    /// 场景栈当前是否把音频暂停着（只在"要变"时调用 set_paused，避免与卡带自己的暂停互相盖）
+    bool scene_audio_paused_ = false;
     bool settings_flag_ = false;
     bool console_flag_ = false;
     bool input_blocked_ = false;

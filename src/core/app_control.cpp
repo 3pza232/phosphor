@@ -32,6 +32,24 @@ std::string layers_json(const LayeredScreen& layers) {
     return out + "]";
 }
 
+/// 卡带场景栈清单 → JSON 数组（底 → 顶）：agent 据此知道压着几层界面、
+/// 世界是否被冻结、音频是否被场景暂停
+std::string scenes_json(const HostContext& host) {
+    std::string out = "[";
+    if (host.scenes != nullptr) {
+        bool first = true;
+        for (const SceneEntry& scene : host.scenes->entries()) {
+            if (!first) out += ",";
+            out += "{\"id\":" + json::quote(scene.id) +
+                   ",\"modal\":" + (scene.modal ? "true" : "false") +
+                   ",\"pause_world\":" + (scene.pause_world ? "true" : "false") +
+                   ",\"audio_pause\":" + (scene.audio_pause ? "true" : "false") + "}";
+            first = false;
+        }
+    }
+    return out + "]";
+}
+
 /// 屏幕文本 → JSON 字符串数组
 std::string screen_lines_json(const Screen& screen) {
     std::istringstream stream(screen.to_text());
@@ -94,6 +112,7 @@ std::string App::control_state_json() const {
         << ",\"render_fps\":" << host_.fps
         << ",\"merge_ms\":" << timing_.merge_ms
         << ",\"layers\":" << layers_json(host_.layers)
+        << ",\"scenes\":" << scenes_json(host_)
         // 卡带声明式界面的控件树（id/role/label/state）：agent 用它定位控件，
         // 不必解析文本画面；没有界面时为 null
         << ",\"ui\":" << (playing_ && !host_.cart_ui_json.empty() ? host_.cart_ui_json : "null");

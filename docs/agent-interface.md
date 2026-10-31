@@ -170,6 +170,7 @@ phosphor --pack carts/snake --json
 | `music` | `{ on, section, index, count }`：是否在播 / 当前乐段名 / 曲序位置 / 曲序总数 |
 | `cart` | 卡带元信息与开销：`id` / `name` / `version` / `author` / `path` / `sidebar_w`；`update_ms` / `draw_ms`（最近一帧）、`update_peak_ms` / `draw_peak_ms`（约 1 秒窗口峰值，查偶发卡顿看这个）、`lua_mem_kb`（Lua 堆）。未插卡时为 `null` |
 | `merge_ms` | 图层合成耗时（**卡带没建层时恒为 0**） |
+| `scenes` | 卡带场景栈（底→顶）：`[{id, modal, pause_world, audio_pause}]`；空数组 = 没有压栈的场景（见 api-reference 的 `phos.scene`） |
 | `layers` | 该卡带的图层清单（名称 / z / 可见性，z 升序；空数组 = 没建层） |
 | `ui` | 卡带声明式界面的控件树快照（见下节「界面」）；**没有界面时为 `null`** |
 | `debug_params` | 卡带注册的可调参数（`phos.debug.number/integer/toggle`）当前值：`[{name, group, kind, value}, ...]`（`kind` = `number`/`integer`/`boolean`；空数组 = 没注册）。`name` **随界面语言变**（写入时必须用它）；`group` 是分组路径串（如 `"武器/火箭筒"`，顶层为空串）——重名时用来消歧。人用调试台拖，agent 用这个读、`debug.set` 写 |

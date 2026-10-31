@@ -259,6 +259,8 @@ bool Cartridge::shelf_draw(const ShelfDrawContext& c) {
 }
 
 bool Cartridge::assemble(const std::string& entry, HostContext& host) {
+    scenes_.clear();          // 重载/换入口时旧场景作废（引用属于即将复用的同一个 state）
+    host.scenes = &scenes_;   // phos.scene 的唯一落点
     host.cart_files = &files_;  // 包内资源（音频等）对本卡带开放
     host.cart_info = &info_;    // 身份也要在脚本之前就位：init() 里往往就要用（phos.cart）
 
@@ -344,6 +346,22 @@ sol::object Cartridge::load_module(const std::string& name) {
 
 int Cartridge::lua_memory_kb() const {
     return lua_gc(lua_.lua_state(), LUA_GCCOUNT, 0);
+}
+
+bool Cartridge::scene_update(float dt) {
+    if (scenes_.depth() == 0) return true;
+    std::string err;
+    if (scenes_.update(dt, err)) return true;
+    error_ = "cart '" + info_.id + "' scene error in update: " + err;
+    return false;
+}
+
+bool Cartridge::scene_draw() {
+    if (scenes_.depth() == 0) return true;
+    std::string err;
+    if (scenes_.draw(err)) return true;
+    error_ = "cart '" + info_.id + "' scene error in draw: " + err;
+    return false;
 }
 
 bool Cartridge::call_guard(const char* phase, sol::protected_function& fn) {

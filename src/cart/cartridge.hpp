@@ -4,6 +4,7 @@
 #include "cart/cart_files.hpp"
 #include "cart/cart_info.hpp"
 #include "cart/save_store.hpp"
+#include "cart/scene.hpp"
 #include "core/defaults.hpp"
 
 #include <sol/sol.hpp>
@@ -56,6 +57,16 @@ public:
     /// 每逻辑帧调用。Lua 错误返回 false（此后卡带不可再用）。
     bool update(float dt);
     bool draw();
+
+    /// 场景栈：卡带侧的"界面/模态层"（phos.scene）。由引擎按固定顺序推进/绘制
+    SceneStack& scenes() { return scenes_; }
+    const SceneStack& scenes() const { return scenes_; }
+    /// 栈顶是否有声明 pause_world 的场景（真 = App 跳过本卡带的 update）
+    bool scene_pause_world() const { return scenes_.pause_world(); }
+    /// 推进栈顶场景（脚本错误 → 设置 error_ 并返回 false）
+    bool scene_update(float dt);
+    /// 从底到顶绘制场景（在卡带 draw 之后调用，压在世界之上）
+    bool scene_draw();
 
     const CartInfo& info() const { return info_; }
     const std::string& error() const { return error_; }
@@ -123,6 +134,8 @@ private:
     sol::object load_module(const std::string& name);
 
     sol::state lua_;
+    /// 场景栈声明在 lua_ 之后：析构时先于 Lua 状态销毁，回调引用不会悬空
+    SceneStack scenes_;
     std::map<std::string, sol::object> module_cache_;  // 声明在 lua_ 之后：先于 state 析构
     sol::protected_function init_fn_;
     sol::protected_function update_fn_;

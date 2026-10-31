@@ -7,6 +7,7 @@
 #include "api/layer_api.hpp"
 #include "api/lua_value.hpp"
 #include "api/net_api.hpp"
+#include "api/scene_api.hpp"
 #include "api/ui_api.hpp"
 #include "cart/cartridge.hpp"
 #include "core/defaults.hpp"
@@ -457,6 +458,7 @@ void register_host_api(sol::state& lua, HostContext& host) {
     };
 
     // 组件层（边框/浮窗/菜单/进度条/正文/精灵/导航/绘制区域）
+    register_scene_api(lua, host);
     register_ui_api(lua, host);
     // 音频层（合成音/音符/打击乐/音序器音乐/采样）
     register_audio_api(lua, host);

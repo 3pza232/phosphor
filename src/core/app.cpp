@@ -183,6 +183,12 @@ void App::tick_playing(float dt) {
     // 调试台"打开即暂停"：**整机**冻结——卡带不推进、主机时间不走、声音也停（画面仍重绘、参数照调）
     const bool frozen = console_.open && pause_when_open_;
     audio_.set_host_paused(frozen);  // 主机级暂停（与卡带自己的 paused 各记一个，不互相盖）
+    // 场景栈的 audio_pause：只在"进入/离开"时切一次，避免每帧覆盖卡带自己设的暂停
+    const bool scene_pauses_audio = host_.scenes != nullptr && host_.scenes->wants_audio_pause();
+    if (scene_pauses_audio != scene_audio_paused_) {
+        scene_audio_paused_ = scene_pauses_audio;
+        audio_.set_paused(scene_pauses_audio);
+    }
     if (!frozen) host_.time += dt;
     shell_.draw_chassis(display_.screen);
     shell_.set_lamps_solid(true);
@@ -198,12 +204,19 @@ void App::tick_playing(float dt) {
 
     using clock = std::chrono::steady_clock;
     const auto t0 = clock::now();
-    bool ok = frozen || cart_->update(dt);  // 冻结时不推进卡带（短路 ||）
+    // 场景栈：栈上有 pause_world 时跳过卡带 update（世界冻结），但场景本身照常推进
+    const bool scene_pauses_world = host_.scenes != nullptr && host_.scenes->pause_world();
+    bool ok = frozen || scene_pauses_world || cart_->update(dt);  // 冻结时不推进卡带（短路 ||）
+    if (ok && !frozen && host_.scenes != nullptr && host_.scenes->depth() > 0)
+        ok = cart_->scene_update(dt);
     const auto t1 = clock::now();
     // 插卡瞬间的画面抖动：隔帧跳过一次绘制，形成电压不稳的闪烁
     const bool flicker = insert_flash_ > 0.0f && (frame_count_ % 3 == 0);
     const bool drawn = ok && !flicker;
     if (drawn) ok = cart_->draw();
+    // 场景画在卡带之后：它们是界面/模态层，必须压在世界之上
+    if (ok && drawn && !frozen && host_.scenes != nullptr && host_.scenes->depth() > 0)
+        ok = cart_->scene_draw();
     const auto t2 = clock::now();
 
     // 插卡闪烁画在**合成之前**：它是外壳的效果，要留在"底"上被渲染出来，

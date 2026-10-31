@@ -17,6 +17,7 @@ namespace sol { class state; }
 namespace phos {
 
 class Audio;
+class SceneStack;
 class CartFiles;
 class Cartridge;
 class Net;
@@ -74,6 +75,10 @@ struct HostContext {
     /// 侧栏面板的**默认底色**（取自当前主题的 skin.panel）：卡带 `panel.clear()` 不带色时
     /// 用它，于是右栏底色随主题、而不是透出游戏画面。由 App 每帧从主题写入
     Color panel_bg{0, 0, 0};
+
+    /// 卡带场景栈（`phos.scene`）：由 Cartridge 持有并在此挂指针；无卡带/主机动画时为 nullptr。
+    /// App 按它决定"是否跳过卡带 update、是否暂停音频、是否在卡带 draw 之后再画场景"
+    SceneStack* scenes = nullptr;
 
     // 可选图层缓冲（`phos.layer`）。卡带不建层时它是空的，主循环里连一次合并都不发生；
     // 每次插卡由 App 重置，于是层随卡带生命周期

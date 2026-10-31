@@ -28,7 +28,8 @@ inline constexpr const char* kProductName = "PHOSPHOR";
 ///       面板与浮层默认底色取自主题（卡带不必改代码，但配色会随主题变）
 ///   6 = 同屏多字号：`put`/`print` 增加可选 `scale`（>=2 时那一个字占 scale 列 x scale 行）
 ///   7 = 声明式界面（`phos.ui.render` 与 focus / checked / set_checked / field_text / reset）：
-///       布局、焦点、滚动、勾选、文本域由引擎负责，卡带只声明元素树
+///       布局、焦点、滚动、勾选、文本域由引擎负责，卡带只声明元素树；
+///       以及场景栈（`phos.scene`）：压栈的界面层可冻结世界、暂停音频、接管更新与绘制
 inline constexpr int kPhosApiVersion = 7;
 
 } // namespace phos
