@@ -290,19 +290,36 @@ int App::sample_handle_for(const std::string& event, const std::string& path) {
 }
 
 
+namespace {
+
+/// 主机事件音的声部优先级：错误反馈最高；确认/插拔/开机次之；按键音是氛围级。
+/// 池被卡带音效压满时，至少不会把"操作失败"这种关键反馈丢掉
+int host_event_priority(const std::string& event) {
+    if (event == "error") return kPriorityCritical;
+    if (event == "confirm" || event == "insert" || event == "eject" || event == "boot")
+        return kPrioritySfx;
+    return kPriorityMin;
+}
+
+} // namespace
+
 void App::play_event(const std::string& event) {
     if (packs_.sounds.empty()) return;
     const SoundPack& pack = packs_.sounds[static_cast<size_t>(packs_.sound_index)];
+    const int priority = host_event_priority(event);
 
     if (auto it = pack.files.find(event); it != pack.files.end()) {
         const int handle = sample_handle_for(event, it->second);
         if (handle > 0) {
-            audio_.play_sample(handle, 0.9f, false);
+            audio_.play_sample(handle, 0.9f, false, priority);
             return;
         }
     }
-    if (auto tone = pack.tones.find(event); tone != pack.tones.end())
-        audio_.play_tone(tone->second);
+    if (auto tone = pack.tones.find(event); tone != pack.tones.end()) {
+        ToneSpec spec = tone->second;
+        if (spec.priority < priority) spec.priority = priority;
+        audio_.play_tone(spec);
+    }
 }
 
 
