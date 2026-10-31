@@ -3,6 +3,7 @@
 #include "core/input.hpp"
 
 #include <memory>
+#include <set>
 #include <string>
 
 struct GLFWwindow;
@@ -18,6 +19,11 @@ struct WindowHandlers {
     bool* console_flag;    // ` 键按下置位（调试台开关）
     bool* input_block;     // true 时物理输入不注入游戏（调试台打开期间）
     bool* capture_escape;  // true 时卡带接管 Esc：Esc 作为普通键注入，不再触发主机暂停
+    /// --- 手柄/键盘共存辅助（Window 内部回填，调用方留空即可） ---
+    /// 键盘当前按下的虚拟键：手柄松开同名键时据此判断是否该真正释放
+    std::set<std::string>* keyboard_down = nullptr;
+    /// 手柄当前按下的虚拟键（key_callback 只读）：键盘松开时若手柄仍按着则跳过释放
+    std::set<std::string>* gamepad_down = nullptr;
 };
 
 /// GLFW 窗口封装（RAII）。OS 窗口与物理输入的唯一聚集地。
@@ -46,7 +52,8 @@ public:
     void set_ime_enabled(bool enabled);
     /// 改写标题栏文字（agent 接管时用于提示"谁在操作"）
     void set_title(const std::string& title) const;
-    void poll_events() const;
+    /// 轮询窗口事件并同步手柄状态（键盘/手柄任一来源按下即按下）
+    void poll_events();
     void swap_buffers() const;
     void make_context_current() const;
 
@@ -60,6 +67,12 @@ private:
     /// 系统给的输入法上下文（Windows 的 HIMC，用 void* 存以保持头文件平台无关）；
     /// 关输入法前记住它，开回来时原样还给它
     void* ime_context_ = nullptr;
+
+    /// 本帧由键盘/手柄分别按下的虚拟键（共存判断用；避免松开一边把另一边还按着的键清掉）
+    std::set<std::string> keyboard_keys_;
+    std::set<std::string> gamepad_keys_;
+    /// 轮询所有已连接的标准布局手柄（热插拔；失焦/断开时释放手柄键）
+    void poll_gamepad();
 };
 
 } // namespace phos

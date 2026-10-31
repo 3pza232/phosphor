@@ -98,14 +98,53 @@ std::string key_name_from_glfw(int glfw_key) {
     }
 }
 
+/// 标准布局手柄 → 现有虚拟键名（与键盘共用同一套名字，不新增输入层概念）。
+/// 左摇杆与十字键都映射到方向键：任一来源按下即按下；摇杆带死区，十字键是数字量。
+std::set<std::string> gamepad_key_names(const GLFWgamepadstate& state) {
+    constexpr float kStickDeadzone = 0.35f;
+    std::set<std::string> keys;
+    const auto button = [&keys, &state](int index, const char* name) {
+        if (state.buttons[index] == GLFW_PRESS) keys.insert(name);
+    };
+    const auto axis = [&keys, &state](int index, float sign, const char* name) {
+        if (state.axes[index] * sign > kStickDeadzone) keys.insert(name);
+    };
+    // 左摇杆（GLFW：左摇杆 X 右正 / Y 下正）与十字键
+    axis(GLFW_GAMEPAD_AXIS_LEFT_X, -1.0f, "left");
+    axis(GLFW_GAMEPAD_AXIS_LEFT_X, 1.0f, "right");
+    axis(GLFW_GAMEPAD_AXIS_LEFT_Y, -1.0f, "up");
+    axis(GLFW_GAMEPAD_AXIS_LEFT_Y, 1.0f, "down");
+    button(GLFW_GAMEPAD_BUTTON_DPAD_LEFT, "left");
+    button(GLFW_GAMEPAD_BUTTON_DPAD_RIGHT, "right");
+    button(GLFW_GAMEPAD_BUTTON_DPAD_UP, "up");
+    button(GLFW_GAMEPAD_BUTTON_DPAD_DOWN, "down");
+    // 面键 / START / BACK / 肩键（肩键落到已有的 lbrace/rbrace 名字上，不新增键名）
+    button(GLFW_GAMEPAD_BUTTON_A, "a");
+    button(GLFW_GAMEPAD_BUTTON_B, "b");
+    button(GLFW_GAMEPAD_BUTTON_X, "x");
+    button(GLFW_GAMEPAD_BUTTON_Y, "y");
+    button(GLFW_GAMEPAD_BUTTON_START, "start");
+    button(GLFW_GAMEPAD_BUTTON_BACK, "select");
+    button(GLFW_GAMEPAD_BUTTON_LEFT_BUMPER, "lbrace");
+    button(GLFW_GAMEPAD_BUTTON_RIGHT_BUMPER, "rbrace");
+    return keys;
+}
+
 void key_callback(GLFWwindow* window, int key, int, int action, int) {
     WindowHandlers* handlers = handlers_for(window);
     if (!handlers) return;
+    // 键盘按下集只服务"手柄/键盘共存"判断：手柄松开同一键时不误清键盘仍按着的
+    const auto note_keyboard = [handlers](const std::string& name, bool down) {
+        if (!handlers->keyboard_down) return;
+        if (down) handlers->keyboard_down->insert(name);
+        else handlers->keyboard_down->erase(name);
+    };
     if (key == GLFW_KEY_ESCAPE) {
         // 卡带声明"接管 Esc"（phos.sys.capture_escape）时，Esc 作为普通键交给卡带，
         // 主机不再拿它做暂停/返回；否则维持主机保留键语义
         if ((action == GLFW_PRESS || action == GLFW_RELEASE) && handlers->capture_escape &&
             *handlers->capture_escape) {
+            note_keyboard("escape", action == GLFW_PRESS);
             handlers->input->set_key("escape", action == GLFW_PRESS);
             return;
         }
@@ -138,7 +177,12 @@ void key_callback(GLFWwindow* window, int key, int, int action, int) {
 
     if (action == GLFW_PRESS || action == GLFW_RELEASE) {
         const std::string name = key_name_from_glfw(key);
-        if (!name.empty()) handlers->input->set_key(name, action == GLFW_PRESS);
+        if (name.empty()) return;
+        const bool down = action == GLFW_PRESS;
+        note_keyboard(name, down);
+        // 手柄仍按着同名键：键盘松开不能把它清掉（任一来源按下即按下）
+        if (!down && handlers->gamepad_down && handlers->gamepad_down->count(name)) return;
+        handlers->input->set_key(name, down);
     }
 }
 
@@ -146,8 +190,12 @@ void focus_callback(GLFWwindow* window, int focused) {
     // 失焦时物理按键的 release 事件可能根本收不到（Alt+Tab / 点别的窗口）：
     // 不释放就会"卡键"——回到游戏还在往一个方向走。这里直接把所有键松开。
     if (!focused) {
-        if (WindowHandlers* handlers = handlers_for(window); handlers && handlers->input)
-            handlers->input->release_all();
+        WindowHandlers* handlers = handlers_for(window);
+        if (!handlers) return;
+        // 失焦时物理键盘的 release 可能收不到：清掉键盘按下集并释放全部虚拟键。
+        // 手柄键由下一次 poll_gamepad 在"未聚焦"分支里释放（那里的释放不被重复按下覆盖）
+        if (handlers->keyboard_down) handlers->keyboard_down->clear();
+        if (handlers->input) handlers->input->release_all();
     }
 }
 
@@ -206,6 +254,9 @@ Window Window::create(int width, int height, const std::string& title,
 
     // 回调上下文挂在窗口自己的 user pointer 上：多个窗口各一份，不再有文件级全局
     win.handlers_ = std::make_unique<WindowHandlers>(handlers);
+    // 回填共存判断用的键集（调用方传进来的这两个指针为 null，不参与）
+    win.handlers_->keyboard_down = &win.keyboard_keys_;
+    win.handlers_->gamepad_down = &win.gamepad_keys_;
     glfwSetWindowUserPointer(win.window_, win.handlers_.get());
 
     apply_window_icon(win.window_, "theme/icon/phos_icon.jpg");
@@ -294,8 +345,40 @@ void Window::set_title(const std::string& title) const {
     if (window_) glfwSetWindowTitle(window_, title.c_str());
 }
 
-void Window::poll_events() const {
+void Window::poll_events() {
     glfwPollEvents();
+    poll_gamepad();
+}
+
+void Window::poll_gamepad() {
+    if (!window_) return;
+    std::set<std::string> pressed;
+
+    // 失焦或调试台吞输入期间视为没有手柄输入：按下集合为空，下面的释放逻辑会松掉
+    // 手柄独占的键（键盘在 key_callback 里同一时刻也被 input_block 挡住）
+    const bool blocked = handlers_->input_block && *handlers_->input_block;
+    if (!blocked && glfwGetWindowAttrib(window_, GLFW_FOCUSED) == GLFW_TRUE) {
+        GLFWgamepadstate state{};
+        for (int jid = GLFW_JOYSTICK_1; jid <= GLFW_JOYSTICK_LAST; ++jid) {
+            if (glfwJoystickIsGamepad(jid) != GLFW_TRUE) continue;
+            if (glfwGetGamepadState(jid, &state) != GLFW_TRUE) continue;
+            const std::set<std::string> names = gamepad_key_names(state);
+            pressed.insert(names.begin(), names.end());
+        }
+    }
+
+    // 松开：手柄这帧没按、且键盘也没按着 → 真正释放
+    for (const std::string& key : gamepad_keys_) {
+        if (pressed.count(key)) continue;
+        if (handlers_->keyboard_down && handlers_->keyboard_down->count(key)) continue;
+        if (handlers_->input) handlers_->input->set_key(key, false);
+    }
+    // 按下：新手柄键（键盘已按着同名键时重复 set_key(true) 不会重记按下沿）
+    for (const std::string& key : pressed) {
+        if (gamepad_keys_.count(key)) continue;
+        if (handlers_->input) handlers_->input->set_key(key, true);
+    }
+    gamepad_keys_ = std::move(pressed);
 }
 
 void Window::swap_buffers() const {
