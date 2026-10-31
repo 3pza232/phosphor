@@ -136,7 +136,7 @@ bool App::write_screenshot(const std::string& path, int& width, int& height,
     const Screen& base = layered ? display_.base : display_.screen;
     // 有图层的卡带，分隔线只在 chrome 里（base 快照在写分隔线之前），截图要补上才与窗口一致
     const Screen* overlay = (layered && host_.panel_w > 0) ? &display_.chrome : nullptr;
-    const auto image = render_screen_image(base, font_files_, options, error,
+    const auto image = render_screen_image(base, fonts_.files(), options, error,
                                            layered ? &host_.layers : nullptr,
                                            host_.content_x, host_.content_y, overlay);
     if (!image) return false;

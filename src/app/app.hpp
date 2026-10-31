@@ -1,5 +1,7 @@
 #pragma once
 
+#include "app/font_state.hpp"
+
 #include "agent/cli.hpp"
 #include "agent/control_channel.hpp"
 #include "agent/debug_console.hpp"
@@ -86,18 +88,10 @@ private:
     /// 卡带脚本出错的统一出口：写日志（错误画面另由 shell_.show_error 负责）
     void log_cart_error(const std::string& message);
 
-    /// 装载字体链：wanted 为方案名，方案不可用时退回 default 并告警
-    void load_font_chain(const std::string& wanted);
-
-    /// 当前生效字号（= 单元格像素边长）：用户显式选了就用它，否则方案声明的字号，再否则出厂默认
-    int effective_font_px() const;
-    /// 当前字体方案声明的**可调字号范围**（设置界面巡回 + 取值钳制的依据；Mod 可抬高 max）
-    int font_min_px() const { return font_min_px_; }
-    int font_max_px() const { return font_max_px_; }
-    /// 按 effective_font_px() 把单元格尺寸推给渲染器、调整窗口大小（截图路径每帧现读
+    /// 按 fonts_.effective_px() 把单元格尺寸推给渲染器、调整窗口大小（截图路径每帧现读
     /// font_px_，无需处理）。字号 = 格边长，行距随之缩放
     void apply_font_px(class Renderer* renderer, class Window* window);
-    /// 设置字号：px<=0 表示"跟随字体方案"（0）；正数钳进 [kMinFontPx, kMaxFontPx] 后生效并落盘
+    /// 设置字号：px<=0 表示"跟随字体方案"（0）；正数钳进当前方案声明的可调范围后生效并落盘
     void apply_font_size(int px, class Renderer* renderer, class Window* window);
 
     // 内容包应用
@@ -169,8 +163,7 @@ private:
     /// 卡带架的"最近打开"记录（见 core/config.hpp 的 load_recent）
     static constexpr const char* kRecentPath = "recent.txt";
 
-    static constexpr const char* kFontDir = "theme/font";                // 字体方案根目录
-    static constexpr const char* kDefaultFontScheme = "default";         // 出厂默认方案名
+    static constexpr const char* kFontDir = "theme/font";  // 字体方案根目录（注入 FontState）
 
     // 仪式感时长（秒）
     static constexpr float kInsertFlashTime = 0.30f;
@@ -250,16 +243,10 @@ private:
     bool input_blocked_ = false;
     std::string last_error_;
 
-    // 字体：当前方案的字体链（主字体在前，回退在后）与全部可用方案名。
-    // 窗口渲染与截图/基线共用同一份路径表，所以两边字体必然一致
-    std::vector<std::string> font_files_;
-    std::vector<FontScheme> font_scheme_list_;  // 全部方案（含各自声明的字号与回退顺序）
-    std::vector<std::string> font_schemes_;     // 全部可用方案名（default 排最前，供设置界面）
-    std::string font_scheme_;                   // 实际生效的方案（配置指定不可用时退回 default）
-    int font_scheme_size_ = 0;                  // 当前方案声明的字号（0 = 未声明）
-    int font_min_px_ = kMinFontPx;              // 当前方案声明的可调下限
-    int font_max_px_ = kMaxFontPx;              // 当前方案声明的可调上限（Mod 覆盖 font.lua 即可抬高）
-    int font_px_ = kDefaultFontPx;              // 当前生效字号（= 单元格像素边长）
+    /// 字体方案状态（方案表/当前方案/字号范围/字体链）：窗口渲染与截图/基线共用同一份
+    /// 路径表，所以两边字体必然一致。当前生效字号仍由 App 持有（它同时决定窗口尺寸）
+    FontState fonts_;
+    int font_px_ = kDefaultFontPx;  // 当前生效字号（= 单元格像素边长）
 
     // 运行形态（供状态查询与窗口标题使用）
     bool headless_ = false;          // true = 无窗口（agent/CI）

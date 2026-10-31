@@ -98,9 +98,9 @@ std::string App::control_state_json() const {
         << json::quote(packs_.sounds.empty()
                            ? ""
                            : packs_.sounds[static_cast<size_t>(packs_.sound_index)].id)
-        << ",\"font\":" << json::quote(font_scheme_)
+        << ",\"font\":" << json::quote(fonts_.current())
         << ",\"font_size\":" << font_px_  // 当前字号 = 单元格像素边长（整机缩放）
-        << ",\"font_size_max\":" << font_max_px_  // 可调上限（由字体方案声明，Mod 可抬高）
+        << ",\"font_size_max\":" << fonts_.max_px()  // 可调上限（由字体方案声明，Mod 可抬高）
         // 本帧是否有输入框在"举手要中文"：卡带声明 ime=true 的框被 feed，或卡带架搜索在输入。
         // 主机据此开关系统输入法（仅 Windows 实际生效），也给测试一个可读的信号
         << ",\"ime\":" << (host_.ime_wanted ? "true" : "false")
@@ -197,8 +197,8 @@ std::string App::control_state_json() const {
         << ",\"shelf\":" << pack_json(packs_.shelves, by_name)
         << ",\"shelf_ids\":" << pack_json(packs_.shelves, by_id)
         << ",\"font\":[";
-    for (size_t i = 0; i < font_schemes_.size(); ++i)
-        out << (i ? "," : "") << json::quote(font_schemes_[i]);
+    for (size_t i = 0; i < fonts_.names().size(); ++i)
+        out << (i ? "," : "") << json::quote(fonts_.names()[i]);
     out << "]}";
 
     std::string held;

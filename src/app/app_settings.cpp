@@ -2,7 +2,6 @@
 
 #include "core/log.hpp"
 #include "platform/window.hpp"
-#include "core/font_files.hpp"
 #include "render/renderer.hpp"
 
 #include <algorithm>
@@ -48,78 +47,33 @@ void App::apply_skin(int index, Window* window, Renderer* renderer) {
 }
 
 
-void App::load_font_chain(const std::string& wanted) {
-    // 方案表里已含声明的回退顺序与字号；不查目录文件系统，避免"表里/盘上"两套排序
-    const auto find = [this](const std::string& name) -> const FontScheme* {
-        for (const FontScheme& s : font_scheme_list_)
-            if (s.name == name) return &s;
-        return nullptr;
-    };
-    const auto use = [this, &find](const std::string& name) {
-        font_scheme_ = name;
-        font_scheme_size_ = 0;
-        font_min_px_ = kMinFontPx;
-        font_max_px_ = kMaxFontPx;
-        if (const FontScheme* s = find(name)) {
-            font_files_ = s->files;
-            font_scheme_size_ = s->size;
-            font_min_px_ = s->min_size;
-            font_max_px_ = s->max_size;  // 方案（或其 Mod 覆盖）声明的可调上限
-        } else {
-            // 方案不在表里（目录被删 / 名字写错）：现取一次，取不到再由下面兜底
-            font_files_ = font_files_in_scheme(std::string(kFontDir) + "/" + name);
-        }
-    };
-
-    use(wanted);
-    // 方案不可用（目录被删、名字写错、里面没有字体）：退回出厂默认并告警。内容坏了不该没字可用
-    if (font_files_.empty() && font_scheme_ != kDefaultFontScheme) {
-        log::warn("font scheme unusable, falling back to default: " + font_scheme_);
-        use(kDefaultFontScheme);
-    }
-    if (font_files_.empty()) log::warn("no font file in " + std::string(kFontDir) + "/" + font_scheme_);
-}
-
-
-int App::effective_font_px() const {
-    const auto in_range = [this](int px) {
-        return px < font_min_px_ ? font_min_px_ : (px > font_max_px_ ? font_max_px_ : px);
-    };
-    if (config_.font_size > 0) return in_range(config_.font_size);      // 用户显式选择优先
-    return font_scheme_size_ > 0 ? font_scheme_size_ : kDefaultFontPx;  // 否则方案声明，再否则出厂默认
-}
-
-
 void App::apply_font_px(Renderer* renderer, Window* window) {
-    font_px_ = effective_font_px();
+    font_px_ = fonts_.effective_px(config_.font_size);
     host_.cell_px = font_px_;                       // ink_box 的兜底宽度随格边长
     if (renderer) renderer->set_cell_px(font_px_);  // 字形随格缩放
     const Skin& skin = packs_.skin();
     if (window) window->resize(skin.grid_w() * font_px_, skin.grid_h() * font_px_);
     // 设置行显示与实际生效保持同步；巡回范围也交给界面（方案声明的 min~max）
-    shell_.set_font_size(font_px_, font_min_px_, font_max_px_);
+    shell_.set_font_size(font_px_, fonts_.min_px(), fonts_.max_px());
 }
 
 
 void App::apply_font_size(int px, Renderer* renderer, Window* window) {
     // 0 = 跟随字体方案；正数钳进**方案声明的范围**（越界不静默保留）
-    const auto in_range = [this](int v) {
-        return v < font_min_px_ ? font_min_px_ : (v > font_max_px_ ? font_max_px_ : v);
-    };
-    config_.font_size = px <= 0 ? 0 : in_range(px);
+    config_.font_size = px <= 0 ? 0 : fonts_.clamp_px(px);
     apply_font_px(renderer, window);
     save_config_now();
 }
 
 
 void App::apply_font_scheme(int index, Renderer* renderer, Window* window) {
-    if (index < 0 || index >= static_cast<int>(font_schemes_.size())) return;
-    load_font_chain(font_schemes_[static_cast<size_t>(index)]);
+    if (index < 0 || index >= static_cast<int>(fonts_.names().size())) return;
+    fonts_.load_chain(fonts_.names()[static_cast<size_t>(index)]);
 
-    // 窗口渲染的字形图集要跟着重建；截图/基线每次现读 font_files_，无需处理
+    // 窗口渲染的字形图集要跟着重建；截图/基线每次现读 fonts_.files()，无需处理
     if (renderer) {
         std::string error;
-        if (!renderer->reload_fonts(font_files_, error))
+        if (!renderer->reload_fonts(fonts_.files(), error))
             log::warn("font atlas rebuild failed: " + error);
         // 墨迹度量随字体链走：换字体后回调依旧取当前字形的框
         host_.glyph_metrics = [renderer](char32_t cp) { return renderer->ink_box(cp); };
@@ -127,9 +81,9 @@ void App::apply_font_scheme(int index, Renderer* renderer, Window* window) {
     // 换方案可能改变"方案声明的字号"（配置为 0=跟随时），字号与字体链一起落地
     apply_font_px(renderer, window);
 
-    config_.font = font_scheme_;
+    config_.font = fonts_.current();
     save_config_now();
-    log::info("setting font=" + font_scheme_);
+    log::info("setting font=" + fonts_.current());
 }
 
 

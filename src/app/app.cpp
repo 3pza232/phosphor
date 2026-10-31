@@ -40,12 +40,10 @@ int App::run(const CliOptions& opts) {
 
     // 字体方案：theme/font/<方案名>/，方案内 font.* 是主字体（ASCII 与字形风格）、
     // font-cn.* 之类补齐它缺的码位。方案可用 font.lua 显式声明字号与回退顺序
-    font_scheme_list_ = scan_font_schemes(kFontDir);
-    font_schemes_.clear();
-    for (const FontScheme& s : font_scheme_list_) font_schemes_.push_back(s.name);
-    load_font_chain(config_.font);
-    font_px_ = effective_font_px();  // 字号：用户设置 > 方案声明 > 出厂默认
-    host_.cell_px = font_px_;        // ink_box 的兜底宽度随格边长
+    fonts_.scan(kFontDir);
+    fonts_.load_chain(config_.font);
+    font_px_ = fonts_.effective_px(config_.font_size);  // 字号：用户设置 > 方案声明 > 出厂默认
+    host_.cell_px = font_px_;                           // ink_box 的兜底宽度随格边长
 
     host_.screen = &display_.screen;
     host_.input = &input_;
@@ -71,10 +69,10 @@ int App::run(const CliOptions& opts) {
     for (const auto& sound : packs_.sounds) names.push_back(sound.name);
     shell_.set_sounds(names, packs_.sound_index);
     int font_index = 0;
-    for (size_t i = 0; i < font_schemes_.size(); ++i)
-        if (font_schemes_[i] == font_scheme_) font_index = static_cast<int>(i);
-    shell_.set_fonts(font_schemes_, font_index);
-    shell_.set_font_size(font_px_, font_min_px_, font_max_px_);
+    for (size_t i = 0; i < fonts_.names().size(); ++i)
+        if (fonts_.names()[i] == fonts_.current()) font_index = static_cast<int>(i);
+    shell_.set_fonts(fonts_.names(), font_index);
+    shell_.set_font_size(font_px_, fonts_.min_px(), fonts_.max_px());
     shell_.set_language(lang_from_name(config_.language));
 
     // 卡带架样式：候选项 = [LIST, WINDOW, <shelf 包名…>]，内容库已按配置解析出选中项。
@@ -514,7 +512,7 @@ int App::run_windowed(const CliOptions& opts) {
     }
 
     Renderer renderer;
-    if (!renderer.init(font_files_, font_px_, font_px_, error)) {
+    if (!renderer.init(fonts_.files(), font_px_, font_px_, error)) {
         std::fprintf(stderr, "ERROR: %s\n", error.c_str());
         return 3;
     }
@@ -523,7 +521,7 @@ int App::run_windowed(const CliOptions& opts) {
     // 无头模式不装它，调用方退回整格宽
     host_.glyph_metrics = [&renderer](char32_t cp) { return renderer.ink_box(cp); };
 
-    if (!console_.init(window.handle(), font_files_, error))
+    if (!console_.init(window.handle(), fonts_.files(), error))
         std::fprintf(stderr, "WARN: %s (debug panel unavailable)\n", error.c_str());
 
     // 标题栏写明"谁在操作"：人看着窗口就知道是 agent 接管，还是自己在玩
