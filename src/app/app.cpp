@@ -4,6 +4,7 @@
 #include "cart/cart_scanner.hpp"
 #include "cart/cart_info.hpp"
 #include "cart/save_store.hpp"
+#include "core/composition.hpp"
 #include "core/effects.hpp"
 #include "core/log.hpp"
 #include "core/mods.hpp"
@@ -745,11 +746,11 @@ int App::run_windowed(const CliOptions& opts) {
         // 窗口尺寸可能刚被"改字号 / 换主题"改过（handle_intent 在 advance 之后才 resize）：
         // present 前重新对齐帧缓冲尺寸，否则这一帧的视口仍是旧尺寸，画面会露出一条黑边
         renderer.set_framebuffer_size(window.framebuffer_width(), window.framebuffer_height());
-        // 底 + 逐层叠画 + 主机 chrome：顺序与原点收在 Display::present 一处
-        const bool layered = playing() && host_.layers.active();
-        const bool overlay = playing() && host_.panel_w > 0;
-        display_state_.display().present(renderer, host_.layers, host_.content_x, host_.content_y, layered,
-                         overlay);
+        // 底 + 逐层叠画 + 主机 chrome：组成由 compose_frame 一处决定，顺序收在 Display::present
+        const ui::Rect content{host_.content_x, host_.content_y, host_.content_w, host_.content_h};
+        display_state_.display().present(
+            renderer, compose_frame(display_state_.display(), host_.layers, content, playing(),
+                                    host_.panel_w > 0));
         // frame.read 的读回点：本帧已画完、尚未 swap。放在调试台之前，
         // 读回的是卡带画面本身，不含仪表盘
         complete_frame_read(&renderer);

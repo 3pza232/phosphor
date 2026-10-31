@@ -1,5 +1,6 @@
 #include "app/app.hpp"
 
+#include "core/composition.hpp"
 #include "core/log.hpp"
 #include "core/version.hpp"
 #include "render/screen_image.hpp"
@@ -131,14 +132,14 @@ bool App::write_screenshot(const std::string& path, int& width, int& height,
     options.cell_h = font_px_;
     options.crt = display_state_.crt();
     // 截图必须与窗口所见一致：底 + 逐层叠画（像素级合成），
-    // 而不是合成后的文本网格 —— 那条路一格只有一个字形，会把下层"顶掉"
-    const bool layered = playing() && host_.layers.active();
-    const Screen& base = layered ? display_state_.display().base : display_state_.display().screen;
-    // 有图层的卡带，分隔线只在 chrome 里（base 快照在写分隔线之前），截图要补上才与窗口一致
-    const Screen* overlay = (layered && host_.panel_w > 0) ? &display_state_.display().chrome : nullptr;
-    const auto image = render_screen_image(base, fonts_.files(), options, error,
-                                           layered ? &host_.layers : nullptr,
-                                           host_.content_x, host_.content_y, overlay);
+    // 而不是合成后的文本网格 —— 那条路一格只有一个字形，会把下层"顶掉"。
+    // 组成与窗口 present 共用 compose_frame；CPU 路径的 chrome 叠加规则见 frame_cpu_overlay
+    const ui::Rect content{host_.content_x, host_.content_y, host_.content_w, host_.content_h};
+    const FrameView view = compose_frame(display_state_.display(), host_.layers, content, playing(),
+                                         host_.panel_w > 0);
+    const auto image = render_screen_image(*view.base, fonts_.files(), options, error,
+                                           view.layers, view.content.x, view.content.y,
+                                           frame_cpu_overlay(view));
     if (!image) return false;
     if (!write_png(*image, path, error)) return false;
     width = image->width;

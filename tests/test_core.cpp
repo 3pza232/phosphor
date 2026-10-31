@@ -2160,4 +2160,43 @@ TEST(json_value_dump_nonfinite_is_null) {
     CHECK_EQ(json::Value::of_number(-std::numeric_limits<double>::infinity()).dump(), std::string("null"));
 }
 
+TEST(frame_composition_decisions) {
+    // compose_frame 的每一条决策规则都在头内单独可测（测试目标没有编译 composition.cpp，
+    // 所以这里覆盖规则本身；6 行装配函数由窗口/截图 golden 覆盖）。
+    Display display;
+    display.screen.resize(80, 45);
+    display.base.resize(80, 45);
+    display.chrome.resize(80, 45);
+    const ui::Rect content{2, 3, 80, 45};
+    LayeredScreen layers;
+    layers.reset(80, 45);
+
+    // 层只在"正在玩 + 层表非空"时参与；chrome 只在"正在玩 + 有侧栏"时叠
+    CHECK(frame_uses_layers(true, true));
+    CHECK(!frame_uses_layers(true, false));
+    CHECK(!frame_uses_layers(false, true));
+    CHECK(frame_uses_overlay(true, true));
+    CHECK(!frame_uses_overlay(true, false));
+    CHECK(!frame_uses_overlay(false, true));
+
+    // 有层用 base，无层用文本整屏 screen
+    CHECK(frame_base(display, true) == &display.base);
+    CHECK(frame_base(display, false) == &display.screen);
+    CHECK(frame_layers(layers, true) == &layers);
+    CHECK(frame_layers(layers, false) == nullptr);
+
+    // CPU 截图路径：无层时 screen 已含分隔线不叠 chrome；有层且要叠时才补 chrome
+    FrameView view;
+    view.base = &display.screen;
+    view.chrome = &display.chrome;
+    view.content = content;
+    view.layered = false;
+    view.overlay = true;
+    CHECK(frame_cpu_overlay(view) == nullptr);
+    view.layered = true;
+    CHECK(frame_cpu_overlay(view) == &display.chrome);
+    view.overlay = false;
+    CHECK(frame_cpu_overlay(view) == nullptr);
+}
+
 } // namespace
