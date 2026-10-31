@@ -13,15 +13,34 @@ namespace phos::ui {
 
 namespace {
 
-/// Cohen–Sutherland：把线段裁到 [0, max_x] × [0, max_y] 的屏幕窗口内。
+/// 几何原语的裁剪区：屏幕 ∩ 可选 clip。clip 为空指针时就是整块屏幕。
+/// 用 64 位求交，脚本传入的矩形可能贴近 INT_MAX；返回空矩形（w/h = 0）表示不可见。
+Rect clipped_rect(const Screen& screen, const Rect* clip) {
+    long long x0 = 0;
+    long long y0 = 0;
+    long long x1 = static_cast<long long>(screen.width()) - 1;
+    long long y1 = static_cast<long long>(screen.height()) - 1;
+    if (clip) {
+        x0 = std::max<long long>(x0, clip->x);
+        y0 = std::max<long long>(y0, clip->y);
+        x1 = std::min<long long>(x1, static_cast<long long>(clip->x) + clip->w - 1);
+        y1 = std::min<long long>(y1, static_cast<long long>(clip->y) + clip->h - 1);
+    }
+    if (x1 < x0 || y1 < y0) return Rect{0, 0, 0, 0};
+    return Rect{static_cast<int>(x0), static_cast<int>(y0), static_cast<int>(x1 - x0 + 1),
+                static_cast<int>(y1 - y0 + 1)};
+}
+
+/// Cohen–Sutherland：把线段裁到 [min_x, max_x] × [min_y, max_y] 的矩形内。
 /// 端点来自脚本，可能接近 INT_MIN/INT_MAX（整数乘除会溢出），所以用 double 求交后再取整；
-/// 屏幕外的超大坐标不会变成无界的光栅化循环。
-bool clip_to_screen(double& x1, double& y1, double& x2, double& y2, double max_x, double max_y) {
-    const auto code = [max_x, max_y](double x, double y) {
+/// 窗口外的超大坐标不会变成无界的光栅化循环。
+bool clip_to_rect(double& x1, double& y1, double& x2, double& y2, double min_x, double max_x,
+                  double min_y, double max_y) {
+    const auto code = [min_x, max_x, min_y, max_y](double x, double y) {
         int c = 0;
-        if (x < 0.0) c |= 1;
+        if (x < min_x) c |= 1;
         else if (x > max_x) c |= 2;
-        if (y < 0.0) c |= 4;
+        if (y < min_y) c |= 4;
         else if (y > max_y) c |= 8;
         return c;
     };
@@ -34,14 +53,14 @@ bool clip_to_screen(double& x1, double& y1, double& x2, double& y2, double max_x
         double x = 0.0;
         double y = 0.0;
         if ((c & 1) != 0) {
-            x = 0.0;
-            y = y1 + (y2 - y1) * (0.0 - x1) / (x2 - x1);
+            x = min_x;
+            y = y1 + (y2 - y1) * (min_x - x1) / (x2 - x1);
         } else if ((c & 2) != 0) {
             x = max_x;
             y = y1 + (y2 - y1) * (max_x - x1) / (x2 - x1);
         } else if ((c & 4) != 0) {
-            y = 0.0;
-            x = x1 + (x2 - x1) * (0.0 - y1) / (y2 - y1);
+            y = min_y;
+            x = x1 + (x2 - x1) * (min_y - y1) / (y2 - y1);
         } else {
             y = max_y;
             x = x1 + (x2 - x1) * (max_y - y1) / (y2 - y1);
@@ -110,18 +129,23 @@ void divider(Screen& screen, int x, int y, int width, Color color, Color bg) {
         screen.put(x + i, y, U'-', color, bg);
 }
 
-void line(Screen& screen, int x1, int y1, int x2, int y2, char32_t ch, Color fg, Color bg) {
-    const int w = screen.width();
-    const int h = screen.height();
-    if (w <= 0 || h <= 0) return;
+void line(Screen& screen, int x1, int y1, int x2, int y2, char32_t ch, Color fg, Color bg,
+          const Rect* clip) {
+    const Rect area = clipped_rect(screen, clip);
+    if (area.w <= 0 || area.h <= 0) return;
+    const int lo_x = area.x;
+    const int hi_x = area.x + area.w - 1;
+    const int lo_y = area.y;
+    const int hi_y = area.y + area.h - 1;
 
     double ax = x1, ay = y1, bx = x2, by = y2;
-    if (!clip_to_screen(ax, ay, bx, by, static_cast<double>(w - 1), static_cast<double>(h - 1)))
+    if (!clip_to_rect(ax, ay, bx, by, static_cast<double>(lo_x), static_cast<double>(hi_x),
+                      static_cast<double>(lo_y), static_cast<double>(hi_y)))
         return;
-    int px = std::clamp(static_cast<int>(std::lround(ax)), 0, w - 1);
-    int py = std::clamp(static_cast<int>(std::lround(ay)), 0, h - 1);
-    const int ex = std::clamp(static_cast<int>(std::lround(bx)), 0, w - 1);
-    const int ey = std::clamp(static_cast<int>(std::lround(by)), 0, h - 1);
+    int px = std::clamp(static_cast<int>(std::lround(ax)), lo_x, hi_x);
+    int py = std::clamp(static_cast<int>(std::lround(ay)), lo_y, hi_y);
+    const int ex = std::clamp(static_cast<int>(std::lround(bx)), lo_x, hi_x);
+    const int ey = std::clamp(static_cast<int>(std::lround(by)), lo_y, hi_y);
 
     const int dx = ex > px ? ex - px : px - ex;
     const int dy = ey > py ? ey - py : py - ey;
@@ -143,57 +167,68 @@ void line(Screen& screen, int x1, int y1, int x2, int y2, char32_t ch, Color fg,
     }
 }
 
-void outline(Screen& screen, int x, int y, int w, int h, char32_t ch, Color fg, Color bg) {
+void outline(Screen& screen, int x, int y, int w, int h, char32_t ch, Color fg, Color bg,
+             const Rect* clip) {
     if (w <= 0 || h <= 0) return;
-    const long long sw = screen.width();
-    const long long sh = screen.height();
+    const Rect area = clipped_rect(screen, clip);
+    if (area.w <= 0 || area.h <= 0) return;
+    const long long ax0 = area.x;
+    const long long ay0 = area.y;
+    const long long ax1 = static_cast<long long>(area.x) + area.w - 1;
+    const long long ay1 = static_cast<long long>(area.y) + area.h - 1;
+
     const long long x0 = x;
     const long long y0 = y;
     const long long x1 = x0 + w - 1;
     const long long y1 = y0 + h - 1;
 
-    // 上下边：与屏幕横向求交后成段画（宽矩形只画可见段，循环次数有界）
-    const long long hx0 = std::max<long long>(x0, 0);
-    const long long hx1 = std::min<long long>(x1, sw - 1);
+    // 上下边：与裁剪区横向求交后成段画（宽矩形只画可见段，循环次数有界）
+    const long long hx0 = std::max(x0, ax0);
+    const long long hx1 = std::min(x1, ax1);
     if (hx0 <= hx1) {
-        if (y0 >= 0 && y0 < sh)
+        if (y0 >= ay0 && y0 <= ay1)
             for (long long i = hx0; i <= hx1; ++i)
                 screen.put(static_cast<int>(i), static_cast<int>(y0), ch, fg, bg);
-        if (y1 != y0 && y1 >= 0 && y1 < sh)
+        if (y1 != y0 && y1 >= ay0 && y1 <= ay1)
             for (long long i = hx0; i <= hx1; ++i)
                 screen.put(static_cast<int>(i), static_cast<int>(y1), ch, fg, bg);
     }
     // 左右边：角格已由上下边覆盖，纵向区间去掉两端（退化时为空）
-    const long long vy0 = std::max<long long>(y0 + 1, 0);
-    const long long vy1 = std::min<long long>(y1 - 1, sh - 1);
+    const long long vy0 = std::max(y0 + 1, ay0);
+    const long long vy1 = std::min(y1 - 1, ay1);
     if (vy0 <= vy1) {
-        if (x0 >= 0 && x0 < sw)
+        if (x0 >= ax0 && x0 <= ax1)
             for (long long i = vy0; i <= vy1; ++i)
                 screen.put(static_cast<int>(x0), static_cast<int>(i), ch, fg, bg);
-        if (x1 != x0 && x1 >= 0 && x1 < sw)
+        if (x1 != x0 && x1 >= ax0 && x1 <= ax1)
             for (long long i = vy0; i <= vy1; ++i)
                 screen.put(static_cast<int>(x1), static_cast<int>(i), ch, fg, bg);
     }
 }
 
-void circle(Screen& screen, int cx, int cy, int r, char32_t ch, Color fg, Color bg) {
-    const int w = screen.width();
-    const int h = screen.height();
-    if (w <= 0 || h <= 0) return;
-    if (r <= 0) {
-        screen.put(cx, cy, ch, fg, bg);  // 半径 0（或负数）：退化成一格
+void circle(Screen& screen, int cx, int cy, int r, char32_t ch, Color fg, Color bg,
+            const Rect* clip) {
+    const Rect area = clipped_rect(screen, clip);
+    if (area.w <= 0 || area.h <= 0) return;
+    const long long ax0 = area.x;
+    const long long ay0 = area.y;
+    const long long ax1 = static_cast<long long>(area.x) + area.w - 1;
+    const long long ay1 = static_cast<long long>(area.y) + area.h - 1;
+    if (r <= 0) {  // 半径 0（或负数）：退化成一格（裁剪区内才写）
+        if (cx >= ax0 && cx <= ax1 && cy >= ay0 && cy <= ay1) screen.put(cx, cy, ch, fg, bg);
         return;
     }
 
     const long long ccx = cx;
     const long long ccy = cy;
     const auto plot = [&](long long px, long long py) {
-        if (px < 0 || py < 0 || px >= w || py >= h) return;
+        if (px < ax0 || py < ay0 || px > ax1 || py > ay1) return;
         screen.put(static_cast<int>(px), static_cast<int>(py), ch, fg, bg);
     };
-    // 八向对称点里"较小坐标"是 y：y 一旦超过屏幕任一边长，八个镜像点都必在屏幕外。
-    // 因此循环上界与半径无关——半径再大也不会变成无界循环（圆心在屏外时可见弧段也覆盖不到更大的 y）。
-    const long long limit = std::max(w - 1, h - 1);
+    // 八向对称点里"较小坐标"是 y：y 超过屏幕任一边长后，八个镜像点都不在屏幕内。
+    // 上界仍按**屏幕**算（与不传 clip 时的几何一致）：clip 只过滤结果，
+    // 不改变同一段弧的采样；半径再大也不会变成无界循环。
+    const long long limit = std::max(screen.width() - 1, screen.height() - 1);
     long long x = r;
     long long y = 0;
     long long err = 1 - x;
@@ -300,17 +335,24 @@ void text_block(Screen& screen, int x, int y, int width, std::string_view body, 
 void icon(Screen& screen, const std::vector<std::string>& rows,
           const std::map<char, Color>& colors, int center_x, int center_y, int step,
           float brightness, Color fallback) {
-    if (rows.empty() || step < 1) return;
+    if (rows.empty()) return;
+    // step = 降采样步长：整数 >= 1（< 1 钳到 1，0 = 逐字符）。
+    // brightness = 0..1：非有限按 1，越界钳制；它只改前景色，图标仍按字形占格
+    // （brightness = 0 => 全黑，视觉上等于"画空"）。
+    step = std::max(1, step);
+    if (!std::isfinite(brightness)) brightness = 1.0f;
+    brightness = std::clamp(brightness, 0.0f, 1.0f);
 
-    int src_h = static_cast<int>(rows.size());
+    const int src_h = static_cast<int>(rows.size());
     int src_w = 0;
     for (const auto& row : rows)
         src_w = std::max(src_w, text::display_width(row));
 
-    int draw_h = (src_h + step - 1) / step;
-    int draw_w = (src_w + step - 1) / step;
-    int x0 = center_x - draw_w / 2;
-    int y0 = center_y - draw_h / 2;
+    // 向上取整但不写 src + step - 1：step 来自脚本，极大时会 int 溢出
+    const int draw_h = (src_h - 1) / step + 1;
+    const int draw_w = src_w == 0 ? 0 : (src_w - 1) / step + 1;
+    const int x0 = center_x - draw_w / 2;
+    const int y0 = center_y - draw_h / 2;
 
     // 提亮/压暗：与指示灯呼吸、其它高亮共用 core/color.hpp 的 scale_color（钳位只有一份）
     auto scale = [brightness](Color c) { return scale_color(c, brightness); };

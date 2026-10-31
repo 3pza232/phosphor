@@ -123,7 +123,7 @@
 | U7 | 主题只有颜色 | `ui::Theme` 已含颜色角色（text/text_dim/accent/warning/danger/disabled/border_focus…）、边框 / 光标字形集、度量；可替换的 `ui` 内容包未做 | ⚠ **部分修复** |
 | U8 | 绘制几何缺失 | 旧：没有线/框/圆/环独立 API；卡带各自逐格光栅化 | ✅ **已修复**：`core/ui` 增加 `line`（Bresenham + Cohen–Sutherland 预裁剪）/ `outline` / `circle`（midpoint 八向、半径有界）；`phos.ui.line/outline/circle` 走内容区局部坐标（缺省 ch/fg/bg，只写字形不铺底），4 组纯逻辑测试覆盖裁剪/退化/对称；`region` 上的同类方法仍未提供 |
 | U9 | 文本框只有缓冲、没有控件 | 声明式 field 的焦点/光标/过滤/按码点退格/限长已在组件层；IME 接线核对结论 | ✅ **已修复**：`Frame::ime_requested` 聚焦 field 时置位，卡带 API 转发到 `host.ime_wanted`，App 每帧 `window.set_ime_enabled`；失焦/不渲染即释放。旧 `phos.input.field({ime=true})` 路径未变。外壳暂无通用转发，但当前唯一中文输入（卡带架搜索）已有专路，无功能缺口 |
-| U10 | 精灵语义与文档不一致 | `ui::icon` 的 `step` 仍是**降采样步长**（`core/ui.cpp`），文档已按实现改写（`api-reference.md` 与 `devkit/phos.lua`）；绑定层仍硬编码亮度 1.0，语义统一未做 | ⚠ **文档已对齐、代码待统一** |
+| U10 | 精灵语义与文档不一致 | 旧：`ui::icon` 的 `step` 实为降采样步长、文档写成缩放；绑定层硬编码亮度 1.0 | ✅ **已修复**：语义定稿并写在文档/注解——`step` = 降采样步长（<1 钳 1，ceil 用 `(src-1)/step+1` 防溢出），`brightness` = 0..1（非有限按 1、越界钳制，只缩放前景色）；`phos.ui.sprite` 与 `Region:sprite` 均透传可选 brightness；钳制统一在 `ui::icon`；Region 另补 line/outline/circle（clip 指针复用 core 光栅化） |
 | U11 | 参数与单位校验缺失 | `ui::bar` 对 NaN 直接转 int；`phos.ui.sprite` 宽高按字节算 | ✅ **已修复**：bar 的 ratio 先 `isfinite` 再 clamp 0..1（core 与声明式两条路径一致）；`phos.ui.sprite` / 区域 sprite 的宽度改按显示列（中文占两格），行高仍按行数；新增 NaN/±inf/中文居中断言 |
 
 **内容侧试点（全部 11 张出厂卡带）**：新栈已用进真实卡带——侧栏改 `phos.ui.render`（无坐标、

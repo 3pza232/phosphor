@@ -272,7 +272,8 @@ phos.audio.stop_sample(hit)
 - **声明式界面**（`phos_api = 7`，推荐）：`phos.ui.render(spec)` 提交一棵元素树，
   布局、焦点、滚动、勾选、文本输入与主题配色由引擎负责——卡带只声明"有什么"。
 - **绘制原语**（更低层，旧卡带继续可用）：`frame` / `modal` / `menu` / `bar` / `text` /
-  `divider` / `center_text` / `sprite` / `nav`，配合 `phos.ui.region` 的裁剪矩形使用。
+  `divider` / `center_text` / `sprite` / `nav` / `line` / `outline` / `circle`，
+  配合 `phos.ui.region` 的裁剪矩形使用。
 
 两层的配色都取自当前主题声明的色板（与 `phos.color` 同源）。坐标是**内容区局部坐标**
 （0-based）；`surface = "panel"` 时是面板局部坐标。
@@ -558,9 +559,10 @@ phos.ui.center_text(y, "GAME OVER")
 phos.ui.text(x, y, w, "long body text...", 3)   -- 最多 3 行，超出加省略号（max_lines 可省略，缺省 1 行）
 
 -- 像素精灵：rows 为字符画，colors 为 字符→颜色（'.' 与空格透明）
--- step 为降采样步长（缺省 1）：step=2 时源图每 2 行 / 2 列取一格，成品是源图的一半大小；
--- 它不是放大倍数
-phos.ui.sprite(x, y, { "..##..", ".####." }, { ["#"] = { 80, 255, 120 } }, 1)
+-- step 为**降采样步长**（缺省 1）：step=2 时源图每 2 行 / 2 列取一格，成品是源图的一半大小；
+-- 它不是放大倍数（< 1 钳到 1）
+-- brightness 为亮度 0..1（可省略，缺省 1；非有限按 1，越界钳制）：只缩放前景色
+phos.ui.sprite(x, y, { "..##..", ".####." }, { ["#"] = { 80, 255, 120 } }, 1, 0.6)
 
 -- 列表导航（内部复用输入抽象）：返回 新下标, 动作
 local index, action = phos.ui.nav(#items, selected)
@@ -586,6 +588,8 @@ phos.ui.circle(40, 22, 6, "o", phos.color.cyan)   -- 空心圆：midpoint，八�
 - `outline` 的 `w`/`h` < 2 时退化：单列 / 单行 / 单格；`circle` 的 `r <= 0` 只画一格
 - 三者都**只写字形，不铺底**（省略 `bg` = 透出下层）；要实底先 `fill` / `region:clear`
 - `line` 同一格只写一次；`circle` 只光栅化可见弧段，半径再大也不会把主机拖住
+- `phos.ui.region` 上也有同名方法（`map:line` / `map:outline` / `map:circle`）：
+  坐标相对区域、参数相同，**自动裁在区域内**（不会画到区域外）
 
 **导航示例**（背包/设置浮窗的典型写法）：
 
@@ -642,6 +646,8 @@ local win = phos.ui.region(20, 5, 40, 12)
 win:frame("SETTINGS")
 win:menu(2, 2, 36, items, selected)  -- 窗口里的菜单，自动裁剪在窗口内
 win:print(2, 10, long_text)          -- 超出窗口的部分被裁掉，不会溢出
+win:outline(1, 1, 38, 10)            -- 空心框：坐标相对窗口，自动裁在窗口内
+win:circle(20, 6, 3, "o", phos.color.cyan)  -- 空心圆：单格半径，画在区域里
 ```
 
 - `opts.surface`：`"screen"`（默认，内容区）或 `"panel"`（侧栏面板）
@@ -651,7 +657,9 @@ win:print(2, 10, long_text)          -- 超出窗口的部分被裁掉，不会�
 - 可用的绘制方法：`clear` / `put` / `print` / `fill` / `blit`（多行）/ `blend`（同格叠加）/
   `back` / `back_rect`（只写底色）/ `plot`（子格落笔）/ `frame` /
   `divider` / `bar` / `menu`（`h` 可省略，缺省按条目数）/ `body`（折行正文，
-  `max_lines` 可省略）/ `sprite`（`step` 可省略）。其中 `put` / `print` / `fill` / `blit` / `clear`
+  `max_lines` 可省略）/ `sprite`（`step` = 降采样步长、`brightness` = 0..1 亮度，均可省略）/
+  `line` / `outline` / `circle`（几何原语：与 `phos.ui.*` 同名同参数，坐标相对区域、
+  **自动裁在区域内**）。其中 `put` / `print` / `fill` / `blit` / `clear`
   省略 `bg` 时一律**保留背景**（"透明底"）；`blend` / `back` / `back_rect` / `plot`
   与 `put` 同组，也**保留背景**
 - **层级 = 调用顺序**：本机每帧清屏、卡带每帧重画，所以先画底图、再画窗口即可；

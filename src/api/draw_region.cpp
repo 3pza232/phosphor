@@ -89,6 +89,10 @@ Surface DrawRegion::surface_of() const {
 
 ui::Style DrawRegion::style() const { return cart_style(host_); }
 
+ui::Rect DrawRegion::bounds() const {
+    return ui::Rect{abs_x(0), abs_y(0), room_w(), h_};
+}
+
 void DrawRegion::clear(Color fg, Color bg) { surface_of().clear(fg, bg); }
 
 void DrawRegion::put(int x, int y, char32_t ch, Color fg, Color bg, uint8_t scale) {
@@ -150,15 +154,33 @@ void DrawRegion::body(int x, int y, int w, std::string_view text, int max_lines)
 }
 
 void DrawRegion::sprite(int x, int y, const std::vector<std::string>& rows,
-                        const std::map<char, Color>& colors, int step) {
+                        const std::map<char, Color>& colors, int step, float brightness) {
     if (rows.empty()) return;
     int art_w = 0;
     for (const auto& row : rows)
         art_w = std::max(art_w, text::display_width(row));  // 按显示列算：中文占两格
     const int art_h = static_cast<int>(rows.size());
-    // ui::icon 以中心定位；这里按左上角语义换算，越界部分由 icon/screen 自己夹住
-    ui::icon(screen(), rows, colors, abs_x(x) + art_w / 2, abs_y(y) + art_h / 2,
-             step < 1 ? 1 : step, 1.0f, style().accent);
+    // ui::icon 以中心定位；这里按左上角语义换算。步长/亮度的钳制在 core（唯一实现）
+    ui::icon(screen(), rows, colors, abs_x(x) + art_w / 2, abs_y(y) + art_h / 2, step,
+             brightness, style().accent);
+}
+
+void DrawRegion::line(int x1, int y1, int x2, int y2, char32_t ch, Color fg, Color bg) {
+    const ui::Rect clip = bounds();
+    if (clip.w <= 0 || clip.h <= 0) return;
+    ui::line(screen(), abs_x(x1), abs_y(y1), abs_x(x2), abs_y(y2), ch, fg, bg, &clip);
+}
+
+void DrawRegion::outline(int x, int y, int w, int h, char32_t ch, Color fg, Color bg) {
+    const ui::Rect clip = bounds();
+    if (clip.w <= 0 || clip.h <= 0) return;
+    ui::outline(screen(), abs_x(x), abs_y(y), w, h, ch, fg, bg, &clip);
+}
+
+void DrawRegion::circle(int cx, int cy, int r, char32_t ch, Color fg, Color bg) {
+    const ui::Rect clip = bounds();
+    if (clip.w <= 0 || clip.h <= 0) return;
+    ui::circle(screen(), abs_x(cx), abs_y(cy), r, ch, fg, bg, &clip);
 }
 
 } // namespace phos

@@ -1098,6 +1098,63 @@ TEST(ui_icon_width_uses_display_width) {
     CHECK_EQ(int(screen.at(6, 1).cols), 0);  // 宽字续格
 }
 
+TEST(ui_icon_step_downsamples) {
+    const std::map<char, Color> colors;
+    // step = 2：源图 4x2 每 2 列/行取一个 -> 成品 2x1；中心 (5,5) -> 左上 (4,5)
+    Screen s(12, 8);
+    const std::vector<std::string> art{"abcd", "efgh"};
+    ui::icon(s, art, colors, 5, 5, 2, 1.0f, Color::white);
+    CHECK_EQ(s.at(4, 5).ch, U'a');
+    CHECK_EQ(s.at(5, 5).ch, U'c');
+    CHECK_EQ(s.at(3, 5).ch, U' ');
+    CHECK_EQ(s.at(4, 6).ch, U' ');  // 第 2 行被降采样掉
+    CHECK_EQ(s.at(5, 6).ch, U' ');
+
+    // step < 1 钳到 1（旧实现会整只不画），即逐字符
+    Screen one(12, 8);
+    ui::icon(one, std::vector<std::string>{"ab"}, colors, 5, 5, 0, 1.0f, Color::white);
+    CHECK_EQ(one.at(4, 5).ch, U'a');
+    CHECK_EQ(one.at(5, 5).ch, U'b');
+
+    // 超大 step 不溢出：向上取整退化为 1 个采样格
+    Screen huge(12, 8);
+    ui::icon(huge, std::vector<std::string>{"ab"}, colors, 5, 5,
+             std::numeric_limits<int>::max(), 1.0f, Color::white);
+    CHECK_EQ(huge.at(5, 5).ch, U'a');
+    CHECK_EQ(huge.at(4, 5).ch, U' ');
+}
+
+TEST(ui_icon_brightness_clamped) {
+    const std::vector<std::string> art{"#"};
+    const std::map<char, Color> colors;
+    const Color base{200, 100, 50};
+
+    // brightness = 0：字形仍占格，前景全黑（视觉上等于"画空"）
+    Screen zero(12, 8);
+    ui::icon(zero, art, colors, 5, 5, 1, 0.0f, base);
+    CHECK_EQ(zero.at(5, 5).ch, U'#');
+    CHECK_EQ(int(zero.at(5, 5).fg.r), 0);
+    CHECK_EQ(int(zero.at(5, 5).fg.g), 0);
+    CHECK_EQ(int(zero.at(5, 5).fg.b), 0);
+
+    // 非有限按 1，> 1 钳到 1：都等于原色
+    Screen nan(12, 8);
+    ui::icon(nan, art, colors, 5, 5, 1, std::numeric_limits<float>::quiet_NaN(), base);
+    CHECK_EQ(int(nan.at(5, 5).fg.r), 200);
+    CHECK_EQ(int(nan.at(5, 5).fg.g), 100);
+    CHECK_EQ(int(nan.at(5, 5).fg.b), 50);
+
+    Screen over(12, 8);
+    ui::icon(over, art, colors, 5, 5, 1, 5.0f, base);
+    CHECK_EQ(int(over.at(5, 5).fg.r), 200);
+    CHECK_EQ(int(over.at(5, 5).fg.g), 100);
+
+    // 负数钳到 0 = 全黑
+    Screen negative(12, 8);
+    ui::icon(negative, art, colors, 5, 5, 1, -2.0f, base);
+    CHECK_EQ(int(negative.at(5, 5).fg.r), 0);
+}
+
 // ---------------------------------------------------------------- ui 几何原语
 
 namespace {
@@ -1238,6 +1295,44 @@ TEST(ui_circle_symmetry_and_radius) {
     Screen edge(12, 12);
     ui::circle(edge, -1000, 5, 1000, U'x', Color::white, Color::black);
     CHECK_EQ(edge.at(0, 5).ch, U'x');
+}
+
+TEST(ui_geometry_clip_rect) {
+    // 第三个裁剪矩形是 Region 的机制：原语只画 clip ∩ 屏幕。x 5..8、y 2..4
+    const ui::Rect clip{5, 2, 4, 3};
+
+    Screen line_screen(20, 10);
+    ui::line(line_screen, 0, 3, 19, 3, U'#', Color::white, Color::black, &clip);
+    CHECK_EQ(count_cells(line_screen, U'#'), 4);
+    CHECK_EQ(line_screen.at(5, 3).ch, U'#');
+    CHECK_EQ(line_screen.at(8, 3).ch, U'#');
+    CHECK_EQ(line_screen.at(4, 3).ch, U' ');
+    CHECK_EQ(line_screen.at(9, 3).ch, U' ');
+
+    // 矩形边都在 clip 外（clip 在矩形内部）：一条边也不画
+    Screen inside(20, 10);
+    ui::outline(inside, 0, 0, 20, 10, U'#', Color::white, Color::black, &clip);
+    CHECK_EQ(count_cells(inside, U'#'), 0);
+
+    // 部分相交：只画落在 clip 内的上边与左边段
+    Screen partial(20, 10);
+    ui::outline(partial, 5, 2, 8, 6, U'#', Color::white, Color::black, &clip);
+    CHECK_EQ(count_cells(partial, U'#'), 6);  // 上边 4 + 左边 2
+    CHECK_EQ(partial.at(5, 2).ch, U'#');
+    CHECK_EQ(partial.at(8, 2).ch, U'#');
+    CHECK_EQ(partial.at(5, 4).ch, U'#');
+    CHECK_EQ(partial.at(8, 3).ch, U' ');  // 右边 x=12 在 clip 外
+    CHECK_EQ(partial.at(5, 5).ch, U' ');
+
+    // 圆：r=1 的四个正方向点都落在 clip 内（对角线不在半径 1 上）
+    Screen circle_screen(20, 10);
+    ui::circle(circle_screen, 6, 3, 1, U'o', Color::white, Color::black, &clip);
+    CHECK_EQ(count_cells(circle_screen, U'o'), 4);
+    CHECK_EQ(circle_screen.at(5, 3).ch, U'o');
+    CHECK_EQ(circle_screen.at(7, 3).ch, U'o');
+    CHECK_EQ(circle_screen.at(6, 2).ch, U'o');
+    CHECK_EQ(circle_screen.at(6, 4).ch, U'o');
+    CHECK_EQ(circle_screen.at(5, 2).ch, U' ');
 }
 
 // ---------------------------------------------------------------- save store

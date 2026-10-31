@@ -62,8 +62,14 @@ public:
     void bar(int x, int y, int w, float ratio);
     void menu(int x, int y, int w, const std::vector<std::string>& items, int selected, int h);
     void body(int x, int y, int w, std::string_view text, int max_lines);
+    /// 精灵：step = 降采样步长（1 = 逐字符；< 1 钳到 1）；brightness = 0..1 亮度
+    /// （非有限按 1，越界钳制），只改前景色
     void sprite(int x, int y, const std::vector<std::string>& rows,
-                const std::map<char, Color>& colors, int step);
+                const std::map<char, Color>& colors, int step, float brightness = 1.0f);
+    /// 几何原语（局部坐标）：与 phos.ui.line/outline/circle 同源，越界由 Region 裁剪
+    void line(int x1, int y1, int x2, int y2, char32_t ch, Color fg, Color bg);
+    void outline(int x, int y, int w, int h, char32_t ch, Color fg, Color bg);
+    void circle(int cx, int cy, int r, char32_t ch, Color fg, Color bg);
 
 private:
     /// 本区域写入的目标网格：锚定层时是那块层缓冲，否则是整屏
@@ -77,6 +83,8 @@ private:
     /// 区域内一条横线的实际可用宽度（x 为区域内坐标，放不下就是 0）
     int clip_w(int x, int w) const;
     ui::Style style() const;
+    /// 区域在目标网格上的矩形（含锚定面原点与层坐标）：几何原语用它裁剪
+    ui::Rect bounds() const;
     /// 局部坐标 → 绝对网格坐标（锚点决定横向基准）
     int abs_x(int x) const;
     int abs_y(int y) const;

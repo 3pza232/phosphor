@@ -139,10 +139,11 @@ void register_ui_api(sol::state& lua, HostContext& host) {
     };
 
     /// 像素精灵：rows 为字符画，colors 是 字符→颜色 映射（键必须是**单字节**字符，
-    /// 用 '█' 这类多字节字符查不到表、会退化成风格色），step 为缩放步长（可省略，缺省 1）。
-    /// 只有 '.' 与空格透明，其余字符都算实心像素。
+    /// 用 '█' 这类多字节字符查不到表、会退化成风格色）。只有 '.' 与空格透明。
+    /// step = 降采样步长（1 = 逐字符，2 = 每 2 列/行取一个；< 1 钳到 1），
+    /// brightness = 0..1 亮度（可省略，缺省 1；非有限按 1）。钳制在 core 里只有一份。
     ui["sprite"] = [&host, rect_at](int x, int y, sol::object rows, sol::object colors,
-                                    sol::optional<int> step) {
+                                    sol::optional<int> step, sol::optional<float> brightness) {
         ui::Style style = cart_style(host);
         std::vector<std::string> art = api::read_rows(rows);
         std::map<char, Color> palette = color_map(colors);
@@ -152,10 +153,9 @@ void register_ui_api(sol::state& lua, HostContext& host) {
         int w = 0;
         for (const auto& row : art) w = std::max(w, text::display_width(row));
         const ui::Rect r = rect_at(x, y, w, h);
-        const int scale = step.value_or(1);
         // 以左上角定位：icon 语义为居中，此处用中心点换算
-        ui::icon(*host.screen, art, palette, r.x + w / 2, r.y + h / 2,
-                 scale < 1 ? 1 : scale, 1.0f, style.accent);
+        ui::icon(*host.screen, art, palette, r.x + w / 2, r.y + h / 2, step.value_or(1),
+                 brightness.value_or(1.0f), style.accent);
     };
 
     /// 列表导航：返回 (新下标, 动作)，动作为 "none" / "confirm" / "cancel"
@@ -231,10 +231,31 @@ void register_ui_api(sol::state& lua, HostContext& host) {
         "body",
         [](DrawRegion& r, int x, int y, int w, const std::string& text,
            sol::optional<int> max_lines) { r.body(x, y, w, text, max_lines.value_or(0)); },
+        // 几何原语：与 phos.ui.line/outline/circle 同参数风格；坐标是 Region 局部坐标，
+        // 越界由 Region 的裁剪矩形负责（core 原语接受 clip 指针）
+        "line",
+        [&host](DrawRegion& r, int x1, int y1, int x2, int y2, sol::object ch, sol::object fg,
+                sol::object bg) {
+            r.line(x1, y1, x2, y2, api::read_char(ch, U'-'),
+                   api::read_color(fg, api::default_fg(host)), api::read_background(bg));
+        },
+        "outline",
+        [&host](DrawRegion& r, int x, int y, int w, int h, sol::object ch, sol::object fg,
+                sol::object bg) {
+            r.outline(x, y, w, h, api::read_char(ch, U'-'),
+                      api::read_color(fg, api::default_fg(host)), api::read_background(bg));
+        },
+        "circle",
+        [&host](DrawRegion& r, int cx, int cy, int radius, sol::object ch, sol::object fg,
+                sol::object bg) {
+            r.circle(cx, cy, radius, api::read_char(ch, U'o'),
+                     api::read_color(fg, api::default_fg(host)), api::read_background(bg));
+        },
         "sprite",
         [](DrawRegion& r, int x, int y, sol::object rows, sol::object colors,
-           sol::optional<int> step) {
-            r.sprite(x, y, api::read_rows(rows), color_map(colors), step.value_or(1));
+           sol::optional<int> step, sol::optional<float> brightness) {
+            r.sprite(x, y, api::read_rows(rows), color_map(colors), step.value_or(1),
+                     brightness.value_or(1.0f));
         });
 
     // 声明式界面：与主机外壳共用 ui/ 的组件树（见 api/ui_render.cpp）
