@@ -70,6 +70,12 @@ Node& Node::add_field(std::string child_id, std::string text) {
     return node;
 }
 
+Node& Node::add_scroll(std::string child_id, int height) {
+    Node& node = add(Kind::scroll, std::move(child_id));
+    node.props.height = height;
+    return node;
+}
+
 Node& Node::add_grid(std::string child_id, int cols) {
     Node& node = add(Kind::grid, std::move(child_id));
     node.props.cols = cols;

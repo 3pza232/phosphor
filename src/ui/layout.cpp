@@ -80,6 +80,22 @@ Size measure(Node& node, int avail_w, const Theme& theme) {
     int content_h = 0;
 
     switch (node.kind) {
+        case Kind::scroll: {
+            const int child_avail = std::max(0, avail_w - pad_w(node) - border_width(node) * 2);
+            int content = 0;
+            int width = 0;
+            bool first = true;
+            for (Node& child : node.children) {
+                const Size size = measure(child, child_avail, theme);
+                if (!first) content += std::max(0, props.gap);
+                first = false;
+                content += size.h + child.props.margin.t + child.props.margin.b;
+                width = std::max(width, size.w + child.props.margin.l + child.props.margin.r);
+            }
+            content_w = props.width > 0 ? props.width : width;
+            content_h = props.height > 0 ? props.height : content;
+            break;
+        }
         case Kind::grid: {
             const int cols = props.cols > 0 ? props.cols : std::max(1, static_cast<int>(node.children.size()));
             const int gap = std::max(0, props.gap);
@@ -228,6 +244,28 @@ void arrange(Node& node, Rect rect, const Theme& theme) {
                       rect.y + border + node.props.padding.t,
                       std::max(0, rect.w - border * 2 - pad_w(node)),
                       std::max(0, rect.h - border * 2 - pad_h(node))};
+
+    if (node.kind == Kind::scroll) {
+        // 纵向视口：子项按列排，y 减去显式偏移；超出视口的部分由绘制裁剪
+        const int gap = std::max(0, node.props.gap);
+        int cursor = node.inner.y - std::max(0, node.props.scroll);
+        bool first = true;
+        for (Node& child : node.children) {
+            if (child.props.absolute) {
+                arrange(child,
+                        Rect{node.inner.x + child.props.x, cursor + child.props.y, 0, 0}, theme);
+                continue;
+            }
+            if (!first) cursor += gap;
+            first = false;
+            int child_w = child.props.width > 0 ? child.props.width : node.inner.w;
+            int child_h = child.props.height > 0 ? child.props.height : child.natural_h;
+            arrange(child, Rect{node.inner.x + child.props.margin.l, cursor,
+                                std::max(0, child_w), std::max(0, child_h)}, theme);
+            cursor += child_h + child.props.margin.t + child.props.margin.b;
+        }
+        return;
+    }
 
     if (node.kind == Kind::grid) {
         const int cols = node.props.cols > 0

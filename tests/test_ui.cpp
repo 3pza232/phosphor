@@ -45,6 +45,28 @@ TEST(ui_layout_column_and_padding) {
     CHECK_EQ(b->rect.y, 8);
 }
 
+TEST(ui_scroll_viewport_clips_and_offsets) {
+    ui::Theme theme;
+    ui::State state;
+    Input input;
+    ui::Rect area{0, 0, 12, 10};
+    ui::Frame frame("t", state, theme, area, &input);
+    ui::Node& scroll = frame.root().add_scroll("sc", 3);
+    scroll.props.scroll = 2;  // 显式偏移：从第 3 项开始显示
+    scroll.props.gap = 0;
+    for (int i = 0; i < 5; ++i) scroll.add_text("r" + std::to_string(i), std::to_string(i));
+    frame.run();
+
+    Screen screen(12, 10);
+    frame.paint(screen);
+    const std::string text = screen.to_text();
+    CHECK(text.find("2") != std::string::npos);
+    CHECK(text.find("3") != std::string::npos);
+    CHECK(text.find("4") != std::string::npos);
+    CHECK(text.find("0") == std::string::npos);  // 偏移到视口外的行不画
+    CHECK(text.find("1") == std::string::npos);
+}
+
 TEST(ui_toast_push_expire_and_paint) {
     ui::Theme theme;
     ui::Toasts toasts;

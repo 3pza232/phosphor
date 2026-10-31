@@ -26,7 +26,8 @@ enum class Kind {
     button,    ///< 按钮行（确认触发）
     hint,      ///< 页脚键位提示（items 为 [键, 说明] 交替）
     table,     ///< 表格：columns 表头（可空）+ rows 数据，列宽可指定
-    grid       ///< 等宽网格：按 cols 列逐行摆放子项（卡片/按键/头像墙）
+    grid,      ///< 等宽网格：按 cols 列逐行摆放子项（卡片/按键/头像墙）
+    scroll     ///< 纵向滚动视口：height = 视口高，scroll = 内容偏移（显式，卡带自己控制）
 };
 
 enum class Align { start, center, end, stretch };
@@ -53,6 +54,7 @@ struct Props {
     Insets padding{};
     int gap = 1;     ///< 容器内子项间距
     int cols = 0;    ///< grid 的列数（0 = 全部排一行）
+    int scroll = 0;  ///< scroll 的内容偏移（行）；显式给出，引擎负责裁剪
     Align align_h = Align::stretch;
     Align align_v = Align::start;
 
@@ -115,7 +117,7 @@ struct Node {
 
     bool is_container() const {
         return kind == Kind::column || kind == Kind::row || kind == Kind::box ||
-               kind == Kind::grid;
+               kind == Kind::grid || kind == Kind::scroll;
     }
 
     // ---- 构造辅助：id 必填，属性用返回引用就地设置 ----
@@ -136,6 +138,7 @@ struct Node {
     Node& add_hint(std::string child_id);
     Node& add_table(std::string child_id);
     Node& add_grid(std::string child_id, int cols);
+    Node& add_scroll(std::string child_id, int height);
 };
 
 /// 根节点：永远是 column（宿主只填它，不改种类）。

@@ -97,6 +97,7 @@ ui::Kind kind_from_name(const std::string& name) {
     if (name == "button") return ui::Kind::button;
     if (name == "hint") return ui::Kind::hint;
     if (name == "table") return ui::Kind::table;
+    if (name == "scroll") return ui::Kind::scroll;
     return ui::Kind::column;
 }
 
@@ -348,6 +349,7 @@ struct Builder {
         out.grow = int_field(t, "grow");
         out.gap = int_field(t, "gap", out.gap);
         out.cols = int_field(t, "cols", out.cols);
+        out.scroll = std::max(0, int_field(t, "scroll", out.scroll));
         out.margin = insets_field(t, "margin");
         out.padding = insets_field(t, "padding");
         out.align_h = align_field(t, "align_h", out.align_h);

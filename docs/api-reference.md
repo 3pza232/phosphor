@@ -410,6 +410,7 @@ pending = phos.ui.render{
 | `hint` | 页脚键位提示（`items` 为 `[键, 说明]` 交替） | — |
 | `table` | 表格：`columns` 表头 + `rows` 数据，列宽/对齐可指定（表头下自动画分隔线） | — |
 | `grid` | 等宽网格：按 `cols` 列逐行摆放子项（卡片/按键/头像墙） | — |
+| `scroll` | 纵向滚动视口：`height` = 视口高，`scroll` = 内容偏移（行）；超出视口的子项被引擎裁剪 | — |
 
 **元素字段**
 
@@ -434,6 +435,7 @@ pending = phos.ui.render{
 | `value` | string | — | stat 的右值；field 的**初始内容**（只在首次出现时写入） |
 | `items` | string[] | — | list 的行；hint 的 `[键, 说明]` 交替 |
 | `cols` | integer | 0 | grid 的列数（0 = 全部排一行）；单元格宽度均分可用宽度 |
+| `scroll` | integer | 0 | scroll 的内容偏移（行）；由卡带显式控制，引擎负责视口裁剪 |
 | `columns` | string[] | — | table 的表头（空 = 无表头；有表头时自动加一条分隔线） |
 | `rows` | table[] | — | table 的数据行：每行一个字符串数组；数字单元格按整数/两位小数转文本 |
 | `widths` | integer[] | — | table 各列固定宽度；0 或缺省 = 按内容自适应（余量均摊铺满可用宽度） |
@@ -502,6 +504,12 @@ pending = phos.ui.render{
 - 控制命令 `ui.list`（同一快照）/ `ui.focus{id}` / `ui.activate{id}`：`ui.activate` 与玩家按 A
   完全同语义，请求在下一逻辑帧的 render 生效。字段与示例见
   [agent-interface.md](agent-interface.md) 的「界面：读控件树、按 id 操作」一节。
+
+### 滚动视口：kind = scroll
+
+height 指定视口高度，scroll 指定内容偏移（行，从 0 起）。偏移由卡带显式控制
+（比如只显示日志尾部：scroll = max(0, #lines - height)）；超出视口的子项由
+引擎**裁剪绘制**，不会漏到视口外。焦点自动跟随滚动尚未实现（需要时先用显式偏移）。
 
 ### 瞬时提示：phos.ui.toast(text, seconds?)
 

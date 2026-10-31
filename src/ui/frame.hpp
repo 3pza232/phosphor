@@ -89,7 +89,7 @@ public:
     std::vector<Event> run();
 
     /// 按本帧布局绘制到网格。
-    void paint(Screen& screen) const;
+    void paint(Screen& screen);
 
     bool ime_requested() const { return ime_requested_; }
     const std::string& focused_id() const { return focused_id_; }

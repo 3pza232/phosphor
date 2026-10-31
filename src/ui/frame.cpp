@@ -352,8 +352,17 @@ void Frame::handle_focus_nav(std::vector<Node*>& focusables, std::vector<Event>&
 
 namespace {
 
-void paint_node(Screen& screen, const Node& node, const Theme& theme, const State& state,
+void paint_node(Screen& screen, Node& node, const Theme& theme, const State& state,
                 const std::string& screen_id, const std::string& focus);
+
+/// 整棵子树平移（scroll 绘制时把子项移到临时视口坐标系，画完再移回）
+void shift_subtree(Node& node, int dx, int dy) {
+    node.rect.x += dx;
+    node.rect.y += dy;
+    node.inner.x += dx;
+    node.inner.y += dy;
+    for (Node& child : node.children) shift_subtree(child, dx, dy);
+}
 
 void paint_border(Screen& screen, const Node& node, const Theme& theme, bool focused) {
     const Rect rect = node.rect;
@@ -436,7 +445,7 @@ void paint_list(Screen& screen, const Node& node, const Theme& theme, const Stat
     }
 }
 
-void paint_node(Screen& screen, const Node& node, const Theme& theme, const State& state,
+void paint_node(Screen& screen, Node& node, const Theme& theme, const State& state,
                 const std::string& screen_id, const std::string& focus) {
     const bool focused = !node.id.empty() && node.id == focus;
 
@@ -448,6 +457,29 @@ void paint_node(Screen& screen, const Node& node, const Theme& theme, const Stat
     if (node.props.border != Border::none) paint_border(screen, node, theme, focused);
 
     switch (node.kind) {
+        case Kind::scroll: {
+            // 视口裁剪：子项先画进"视口大小的临时屏"，再把非空格搬回主屏。
+            // 这样任意子项（含嵌套容器/宽字/缩放块）都被天然裁在视口内，
+            // 不需要给每个绘制函数都加一个 clip 参数
+            if (node.inner.w <= 0 || node.inner.h <= 0) break;
+            Screen viewport(node.inner.w, node.inner.h);
+            viewport.clear_transparent();
+            const int dx = -node.inner.x;
+            const int dy = -node.inner.y;
+            for (Node& child : node.children) {
+                shift_subtree(child, dx, dy);
+                paint_node(viewport, child, theme, state, screen_id, focus);
+                shift_subtree(child, -dx, -dy);
+            }
+            for (int y = 0; y < viewport.height(); ++y) {
+                for (int x = 0; x < viewport.width(); ++x) {
+                    const Cell& cell = viewport.at(x, y);
+                    if (cell.ch != U' ' || cell.alpha != 0)
+                        screen.set(node.inner.x + x, node.inner.y + y, cell);
+                }
+            }
+            break;
+        }
         case Kind::text: paint_text(screen, node, theme); break;
         case Kind::divider: {
             if (node.inner.w <= 0) break;
@@ -619,13 +651,14 @@ void paint_node(Screen& screen, const Node& node, const Theme& theme, const Stat
         default: break;
     }
 
-    for (const Node& child : node.children)
-        paint_node(screen, child, theme, state, screen_id, focus);
+    if (node.kind != Kind::scroll)
+        for (Node& child : node.children)
+            paint_node(screen, child, theme, state, screen_id, focus);
 }
 
 } // namespace
 
-void Frame::paint(Screen& screen) const {
+void Frame::paint(Screen& screen) {
     paint_node(screen, root_, theme_, state_, screen_id_, focused_id_);
 }
 
