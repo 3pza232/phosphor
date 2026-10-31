@@ -346,6 +346,87 @@ TEST(json_depth_limit_boundary) {
     CHECK(!err.empty());
 }
 
+TEST(json_value_roundtrip_nested) {
+    json::Value value;
+    std::string err;
+    CHECK(value.parse(R"({"name":"ADA","stats":{"hp":100,"mp":30.5},)"
+                      R"("history":[1,2,3],"tags":["a","b"],"seen":true,"ratio":0.25})",
+                      err));
+    CHECK(value.kind == json::Value::Kind::object);
+    CHECK_EQ(value.members.size(), size_t(6));
+    CHECK_EQ(value.members.at("name").text, std::string("ADA"));
+    const json::Value& stats = value.members.at("stats");
+    CHECK(stats.kind == json::Value::Kind::object);
+    CHECK_EQ(stats.members.at("hp").number, 100.0);
+    CHECK_EQ(stats.members.at("mp").number, 30.5);
+    const json::Value& history = value.members.at("history");
+    CHECK(history.kind == json::Value::Kind::array);
+    CHECK_EQ(history.items.size(), size_t(3));
+    CHECK_EQ(history.items[2].number, 3.0);
+
+    // 序列化稳定：dump → parse → dump 完全一致；嵌套容器保持 JSON 形状
+    const std::string dumped = value.dump();
+    json::Value again;
+    CHECK(again.parse(dumped, err));
+    CHECK_EQ(again.dump(), dumped);
+    CHECK(dumped.find("\"history\":[1,2,3]") != std::string::npos);
+    CHECK(dumped.find("\"stats\":{") != std::string::npos);
+    // 17 位有效数字：小数可无损回读
+    json::Value number;
+    CHECK(number.parse("0.1", err));
+    CHECK_EQ(number.number, 0.1);
+    // 文本转义与 Object 共用同一份实现
+    json::Value text;
+    CHECK(text.parse("\"a\\\"b\\n\u4e2d\"", err));
+    CHECK_EQ(text.text, std::string("a\"b\n中"));
+    CHECK_EQ(text.dump(), std::string("\"a\\\"b\\n中\""));
+}
+
+TEST(json_value_strict_and_depth_limit) {
+    json::Value value;
+    std::string err;
+    CHECK(!value.parse("", err));
+    CHECK(!value.parse("[1,2", err));
+    CHECK(!value.parse("{\"a\":1} junk", err));  // 必须整串消费
+    CHECK(!value.parse("NaN", err));
+    CHECK(!value.parse("Infinity", err));
+    CHECK(!value.parse("1e999", err));
+    CHECK(!value.parse("1abc", err));  // 数字后必须是分隔符
+    CHECK(!value.parse("null junk", err));
+    CHECK(value.parse("null", err));
+    CHECK(value.kind == json::Value::Kind::null);
+
+    const auto nested = [](int levels) {
+        std::string text;
+        for (int i = 0; i < levels; ++i) text += '[';
+        text += '1';
+        for (int i = 0; i < levels; ++i) text += ']';
+        return text;
+    };
+    CHECK(value.parse(nested(json::Value::kMaxDepth), err));       // 上限内
+    CHECK(!value.parse(nested(json::Value::kMaxDepth + 1), err));  // 超一层即拒绝
+}
+
+TEST(json_value_reports_duplicate_keys_per_object) {
+    json::Value value;
+    std::string err;
+    CHECK(value.parse(R"({"a":1,"a":2,"outer":{"b":1,"b":2}})", err));
+    CHECK_EQ(value.duplicate_keys.size(), size_t(1));
+    CHECK_EQ(value.duplicate_keys[0], std::string("a"));
+    CHECK_EQ(value.members.at("a").number, 2.0);  // 后者生效
+    const json::Value& outer = value.members.at("outer");
+    CHECK_EQ(outer.duplicate_keys.size(), size_t(1));
+    CHECK_EQ(outer.duplicate_keys[0], std::string("b"));
+
+    // Object 视图继续把各层重复键暴露给配置读取
+    json::Object object;
+    CHECK(object.parse(R"({"theme":{"skin":"a","skin":"b"}})", err));
+    const json::Object* theme = object.object("theme");
+    CHECK(theme != nullptr);
+    CHECK_EQ(theme->duplicate_keys().size(), size_t(1));
+    CHECK_EQ(theme->str("skin"), std::string("b"));
+}
+
 // ---------------------------------------------------------------- palette / builtin
 
 TEST(palette_slot_names) {
@@ -1037,6 +1118,137 @@ TEST(save_store_typed_values_roundtrip) {
     CHECK_EQ(*reopened.get("level"), std::string("12.5"));  // 文本视图
 
     std::filesystem::remove_all(dir, ec);
+}
+
+TEST(save_store_structured_values_roundtrip) {
+    namespace fs = std::filesystem;
+    const fs::path dir = unit_scratch("saves-structured");
+    std::error_code ec;
+    fs::remove_all(dir, ec);
+
+    json::Value stats = json::Value::of_object();
+    stats.members["hp"] = json::Value::of_number(100);
+    stats.members["mp"] = json::Value::of_number(30.5);
+
+    json::Value history = json::Value::of_array();
+    for (int i = 1; i <= 3; ++i) history.items.push_back(json::Value::of_number(i));
+
+    json::Value tags = json::Value::of_array();
+    tags.items.push_back(json::Value::of_text("a"));
+    tags.items.push_back(json::Value::of_text("b"));
+
+    json::Value profile = json::Value::of_object();
+    profile.members["name"] = json::Value::of_text("ADA");
+    profile.members["seen"] = json::Value::of_boolean(true);
+    profile.members["stats"] = stats;
+    profile.members["history"] = history;
+    profile.members["tags"] = tags;
+
+    SaveStore store;
+    CHECK(store.open(dir.string(), "struct"));
+    CHECK(store.set("profile", profile));
+    CHECK(store.get_value("profile").has_value());
+
+    // 落盘正文就是 JSON：数组与嵌套对象原样，不是被拍平成字符串
+    {
+        std::ifstream in(dir / "struct.sav", std::ios::binary);
+        std::string text, line;
+        while (std::getline(in, line)) text += line + '\n';
+        in.close();
+        CHECK(text.find("\"history\":[1,2,3]") != std::string::npos);
+        CHECK(text.find("\"stats\":{") != std::string::npos);
+        CHECK(text.find("\"tags\":[\"a\",\"b\"]") != std::string::npos);
+    }
+
+    // 另一个实例读回同构值；文本视图是它的 JSON 文本
+    SaveStore reopened;
+    CHECK(reopened.open(dir.string(), "struct"));
+    const auto loaded = reopened.get_value("profile");
+    CHECK(loaded.has_value() && loaded->kind == json::Value::Kind::object);
+    CHECK_EQ(loaded->dump(), profile.dump());
+    CHECK_EQ(*reopened.get("profile"), profile.dump());
+
+    // 标量值仍按原类型取回
+    CHECK(store.set("level", "9"));
+    CHECK(store.set("hp", SaveStore::Value::of_number(7)));
+    SaveStore again;
+    CHECK(again.open(dir.string(), "struct"));
+    CHECK_EQ(*again.get("level"), std::string("9"));
+    CHECK_EQ(again.get_value("hp")->number, 7.0);
+
+    fs::remove_all(dir, ec);
+}
+
+TEST(save_store_rejects_invalid_structured_values) {
+    namespace fs = std::filesystem;
+    const fs::path dir = unit_scratch("saves-structured-bad");
+    std::error_code ec;
+    fs::remove_all(dir, ec);
+
+    SaveStore store;
+    CHECK(store.open(dir.string(), "bad"));
+
+    // null 不是存档值（Lua 里 null 与"键不存在"无法区分）
+    CHECK(!store.set("null", json::Value{}));
+    // 嵌套 NaN / Infinity 会让 JSON 变成非法文本：整份拒绝
+    json::Value nan = json::Value::of_object();
+    nan.members["x"] = json::Value::of_number(std::numeric_limits<double>::quiet_NaN());
+    CHECK(!store.set("nan", nan));
+    json::Value inf = json::Value::of_array();
+    inf.items.push_back(json::Value::of_number(std::numeric_limits<double>::infinity()));
+    CHECK(!store.set("inf", inf));
+    json::Value with_null = json::Value::of_object();
+    with_null.members["x"] = json::Value{};
+    CHECK(!store.set("with_null", with_null));
+
+    // 结构化值按其 JSON 文本计入 4096 上限
+    json::Value huge = json::Value::of_object();
+    huge.members["blob"] = json::Value::of_text(std::string(5000, 'x'));
+    CHECK(!store.set("huge", huge));
+    json::Value fits = json::Value::of_object();
+    fits.members["blob"] = json::Value::of_text(std::string(4000, 'x'));
+    CHECK(store.set("fits", fits));
+
+    // 被拒绝的写入不改变内存；已写入的合法值落盘可读
+    CHECK(!store.get("nan").has_value());
+    CHECK(!store.get("null").has_value());
+    SaveStore reopened;
+    CHECK(reopened.open(dir.string(), "bad"));
+    const auto loaded = reopened.get_value("fits");
+    CHECK(loaded.has_value() && loaded->kind == json::Value::Kind::object);
+
+    fs::remove_all(dir, ec);
+}
+
+TEST(save_store_tape_code_flattens_structured_values) {
+    namespace fs = std::filesystem;
+    const fs::path dir = unit_scratch("saves-structured-tape");
+    std::error_code ec;
+    fs::remove_all(dir, ec);
+
+    json::Value profile = json::Value::of_object();
+    profile.members["name"] = json::Value::of_text("ADA");
+    json::Value history = json::Value::of_array();
+    history.items.push_back(json::Value::of_number(1));
+    history.items.push_back(json::Value::of_number(2));
+    profile.members["history"] = history;
+
+    SaveStore source;
+    CHECK(source.open(dir.string(), "tape"));
+    CHECK(source.set("profile", profile));
+    const std::string code = source.export_code();
+    CHECK(!code.empty());
+
+    // 磁带码只有旧版 key=value 文本语义：结构化值导出为 JSON 文本，导入后成为文本值
+    SaveStore target;
+    CHECK(target.open(dir.string(), "tape2"));
+    CHECK(target.import_code(code));
+    const auto imported = target.get_value("profile");
+    CHECK(imported.has_value() && imported->kind == json::Value::Kind::text);
+    CHECK_EQ(imported->text, profile.dump());
+    CHECK_EQ(*target.get("profile"), profile.dump());
+
+    fs::remove_all(dir, ec);
 }
 
 TEST(save_store_export_import_roundtrip) {

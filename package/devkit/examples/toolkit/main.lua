@@ -3,13 +3,15 @@
 -- 这些是"每张卡带都会写一遍"的东西，引擎收走后作者只写玩法：
 --   * 排行榜：排序、截断、存档键与坏档容错都由 phos.score 负责；
 --   * 共享词表：SCORE/BEST/PAUSED… 不需要每张卡带再抄两列；
---   * 格式化：千分位、mm:ss、百分比只有一份实现（与主机展示一致）。
+--   * 格式化：千分位、mm:ss、百分比只有一份实现（与主机展示一致）；
+--   * 存档：标量按原类型、表值按结构原样存取（嵌套对象与数组都不必自己编解码）。
 local points = 0
 local hp = 0.4567
 local shared = {}
 local board = nil
 local plays = 0          -- 数字型存档示例：读出就是 number，不必 tonumber
 local seen_intro = false -- 布尔型存档示例：读出就是 boolean，不必比字符串
+local profile = nil      -- 表值存档示例：嵌套对象 + 数组原样读回
 local slot1_marker, default_marker = "", "" -- 槽位隔离示例
 
 local function fmt()
@@ -39,6 +41,17 @@ function init()
   phos.save.slot(0)
   default_marker = phos.save.read("slot_marker") or ""
 
+  -- 表值存档：读回来就是同一张表（对象是字符串键、连续 1..n 整数键是数组），
+  -- 直接当普通 Lua 表用；改写后再整张写回即可，不需要自己序列化
+  profile = phos.save.read("profile")
+  if type(profile) ~= "table" then profile = {} end
+  profile.name = profile.name or "PILOT"
+  profile.level = (profile.level or 0) + 1
+  profile.stats = profile.stats or { hp = 100, mp = 30 }
+  profile.history = profile.history or {}
+  table.insert(profile.history, profile.level)
+  phos.save.write("profile", profile)
+
   plays = phos.save.read("plays") or 0            -- 数字/布尔按原类型取回
   seen_intro = phos.save.read("seen_intro") or false
   if not seen_intro then
@@ -56,6 +69,10 @@ function init()
     formatted = function() return fmt() end,
     shared_score = function() return shared.score or "" end,
     plays = function() return plays end,
+    profile_name = function() return profile.name end,
+    profile_level = function() return profile.level end,
+    profile_hp = function() return profile.stats.hp end,
+    profile_history = function() return profile.history end,
     slot1_marker = function() return slot1_marker end,
     default_marker = function() return default_marker end,
     save_slot = function() return phos.save.slot_index() end,
@@ -85,6 +102,7 @@ function draw()
   S.print(1, 3, (shared.score or "SCORE") .. ": " .. t.score, C.white)
   S.print(1, 4, (shared.best or "BEST") .. ": " .. tostring(board:best()), C.green)
   S.print(1, 5, "CLOCK: " .. t.clock .. "   HP: " .. t.percent, C.gray)
+  S.print(1, 6, "LVL: " .. tostring(profile.level) .. "   RUNS: " .. #profile.history, C.gray)
 
   -- 侧栏也是同一套组件（引擎负责布局/焦点/主题）
   phos.ui.render{

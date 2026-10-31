@@ -22,6 +22,7 @@
 
 #include <cmath>
 #include <cstdio>
+#include <set>
 
 namespace phos {
 
@@ -133,6 +134,119 @@ void bind_surface_api(sol::table& t, HostContext& host, bool is_panel) {
         (is_panel ? panel_surface(host) : content_surface(host))
             .plot(x, y, api::read_color(fg, default_fg(host)));
     };
+}
+
+/// 存档表值的嵌套上限：卡带写的表最多 8 层（与文档一致），再深写入失败
+constexpr int kMaxSaveDepth = 8;
+
+/// Lua 表的键 → 字符串：文本原样、数字/布尔转文本；表/函数/userdata 键拒绝
+bool save_key_from_lua(const sol::object& key, std::string& out) {
+    if (key.is<std::string>()) {
+        out = key.as<std::string>();
+        return true;
+    }
+    if (key.is<long long>()) {
+        out = std::to_string(key.as<long long>());
+        return true;
+    }
+    if (key.is<double>()) {
+        char buffer[32];
+        std::snprintf(buffer, sizeof(buffer), "%g", key.as<double>());
+        out = buffer;
+        return true;
+    }
+    if (key.is<bool>()) {
+        out = key.as<bool>() ? "true" : "false";
+        return true;
+    }
+    return false;
+}
+
+/// Lua 值 → 存档值：连续 1..n 整数键的表是数组，其余表是对象。
+/// 函数/userdata/thread、环引用、超过深度的表一律拒绝——写入失败好过存下半份。
+/// 遇到第一个非法值就返回 false，调用方据此向卡带回报失败。
+bool save_value_from_lua(const sol::object& value, json::Value& out, int depth,
+                         std::set<const void*>& path) {
+    switch (value.get_type()) {
+        case sol::type::boolean: out = json::Value::of_boolean(value.as<bool>()); return true;
+        case sol::type::number: out = json::Value::of_number(value.as<double>()); return true;
+        case sol::type::string: out = json::Value::of_text(value.as<std::string>()); return true;
+        case sol::type::table: break;
+        default: return false;
+    }
+    if (depth <= 0) return false;  // 超深：存档只收 8 层以内的表
+
+    const sol::table table = value.as<sol::table>();
+    const void* identity = table.pointer();
+    if (identity && !path.insert(identity).second) return false;  // 环引用
+    struct PopPath {
+        std::set<const void*>& path;
+        const void* identity;
+        ~PopPath() {
+            if (identity) path.erase(identity);
+        }
+    } pop{path, identity};
+
+    // 连续 1..n 整数键 = 数组（空表按对象处理：{} 与 [] 对读的人来说一样）
+    size_t count = 0;
+    long long max_key = 0;
+    bool sequence = true;
+    for (const auto& entry : table) {
+        if (!entry.first.is<long long>()) {
+            sequence = false;
+            break;
+        }
+        const long long key = entry.first.as<long long>();
+        if (key < 1) {
+            sequence = false;
+            break;
+        }
+        ++count;
+        if (key > max_key) max_key = key;
+    }
+    if (sequence && count > 0 && static_cast<size_t>(max_key) == count) {
+        out = json::Value::of_array();
+        out.items.reserve(count);
+        for (long long i = 1; i <= max_key; ++i) {
+            json::Value item;
+            if (!save_value_from_lua(table[i], item, depth - 1, path)) return false;
+            out.items.push_back(std::move(item));
+        }
+        return true;
+    }
+
+    out = json::Value::of_object();
+    for (const auto& entry : table) {
+        std::string key;
+        if (!save_key_from_lua(entry.first, key)) return false;
+        json::Value item;
+        if (!save_value_from_lua(entry.second, item, depth - 1, path)) return false;
+        // 键转字符串后撞车（如 [1] 与 ["1"]）会静默丢一个：拒绝比丢数据诚实
+        if (!out.members.emplace(std::move(key), std::move(item)).second) return false;
+    }
+    return true;
+}
+
+/// 存档值 → Lua 值：read 返回与写入时同构的表（数组 1..n、对象字符串键）
+sol::object save_value_to_lua(lua_State* state, const json::Value& value) {
+    switch (value.kind) {
+        case json::Value::Kind::text: return sol::make_object(state, value.text);
+        case json::Value::Kind::number: return sol::make_object(state, value.number);
+        case json::Value::Kind::boolean: return sol::make_object(state, value.boolean);
+        case json::Value::Kind::array: {
+            sol::table table = sol::state_view(state).create_table();
+            for (size_t i = 0; i < value.items.size(); ++i)
+                table[static_cast<int>(i) + 1] = save_value_to_lua(state, value.items[i]);
+            return table;
+        }
+        case json::Value::Kind::object: {
+            sol::table table = sol::state_view(state).create_table();
+            for (const auto& [key, child] : value.members)
+                table[key] = save_value_to_lua(state, child);
+            return table;
+        }
+        default: return sol::nil;
+    }
 }
 
 } // namespace
@@ -400,36 +514,22 @@ void register_host_api(sol::state& lua, HostContext& host) {
     // --- phos.save（需 manifest 声明 save = true） ---
     sol::table save = phos.create_named("save");
     save["available"] = [&host]() { return host.save != nullptr; };
+    // 值可以是文本/数字/布尔，也可以是表：连续 1..n 整数键 = 数组，其余 = 对象
+    // （键转字符串），嵌套深度 ≤ 8。函数/userdata/环等存不下的值返回 false——
+    // 卡带据此降级，而不是以为"已经存下了"
     save["write"] = [&host](const std::string& key, const sol::object& value) -> bool {
         if (!host.save) return false;
-        // 值可以是文本/数字/布尔（标量）；结构化表留给后续版本，写入失败时返回 false
-        // （卡带据此降级，而不是以为"已经存下了"）
-        SaveStore::Value stored;
-        if (value.is<std::string>()) {
-            stored = SaveStore::Value::of_text(value.as<std::string>());
-        } else if (value.is<bool>()) {
-            stored = SaveStore::Value::of_boolean(value.as<bool>());
-        } else if (value.is<double>()) {
-            stored = SaveStore::Value::of_number(value.as<double>());
-        } else if (value.is<int>()) {
-            stored = SaveStore::Value::of_number(static_cast<double>(value.as<int>()));
-        } else {
-            return false;
-        }
+        json::Value stored;
+        std::set<const void*> path;
+        if (!save_value_from_lua(value, stored, kMaxSaveDepth, path)) return false;
         return host.save->set(key, stored);  // 落盘失败也要如实回报，卡带才好降级
     };
+    // read 返回同构值：标量原类型，表按写入时的结构还原（数组 1..n、对象字符串键）
     save["read"] = [&host, &lua](const std::string& key) -> sol::object {
         if (!host.save) return sol::nil;
         auto value = host.save->get_value(key);
         if (!value) return sol::nil;
-        switch (value->kind) {
-            case SaveStore::Value::Kind::number:
-                return sol::make_object(lua.lua_state(), value->number);
-            case SaveStore::Value::Kind::boolean:
-                return sol::make_object(lua.lua_state(), value->boolean);
-            default:
-                return sol::make_object(lua.lua_state(), value->text);
-        }
+        return save_value_to_lua(lua.lua_state(), *value);
     };
     // 存档槽：0 = 默认档，1..9 = 独立槽位（同一卡带的多份进度/多存档）
     save["slot"] = [&host](int slot) -> bool {

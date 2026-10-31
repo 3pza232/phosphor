@@ -5,7 +5,6 @@
 
 #include <cmath>
 #include <cstdint>
-#include <cstdio>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -26,12 +25,38 @@ bool key_within_limits(const std::string& key) {
            key.find('=') == std::string::npos && key.find('\n') == std::string::npos;
 }
 
+/// 值树合法性：数字必须有限（NaN/inf 不是合法 JSON）、不允许 null
+/// （null 与"键不存在"在 Lua 里无法区分，存下来只会读回一个缺项）
+bool value_tree_valid(const SaveStore::Value& value) {
+    switch (value.kind) {
+        case SaveStore::Value::Kind::null: return false;
+        case SaveStore::Value::Kind::number: return std::isfinite(value.number);
+        case SaveStore::Value::Kind::array:
+            for (const SaveStore::Value& item : value.items)
+                if (!value_tree_valid(item)) return false;
+            return true;
+        case SaveStore::Value::Kind::object:
+            for (const auto& [key, child] : value.members) {
+                (void)key;
+                if (!value_tree_valid(child)) return false;
+            }
+            return true;
+        default: return true;
+    }
+}
+
+/// 入库校验：结构化值按其 JSON 文本计入 4096 上限（磁带码也按这份文本导出）；
+/// 顶层的文本值另要求不含换行（磁带码按 key=value 行拼接）
 bool value_within_limits(const SaveStore::Value& value) {
-    if (value.kind == SaveStore::Value::Kind::text)
-        return value.text.size() <= SaveStore::kMaxValueLength &&
-               value.text.find('\n') == std::string::npos;
-    if (value.kind == SaveStore::Value::Kind::number) return std::isfinite(value.number);
-    return true;
+    if (!value_tree_valid(value)) return false;
+    switch (value.kind) {
+        case SaveStore::Value::Kind::text:
+            return value.text.size() <= SaveStore::kMaxValueLength &&
+                   value.text.find('\n') == std::string::npos;
+        case SaveStore::Value::Kind::number:
+        case SaveStore::Value::Kind::boolean: return true;
+        default: return value.dump().size() <= SaveStore::kMaxValueLength;
+    }
 }
 
 int hex_nibble(char c) {
@@ -61,33 +86,11 @@ std::string hex32(uint32_t value) {
     return out;
 }
 
-/// JSON 数字字面量：17 位有效数字可无损回读 double；非有限数在入库前已被拒绝
-std::string format_number(double value) {
-    char buffer[40];
-    std::snprintf(buffer, sizeof(buffer), "%.17g", value);
-    return std::string(buffer);
-}
-
-std::string value_json(const SaveStore::Value& value) {
-    switch (value.kind) {
-        case SaveStore::Value::Kind::number: return format_number(value.number);
-        case SaveStore::Value::Kind::boolean: return value.boolean ? "true" : "false";
-        default: return json::quote(value.text);
-    }
-}
-
+/// 正文：一份 JSON 对象（键升序、值树原样转 JSON），CRC 与落盘都只认这一份文本
 std::string json_payload(const std::map<std::string, SaveStore::Value>& data) {
-    std::string out = "{";
-    bool first = true;
-    for (const auto& [key, value] : data) {
-        if (!first) out += ',';
-        first = false;
-        out += json::quote(key);
-        out += ':';
-        out += value_json(value);
-    }
-    out += '}';
-    return out;
+    json::Value root = json::Value::of_object();
+    for (const auto& [key, value] : data) root.members[key] = value;
+    return root.dump();
 }
 
 /// 删掉半份写出的临时文件（失败路径的清理；删不掉也没有更好的补救）
@@ -158,12 +161,9 @@ bool parse_v2(std::string_view text, Header& header) {
 
 } // namespace
 
-std::string SaveStore::Value::as_text() const {
-    switch (kind) {
-        case Kind::number: return format_number(number);
-        case Kind::boolean: return boolean ? "true" : "false";
-        default: return text;
-    }
+std::string save_text(const SaveStore::Value& value) {
+    if (value.kind == SaveStore::Value::Kind::text) return value.text;
+    return value.dump();
 }
 
 bool SaveStore::open(const std::string& save_dir, const std::string& cart_id, int slot) {
@@ -204,22 +204,23 @@ bool SaveStore::open(const std::string& save_dir, const std::string& cart_id, in
             writable_ = false;
             return false;
         }
-        json::Object object;
+        json::Value payload;
         std::string err;
-        if (!object.parse(header.payload, err)) {
+        if (!payload.parse(header.payload, err)) {
             log::warn("save: bad payload in " + path_ + ": " + err);
             writable_ = false;
             return false;
         }
-        for (const std::string& key : object.keys()) {
+        if (payload.kind != json::Value::Kind::object) {
+            log::warn("save: payload in " + path_ + " is not an object");
+            writable_ = false;
+            return false;
+        }
+        for (const auto& [key, value] : payload.members) {
             if (!key_within_limits(key)) continue;
             if (data_.size() >= kMaxEntries) break;
-            Value value;
-            if (object.is_string(key)) value = Value::of_text(object.str(key));
-            else if (object.is_number(key)) value = Value::of_number(object.number(key));
-            else if (object.is_boolean(key)) value = Value::of_boolean(object.flag(key));
-            else continue;
-            if (value_within_limits(value)) data_[key] = std::move(value);
+            if (!value_within_limits(value)) continue;  // 非法/超限值跳过，不让整份存档作废
+            data_[key] = value;
         }
         return true;
     }
@@ -248,7 +249,7 @@ std::optional<SaveStore::Value> SaveStore::get_value(const std::string& key) con
 std::optional<std::string> SaveStore::get(const std::string& key) const {
     auto value = get_value(key);
     if (!value) return std::nullopt;
-    return value->as_text();
+    return save_text(*value);
 }
 
 bool SaveStore::set(const std::string& key, const Value& value) {
@@ -313,10 +314,10 @@ bool SaveStore::flush(const std::map<std::string, Value>& data) const {
 
 std::string SaveStore::export_code() const {
     // 磁带码：旧版 `key=value\n` 载荷的十六进制——跨版本/跨机器都能读。
-    // 数字/布尔按文本视图写进码里，导入后成为文本值（磁带码只保证文本语义）
+    // 结构化值按 JSON 文本写进码里（导入后成为文本值：码只保证文本语义）
     static const char* kHex = "0123456789ABCDEF";
     std::string payload;
-    for (const auto& [k, v] : data_) payload += k + "=" + v.as_text() + "\n";
+    for (const auto& [k, v] : data_) payload += k + "=" + save_text(v) + "\n";
 
     std::string code;
     code.reserve(payload.size() * 2);

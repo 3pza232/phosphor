@@ -161,38 +161,6 @@ std::string parse_string(Scanner& s) {
     return out;
 }
 
-/// 跳过一个复合值（对象/数组），并把 scanner 停在它之后
-void skip_value(Scanner& s) {
-    s.skip_ws();
-    const char open = s.peek();
-    if (open != '{' && open != '[') {
-        while (!s.eof() && s.peek() != ',' && s.peek() != '}') ++s.pos;
-        return;
-    }
-
-    const char close = open == '{' ? '}' : ']';
-    int depth = 0;
-    while (!s.eof()) {
-        const char c = s.text[s.pos++];
-        if (c == '"') {
-            --s.pos;
-            parse_string(s);
-            if (!s.ok) return;
-            continue;
-        }
-        if (c == open) ++depth;
-        else if (c == close && --depth == 0) return;
-    }
-    s.fail("unterminated nested value");
-}
-
-std::string trim(std::string text) {
-    size_t begin = 0, end = text.size();
-    while (begin < end && std::isspace(static_cast<unsigned char>(text[begin]))) ++begin;
-    while (end > begin && std::isspace(static_cast<unsigned char>(text[end - 1]))) --end;
-    return text.substr(begin, end - begin);
-}
-
 /// JSON 数字文法：-?(0|[1-9][0-9]*)(\.[0-9]+)?([eE][+-]?[0-9]+)?
 /// 先按文法过一遍再交给 strtod：NaN/Infinity/+1/01/0x10 都是 strtod 会宽容接受、
 /// JSON 却非法的写法；溢出成无穷（1e999）同样判错——本实现只保留 double 能表示的值。
@@ -228,10 +196,137 @@ bool parse_number(std::string_view token, double& value) {
     return true;
 }
 
-/// 解析数组：只收集字符串元素（数字/布尔按原样文本收），嵌套对象/数组整体跳过。
-/// 配置里的 mods_disabled 是字符串数组，其它数组语义未定义——收了也没人读
-bool parse_array(Scanner& s, std::vector<std::string>& out) {
+/// 数字的短文本（%g）：显示与对象取值用
+std::string short_number(double value) {
+    char buffer[32];
+    std::snprintf(buffer, sizeof(buffer), "%g", value);
+    return buffer;
+}
+
+/// 数字的精确文本（17 位有效数字）：落盘后可无损回读
+std::string exact_number(double value) {
+    char buffer[40];
+    std::snprintf(buffer, sizeof(buffer), "%.17g", value);
+    return buffer;
+}
+
+bool parse_value(Scanner& s, Value& out, int depth);
+bool parse_object(Scanner& s, Value& out, int depth);
+bool parse_array(Scanner& s, Value& out, int depth);
+
+/// 数字扫描：字符集先扫一段，再交给严格文法校验，最后要求后面是分隔符——
+/// 否则 "1abc" 会被截成合法前缀 1，留下 "abc" 让上层报一个难懂的错误
+bool parse_number_at(Scanner& s, Value& out) {
+    const size_t start = s.pos;
+    while (!s.eof()) {
+        const char c = s.peek();
+        if (std::isdigit(static_cast<unsigned char>(c)) || c == '-' || c == '+' || c == '.' ||
+            c == 'e' || c == 'E')
+            ++s.pos;
+        else
+            break;
+    }
+    const std::string raw(s.text.substr(start, s.pos - start));
+    double parsed = 0.0;
+    if (!parse_number(raw, parsed)) {
+        s.fail(raw.empty() ? "expected value" : "bad number '" + raw.substr(0, 32) + "'");
+        return false;
+    }
+    if (!s.eof()) {
+        const char next = s.peek();
+        if (!std::isspace(static_cast<unsigned char>(next)) && next != ',' && next != '}' &&
+            next != ']') {
+            s.fail("bad number '" + raw.substr(0, 32) + "'");
+            return false;
+        }
+    }
+    out = Value::of_number(parsed);
+    return true;
+}
+
+bool parse_value(Scanner& s, Value& out, int depth) {
+    s.skip_ws();
+    if (s.eof()) {
+        s.fail("unexpected end");
+        return false;
+    }
+    switch (s.peek()) {
+        case '{': return parse_object(s, out, depth);
+        case '[': return parse_array(s, out, depth);
+        case '"':
+            out = Value::of_text(parse_string(s));
+            return s.ok;
+        case 't':
+            if (s.text.substr(s.pos, 4) != "true") {
+                s.fail("bad literal");
+                return false;
+            }
+            s.pos += 4;
+            out = Value::of_boolean(true);
+            return true;
+        case 'f':
+            if (s.text.substr(s.pos, 5) != "false") {
+                s.fail("bad literal");
+                return false;
+            }
+            s.pos += 5;
+            out = Value::of_boolean(false);
+            return true;
+        case 'n':
+            if (s.text.substr(s.pos, 4) != "null") {
+                s.fail("bad literal");
+                return false;
+            }
+            s.pos += 4;
+            out = Value{};
+            return true;
+        default: return parse_number_at(s, out);
+    }
+}
+
+bool parse_object(Scanner& s, Value& out, int depth) {
+    if (depth >= Value::kMaxDepth) {
+        s.fail("json nested too deep");
+        return false;
+    }
+    ++s.pos;  // '{'
+    out = Value::of_object();
+    while (true) {
+        s.skip_ws();
+        if (s.eof()) {
+            s.fail("unexpected end of object");
+            return false;
+        }
+        if (s.peek() == '}') {
+            ++s.pos;
+            return true;
+        }
+        if (s.peek() == ',') {
+            ++s.pos;
+            continue;
+        }
+        std::string key = parse_string(s);
+        if (!s.ok) return false;
+        s.skip_ws();
+        if (s.peek() != ':') {
+            s.fail("expected ':'");
+            return false;
+        }
+        ++s.pos;
+        Value child;
+        if (!parse_value(s, child, depth + 1)) return false;
+        if (out.members.count(key) > 0) out.duplicate_keys.push_back(key);
+        out.members[std::move(key)] = std::move(child);
+    }
+}
+
+bool parse_array(Scanner& s, Value& out, int depth) {
+    if (depth >= Value::kMaxDepth) {
+        s.fail("json nested too deep");
+        return false;
+    }
     ++s.pos;  // '['
+    out = Value::of_array();
     while (true) {
         s.skip_ws();
         if (s.eof()) {
@@ -246,25 +341,9 @@ bool parse_array(Scanner& s, std::vector<std::string>& out) {
             ++s.pos;
             continue;
         }
-        const char c = s.peek();
-        if (c == '"') {
-            out.push_back(parse_string(s));
-            if (!s.ok) return false;
-        } else if (c == '{' || c == '[') {
-            skip_value(s);  // 嵌套的复合值不参与取值
-            if (!s.ok) return false;
-        } else {
-            const size_t start = s.pos;
-            while (!s.eof() && s.peek() != ',' && s.peek() != ']') ++s.pos;
-            const std::string raw = trim(std::string(s.text.substr(start, s.pos - start)));
-            double ignored = 0.0;
-            if (raw.empty() ||
-                (raw != "true" && raw != "false" && raw != "null" && !parse_number(raw, ignored))) {
-                s.fail("bad value in array");  // 裸字面量同样按 JSON 文法校验
-                return false;
-            }
-            out.push_back(raw);
-        }
+        Value child;
+        if (!parse_value(s, child, depth + 1)) return false;
+        out.items.push_back(std::move(child));
     }
 }
 
@@ -310,105 +389,114 @@ std::string escape(std::string_view text) {
 
 std::string quote(std::string_view text) { return "\"" + escape(text) + "\""; }
 
-bool Object::parse(std::string_view text, std::string& err) { return parse_at(text, err, 0); }
+namespace {
 
-bool Object::parse_at(std::string_view text, std::string& err, int depth) {
-    if (depth >= kMaxDepth) {
-        err = "json nested too deep";
+void dump_value(const Value& value, std::string& out) {
+    switch (value.kind) {
+        case Value::Kind::null: out += "null"; return;
+        case Value::Kind::boolean: out += value.boolean ? "true" : "false"; return;
+        case Value::Kind::number: out += exact_number(value.number); return;
+        case Value::Kind::text: out += quote(value.text); return;
+        case Value::Kind::array:
+            out += '[';
+            for (size_t i = 0; i < value.items.size(); ++i) {
+                if (i > 0) out += ',';
+                dump_value(value.items[i], out);
+            }
+            out += ']';
+            return;
+        case Value::Kind::object: {
+            out += '{';
+            bool first = true;
+            for (const auto& [key, child] : value.members) {
+                if (!first) out += ',';
+                first = false;
+                out += quote(key);
+                out += ':';
+                dump_value(child, out);
+            }
+            out += '}';
+            return;
+        }
+    }
+}
+
+} // namespace
+
+bool Value::parse(std::string_view json_text, std::string& err) {
+    Scanner s{json_text};
+    *this = Value{};
+    if (!parse_value(s, *this, 0)) {
+        err = s.err.empty() ? "bad json" : s.err;
         return false;
     }
-    values_.clear();
-    duplicates_.clear();
-    Scanner s{text};
-
     s.skip_ws();
-    if (s.peek() != '{') {
+    if (!s.eof()) {
+        err = "trailing characters";
+        return false;
+    }
+    return true;
+}
+
+std::string Value::dump() const {
+    std::string out;
+    dump_value(*this, out);
+    return out;
+}
+
+bool Object::parse(std::string_view text, std::string& err) {
+    Value root;
+    if (!root.parse(text, err)) return false;
+    if (root.kind != Value::Kind::object) {
         err = "expected '{'";
         return false;
     }
-    ++s.pos;
+    assign(root, *this);
+    return true;
+}
 
-    while (true) {
-        s.skip_ws();
-        if (s.eof()) {
-            err = "unexpected end of object";
-            return false;
-        }
-        if (s.peek() == '}') {
-            ++s.pos;
-            return true;
-        }
-        if (s.peek() == ',') {
-            ++s.pos;
-            continue;
-        }
-
-        std::string key = parse_string(s);
-        if (!s.ok) {
-            err = s.err;
-            return false;
-        }
-        s.skip_ws();
-        if (s.peek() != ':') {
-            err = "expected ':'";
-            return false;
-        }
-        ++s.pos;
-        s.skip_ws();
-
+void Object::assign(const Value& value, Object& target) {
+    target.values_.clear();
+    target.duplicates_ = value.duplicate_keys;
+    for (const auto& [key, child] : value.members) {
         Entry entry;
-        const char c = s.peek();
-        if (c == '{') {
-            // 嵌套对象：先量出它的范围，再递归解析成子对象（配置读取要用）
-            Scanner nested{s.text.substr(s.pos)};
-            skip_value(nested);
-            if (!nested.ok) {
-                err = nested.err;
-                return false;
-            }
-            auto child = std::make_shared<Object>();
-            std::string child_err;
-            if (!child->parse_at(s.text.substr(s.pos, nested.pos), child_err, depth + 1)) {
-                err = child_err;
-                return false;
-            }
-            entry.kind = Kind::object;
-            entry.object = std::move(child);
-            s.pos += nested.pos;
-        } else if (c == '[') {
-            entry.kind = Kind::array;
-            if (!parse_array(s, entry.array)) {
-                err = s.err;
-                return false;
-            }
-        } else if (c == '"') {
-            entry.kind = Kind::string;
-            entry.text = parse_string(s);
-            if (!s.ok) {
-                err = s.err;
-                return false;
-            }
-        } else {
-            const size_t start = s.pos;
-            while (!s.eof() && s.peek() != ',' && s.peek() != '}') ++s.pos;
-            const std::string raw = trim(std::string(text.substr(start, s.pos - start)));
-            if (raw == "true" || raw == "false") {
-                entry.kind = Kind::boolean;
-                entry.boolean = raw == "true";
-            } else if (raw == "null") {
-                entry.kind = Kind::null;
-            } else {
-                double parsed = 0.0;
-                if (!parse_number(raw, parsed)) {
-                    err = raw.empty() ? "expected value" : "bad number '" + raw.substr(0, 32) + "'";
-                    return false;
-                }
+        switch (child.kind) {
+            case Value::Kind::text:
+                entry.kind = Kind::string;
+                entry.text = child.text;
+                break;
+            case Value::Kind::number:
                 entry.kind = Kind::number;
-                entry.number = parsed;
-            }
+                entry.number = child.number;
+                break;
+            case Value::Kind::boolean:
+                entry.kind = Kind::boolean;
+                entry.boolean = child.boolean;
+                break;
+            case Value::Kind::null: entry.kind = Kind::null; break;
+            case Value::Kind::object:
+                entry.kind = Kind::object;
+                entry.object = std::make_shared<Object>();
+                assign(child, *entry.object);
+                break;
+            case Value::Kind::array:
+                entry.kind = Kind::array;
+                for (const Value& item : child.items) {
+                    switch (item.kind) {
+                        case Value::Kind::text: entry.array.push_back(item.text); break;
+                        case Value::Kind::number:
+                            entry.array.push_back(short_number(item.number));
+                            break;
+                        case Value::Kind::boolean:
+                            entry.array.push_back(item.boolean ? "true" : "false");
+                            break;
+                        case Value::Kind::null: entry.array.push_back("null"); break;
+                        default: break;  // 嵌套对象/数组不参与取值
+                    }
+                }
+                break;
         }
-        if (values_.count(key) > 0) duplicates_.push_back(key);
-        values_[std::move(key)] = std::move(entry);
+        target.values_.emplace(key, std::move(entry));
     }
 }
 
@@ -435,11 +523,7 @@ std::string Object::str(std::string_view key, std::string_view fallback) const {
     auto it = values_.find(std::string(key));
     if (it == values_.end()) return std::string(fallback);
     if (it->second.kind == Kind::string) return it->second.text;
-    if (it->second.kind == Kind::number) {
-        char buf[32];
-        std::snprintf(buf, sizeof(buf), "%g", it->second.number);
-        return buf;
-    }
+    if (it->second.kind == Kind::number) return short_number(it->second.number);
     return std::string(fallback);
 }
 

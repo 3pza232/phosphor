@@ -212,7 +212,7 @@ E 从 A 开始持续，不等其它阶段。
 
 | 能力 | 内容 | 直接删掉的重复 |
 |---|---|---|
-| 存档 v2 | `PHOSPHOR-SAVE 2` 容器 + **标量值类型保真**（文本/数字/布尔）**已完成**：CRC32、旧档升级 + `.v1` 备份、坏校验降级只读；结构化表、槽位、磁带码带 cart id 仍待做 | towerdef 约 220 行编解码；导入他卡存档 |
+| 存档 v2 | **已完成**：`PHOSPHOR-SAVE 2` 容器（CRC32、旧档升级 + `.v1` 备份、坏校验只读）、值类型保真（文本/数字/布尔/**表**，嵌套深度≤8、非法值拒绝）、槽位 0..9；增量合并仍待做 | towerdef 约 220 行编解码；导入他卡存档 |
 | 内置排行榜 | `phos.score.new{max, key}`：降序 TOP N、名次返回、`clear`、坏档/无存档降级、`score.top` 只读查询（已完成，`toolkit_smoke` 覆盖持久化） | 6 份最高分实现 |
 | 共享词表/格式化 | `phos.lang.shared()`（18 词 zh/en）+ `text.score/clock/percent`（`core/format` 唯一实现，单测覆盖）；`money` 暂未做（留待按需） | 617 行文案表、24 处 pad |
 | 观测 schema | `phos.observe{ score=..., units={...} }`：一次登记，`state.query` 稳定字段 | worms 约 200 行、towerdef/crawl 各约 60 行 |

@@ -148,7 +148,7 @@ worms 验证了"组件布局 + 卡带侧计算"的复杂面板（两队血量/�
 | # | 现象 | 证据 |
 |---|---|---|
 | K1 | 模板用 40 行"十条约定"解释绘制模型 | `devkit/template/main.lua:12-51`——学习成本被写进了骨架 |
-| K2 | 存档是字符串 KV（键 ≤64、值 ≤4096、条目 ≤256），无结构/版本/槽位 | `cart/save_store.hpp`；代价是 towerdef 约 220 行 RLE 编解码 + 19 字段记录 | ◐ **大部分缓解**：v2 容器（magic+版本+卡带 id+CRC32、旧档升级 + `.v1` 备份、坏档只读、跨卡带拒绝）+ 标量类型保真（文本/数字/布尔）+ **槽位 0..9**；结构化表与增量合并仍未做；`phos.score` 已收走 6 份最高分实现 |
+| K2 | 存档是字符串 KV（键 ≤64、值 ≤4096、条目 ≤256），无结构/版本/槽位 | `cart/save_store.hpp`；代价是 towerdef 约 220 行 RLE 编解码 + 19 字段记录 | ✅ **已修复**：v2 容器（magic+版本+卡带 id+CRC32、旧档升级 + `.v1` 备份、坏档只读、跨卡带拒绝）、值类型保真（文本/数字/布尔/**表**，表=嵌套对象/数组、深度≤8、非法值拒绝）、**槽位 0..9**；增量合并（merge）仍未做，属后续优化；`phos.score` 已收走 6 份最高分实现 |
 | K3 | Mod 只能整文件覆盖 | `mods/towerdef-build-pause/main.lua` 是 646 行整文件 fork（本体 617 行），只改约 10 行；mod 自己头部承认会腐烂 |
 | K4 | 没有共享词表/格式化 | 11 张卡带各写 `SCORE/BEST/PAUSED/RESTART` 两列，617 行；没有 `phos.text.score/clock`，没有键位提示组件 | ✅ **已提供**：`phos.lang.shared()`（18 个常用词，zh/en）、`phos.text.score/clock/percent`（`core/format`，与主机展示同源）；键位提示仍归各卡带（`hint` 组件可替代大部分） |
 | K5 | 没有结构化观测约定 | `debug_state()` 各卡手搓（worms 约 200 行、towerdef/crawl 各约 60 行），字段名无约束 | ✅ **已提供**：`phos.observe{字段 = 值/函数}`（查询时求值，深度 4 序列化，单字段报错不拖垮整份）；`debug_state()` 仍兼容 |

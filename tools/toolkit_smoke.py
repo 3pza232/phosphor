@@ -5,7 +5,8 @@
 断言的是卡带能依赖的行为：
 * phos.score：构造即装载、add 返回名次、TOP N 降序截断、clear、跨 cart.reload 持久化；
 * phos.lang.shared()：当前语言那一列（中/英各一份词表，缺省随 config 语言）；
-* phos.text.score/clock/percent：千分位、mm:ss、百分比的唯一实现。
+* phos.text.score/clock/percent：千分位、mm:ss、百分比的唯一实现；
+* phos.save：标量按原类型、表值按结构（嵌套对象 / 数组）跨重载原样读写。
 
 跑法（在含 phosphor.exe 的构建目录）：python ../tools/toolkit_smoke.py
 """
@@ -59,6 +60,17 @@ def main() -> int:
             checks.check(debug.get("shared_score") == "得分",
                          f"共享词表取当前语言（{debug.get('shared_score')}）")
 
+            print("  -- 表值存档 --")
+            checks.check(debug.get("profile_name") == "PILOT",
+                         f"表值存档读回字段（name={debug.get('profile_name')!r}）")
+            checks.check(debug.get("profile_level") == 1
+                         and isinstance(debug.get("profile_level"), int),
+                         f"嵌套字段按 number 读回（level={debug.get('profile_level')!r}）")
+            checks.check(debug.get("profile_hp") == 100,
+                         f"嵌套对象字段（hp={debug.get('profile_hp')!r}）")
+            checks.check(debug.get("profile_history") == [1],
+                         f"数组值按序列读回（history={debug.get('profile_history')!r}）")
+
             print("  -- 格式化 --")
             formatted = debug.get("formatted") or {}
             checks.check(re.fullmatch(r"\d{2}:\d{2}", str(formatted.get("clock"))) is not None,
@@ -99,6 +111,11 @@ def main() -> int:
             checks.check(debug.get("default_marker") == "", "默认槽看不到 1 号槽的键")
             checks.check(debug.get("save_slot") == 0, "当前槽回到默认 0")
             checks.check(debug.get("seen_intro") is True, "布尔存档重载后仍是 boolean")
+            checks.check(debug.get("profile_level") == 2
+                         and debug.get("profile_history") == [1, 2],
+                         f"表值存档跨重载保持结构（level={debug.get('profile_level')!r},"
+                         f" history={debug.get('profile_history')!r}）")
+            checks.check(debug.get("profile_hp") == 100, "嵌套对象跨重载保持")
 
             print("  -- 清空 --")
             host.key("b"); host.step(3)
