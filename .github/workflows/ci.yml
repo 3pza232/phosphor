@@ -44,6 +44,23 @@ jobs:
         working-directory: build-ci
         run: ./phosphor_tests.exe
 
-      - name: 无头门禁（includes / api / unit / control / draw / layer / cart / net）
+      - name: 无头门禁（13 项：includes/api/unit/control/draw/layer/ui/scene/toolkit/lint/portable/cart/net）
         working-directory: build-ci
         run: python ../tools/run_checks.py
+
+      # 性能预算不是门禁（共享 runner 的绝对值会抖）：跑一份报告附到 job summary 并留档，
+      # 方便事后对比某个 PR 是否让某张卡带突然变慢
+      - name: 性能预算报告（非门禁）
+        working-directory: build-ci
+        continue-on-error: true
+        run: |
+          python ../tools/perf_budget.py > perf-budget.txt
+          { echo '## 性能预算（p95 update）'; echo '```'; cat perf-budget.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 上传性能预算报告
+        if: always()
+        uses: actions/upload-artifact`v4
+        with:
+          name: perf-budget
+          path: build-ci/perf-budget.txt
+          if-no-files-found: ignore

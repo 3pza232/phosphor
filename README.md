@@ -104,6 +104,12 @@ cmake --preset sanity           # build-sanity/：自检构建，慢，只用于
 | `phos.py` | 上面几个脚本共用的控制通道客户端库，不单独运行 | — |
 | `sync_package.cmake` | 构建期把 `package/` 与 `docs/` 同步进构建目录（由 `assemble_package` 目标调用，规则与告警见文件头） | 随构建自动执行 |
 
+## 持续集成
+
+`.github/workflows/ci.yml` 在 Windows + MSYS2 MinGW64 上配置、构建、跑单元测试与 13 项无头门禁；
+性能预算（`tools/perf_budget.py`）作为**非门禁**步骤附到 job summary 并留 artifact，
+方便对比某个改动是否让某张卡带突然变慢。
+
 ## 目录
 
 | 目录 | 内容 |
