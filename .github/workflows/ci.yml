@@ -59,8 +59,23 @@ jobs:
 
       - name: 上传性能预算报告
         if: always()
-        uses: actions/upload-artifact`v4
+        uses: actions/upload-artifact@v4
         with:
           name: perf-budget
           path: build-ci/perf-budget.txt
+          if-no-files-found: ignore
+
+      # 像素基线同样是"非门禁"：字体光栅化/驱动在不同 runner 上可能有细微差异。
+      # 失败时把实际截图与指标带进日志，人工判断是真回归还是环境差异
+      - name: 像素基线（非门禁）
+        working-directory: build-ci
+        continue-on-error: true
+        run: python ../tools/pixel_golden.py
+
+      - name: 上传像素基线截图
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pixel-golden-shots
+          path: build-ci/tests-out/pixel-golden
           if-no-files-found: ignore

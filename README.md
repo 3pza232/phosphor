@@ -108,8 +108,9 @@ cmake --preset sanity           # build-sanity/：自检构建，慢，只用于
 ## 持续集成
 
 `.github/workflows/ci.yml` 在 Windows + MSYS2 MinGW64 上配置、构建、跑单元测试与 13 项无头门禁；
-性能预算（`tools/perf_budget.py`）作为**非门禁**步骤附到 job summary 并留 artifact，
-方便对比某个改动是否让某张卡带突然变慢。
+性能预算（`tools/perf_budget.py`）与像素基线（`tools/pixel_golden.py`）作为**非门禁**步骤运行：
+前者附到 job summary 并留 artifact，方便对比某个改动是否让某张卡带突然变慢；后者失败时把
+实际截图留档，供人工判断是回归还是跨机差异。
 
 ## 目录
 
