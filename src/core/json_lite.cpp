@@ -416,6 +416,21 @@ bool Object::has(std::string_view key) const {
     return values_.find(std::string(key)) != values_.end();
 }
 
+bool Object::is_string(std::string_view key) const {
+    auto it = values_.find(std::string(key));
+    return it != values_.end() && it->second.kind == Kind::string;
+}
+
+bool Object::is_number(std::string_view key) const {
+    auto it = values_.find(std::string(key));
+    return it != values_.end() && it->second.kind == Kind::number;
+}
+
+bool Object::is_boolean(std::string_view key) const {
+    auto it = values_.find(std::string(key));
+    return it != values_.end() && it->second.kind == Kind::boolean;
+}
+
 std::string Object::str(std::string_view key, std::string_view fallback) const {
     auto it = values_.find(std::string(key));
     if (it == values_.end()) return std::string(fallback);

@@ -77,6 +77,10 @@ def main() -> int:
             debug = host.state().get("debug") or {}
             checks.check(debug.get("list") == [3000, 2000, 1000],
                          f"TOP N 降序（{debug.get('list')}）")
+            checks.check(debug.get("plays") == 3 and isinstance(debug.get("plays"), int),
+                         f"数字存档按 number 取回（{debug.get('plays')!r}）")
+            checks.check(debug.get("seen_intro") is True,
+                         f"布尔存档按 boolean 取回（{debug.get('seen_intro')!r}）")
 
             print("  -- 持久化 --")
             host.send("cart.reload")
@@ -86,6 +90,9 @@ def main() -> int:
                          f"reload 重置玩法状态（points={debug.get('points')}）")
             checks.check(debug.get("best") == 3000 and debug.get("list") == [3000, 2000, 1000],
                          f"排行榜从存档恢复（{debug.get('list')}）")
+            checks.check(debug.get("plays") == 3 and isinstance(debug.get("plays"), int),
+                         f"数字存档重载后仍是 number（{debug.get('plays')!r}）")
+            checks.check(debug.get("seen_intro") is True, "布尔存档重载后仍是 boolean")
 
             print("  -- 清空 --")
             host.key("b"); host.step(3)

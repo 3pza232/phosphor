@@ -985,6 +985,33 @@ TEST(save_store_roundtrip_and_limits) {
     std::filesystem::remove_all(dir, ec);
 }
 
+TEST(save_store_typed_values_roundtrip) {
+    const std::filesystem::path dir = unit_scratch("saves-typed");
+    std::error_code ec;
+    std::filesystem::remove_all(dir, ec);
+
+    SaveStore store;
+    CHECK(store.open(dir.string(), "typed"));
+    CHECK(store.set("name", SaveStore::Value::of_text("ADA")));
+    CHECK(store.set("level", SaveStore::Value::of_number(12.5)));
+    CHECK(store.set("seen", SaveStore::Value::of_boolean(true)));
+    // 非有限数不是合法 JSON：拒绝入库
+    CHECK(!store.set("bad", SaveStore::Value::of_number(
+                                 std::numeric_limits<double>::infinity())));
+
+    SaveStore reopened;
+    CHECK(reopened.open(dir.string(), "typed"));
+    const auto level = reopened.get_value("level");
+    CHECK(level.has_value() && level->kind == SaveStore::Value::Kind::number);
+    CHECK(std::abs(level->number - 12.5) < 1e-12);
+    const auto seen = reopened.get_value("seen");
+    CHECK(seen.has_value() && seen->kind == SaveStore::Value::Kind::boolean && seen->boolean);
+    CHECK_EQ(*reopened.get("name"), std::string("ADA"));
+    CHECK_EQ(*reopened.get("level"), std::string("12.5"));  // 文本视图
+
+    std::filesystem::remove_all(dir, ec);
+}
+
 TEST(save_store_export_import_roundtrip) {
     const std::filesystem::path dir =
         unit_scratch("saves2");

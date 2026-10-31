@@ -3,7 +3,9 @@
 #include "core/json_lite.hpp"
 #include "core/log.hpp"
 
+#include <cmath>
 #include <cstdint>
+#include <cstdio>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -14,17 +16,22 @@ namespace phos {
 namespace {
 
 /// 容器格式：第一行是带版本/卡带 id/校验和的头部，正文是一行 JSON 对象。
-/// 旧格式（`key=value` 每行一条、无头部）继续可读，并在首次写入时自动升级；
+/// 旧格式（`key=value` 每行一条、无头部）继续可读，并在首次打开时自动升级；
 /// 升级前留一份 `.v1` 备份——玩家的旧存档不该因为升级而变得不可回退。
 constexpr std::string_view kMagic = "PHOSPHOR-SAVE";
 constexpr int kFormatVersion = 2;
 
-/// 入库校验：值不允许换行（磁带码与 JSON 都按单行值组织），键不得含 '='
-bool entry_within_limits(const std::string& key, const std::string& value) {
-    if (key.empty() || key.size() > SaveStore::kMaxKeyLength) return false;
-    if (value.size() > SaveStore::kMaxValueLength) return false;
-    return key.find('=') == std::string::npos && key.find('\n') == std::string::npos &&
-           value.find('\n') == std::string::npos;
+bool key_within_limits(const std::string& key) {
+    return !key.empty() && key.size() <= SaveStore::kMaxKeyLength &&
+           key.find('=') == std::string::npos && key.find('\n') == std::string::npos;
+}
+
+bool value_within_limits(const SaveStore::Value& value) {
+    if (value.kind == SaveStore::Value::Kind::text)
+        return value.text.size() <= SaveStore::kMaxValueLength &&
+               value.text.find('\n') == std::string::npos;
+    if (value.kind == SaveStore::Value::Kind::number) return std::isfinite(value.number);
+    return true;
 }
 
 int hex_nibble(char c) {
@@ -54,7 +61,22 @@ std::string hex32(uint32_t value) {
     return out;
 }
 
-std::string json_payload(const std::map<std::string, std::string>& data) {
+/// JSON 数字字面量：17 位有效数字可无损回读 double；非有限数在入库前已被拒绝
+std::string format_number(double value) {
+    char buffer[40];
+    std::snprintf(buffer, sizeof(buffer), "%.17g", value);
+    return std::string(buffer);
+}
+
+std::string value_json(const SaveStore::Value& value) {
+    switch (value.kind) {
+        case SaveStore::Value::Kind::number: return format_number(value.number);
+        case SaveStore::Value::Kind::boolean: return value.boolean ? "true" : "false";
+        default: return json::quote(value.text);
+    }
+}
+
+std::string json_payload(const std::map<std::string, SaveStore::Value>& data) {
     std::string out = "{";
     bool first = true;
     for (const auto& [key, value] : data) {
@@ -62,7 +84,7 @@ std::string json_payload(const std::map<std::string, std::string>& data) {
         first = false;
         out += json::quote(key);
         out += ':';
-        out += json::quote(value);
+        out += value_json(value);
     }
     out += '}';
     return out;
@@ -83,8 +105,8 @@ bool probe_writable(const std::string& tmp) {
     return true;
 }
 
-/// 旧格式解析（`key=value` 每行一条）：既用于迁移，也用于磁带码导入
-bool parse_legacy(std::string_view text, std::map<std::string, std::string>& out) {
+/// 旧格式解析（`key=value` 每行一条）：用于迁移与磁带码导入；值按文本处理
+bool parse_legacy(std::string_view text, std::map<std::string, SaveStore::Value>& out) {
     size_t begin = 0;
     while (begin <= text.size()) {
         const size_t end = text.find('\n', begin);
@@ -96,9 +118,10 @@ bool parse_legacy(std::string_view text, std::map<std::string, std::string>& out
             const std::string key(line.substr(0, eq));
             const std::string value(line.substr(eq + 1));
             // 存档文件亦不可信：越界项跳过，而不是让整份存档作废
-            if (entry_within_limits(key, value) &&
+            if (key_within_limits(key) && value.size() <= SaveStore::kMaxValueLength &&
+                value.find('\n') == std::string::npos &&
                 !(out.size() >= SaveStore::kMaxEntries && out.find(key) == out.end()))
-                out[key] = value;
+                out[key] = SaveStore::Value::of_text(value);
         }
         if (end == std::string_view::npos) break;
         begin = end + 1;
@@ -134,6 +157,14 @@ bool parse_v2(std::string_view text, Header& header) {
 }
 
 } // namespace
+
+std::string SaveStore::Value::as_text() const {
+    switch (kind) {
+        case Kind::number: return format_number(number);
+        case Kind::boolean: return boolean ? "true" : "false";
+        default: return text;
+    }
+}
 
 bool SaveStore::open(const std::string& save_dir, const std::string& cart_id) {
     namespace fs = std::filesystem;
@@ -177,15 +208,20 @@ bool SaveStore::open(const std::string& save_dir, const std::string& cart_id) {
             return false;
         }
         for (const std::string& key : object.keys()) {
-            const std::string value = object.str(key);
-            if (entry_within_limits(key, value)) data_[key] = value;
+            if (!key_within_limits(key)) continue;
+            if (data_.size() >= kMaxEntries) break;
+            Value value;
+            if (object.is_string(key)) value = Value::of_text(object.str(key));
+            else if (object.is_number(key)) value = Value::of_number(object.number(key));
+            else if (object.is_boolean(key)) value = Value::of_boolean(object.flag(key));
+            else continue;
+            if (value_within_limits(value)) data_[key] = std::move(value);
         }
         return true;
     }
 
     // 旧格式：读入后立刻升级；保留 .v1 备份，升级失败也不动原文件
-    const bool loaded = parse_legacy(text, data_);
-    if (!loaded) return false;
+    if (!parse_legacy(text, data_)) return false;
     if (writable_) {
         const std::string backup = path_ + ".v1";
         std::error_code backup_ec;
@@ -199,14 +235,20 @@ bool SaveStore::open(const std::string& save_dir, const std::string& cart_id) {
     return true;
 }
 
-std::optional<std::string> SaveStore::get(const std::string& key) const {
+std::optional<SaveStore::Value> SaveStore::get_value(const std::string& key) const {
     auto it = data_.find(key);
     if (it == data_.end()) return std::nullopt;
     return it->second;
 }
 
-bool SaveStore::set(const std::string& key, const std::string& value) {
-    if (!writable_ || !entry_within_limits(key, value)) return false;
+std::optional<std::string> SaveStore::get(const std::string& key) const {
+    auto value = get_value(key);
+    if (!value) return std::nullopt;
+    return value->as_text();
+}
+
+bool SaveStore::set(const std::string& key, const Value& value) {
+    if (!writable_ || !key_within_limits(key) || !value_within_limits(value)) return false;
 
     auto it = data_.find(key);
     if (it == data_.end()) {
@@ -216,7 +258,7 @@ bool SaveStore::set(const std::string& key, const std::string& value) {
         data_.erase(key);  // 写盘失败：回滚，内存保持与磁盘一致
         return false;
     }
-    const std::string previous = it->second;
+    const Value previous = it->second;
     it->second = value;
     if (flush(data_)) return true;
     it->second = previous;
@@ -234,7 +276,7 @@ bool SaveStore::erase(const std::string& key) {
     return false;
 }
 
-bool SaveStore::flush(const std::map<std::string, std::string>& data) const {
+bool SaveStore::flush(const std::map<std::string, Value>& data) const {
     const std::string tmp = path_ + ".tmp";
     std::ofstream out(tmp, std::ios::trunc | std::ios::binary);
     if (!out) return false;
@@ -271,11 +313,11 @@ bool SaveStore::flush(const std::map<std::string, std::string>& data) const {
 }
 
 std::string SaveStore::export_code() const {
-    // 磁带码：仍然用旧版 `key=value\n` 的十六进制——跨版本/跨机器都能读，
-    // 导入端解析后按当前格式落盘
+    // 磁带码：旧版 `key=value\n` 载荷的十六进制——跨版本/跨机器都能读。
+    // 数字/布尔按文本视图写进码里，导入后成为文本值（磁带码只保证文本语义）
     static const char* kHex = "0123456789ABCDEF";
     std::string payload;
-    for (const auto& [k, v] : data_) payload += k + "=" + v + "\n";
+    for (const auto& [k, v] : data_) payload += k + "=" + v.as_text() + "\n";
 
     std::string code;
     code.reserve(payload.size() * 2);
@@ -306,10 +348,10 @@ bool SaveStore::import_code(const std::string& code) {
     }
 
     // 先全量校验再落地：任何一处非法都保持原存档不变
-    std::map<std::string, std::string> parsed;
+    std::map<std::string, Value> parsed;
     if (!parse_legacy(payload, parsed)) return false;
 
-    std::map<std::string, std::string> previous = data_;
+    std::map<std::string, Value> previous = data_;
     data_ = std::move(parsed);
     if (flush(data_)) return true;
     data_ = std::move(previous);

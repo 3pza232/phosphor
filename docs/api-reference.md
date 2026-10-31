@@ -422,7 +422,6 @@ pending = phos.ui.render{
 | `bar` | 进度条（`ratio` 0..1） | — |
 | `button` | 按钮行 | A → `activated` |
 | `hint` | 页脚键位提示（`items` 为 `[键, 说明]` 交替） | — |
-| `table` | 表格：`columns` 表头 + `rows` 数据，列宽/对齐可指定（表头下自动画分隔线） | — |
 
 **元素字段**
 
@@ -446,10 +445,6 @@ pending = phos.ui.render{
 | `text` | string | — | text / option / button / stat 的正文；field 的**占位提示** |
 | `value` | string | — | stat 的右值；field 的**初始内容**（只在首次出现时写入） |
 | `items` | string[] | — | list 的行；hint 的 `[键, 说明]` 交替 |
-| `columns` | string[] | — | table 的表头（空 = 无表头；有表头时自动加一条分隔线） |
-| `rows` | table[] | — | table 的数据行：每行一个字符串数组；数字单元格按整数/两位小数转文本 |
-| `widths` | integer[] | — | table 各列固定宽度；0 或缺省 = 按内容自适应（余量均摊铺满可用宽度） |
-| `col_align` | string[] | start | table 各列对齐：`left` / `center` / `right` |
 | `disabled` | table? | — | list 中不可选的行：下标数组 `{2, 5}` 或等长布尔数组 |
 | `ratio` | number | 0 | bar 的比例（0..1，越界按 0/1 画） |
 | `checked` | boolean | false | checkbox 的**初值**；之后以用户操作为准 |
@@ -458,14 +453,6 @@ pending = phos.ui.render{
 | `indent` / `text_gap` | integer | 0 / 1 | 选中标记的缩进、正文相对标记的间距 |
 | `label_w` | integer | 0 | stat 的标签列宽；0 = 主题默认（16） |
 | `absolute` / `x` / `y` | boolean / integer | false / 0 | true = 相对父内容区定位，不参与流式布局 |
-
-表格示例（表头 + 右对齐数值列）：
-
-```lua
-{ kind = "table", columns = { "RANK", "NAME", "SCORE" }, widths = { 4, 8, 6 },
-  col_align = { "left", "left", "right" },
-  rows = { { "1", "ALPHA", "1200" }, { "2", "BETA", "900" } } },
-```
 
 **交互与焦点**
 
@@ -705,7 +692,6 @@ phos.scene.audio_pause()    -- 栈上是否有场景暂停音频
 - 卡片字段：`id`（缺省 `"scene"`）、`modal`、`pause_world`、`audio_pause`、`update(dt)`、
   `draw()`、`on_enter()`、`on_exit(result)`；后四个均可省略
 - 回调里可以继续 `push` / `pop`：引擎先排队、回调返回后再落地（不会在"正在执行的那层"上动刀）
-- 压栈的那一帧**不调用**新场景的 `update`：按键在那一帧仍是"按下"状态，立刻调 update 会把开门键当成关门键
 - `pause_world` / `audio_pause` 是**整栈查询**：压着菜单时世界就该停，回到栈顶也一样
 - 场景栈随卡带生命周期：换卡/拔卡清空，不跨卡带
 - agent 侧可读：`state.query.scenes` 报出底→顶的场景清单（id / modal / pause_world / audio_pause）
@@ -928,3 +914,147 @@ function update(dt)
   name:feed()                       -- 每帧一次；同一帧重复调用是幂等的
   if phos.input.pressed("start") then submit(name.value) end
 end
+
+-- name.value     当前文本（UTF-8，永远是完整的码点序列）
+-- name.count     已录入的**码点**数（中文与半角同样算 1）
+-- name:clear()   清空
+```
+
+- `filter` 预设：`"any"`（默认）/ `"printable"` / `"ascii"` / `"digits"` / `"hex"` / `"letters"`；
+  也可以传 `function(cp) return true end` 自己判（`cp` 是码点数字，回调出错按"不接受"处理）
+- `max` 是**码点数**上限（0 = 不限）
+- `ime = true` 才允许**收中文**（默认关）。主机据此在该框被 `feed` 的那一帧打开**系统输入法**；
+  不声明的框收不到中文（拼音候选里选出来的字进不来），所以"哪些框要中文"由卡带在**代码里**
+  说了算（如联机昵称框 `ime = true`，纯数字 / hex 的框不声明）。主机自带的卡带架搜索框不走
+  卡带声明，由主机在编辑期间打开输入法（同一条开关路径），因此也能直接输中文。
+  仅在 Windows 上由主机开关输入法；其它平台交给各自的输入法框架
+- 缓冲随卡带一起销毁；要持久化时自己写进 `phos.save`
+
+## phos.save
+
+需 manifest 声明 `save = true`，否则 `available()` 返回 false 且写入被忽略（不报错）。
+
+```lua
+phos.save.available()           -- 存档是否可用
+phos.save.write(key, value)     -- value 为字符串；入库成功返回 true
+local v = phos.save.read(key)   -- 不存在返回 nil
+phos.save.erase(key)
+
+local code = phos.save.export() -- 导出磁带码（可复制文本）
+local ok = phos.save.import(code) -- 从磁带码恢复（**整份替换**）；码非法返回 false 且不做改动
+```
+
+入库约束（`write` 与 `import` 共用，越界即拒绝）：
+
+| 项 | 上限 | 说明 |
+|----|------|------|
+| 键长 | 64 | 非空，且不含 `=` 与换行 |
+| 值长 | 4096 | 不含换行 |
+| 条目数 | 256 | 新键超出后不再接受 |
+
+> 磁带码是"整份存档"的载体：`import` 成功即替换全部条目（不是合并）。
+> 导入前会全量校验，任何一处非法都保持原存档不变。
+
+## phos.lang
+
+多语言取值：文案属于卡带内容，主机只提供"取当前语言那一条"的机制。
+
+```lua
+local t = phos.lang.dict({ zh = { score = "得分" }, en = { score = "SCORE" } })
+local word = phos.lang.pick({ zh = "普通炮弹", en = "SHELL" })
+local words = phos.lang.shared()   -- 通用词表（SCORE/BEST/PAUSED/RESUME/...）
+```
+
+- `dict(fields)`：返回 `{zh=…,en=…}` 里当前语言那一张表（**引用**，每帧取一次即可跟随切换）
+- `pick(fields)`：取单条；两者都是**缺 en 回落中文**，漏翻不会露出空串
+- `shared()`：引擎自带的通用词表（18 个常用词，取当前语言那一列）。每调用一次新建一张表——
+  在 `init` 里取一次就够了，语言切换后按需重取；卡带自己的专有词仍写在自己的 `Text` 表里
+
+## phos.assets
+
+读取卡带包内的文件。路径相对包根；越界（`..`）一律拒绝；**缺失返回 `nil` / `false`，
+不抛异常**（缺资源怎么处理是卡带自己的事）。
+
+```lua
+local text = phos.assets.text("assets/title.txt")   -- 全文；缺失返回 nil
+local rows = phos.assets.rows("assets/map.txt")     -- 按行（1 基数组，保留空行）；缺失返回 nil
+local ok   = phos.assets.exists("assets/map.txt")   -- 是否存在
+local size = phos.assets.size("assets/map.txt")     -- 字节数（缺失为 0）
+local all  = phos.assets.list("assets/")            -- 列出包内文件（可省略前缀）
+```
+
+> **单文件上限 8 MiB**：`text` / `rows` 会整读进内存，超过上限的文件**拒读**（返回 `nil`
+> 并写主机日志），避免超大素材把 Lua 堆撑爆。`size` / `exists` 只查元信息、不读
+> 全文，所以**先问大小再决定读不读**是安全的（`exists` 对超大文件仍如实报告存在）。
+```
+
+适合放的东西：关卡 / 地图 / 对话表（一行一个元素，用 `rows` 读）、字符画素材、
+音频文件（配合 `phos.audio.sample`）、平衡性数值表（改数值不必动代码）。
+
+> 覆盖层 Mod 生效时读到的是替换后的内容，卡带代码无感知
+> （做覆盖层 Mod：在 `mods/<mod-id>/` 里放好替换文件，再由 `mod.lua` 的 `overrides`
+> 登记到键 `<卡带id>/assets/…`，见 content-packs.md）。
+
+## phos.score
+
+卡带排行榜：TOP N 分数，写进**当前卡带的存档**（需要 manifest 声明 `save = true`；
+没声明时只在内存里工作，`available()` 返回 false——卡带不需要为此写分支）。
+排序、截断、存档键与坏档容错都在引擎侧，卡带只回答"加多少分"。
+
+```lua
+local board = phos.score.new{ max = 5, key = "scores" }  -- 构造时自动装载
+
+board:add(1200)      -- 插入并返回名次（1 基）；没进 TOP N 返回 0
+board:best()         -- 第一名（空榜 = 0）
+board:list()         -- 降序数组，最多 max 项
+board:clear()        -- 清空并落盘
+board:available()    -- 存档是否可写（manifest 未声明 save 时为 false）
+board:key()          -- 实际使用的存档键
+
+phos.score.top(5, "scores")   -- 只读地取前 N 名（不写盘）
+```
+
+- `max` 钳到 **1..20**（缺省 5）；`key` 缺省 `"scores"`，过长/含 `=` 或换行时回退默认键
+- 只接受非负整数；同分保持插入顺序（先到的排前面）
+- 存档是逗号分隔的整数串，坏项跳过而不是整榜作废；写入失败只记日志，卡带照常运行
+- 换卡/重载不串榜：每个实例绑定当前卡带的存档句柄
+
+## phos.cart
+
+```lua
+local cart = phos.cart.info()   -- 取一次存起来（每次调用都会建一张新表）
+cart.id       -- "snake"   卡带 id
+cart.name     -- "SNAKE"   卡带架与侧栏显示的标题
+cart.version  -- "1.0.0"   作者自己的版本号（与主机版本无关）
+cart.author   -- 作者
+cart.desc     -- 简介（按当前界面语言取；英文缺失时回落中文）
+```
+
+卡带的身份以 `manifest.lua` 为**唯一来源**：标题画面、关于页、标题栏都从这里读；
+在 Lua 里再抄一份字符串时，改了 manifest 就会留下对不上的旧文案。
+未插卡时（主机脚本，例如出厂启动动画）各项为空串。
+
+## phos.observe
+
+给 agent 看的玩法状态用**声明式观测**声明一次：每个字段可以是值，也可以是函数，
+引擎在 `state.query` 时求值——观测因此永远与真实状态一致，不必维护一份会过期的手写快照。
+
+```lua
+function init()
+  phos.observe{
+    score = function() return score end,
+    hp = function() return hp end,
+    units = function() return summarize_units() end,   -- 返回表也可以（深度 4 序列化）
+    wave = wave,                                        -- 固定值直接写
+  }
+end
+```
+
+- 在 `init()` 里登记一次即可；之后 `state.query` 的 `debug` 字段自动带上这些键
+- 字段可以是 number/string/boolean/表（数组写成 JSON 数组；超过深度 4 的嵌套截断）
+- 单个字段求值报错只跳过该字段，不影响整份观测；登记了 `debug_state()` 的卡带仍以它为准
+- 老写法 `debug_state()` 继续有效；新卡带推荐 `phos.observe`（少一份手写快照）
+
+## phos.debug
+
+把玩法里的常数登记进"**可调篮子**"，就能在运行中用 `~` 呼出的调试台**拖滑条实时改**，

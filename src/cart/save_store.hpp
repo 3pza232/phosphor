@@ -6,25 +6,60 @@
 
 namespace phos {
 
-/// 卡带存档：saves/<卡带id>.sav，键值对文本（既有存档直接可读）。
+/// 卡带存档：saves/<卡带id>.sav，带版本/校验和的容器（格式 v2）。
 ///
 /// 写入即落盘且**整份原子替换**：先写 <path>.tmp，flush/close 成功后再 rename 覆盖。
 /// 掉电只会留下旧档或一份半成品 .tmp，不会把旧档截断成半份；写盘失败时内存回滚，
 /// 保证"读到的 = 磁盘上的"，卡带不会被骗。
 ///
-/// 入库约束（写入与磁带码导入共用）：键非空、键长 ≤ 64 且不含 '=' 与换行，
-/// 值长 ≤ 4096 且不含换行，条目数 ≤ 256。
+/// 值支持三种标量：文本 / 数字 / 布尔（结构化表留给后续版本）。旧格式存档
+/// （每行 key=value、无头部）继续可读，首次打开自动升级并保留 .v1 备份。
 class SaveStore {
 public:
+    struct Value {
+        enum class Kind { text, number, boolean };
+        Kind kind = Kind::text;
+        std::string text;
+        double number = 0.0;
+        bool boolean = false;
+
+        static Value of_text(std::string value) {
+            Value out;
+            out.text = std::move(value);
+            return out;
+        }
+        static Value of_number(double value) {
+            Value out;
+            out.kind = Kind::number;
+            out.number = value;
+            return out;
+        }
+        static Value of_boolean(bool value) {
+            Value out;
+            out.kind = Kind::boolean;
+            out.boolean = value;
+            return out;
+        }
+        /// 文本视图（磁带码与旧版 get 的语义）：数字/布尔按 JSON 字面量转文本
+        std::string as_text() const;
+    };
+
     /// 打开（读取已有存档）；同一对象可复用，先清空上次的内容。
     /// 目录建不出来/临时文件写不进时降级为只读：读取照常，写入返回 false——绝不让卡带
     /// 以为存下了。旧档存在却读不出时也按只读处理，避免用空数据覆盖未知内容。
     bool open(const std::string& save_dir, const std::string& cart_id);
 
+    /// 文本视图（数字/布尔转成 JSON 字面量文本；旧调用方与磁带码用）
     std::optional<std::string> get(const std::string& key) const;
+
+    /// 带类型的值（卡带写数字/布尔后原样取回）
+    std::optional<Value> get_value(const std::string& key) const;
     size_t size() const { return data_.size(); }
     /// 写入并落盘；返回是否真的写进磁盘（键值越界、只读、I/O 失败都返回 false）
-    bool set(const std::string& key, const std::string& value);
+    bool set(const std::string& key, const Value& value);
+    bool set(const std::string& key, const std::string& value) {
+        return set(key, Value::of_text(value));
+    }
     /// 删除并落盘；返回是否真的写进磁盘
     bool erase(const std::string& key);
 
@@ -41,9 +76,9 @@ public:
 
 private:
     /// 整份原子写盘（临时文件 + rename）；返回是否成功（调用方据此向卡带回报真实结果）
-    bool flush(const std::map<std::string, std::string>& data) const;
+    bool flush(const std::map<std::string, Value>& data) const;
 
-    std::map<std::string, std::string> data_;
+    std::map<std::string, Value> data_;
     std::string path_;
     bool writable_ = false;
 };

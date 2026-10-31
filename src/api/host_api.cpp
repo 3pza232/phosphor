@@ -400,15 +400,36 @@ void register_host_api(sol::state& lua, HostContext& host) {
     // --- phos.save（需 manifest 声明 save = true） ---
     sol::table save = phos.create_named("save");
     save["available"] = [&host]() { return host.save != nullptr; };
-    save["write"] = [&host](const std::string& key, const std::string& value) -> bool {
+    save["write"] = [&host](const std::string& key, const sol::object& value) -> bool {
         if (!host.save) return false;
-        return host.save->set(key, value);  // 落盘失败也要如实回报，卡带才好降级
+        // 值可以是文本/数字/布尔（标量）；结构化表留给后续版本，写入失败时返回 false
+        // （卡带据此降级，而不是以为"已经存下了"）
+        SaveStore::Value stored;
+        if (value.is<std::string>()) {
+            stored = SaveStore::Value::of_text(value.as<std::string>());
+        } else if (value.is<bool>()) {
+            stored = SaveStore::Value::of_boolean(value.as<bool>());
+        } else if (value.is<double>()) {
+            stored = SaveStore::Value::of_number(value.as<double>());
+        } else if (value.is<int>()) {
+            stored = SaveStore::Value::of_number(static_cast<double>(value.as<int>()));
+        } else {
+            return false;
+        }
+        return host.save->set(key, stored);  // 落盘失败也要如实回报，卡带才好降级
     };
     save["read"] = [&host, &lua](const std::string& key) -> sol::object {
         if (!host.save) return sol::nil;
-        auto v = host.save->get(key);
-        if (!v) return sol::nil;
-        return sol::make_object(lua.lua_state(), *v);
+        auto value = host.save->get_value(key);
+        if (!value) return sol::nil;
+        switch (value->kind) {
+            case SaveStore::Value::Kind::number:
+                return sol::make_object(lua.lua_state(), value->number);
+            case SaveStore::Value::Kind::boolean:
+                return sol::make_object(lua.lua_state(), value->boolean);
+            default:
+                return sol::make_object(lua.lua_state(), value->text);
+        }
     };
     save["erase"] = [&host](const std::string& key) -> bool {
         return host.save && host.save->erase(key);

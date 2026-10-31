@@ -8,6 +8,8 @@ local points = 0
 local hp = 0.4567
 local shared = {}
 local board = nil
+local plays = 0          -- 数字型存档示例：读出就是 number，不必 tonumber
+local seen_intro = false -- 布尔型存档示例：读出就是 boolean，不必比字符串
 
 local function fmt()
   return {
@@ -28,6 +30,13 @@ end
 function init()
   shared = phos.lang.shared()
   board = phos.score.new{ max = 5, key = "toolkit_scores" }
+  plays = phos.save.read("plays") or 0            -- 数字/布尔按原类型取回
+  seen_intro = phos.save.read("seen_intro") or false
+  if not seen_intro then
+    seen_intro = true
+    phos.save.write("seen_intro", true)
+  end
+  phos.save.write("plays", plays)
   -- 给 agent 的观测：字段可以是值，也可以是"查询时求值"的函数。
   -- 引擎在 state.query 时调用，于是观测永远与真实状态一致（不必维护快照）
   phos.observe{
@@ -37,12 +46,16 @@ function init()
     available = function() return board:available() end,
     formatted = function() return fmt() end,
     shared_score = function() return shared.score or "" end,
+    plays = function() return plays end,
+    seen_intro = function() return seen_intro end,
   }
 end
 
 function update(dt)
   if phos.input.pressed("a") then
     points = points + 1000
+    plays = plays + 1
+    phos.save.write("plays", plays)              -- 数字直接写，不必 tostring
     local rank = board:add(points)
     phos.sys.log("score added: rank=" .. tostring(rank))
     phos.audio.beep(760, 0.05)

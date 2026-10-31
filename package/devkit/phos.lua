@@ -705,12 +705,12 @@ phos.save = {}
 function phos.save.available() end
 
 ---@param key string 长度 ≤64
----@param value string 长度 ≤4096
+---@param value string|number|boolean 文本长度 ≤4096；数字/布尔按原类型取回
 ---@return boolean
 function phos.save.write(key, value) end
 
 ---@param key string
----@return string|nil
+---@return string|number|boolean|nil 写入时的类型（结构化表留给后续版本）
 function phos.save.read(key) end
 
 ---删除键

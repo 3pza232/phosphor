@@ -35,6 +35,9 @@ public:
     bool parse(std::string_view text, std::string& err);
 
     bool has(std::string_view key) const;
+    bool is_string(std::string_view key) const;
+    bool is_number(std::string_view key) const;
+    bool is_boolean(std::string_view key) const;
     std::string str(std::string_view key, std::string_view fallback = "") const;
 
     /// 整数读取：小数向零截断；超出 int 范围的数值钳到端点，非有限数取 fallback。
