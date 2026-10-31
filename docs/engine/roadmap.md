@@ -93,7 +93,7 @@ E 从 A 开始持续，不等其它阶段。
 > **状态（2026-10-31）**：**主体已完成**。`src/ui/` 已落地（8 文件 1,310 行：
 > `element` / `layout` / `frame` / `theme`——规划里的 widget/nav/screen 合并进
 > element/layout/frame）；布局、控件 v1、焦点、主题 token、文本域已实装；
-> **屏幕栈 `ScreenStack` 与 Modal 未做**（M3 一起补）。设置屏 + 错误屏已迁到组件树，
+> **屏幕栈 `ui::ScreenStack` 已做**（push/pop/reset、模态标记、on_enter/on_exit；Shell 浮层导航接入；Modal 作为标记/场景栈语义沿用）。设置屏 + 错误屏已迁到组件树，
 > `tools/shell_golden.py` 的文本快照守住迁移前后一致；单测 `tests/test_ui.cpp` 6 条
 > （布局/焦点/滚动），`tools/ui_smoke.py` 已进 `run_checks`（9 项）。
 > 剩余：屏幕栈、像素基线（Table/Grid/Scroll 已补齐：`columns`/`rows`/`widths`/`col_align`；

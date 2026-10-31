@@ -105,6 +105,7 @@
 | `Display` | 三块显示面（`screen` / `base` / `chrome`）与合成顺序（`present`） | 只依赖 core 与 `Renderer`（向下），**不吃 `HostContext`**，故是纯展示单元 |
 | `App::AgentSession` | agent 控制通道的**会话语义**（单步推进 / 待回包的请求 / 注入按键的定时释放） | 纯数据；与通道的 I/O（`ControlChannel`）分开 |
 | `SoundState` | 事件音优先级/播放、采样解码缓存、音量应用 | sound_index/config 持久化仍归 ContentLibrary/App；不依赖 HostContext |
+| `DisplayState` | 三块显示面（screen/base/chrome）与 CRT 当前参数；resize/reset_chrome/apply_crt 纯状态部分 | present/Renderer/窗口尺寸仍由 App 调用；不依赖 render 类型 |
 | `AgentController` | agent 命令语义与状态：21 分支分发、40+ 字段状态快照、单步/取消/frame.read 会话胶水、观察 JSON | 协议 I/O 在 `agent/ControlChannel`；App 只构造 AgentServices 回调并采集 AgentState；DebugConsole 生命周期仍归 App |
 | `ShelfPlayback` | 架子包脚本与动画时钟：`reset/load/tick/draw/active` | Shell 画家/配置/packs 仍归 App；不持有回退策略 |
 | `FontState` | 字体方案状态与加载：方案表/名字列表/当前字体链/声明字号与 min-max；`scan/load_chain/effective_px/clamp_px` | 只注入字体目录与配置值，不碰 Renderer/Window；字号=窗口尺寸仍归 App |
@@ -137,6 +138,7 @@ net / input / host / control 多个协作者、且依赖 `HostContext`（api 层
 | `text` | 文本工具：UTF-8 码点解码、显示宽度（全角算 2 格）、截断/折行/补齐/居中、删除事件约定 |
 | `text_input` | 界面文本输入缓冲：过滤、退格（按码点）、限长、计数——输入进入界面的唯一入口 |
 | `font_files` | 字体方案目录里的字体文件枚举与**默认回退顺序**（纯路径，不加载字形）：内容包扫描与字体加载共用，二者不必互相依赖 |
+| `ui::ScreenStack` | 通用屏幕栈：push/pop/reset、模态标记、on_enter/on_exit；Shell 浮层导航已接入 | 纯数据结构，不依赖 shell/app |
 | `screen_text` / `screen_draw` / `screen_store` | Screen 的三个关注点：文本导出、写入/替换语义（friend Writer）、存储与只读视图；`Screen` 变薄门面 |
 | `defaults` / `version` | 跨模块常量与产品信息的**单一来源** |
 
