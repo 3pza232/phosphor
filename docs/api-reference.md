@@ -14,6 +14,7 @@
 ```lua
 phos.screen   -- 字符屏幕：一切画面表达
 phos.ui       -- 界面层：声明式 render（布局/控件/焦点/主题）+ 底层绘制原语/裁剪区域
+phos.scene    -- 场景栈：压在世界之上的界面层（可冻结世界/暂停音频/接管更新与绘制）
 phos.layer    -- 可选图层：把世界 / 下落物 / 特效 / 浮窗分开画（见下节）
 phos.panel    -- 右侧栏面板（需 manifest 声明 sidebar）
 phos.text     -- 文本度量与定宽裁剪（宽度单位是"列"，不是字节）
@@ -24,6 +25,7 @@ phos.audio    -- 合成音/音符/打击乐/音序器音乐/采样
 phos.save     -- 存档（需 manifest 声明 save = true）
 phos.assets   -- 包内资源读取（文本 / 按行 / 存在性 / 大小 / 列表）
 phos.debug    -- 可调参数篮子：注册数值，用 `~` 调试台实时微调（见下节）
+phos.score    -- 卡带排行榜：TOP N 分数（排序/截断/存档键/坏档容错在引擎侧）
 phos.sys      -- 系统信息与工具
 phos.cart     -- 当前卡带的身份（id / 标题 / 版本 / 作者 / 简介）
 phos.net      -- 局域网联机：开房 / 加入 / 收发消息 / 发现（见下节）
@@ -166,6 +168,20 @@ phos.text.ink_box("@")                  -- xoff, width, approx（字形墨迹框
 **定宽位置（侧栏、状态条）用 `fit`**：主机在右侧是硬切，
 写完超长的那一截就没了影，"按住更高"会变成"按住更"；`fit` 会补一个省略号，
 玩家一眼就知道"这里还有字"。`columns` 传可用列宽（面板里通常是 `pw - 2`）。
+
+---
+
+### 数值展示：`score` / `clock` / `percent`
+
+千分位、计时与百分比只有一份实现（与主机自身的展示一致），卡带不要自己拼格式：
+
+```lua
+phos.text.score(31200)        -- "31,200"（负数保留符号）
+phos.text.clock(754)          -- "12:34"；3661 -> "1:01:01"；负数按 0
+phos.text.percent(0.4567)     -- "45.7%"；第二位参数是小数位数（0..2，缺省 1）
+```
+
+这三者接受 number/integer；坏值（nan/inf/字符串）按 0 处理，不会把画面写歪。
 
 ## phos.audio
 
@@ -938,6 +954,21 @@ local ok = phos.save.import(code) -- 从磁带码恢复（**整份替换**）；
 > 磁带码是"整份存档"的载体：`import` 成功即替换全部条目（不是合并）。
 > 导入前会全量校验，任何一处非法都保持原存档不变。
 
+## phos.lang
+
+多语言取值：文案属于卡带内容，主机只提供"取当前语言那一条"的机制。
+
+```lua
+local t = phos.lang.dict({ zh = { score = "得分" }, en = { score = "SCORE" } })
+local word = phos.lang.pick({ zh = "普通炮弹", en = "SHELL" })
+local words = phos.lang.shared()   -- 通用词表（SCORE/BEST/PAUSED/RESUME/...）
+```
+
+- `dict(fields)`：返回 `{zh=…,en=…}` 里当前语言那一张表（**引用**，每帧取一次即可跟随切换）
+- `pick(fields)`：取单条；两者都是**缺 en 回落中文**，漏翻不会露出空串
+- `shared()`：引擎自带的通用词表（18 个常用词，取当前语言那一列）。每调用一次新建一张表——
+  在 `init` 里取一次就够了，语言切换后按需重取；卡带自己的专有词仍写在自己的 `Text` 表里
+
 ## phos.assets
 
 读取卡带包内的文件。路径相对包根；越界（`..`）一律拒绝；**缺失返回 `nil` / `false`，
@@ -962,6 +993,30 @@ local all  = phos.assets.list("assets/")            -- 列出包内文件（可�
 > 覆盖层 Mod 生效时读到的是替换后的内容，卡带代码无感知
 > （做覆盖层 Mod：在 `mods/<mod-id>/` 里放好替换文件，再由 `mod.lua` 的 `overrides`
 > 登记到键 `<卡带id>/assets/…`，见 content-packs.md）。
+
+## phos.score
+
+卡带排行榜：TOP N 分数，写进**当前卡带的存档**（需要 manifest 声明 `save = true`；
+没声明时只在内存里工作，`available()` 返回 false——卡带不需要为此写分支）。
+排序、截断、存档键与坏档容错都在引擎侧，卡带只回答"加多少分"。
+
+```lua
+local board = phos.score.new{ max = 5, key = "scores" }  -- 构造时自动装载
+
+board:add(1200)      -- 插入并返回名次（1 基）；没进 TOP N 返回 0
+board:best()         -- 第一名（空榜 = 0）
+board:list()         -- 降序数组，最多 max 项
+board:clear()        -- 清空并落盘
+board:available()    -- 存档是否可写（manifest 未声明 save 时为 false）
+board:key()          -- 实际使用的存档键
+
+phos.score.top(5, "scores")   -- 只读地取前 N 名（不写盘）
+```
+
+- `max` 钳到 **1..20**（缺省 5）；`key` 缺省 `"scores"`，过长/含 `=` 或换行时回退默认键
+- 只接受非负整数；同分保持插入顺序（先到的排前面）
+- 存档是逗号分隔的整数串，坏项跳过而不是整榜作废；写入失败只记日志，卡带照常运行
+- 换卡/重载不串榜：每个实例绑定当前卡带的存档句柄
 
 ## phos.cart
 

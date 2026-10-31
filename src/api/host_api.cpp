@@ -7,10 +7,12 @@
 #include "api/layer_api.hpp"
 #include "api/lua_value.hpp"
 #include "api/net_api.hpp"
+#include "api/score_api.hpp"
 #include "api/scene_api.hpp"
 #include "api/ui_api.hpp"
 #include "cart/cartridge.hpp"
 #include "core/defaults.hpp"
+#include "core/format.hpp"
 #include "core/log.hpp"
 #include "core/surface.hpp"
 #include "core/text.hpp"
@@ -18,6 +20,7 @@
 
 #include <sol/sol.hpp>
 
+#include <cmath>
 #include <cstdio>
 
 namespace phos {
@@ -273,6 +276,35 @@ void register_host_api(sol::state& lua, HostContext& host) {
         return std::make_tuple(box.xoff, box.width, box.approx);
     };
 
+    // 数值读成 long long：卡带可能传浮点（计时/比例），坏值按 0 处理而不是 UB
+    const auto read_integer = [](const sol::object& value) -> long long {
+        if (value.is<int>()) return value.as<int>();
+        if (value.is<double>()) {
+            const double number = value.as<double>();
+            if (!std::isfinite(number)) return 0;
+            return static_cast<long long>(number < 0 ? number - 0.5 : number + 0.5);
+        }
+        return 0;
+    };
+    const auto read_ratio = [](const sol::object& value) -> double {
+        if (value.is<double>()) return value.as<double>();
+        if (value.is<int>()) return static_cast<double>(value.as<int>());
+        return 0.0;
+    };
+
+    // 展示格式化：分数千分位、计时 mm:ss、百分比。卡带与主机展示共用 core/format，
+    // 各写一份迟早会在"四位数怎么断"上不一致
+    text_api["score"] = [read_integer](const sol::object& value) {
+        return format::score(read_integer(value));
+    };
+    text_api["clock"] = [read_integer](const sol::object& value) {
+        return format::clock(read_integer(value));
+    };
+    text_api["percent"] = [read_ratio, read_integer](const sol::object& value,
+                                                     sol::optional<int> digits) {
+        return format::percent(read_ratio(value), digits.value_or(1));
+    };
+
     // --- phos.input ---
     sol::table input = phos.create_named("input");
     // 键就是名字：主机不做白名单，任何名字都能查（没见过 = 一直是松开）。
@@ -441,6 +473,35 @@ void register_host_api(sol::state& lua, HostContext& host) {
         return dict.valid() ? dict : lua.create_table();  // 两列都没写：给空表，别让卡带崩
     };
 
+    // 共享词表：SCORE / BEST / PAUSED 这类每张卡带都会用到的词，取当前语言那一列。
+    // 卡带可在 init 里拷一份再覆盖自己的词；每帧重取会产生垃圾表，文档建议按需刷新
+    lang["shared"] = [&host, &lua]() {
+        const bool en = host.language == "en";
+        sol::table out = lua.create_table();
+        const auto put = [&](const char* key, const char* zh, const char* en_word) {
+            out[key] = en ? en_word : zh;
+        };
+        put("score", "得分", "SCORE");
+        put("best", "最高", "BEST");
+        put("level", "关卡", "LEVEL");
+        put("lives", "生命", "LIVES");
+        put("time", "时间", "TIME");
+        put("paused", "暂停", "PAUSED");
+        put("resume", "继续", "RESUME");
+        put("restart", "重来", "RESTART");
+        put("quit", "退出", "QUIT");
+        put("start", "开始", "START");
+        put("back", "返回", "BACK");
+        put("help", "帮助", "HELP");
+        put("confirm", "确认", "CONFIRM");
+        put("cancel", "取消", "CANCEL");
+        put("on", "开", "ON");
+        put("off", "关", "OFF");
+        put("keys", "操作", "KEYS");
+        put("select", "选择", "SELECT");
+        return out;
+    };
+
     // --- phos.cart：卡带自己的身份（来自 manifest.lua） ---
     // 有了它，卡带不必把标题之类的身份再抄一份到 Lua 里：作者在 manifest.lua 改
     // `name`，标题画面与关于页立刻跟着变。取一次存起来即可，别每帧调用
@@ -459,6 +520,7 @@ void register_host_api(sol::state& lua, HostContext& host) {
 
     // 组件层（边框/浮窗/菜单/进度条/正文/精灵/导航/绘制区域）
     register_scene_api(lua, host);
+    register_score_api(lua, host);
     register_ui_api(lua, host);
     // 音频层（合成音/音符/打击乐/音序器音乐/采样）
     register_audio_api(lua, host);

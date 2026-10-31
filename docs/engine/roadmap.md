@@ -185,8 +185,8 @@ E 从 A 开始持续，不等其它阶段。
 | 能力 | 内容 | 直接删掉的重复 |
 |---|---|---|
 | 存档 v2 | 原子写、版本字节 + 迁移钩子、结构化值（表/JSON）、槽位、磁带码带 cart id + CRC | towerdef 约 220 行编解码；导入他卡存档 |
-| 内置排行榜 | `phos.score{top=5, key="scores"}` | 6 份最高分实现 |
-| 共享词表/格式化 | `phos.lang.shared()` + `text.score/clock/money/percent` | 617 行文案表、24 处 pad |
+| 内置排行榜 | `phos.score.new{max, key}`：降序 TOP N、名次返回、`clear`、坏档/无存档降级、`score.top` 只读查询（已完成，`toolkit_smoke` 覆盖持久化） | 6 份最高分实现 |
+| 共享词表/格式化 | `phos.lang.shared()`（18 词 zh/en）+ `text.score/clock/percent`（`core/format` 唯一实现，单测覆盖）；`money` 暂未做（留待按需） | 617 行文案表、24 处 pad |
 | 观测 schema | `phos.observe{ score=..., units={...} }`：一次登记，`state.query` 稳定字段 | worms 约 200 行、towerdef/crawl 各约 60 行 |
 | 键位提示 | `ui.hint` 自动取 `key_name` + 宽度裁剪 + 可重绑定 | 11 份键位提示块 |
 | 卡带 lint | `--check-cart`：全局变量、硬编码面板宽、`screen.size()` 误用、重复文案键、`rgb` 直写 | K8 类缺陷 |

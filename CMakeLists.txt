@@ -123,6 +123,7 @@ if(PHOSPHOR_BUILD_TESTS)
         tests/test_shell_ui.cpp
         src/core/color.cpp
         src/core/text.cpp
+        src/core/format.cpp
         src/core/text_input.cpp
         src/core/log.cpp
         src/core/json_lite.cpp

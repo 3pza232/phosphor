@@ -632,6 +632,22 @@ function phos.text.pad(text, columns) end
 ---@return string
 function phos.text.pad_left(text, columns) end
 
+---数值展示：千分位（31200 → "31,200"）
+---@param value number|integer
+---@return string
+function phos.text.score(value) end
+
+---计时：754 → "12:34"；3661 → "1:01:01"；负数按 0
+---@param seconds number|integer
+---@return string
+function phos.text.clock(seconds) end
+
+---百分比：0.4567 → "45.7%"；digits 0..2（缺省 1）
+---@param ratio number
+---@param digits integer|nil
+---@return string
+function phos.text.percent(ratio, digits) end
+
 ---多语言取值：文案属于卡带内容（主机不替卡带翻译），这里只提供"取当前语言那一条"
 ---的机制。缺项一律回落中文，卡带不必为漏翻写防御代码。
 ---@class phos.lang
@@ -648,6 +664,11 @@ function phos.lang.pick(fields) end
 ---@param fields table zh / en 两张表
 ---@return table
 function phos.lang.dict(fields) end
+
+---共享词表：score/best/level/lives/paused/resume/... 取当前语言那一列。
+---每帧重取会新建表；建议 init 取一次、语言切换后按需重取。
+---@return table<string, string>
+function phos.lang.shared() end
 
 ---包内资源读取（路径相对包根；覆盖层 Mod 生效时读到替换后的内容）
 ---@class phos.assets
@@ -757,6 +778,30 @@ function phos.sys.language() end
 function phos.sys.capture_escape(on) end
 
 ---卡带自己的身份（取自 manifest.lua）
+---排行榜：TOP N 分数，写进当前卡带的存档（键可自定义；存档不可用时只在内存里工作）
+---@class phos.Score
+---@field available fun(self: phos.Score): boolean
+---@field capacity fun(self: phos.Score): integer
+---@field best fun(self: phos.Score): integer
+---@field list fun(self: phos.Score): integer[]
+---@field add fun(self: phos.Score, value: integer): integer 插入并返回名次（1 基）；没进榜返回 0
+---@field clear fun(self: phos.Score)
+---@field key fun(self: phos.Score): string
+
+---@class phos.score
+phos.score = {}
+
+---创建排行榜（构造时自动从存档装载）
+---@param opts table|nil { max?: integer 1..20（缺省 5）, key?: string 存档键（缺省 "scores"） }
+---@return phos.Score
+function phos.score.new(opts) end
+
+---只读地取某个榜的前 N 名（不写盘）
+---@param count integer|nil
+---@param key string|nil
+---@return integer[]
+function phos.score.top(count, key) end
+
 ---@class phos.CartInfo
 ---@field id string 卡带 id
 ---@field name string 卡带架与侧栏显示的标题

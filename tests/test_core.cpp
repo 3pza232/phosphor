@@ -7,6 +7,7 @@
 #include "core/color.hpp"
 #include "core/config.hpp"
 #include "core/crt.hpp"
+#include "core/format.hpp"
 #include "core/json_lite.hpp"
 #include "core/layered_screen.hpp"
 #include "core/palette.hpp"
@@ -409,6 +410,33 @@ TEST(skin_builtin_geometry) {
     CHECK_EQ(r.w, s.screen_w);
     CHECK_EQ(r.h, s.screen_h);
     CHECK(!s.lamps.empty());
+}
+
+// ---------------------------------------------------------------- format
+
+TEST(format_score_thousands) {
+    CHECK_EQ(format::score(0), std::string("0"));
+    CHECK_EQ(format::score(999), std::string("999"));
+    CHECK_EQ(format::score(1000), std::string("1,000"));
+    CHECK_EQ(format::score(31200), std::string("31,200"));
+    CHECK_EQ(format::score(1234567), std::string("1,234,567"));
+    CHECK_EQ(format::score(-1234), std::string("-1,234"));
+}
+
+TEST(format_clock) {
+    CHECK_EQ(format::clock(0), std::string("00:00"));
+    CHECK_EQ(format::clock(59), std::string("00:59"));
+    CHECK_EQ(format::clock(754), std::string("12:34"));
+    CHECK_EQ(format::clock(3661), std::string("1:01:01"));
+    CHECK_EQ(format::clock(-5), std::string("00:00"));
+}
+
+TEST(format_percent) {
+    CHECK_EQ(format::percent(0.4567), std::string("45.7%"));
+    CHECK_EQ(format::percent(1.0), std::string("100.0%"));
+    CHECK_EQ(format::percent(0.5, 0), std::string("50%"));
+    CHECK_EQ(format::percent(0.12345, 2), std::string("12.35%"));
+    CHECK_EQ(format::percent(0.5, 9), std::string("50.00%"));  // digits 钳到 2
 }
 
 // ---------------------------------------------------------------- config
