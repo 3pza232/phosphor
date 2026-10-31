@@ -84,7 +84,9 @@ int DrawRegion::clip_w(int x, int w) const {
 }
 
 Surface DrawRegion::surface_of() const {
-    return Surface(screen(), abs_x(0), abs_y(0), room_w(), h_);
+    // 区域矩形只由 bounds() 换算：Surface 与原语裁剪共用同一份坐标，避免两处各算一遍
+    const ui::Rect area = bounds();
+    return Surface(screen(), area.x, area.y, area.w, area.h);
 }
 
 ui::Style DrawRegion::style() const { return cart_style(host_); }
@@ -124,18 +126,20 @@ void DrawRegion::back_rect(int x, int y, int w, int h, Color bg) {
 void DrawRegion::plot(int x2, int y2, Color fg) { surface_of().plot(x2, y2, fg); }
 
 void DrawRegion::frame(std::string_view title) {
-    ui::frame(screen(), ui::Rect{abs_x(0), abs_y(0), room_w(), h_}, title, style());
+    ui::frame(screen(), bounds(), title, style());
 }
 
 void DrawRegion::divider(int y) {
     if (y < 0 || y >= h_) return;
-    ui::Style s = style();
-    ui::divider(screen(), abs_x(0), abs_y(y), room_w(), s.dim, s.bg);
+    const ui::Rect area = bounds();
+    const ui::Style s = style();
+    ui::divider(screen(), area.x, area.y + y, area.w, s.dim, s.bg);
 }
 
 void DrawRegion::bar(int x, int y, int w, float ratio) {
     if (y < 0 || y >= h_) return;
-    ui::bar(screen(), abs_x(x), abs_y(y), clip_w(x, w), ratio, style());
+    const ui::Rect area = bounds();
+    ui::bar(screen(), area.x + x, area.y + y, clip_w(x, w), ratio, style());
 }
 
 void DrawRegion::menu(int x, int y, int w, const std::vector<std::string>& items, int selected,
@@ -143,13 +147,15 @@ void DrawRegion::menu(int x, int y, int w, const std::vector<std::string>& items
     if (items.empty()) return;
     const int height = h > 0 ? h : static_cast<int>(items.size());
     if (y + height <= 0 || y >= h_) return;
-    ui::menu(screen(), ui::Rect{abs_x(x), abs_y(y), clip_w(x, w), height}, items, selected,
+    const ui::Rect area = bounds();
+    ui::menu(screen(), ui::Rect{area.x + x, area.y + y, clip_w(x, w), height}, items, selected,
              style());
 }
 
 void DrawRegion::body(int x, int y, int w, std::string_view text, int max_lines) {
     if (y < 0 || y >= h_) return;
-    ui::text_block(screen(), abs_x(x), abs_y(y), clip_w(x, w), text,
+    const ui::Rect area = bounds();
+    ui::text_block(screen(), area.x + x, area.y + y, clip_w(x, w), text,
                    max_lines > 0 ? max_lines : 1, style());
 }
 
@@ -160,8 +166,10 @@ void DrawRegion::sprite(int x, int y, const std::vector<std::string>& rows,
     for (const auto& row : rows)
         art_w = std::max(art_w, text::display_width(row));  // 按显示列算：中文占两格
     const int art_h = static_cast<int>(rows.size());
-    // ui::icon 以中心定位；这里按左上角语义换算。步长/亮度的钳制在 core（唯一实现）
-    ui::icon(screen(), rows, colors, abs_x(x) + art_w / 2, abs_y(y) + art_h / 2, step,
+    // ui::icon 以中心定位；这里按左上角语义换算。step/brightness 由 Lua 绑定层
+    // （api::parse_step / parse_brightness）归一化，core 对直接调用者仍兜底
+    const ui::Rect area = bounds();
+    ui::icon(screen(), rows, colors, area.x + x + art_w / 2, area.y + y + art_h / 2, step,
              brightness, style().accent);
 }
 
