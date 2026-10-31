@@ -40,28 +40,64 @@ local GHOST_COLOR = { blinky = "red", pinky = "magenta", inky = "cyan", clyde = 
 
 local game
 local cart = {}
-local paused, reported, flash = false, false, 0
+local board           -- 最高分排行榜（引擎负责排序/截断/存档键）
+local reported, flash = false, 0
 
 local function save_best()
-  if phos.save.available() then phos.save.write("best", tostring(game.best)) end
+  board:add(math.max(game.best or 0, game.score))
 end
 
 local function restart()
+  phos.scene.clear()
   game:reset_run()
-  paused, reported = false, false
-  phos.audio.paused(false)
+  reported = false
+end
+
+-- 暂停浮窗交给场景栈：pause_world 冻结世界、audio_pause 暂停音频，出栈自动恢复
+local function pause_update(dt)
+  if phos.input.pressed("start") or phos.input.pressed("b") then
+    phos.scene.pop()
+  elseif phos.input.pressed("select") then
+    phos.scene.clear()
+    restart()
+  end
+end
+
+local function pause_draw()
+  local words = phos.lang.shared()
+  phos.ui.render{
+    screen = "pause", rect = { x = 18, y = 16, w = 34, h = 10 },
+    kind = "box", title = words.paused, border = "single", opaque = true, bg = "black",
+    children = {
+      { kind = "stat", text = words.score, value = phos.text.score(game.score), label_w = 7 },
+      { kind = "stat", text = words.best,
+        value = phos.text.score(math.max(board:best(), game.best or 0)), label_w = 7 },
+      { kind = "divider", fg = "dark_gray" },
+      { kind = "hint", items = { phos.input.key_name("start"), "resume",
+                                 phos.input.key_name("select"), "restart" } },
+    },
+  }
 end
 
 function init()
   cart = phos.cart.info()
+  board = phos.score.new{ max = 1, key = "best" }
   game = Game.new()
   -- 把本卡带的可调常数交给 `~` 调试台（见 phos.debug.number）
   for _, t in ipairs(Game.tunables()) do
     phos.debug.number(t.name, t.get, t.set, { min = t.min, max = t.max, step = t.step })
   end
-  local saved = phos.save.read("best")
-  if saved then game.best = tonumber(saved) or 0 end
+  game.best = board:best()
   phos.audio.music(Music)
+  phos.observe{
+    score = function() return game.score end,
+    best = function() return game.best end,
+    level = function() return game.level end,
+    lives = function() return game.lives end,
+    state = function() return game.state end,
+    paused = function() return phos.scene.depth() > 0 end,
+    ghosts = function() return game:status().ghosts end,
+  }
 end
 
 function update(dt)
@@ -76,12 +112,13 @@ function update(dt)
     return
   end
 
-  if phos.input.pressed("start") then
-    paused = not paused
-    phos.audio.paused(paused)
+  if phos.input.pressed("start") and phos.scene.depth() == 0 then
+    phos.scene.push{
+      id = "pause", modal = true, pause_world = true, audio_pause = true,
+      update = pause_update, draw = pause_draw,
+    }
   end
   if phos.input.pressed("select") then restart() end
-  if paused then return end
 
   -- 输入 → 意图：这里只回答"哪个键按下了"，能不能转向由规则判定
   if phos.input.pressed("left") then game:turn(-1, 0) end
@@ -167,9 +204,7 @@ end
 local function draw_status(S, C, t)
   local mid = OX + Game.W // 2
   local msg
-  if paused then
-    msg = t.paused
-  elseif game.state == "ready" then
+  if game.state == "ready" then
     msg = t.ready
   elseif game.state == "clear" then
     msg = t.cleared
@@ -188,13 +223,7 @@ function draw()
   draw_maze(S, C)
   draw_actors(S, C)
   draw_status(S, C, t)
-  Panel.draw(game, t)
+  Panel.draw(game, board)
 end
 
--- agent 观察入口：主机在 state.query 时会把这里返回的表一并带上
-function debug_state()
-  local status = game:status()
-  status.paused = paused
-  status.best = game.best
-  return status
-end
+-- 观测在 init 里用 phos.observe 声明（字段为函数，查询时求值）
