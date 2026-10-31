@@ -5,9 +5,10 @@
 
     lua     sol2 / Lua 头只允许出现在 api/ cart/ pack/ devkit/
     gl      glad / OpenGL / GLFW 头只允许出现在 render/ 与 platform/window.cpp
-    core    core/ 不得 include api/ cart/ pack/ shell/ agent/ net/（app.* 是组装点，见白名单）
-    render  render/ 不得 include shell/ api/ cart/ pack/ agent/ net/
-    shell   shell/ 不得 include cart/ pack/ agent/ net/
+    core    core/ 不得 include api/ cart/ pack/ shell/ agent/ net/ app/
+    render  render/ 不得 include shell/ api/ cart/ pack/ agent/ net/ app/
+    shell   shell/ 不得 include cart/ pack/ agent/ net/ app/
+    app     组装层：唯一允许知道全部层的模块（不设禁止表）；其它模块不得 include app/
 
 核查对象是 include 的**书写形式**：它回答"这个模块直接依赖了谁"，不解析宏、不跟 extern 头
 的传递包含。已存在的违规收在 WHITELIST（逐条写明原因与 TODO），只放宽
@@ -44,9 +45,11 @@ GL_HOMES = ("render/",)
 GL_FILES = frozenset({"platform/window.cpp"})
 GL_HEADERS = frozenset({"glad.h"})
 GL_PREFIXES = ("glad/", "GLFW/", "GL/")
-CORE_FORBIDDEN = ("api", "cart", "pack", "shell", "agent", "net")
-RENDER_FORBIDDEN = ("shell", "api", "cart", "pack", "agent", "net")
-SHELL_FORBIDDEN = ("cart", "pack", "agent", "net")
+#: app/ 是组装层（顶层）：允许知道全部层，因此不出现在任何模块的允许列表里，
+#: 而是出现在下层模块的禁止表里——下层 include app/ 一律判违规（反向依赖/环）
+CORE_FORBIDDEN = ("api", "cart", "pack", "shell", "agent", "net", "app")
+RENDER_FORBIDDEN = ("shell", "api", "cart", "pack", "agent", "net", "app")
+SHELL_FORBIDDEN = ("cart", "pack", "agent", "net", "app")
 
 
 class Rule(NamedTuple):
@@ -89,9 +92,6 @@ RULES = (
 #: 既存违规的例外：(规则 key, 源文件 pattern, include pattern, 原因与 TODO)，pattern 用 fnmatch。
 #: 只放宽到这一组，不整文件/整目录豁免。
 WHITELIST = (
-    ("core", "core/app*", "*",
-     "组装点例外：architecture.md 第一节第 1 条明订 core/app.* 必须知道所有层才能把它们"
-     "接起来；core/ 其余单元仍受约束"),
     ("shell", "shell/shell.hpp", "cart/cartridge.hpp",
      "外壳持有 vector<CartInfo> 供卡带架显示，实际只用 CartInfo（cart_info.hpp），"
      "此处过度包含还连带拉起 sol2。TODO：收窄为 cart/cart_info.hpp；CartInfo 下沉 core 后彻底合规"),

@@ -1,4 +1,4 @@
-#include "core/app.hpp"
+#include "app/app.hpp"
 
 #include "cart/cart_scanner.hpp"
 #include "cart/cart_info.hpp"

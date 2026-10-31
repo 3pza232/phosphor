@@ -1,4 +1,4 @@
-#include "core/app.hpp"
+#include "app/app.hpp"
 
 #include "core/log.hpp"
 #include "core/version.hpp"

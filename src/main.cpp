@@ -3,7 +3,7 @@
 #include "core/json_lite.hpp"
 #include "cart/cart_scanner.hpp"
 #include "devkit/cart_lint.hpp"
-#include "core/app.hpp"
+#include "app/app.hpp"
 #include "core/log.hpp"
 #include "platform/paths.hpp"
 #include "core/version.hpp"
