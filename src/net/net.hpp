@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -82,8 +83,16 @@ public:
     /// 取走连接事件（每次调用清空）。
     std::vector<Event> poll_events();
 
-    /// 广播查询并收集应答（有界阻塞，单位毫秒）。
+    /// 广播查询并收集应答（有界阻塞，单位毫秒）。不要在 update() 里用——它会让主线程
+    /// 最多停 timeout_ms；游戏内请用 discover_async + poll_discovered。
     std::vector<Discovered> discover(int timeout_ms);
+
+    /// 异步发现：后台线程广播并收应答，主线程不阻塞。同一时刻只允许一次在途；
+    /// 已有在途时返回 false（调用方下一帧再试）。
+    bool discover_async(int timeout_ms);
+    /// 取异步发现的结果：完成前返回 nullopt；取走即清空（空数组 = 找到了 0 个房间）。
+    std::optional<std::vector<Discovered>> poll_discovered();
+    bool discovering() const;
 
     /// 更新房间对外广播的信息（供"局域网发现"的应答用）。主机开局后调 `set_room_open(false)`，
     /// 搜索方就能在列表里看到"游戏中"并据此拒绝加入。只对主机的发现应答有意义。

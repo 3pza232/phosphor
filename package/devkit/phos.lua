@@ -944,6 +944,24 @@ function phos.net.events() end
 ---@return table
 function phos.net.discover(seconds) end
 
+---异步发现：后台广播查询，**不阻塞主线程**（update() 里用这个）。
+---同一时刻只允许一次在途；已有在途时返回 false。
+---@param seconds? number 扫描时长（默认 0.6）
+---@return boolean 是否成功发起
+function phos.net.discover_async(seconds) end
+
+---取异步发现的结果：
+---  * nil = 还没完成（继续等）
+---  * 空表 = 找到 0 个房间
+---  * 非空 = { { name, address, port, players, open }, ... }
+---取走即清空（每次扫描只交付一次）。
+---@return table|nil
+function phos.net.discover_poll() end
+
+---是否有异步发现在途
+---@return boolean
+function phos.net.discovering() end
+
 ---更新房间对外广播的信息（供局域网发现应答）：主机开局后 set_room({ open = false })，
 ---搜索方就会在列表里看到"游戏中"并据此拒绝加入
 ---@param opts table { name? = string, open? = boolean }

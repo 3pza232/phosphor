@@ -2408,6 +2408,7 @@ local function lan_blank(phase)
 		phase = phase, host = false, code = 0, my_team = nil, pick_team = 1,
 		caps = { 5, 5 }, hp = menu.hp, map = menu.map,
 		create_row = 1, search = "", rooms = {}, room_sel = 1, refresh_t = 0,
+		discover_for = nil, discover_next = nil, search_code = nil,
 		roster = {}, remote = {}, rstate = nil, err = "", start_req = nil, leave = false,
 		pending = {}, -- 开局前收到的帧包（大厅阶段），开局时交给 mnet
 	}
@@ -2614,6 +2615,46 @@ function menu_lan_input(dt)
 	end
 end
 
+-- 异步发现：发起一次后台扫描（一次在途；忙时把下一次排进 discover_next）
+local function lan_discover(self, mode, seconds)
+	if self.discover_for then
+		self.discover_next = { mode, seconds }
+		return false
+	end
+	if not phos.net.discover_async(seconds) then return false end
+	self.discover_for = mode
+	return true
+end
+
+-- 取异步发现结果：按发起时的用途分派（搜索房间 / 刷新列表）
+local function lan_poll_discover(self)
+	local rooms = phos.net.discover_poll()
+	if not rooms then return false end
+	local mode = self.discover_for
+	self.discover_for = nil
+	if mode == "search" then
+		local found
+		for _, room in ipairs(rooms) do
+			if room.port == self.search_code then found = room break end
+		end
+		self.search_code = nil
+		if found and not found.open then
+			self.err = L().lan.in_game
+		elseif found then
+			lan_try_join(self, found)
+		else
+			self.err = L().lan.no_room
+		end
+	else
+		self.rooms = rooms
+		if self.room_sel > #self.rooms then self.room_sel = math.max(1, #self.rooms) end
+	end
+	local queued = self.discover_next
+	self.discover_next = nil
+	if queued then lan_discover(self, queued[1], queued[2]) end
+	return true
+end
+
 function lan_enter(phase)
 	-- 昵称是联机的"门牌"：空着不许进大厅（明确提示，不静默失败）
 	if nick() == "" then
@@ -2626,7 +2667,8 @@ function lan_enter(phase)
 	screen = "lobby"
 	phos.panel.resize(0)
 	if phase == "overview" then
-		lan.rooms = phos.net.discover(0.4)
+		lan.rooms = {}
+		lan_discover(lan, "rooms", 0.4)
 	end
 end
 
@@ -2634,6 +2676,7 @@ function lan_update(dt)
 	local self = lan
 	if not self then screen = "menu"; return end
 	lan_recv(self)
+	lan_poll_discover(self)
 	if self.leave then
 		phos.net.stop(); lan = nil; screen = "menu"; return
 	end
@@ -2677,29 +2720,21 @@ function lan_update(dt)
 		if a then
 			self.err = ""
 			local code = tonumber(self.search)
-			local found
-			for _, room in ipairs(phos.net.discover(0.4)) do
-				if room.port == code then found = room break end
-			end
-			if found and not found.open then
-				self.err = L().lan.in_game
-			elseif found then
-				lan_try_join(self, found)
-			else
-				self.err = L().lan.no_room
+			if code then
+				self.search_code = code
+				lan_discover(self, "search", 0.4)
 			end
 		end
 	elseif self.phase == "overview" then
 		-- 回车=加入选中的房间，R=手动刷新；两者不能共用回车（会误触直接进房）
 		self.refresh_t = self.refresh_t - dt
-		if self.refresh_t <= 0 then
+		if self.refresh_t <= 0 and not self.discover_for then
 			self.refresh_t = 1.5
-			self.rooms = phos.net.discover(0.12)
-			if self.room_sel > #self.rooms then self.room_sel = math.max(1, #self.rooms) end
+			lan_discover(self, "rooms", 0.12)
 		end
-		if phos.input.pressed("r") then
+		if phos.input.pressed("r") and not self.discover_for then
 			self.refresh_t = 1.5
-			self.rooms = phos.net.discover(0.3)
+			lan_discover(self, "rooms", 0.3)
 			phos.audio.beep(480, 0.03, { wave = "square", volume = 0.12 })
 		end
 		if d and #self.rooms > 0 then self.room_sel = math.min(#self.rooms, self.room_sel + 1) end

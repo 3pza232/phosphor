@@ -212,7 +212,7 @@ E 从 A 开始持续，不等其它阶段。
 | 卡带 lint | `--check-cart`（已完成）：manifest/入口、顶层隐式全局、`screen.size()` 误用、阻塞 `discover()`、`require` 缺模块、观测声明；`tools/cart_lint.py` 作为门禁（12 项之一） | K8 类缺陷 |
 
 **验收**：`phos.save` v2 有掉电/损坏/迁移用例；三张样板卡带合计再降 ≥500 行；
-`--check-cart` 已能报出隐式全局/可玩区误用/阻塞调用；出厂卡带与示例当前 0 error、0 warning（联机 discover 属已知 API 债，见 C14）。
+`--check-cart` 已能报出隐式全局/可玩区误用/阻塞调用；出厂卡带与示例当前 0 error、0 warning（联机 discover 已改异步；`join` 仍属 C14 剩余债）。
 
 ### M5 体验与子系统（持续，按季度排）
 
@@ -639,7 +639,7 @@ phos.ui.field{ "name", label = t.name, field = field, on_submit = start_game }
 | 阶段 | 关闭的缺陷 |
 |---|---|
 | M0 | C1–C6、C9–C13、C16；C7（先统一为一条路径）；S5（一行前向声明）；E1 部分 |
-| M1 | S1–S4、S6–S8、S11（与 5.1/5.8 同批）；C14（C15 已在 M0 修完）；U1 部分（两屏） |
+| M1 | S1–S4、S6–S8、S11（与 5.1/5.8 同批）；C14 剩余 `join` 异步化（C15 已修、discover 已异步）；U1 部分（两屏） |
 | M2 | U1、U5、U6、U7（外壳侧）；E3（外壳基线） |
 | M3 | U2–U4、U6、U7（卡带侧）；K1；`phos_api = 7` |
 | M4 | K2–K5、K7、K8；E2 部分 |

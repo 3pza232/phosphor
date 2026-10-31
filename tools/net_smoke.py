@@ -40,6 +40,19 @@ def debug(host: Host) -> dict:
     return host.state().get("debug") or {}
 
 
+def discover_once(host: Host) -> dict:
+    """按一次 D 并等异步发现完成（后台扫描 0.4s，驱动的帧数不等于墙钟时间）。"""
+    before = debug(host).get("discover_ready", 0)
+    host.key("d")
+    for _ in range(120):
+        host.step(5)
+        time.sleep(0.01)
+        state = debug(host)
+        if state.get("discover_ready", 0) > before:
+            return state
+    return debug(host)
+
+
 def check_three_nodes(report) -> None:
     """星型三节点：客户端之间没有 socket，消息只能靠主机转发。
 
@@ -133,22 +146,19 @@ def run() -> int:
                      "收到的消息类型是卡带自定义的 kind")
 
         # 发现去重：同机主机会同时收到广播查询与回环查询、各答一次；同一房间只该列一条
-        b.key("d")
-        b.step(30)
-        report.check(debug(b).get("found_count") == 1,
-                     f"发现去重：只列出一个房间（实为 {debug(b).get('found_count')}）")
+        db = discover_once(b)
+        report.check(db.get("found_count") == 1,
+                     f"发现去重：只列出一个房间（实为 {db.get('found_count')}）")
 
         # set_room({open})：开局后置 false，搜索方据 open 提示"游戏中"并拒绝加入
         a.key("o")
         a.step(10)
-        b.key("d")
-        b.step(30)
-        report.check(debug(b).get("found_open") == 0, "set_room(open=false) 后，发现结果 open=false")
+        db = discover_once(b)
+        report.check(db.get("found_open") == 0, "set_room(open=false) 后，发现结果 open=false")
         a.key("o")
         a.step(10)
-        b.key("d")
-        b.step(30)
-        report.check(debug(b).get("found_open") == 1, "set_room(open=true) 后，发现结果 open=true")
+        db = discover_once(b)
+        report.check(db.get("found_open") == 1, "set_room(open=true) 后，发现结果 open=true")
 
         # B 退出：A 应看到对端消失并收到 disconnected 事件
         b.close()

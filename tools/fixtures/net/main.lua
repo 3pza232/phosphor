@@ -30,16 +30,38 @@ local function try_host()
   role = phos.net.role()
 end
 
-local function try_join()
-  -- 先自动发现；找不到再退回本地回环（同机自测/单机演示都能用）
-  local rooms = phos.net.discover(0.6)
-  join_discovered = #rooms > 0
-  if join_discovered then
-    phos.net.join(rooms[1].address, { port = rooms[1].port, name = "P2" })
-  else
-    phos.net.join("127.0.0.1", { port = PORT, name = "P2" })
+local pending_discover = nil  -- "join" | "count"：异步发现完成后要做什么
+local discover_calls, discover_ready = 0, 0
+
+-- 异步发现：update() 里不阻塞。先发起，结果下一帧（或几帧后）poll 取走
+local function start_discover(seconds, mode)
+  pending_discover = mode
+  discover_calls = discover_calls + 1
+  phos.net.discover_async(seconds)
+end
+
+local function poll_discover()
+  local rooms = phos.net.discover_poll()
+  if not rooms then return end
+  discover_ready = discover_ready + 1
+  found_count = #rooms
+  found_open = (rooms[1] and rooms[1].open) and true or false
+  local mode = pending_discover
+  pending_discover = nil
+  if mode == "join" then
+    -- 找不到再退回本地回环（同机自测/单机演示都能用）
+    join_discovered = #rooms > 0
+    if join_discovered then
+      phos.net.join(rooms[1].address, { port = rooms[1].port, name = "P2" })
+    else
+      phos.net.join("127.0.0.1", { port = PORT, name = "P2" })
+    end
+    role = phos.net.role()
   end
-  role = phos.net.role()
+end
+
+local function try_join()
+  start_discover(0.6, "join")
 end
 
 function init()
@@ -50,11 +72,8 @@ function update(dt)
   frame = frame + 1
   if phos.input.pressed("h") then try_host() end
   if phos.input.pressed("j") then try_join() end
-  if phos.input.pressed("d") then
-    local rooms = phos.net.discover(0.4)
-    found_count = #rooms
-    found_open = (rooms[1] and rooms[1].open) and true or false
-  end
+  if phos.input.pressed("d") then start_discover(0.4, "count") end
+  poll_discover()
   if phos.input.pressed("o") then
     room_open = not room_open
     phos.net.set_room({ open = room_open })
@@ -114,6 +133,8 @@ function debug_state()
     connects = connects,
     disconnects = disconnects,
     join_discovered = join_discovered and 1 or 0,
+    discover_calls = discover_calls,
+    discover_ready = discover_ready,
     found_count = found_count,          -- 上次 discover 找到的房间数（去重后应为 1）
     found_open = found_open and 1 or 0, -- 首个房间的 open 标志（配合 set_room 校验）
     room_open = room_open and 1 or 0,   -- 本机 set_room 的当前值

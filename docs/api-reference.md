@@ -812,6 +812,11 @@ for _, e in ipairs(phos.net.events()) do -- { type="connected"|"disconnected", p
 end
 
 -- 局域网发现：广播查询并收集应答（有界阻塞，默认 0.5 秒）
+-- 帧内用异步版（后台扫描，主线程不阻塞）：
+phos.net.discover_async(0.6)
+local rooms = phos.net.discover_poll()   -- nil = 还没好；表 = 结果（空表 = 0 个房间）
+phos.net.discovering()                   -- 是否有扫描在途
+
 for _, room in ipairs(phos.net.discover(0.5)) do
   -- 字段：name / address / port / players（人数）/ open（房主是否还接受加入）
   local tag = room.open and ("x" .. room.players) or "IN GAME"   -- 开局后的房间标"游戏中"

@@ -10,6 +10,13 @@
 
 ---
 
+## 发现：阻塞版与异步版
+
+`phos.net.discover(seconds)` 是**有界阻塞**（最多 seconds），适合启动/退出流程；
+游戏帧内应使用 `phos.net.discover_async(seconds)` + `phos.net.discover_poll()`：
+扫描在后台线程完成，主线程每帧只轮询结果（nil = 在途，空表 = 0 个房间）。
+一次只允许一个扫描在途（`discovering()` 可查），关停时后台线程在 50ms 分片内退出。
+
 ## 一、目标与非目标
 
 **目标**

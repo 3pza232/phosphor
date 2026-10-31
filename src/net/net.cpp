@@ -104,6 +104,14 @@ struct Net::Impl {
     std::thread worker;
     std::atomic<bool> running{false};
 
+    // 异步发现：同一时刻只允许一次在途；结果由主线程 poll_discovered() 取走
+    std::thread disc_thread;
+    std::atomic<bool> disc_running{false};
+    std::atomic<bool> disc_stop{false};
+    std::mutex disc_mtx;
+    std::vector<Discovered> disc_result;
+    bool disc_ready = false;
+
     // 主线程可见快照
     mutable std::mutex state_mtx;
     std::string last_error;
@@ -573,6 +581,14 @@ struct Net::Impl {
         for (auto& [id, peer] : conns)
             if (peer.sock.valid()) net::shutdown_socket(peer.sock);
         if (worker.joinable()) worker.join();
+        disc_stop.store(true);
+        if (disc_thread.joinable()) disc_thread.join();
+        disc_running.store(false);
+        {
+            std::lock_guard<std::mutex> lock(disc_mtx);
+            disc_ready = false;
+            disc_result.clear();
+        }
         listener.close();
         udp.close();
         wake.close();
@@ -737,8 +753,13 @@ std::vector<Net::Event> Net::poll_events() {
     return out;
 }
 
-std::vector<Net::Discovered> Net::discover(int timeout_ms) {
-    std::vector<Discovered> found;
+namespace {
+
+/// 一次完整的发现扫描：临时 UDP 广播查询，收应答到超时。阻塞版 discover() 与
+/// 异步线程共用；stopped 置位时在 50ms 分片之间自检，关停不等人
+std::vector<Net::Discovered> discover_scan(int discovery_port, int timeout_ms,
+                                           const std::atomic<bool>* stopped) {
+    std::vector<Net::Discovered> found;
     std::string err;
     net::Socket udp = net::udp_open(0, true, err);
     if (!udp.valid()) return found;
@@ -746,19 +767,20 @@ std::vector<Net::Discovered> Net::discover(int timeout_ms) {
     std::ostringstream query;
     query << "{\"magic\":" << json::quote(kMagic) << ",\"q\":1}";
     const std::string payload = query.str();
-    const int port = impl_->opts.discovery_port > 0 ? impl_->opts.discovery_port : 45454;
+    const int port = discovery_port > 0 ? discovery_port : 45454;
     net::udp_send_to(udp, "255.255.255.255", port, payload.data(),
                      static_cast<int>(payload.size()));
     net::udp_send_to(udp, "127.0.0.1", port, payload.data(), static_cast<int>(payload.size()));
 
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout_ms);
     while (std::chrono::steady_clock::now() < deadline) {
+        if (stopped && stopped->load()) break;
         const auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
                                    deadline - std::chrono::steady_clock::now())
                                    .count();
         if (remaining <= 0) break;
-        const net::SelectResult ready = net::select_wait({udp.native()}, {},
-                                                         static_cast<int>(remaining));
+        const int slice = std::min<int>(static_cast<int>(remaining), 50);
+        const net::SelectResult ready = net::select_wait({udp.native()}, {}, slice);
         if (ready.readable.empty()) continue;
         char buffer[1024];
         std::string from_ip;
@@ -769,22 +791,60 @@ std::vector<Net::Discovered> Net::discover(int timeout_ms) {
         std::string parse_err;
         if (!beacon.parse(std::string(buffer, static_cast<size_t>(n)), parse_err)) continue;
         if (beacon.str("magic") != kMagic) continue;
-        Discovered entry;
+        Net::Discovered entry;
         entry.name = beacon.str("name");
         entry.address = from_ip;
         entry.port = beacon.integer("port", 0);
         entry.players = beacon.integer("players", 0);
-        entry.open = beacon.flag("open", true); // 旧版主机没有这一项：按"可加入"算
+        entry.open = beacon.flag("open", true);  // 旧版主机没有这一项：按"可加入"算
         // 去重按 **name + port**（房间身份），不按来源 IP：同一台主机会同时收到
-        // 广播查询与回环查询，各答一次——两次的来源 IP 不同（局域网 IP vs 127.0.0.1），
-        // 但房间名与端口一样。按 (address, port) 去重会把同一个房间显示成两个。
-        const bool dup = std::any_of(found.begin(), found.end(), [&](const Discovered& d) {
-            return d.port == entry.port && d.name == entry.name;
-        });
+        // 广播查询与回环查询，各答一次——两次来源 IP 不同，但房间名与端口一样
+        const bool dup = std::any_of(found.begin(), found.end(),
+                                     [&](const Net::Discovered& d) {
+                                         return d.port == entry.port && d.name == entry.name;
+                                     });
         if (!dup) found.push_back(std::move(entry));
     }
     return found;
 }
+
+} // namespace
+
+std::vector<Net::Discovered> Net::discover(int timeout_ms) {
+    const int port = impl_->opts.discovery_port > 0 ? impl_->opts.discovery_port : 45454;
+    return discover_scan(port, timeout_ms, nullptr);
+}
+
+bool Net::discover_async(int timeout_ms) {
+    if (!impl_) return false;
+    if (impl_->disc_running.exchange(true)) return false;  // 已有在途
+    if (impl_->disc_thread.joinable()) impl_->disc_thread.join();
+    impl_->disc_stop.store(false);
+    const int port = impl_->opts.discovery_port > 0 ? impl_->opts.discovery_port : 45454;
+    const int timeout = std::max(0, timeout_ms);
+    impl_->disc_thread = std::thread([this, port, timeout] {
+        std::vector<Discovered> found = discover_scan(port, timeout, &impl_->disc_stop);
+        {
+            std::lock_guard<std::mutex> lock(impl_->disc_mtx);
+            impl_->disc_result = std::move(found);
+            impl_->disc_ready = true;
+        }
+        impl_->disc_running.store(false);
+    });
+    return true;
+}
+
+std::optional<std::vector<Net::Discovered>> Net::poll_discovered() {
+    if (!impl_) return std::nullopt;
+    std::lock_guard<std::mutex> lock(impl_->disc_mtx);
+    if (!impl_->disc_ready) return std::nullopt;
+    impl_->disc_ready = false;
+    std::vector<Discovered> out = std::move(impl_->disc_result);
+    impl_->disc_result.clear();
+    return out;
+}
+
+bool Net::discovering() const { return impl_ && impl_->disc_running.load(); }
 
 void Net::set_room_name(const std::string& name) {
     if (!impl_) return;

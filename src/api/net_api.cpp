@@ -281,6 +281,9 @@ void register_net_api(sol::state& lua, HostContext& host) {
         net["poll"] = [&lua]() { return lua.create_table(); };
         net["events"] = [&lua]() { return lua.create_table(); };
         net["discover"] = [&lua](sol::optional<double>) { return lua.create_table(); };
+        net["discover_async"] = [](sol::optional<double>) { return false; };
+        net["discover_poll"] = [&lua]() -> sol::object { return sol::nil; };
+        net["discovering"] = []() { return false; };
         net["set_room"] = [](sol::optional<sol::table>) {};
         return;
     }
@@ -381,6 +384,32 @@ void register_net_api(sol::state& lua, HostContext& host) {
         }
         return out;
     };
+
+    // 异步发现：update() 里安全（后台扫描，主线程只轮询结果）。同一时刻只允许一次在途，
+    // 已有在途时返回 false；结果由 discover_poll() 取走（nil = 还没好，空表 = 找到 0 个）
+    net["discover_async"] = [engine](sol::optional<double> seconds) {
+        double s = seconds.value_or(0.6);
+        if (!std::isfinite(s) || s < 0.0) s = 0.0;
+        if (s > 5.0) s = 5.0;
+        return engine->discover_async(static_cast<int>(s * 1000.0));
+    };
+    net["discover_poll"] = [engine, &lua]() -> sol::object {
+        auto rooms = engine->poll_discovered();
+        if (!rooms) return sol::nil;
+        sol::table out = lua.create_table();
+        int index = 1;
+        for (const Net::Discovered& room : *rooms) {
+            sol::table entry = lua.create_table();
+            entry["name"] = room.name;
+            entry["address"] = room.address;
+            entry["port"] = room.port;
+            entry["players"] = room.players;
+            entry["open"] = room.open;
+            out[index++] = entry;
+        }
+        return sol::make_object(lua, out);
+    };
+    net["discovering"] = [engine]() { return engine->discovering(); };
 
     // 更新房间对外广播（发现应答）：主机开局后 set_room({ open = false })，搜索方看到"游戏中"
     net["set_room"] = [engine](sol::optional<sol::table> opts) {
