@@ -683,6 +683,16 @@ TEST(skin_ui_glyph_and_metric_validation) {
     CHECK(skin_ui_accept_metric(1, 1, kSkinUiLabelMax));
     CHECK(skin_ui_accept_metric(kSkinUiLabelMax, 1, kSkinUiLabelMax));
     CHECK(!skin_ui_accept_metric(0, 1, kSkinUiLabelMax));
+
+    // 按键重复：延迟 1..120 帧、间隔 1..30 帧（0 与超上限都是坏值，回退默认）
+    CHECK(skin_ui_accept_metric(1, 1, kSkinUiRepeatDelayMax));
+    CHECK(skin_ui_accept_metric(kSkinUiRepeatDelayMax, 1, kSkinUiRepeatDelayMax));
+    CHECK(!skin_ui_accept_metric(0, 1, kSkinUiRepeatDelayMax));
+    CHECK(!skin_ui_accept_metric(kSkinUiRepeatDelayMax + 1, 1, kSkinUiRepeatDelayMax));
+    CHECK(skin_ui_accept_metric(1, 1, kSkinUiRepeatEveryMax));
+    CHECK(skin_ui_accept_metric(kSkinUiRepeatEveryMax, 1, kSkinUiRepeatEveryMax));
+    CHECK(!skin_ui_accept_metric(0, 1, kSkinUiRepeatEveryMax));
+    CHECK(!skin_ui_accept_metric(kSkinUiRepeatEveryMax + 1, 1, kSkinUiRepeatEveryMax));
 }
 
 TEST(theme_from_skin_merges_ui_overrides_and_leaves_defaults) {
@@ -695,6 +705,8 @@ TEST(theme_from_skin_merges_ui_overrides_and_leaves_defaults) {
     skin.ui.metrics.gap = 0;
     skin.ui.metrics.label_w = 20;
     skin.ui.metrics.indent = 0;
+    skin.ui.metrics.repeat_delay = 30;
+    skin.ui.metrics.repeat_interval = 5;
 
     const ui::Theme theme = ui::theme_from_skin(skin);
     CHECK_EQ(int(theme.glyphs.h), int(U'='));
@@ -707,6 +719,8 @@ TEST(theme_from_skin_merges_ui_overrides_and_leaves_defaults) {
     CHECK_EQ(theme.metrics.gap, 0);
     CHECK_EQ(theme.metrics.label_w, 20);
     CHECK_EQ(theme.metrics.indent, 0);
+    CHECK_EQ(theme.metrics.repeat_delay, 30);
+    CHECK_EQ(theme.metrics.repeat_interval, 5);
 
     // 卡带主题由色板派生，不受 skin.ui 影响
     Palette palette;
@@ -714,6 +728,9 @@ TEST(theme_from_skin_merges_ui_overrides_and_leaves_defaults) {
     CHECK_EQ(int(cart_theme.glyphs.h), int(U'-'));
     CHECK_EQ(int(cart_theme.glyphs.table_rule), int(U'\u2500'));
     CHECK_EQ(cart_theme.metrics.pad_x, 1);
+    // 卡带主题固定为默认重复节奏，不受 skin.ui.metrics 影响
+    CHECK_EQ(cart_theme.metrics.repeat_delay, 18);
+    CHECK_EQ(cart_theme.metrics.repeat_interval, 3);
 }
 
 // ---------------------------------------------------------------- format

@@ -32,6 +32,8 @@ struct Metrics {
     int gap = 1;       ///< 栈内子项间距
     int label_w = 16;  ///< "标签 + 取值"行的标签列宽
     int indent = 2;    ///< 选中标记占用的列宽
+    int repeat_delay = 18;    ///< 方向键按住后首次重复前等待的帧数（默认 18 ≈ 300ms@60Hz）
+    int repeat_interval = 3;  ///< 重复间隔帧数（默认 3 ≈ 50ms@60Hz）
 };
 
 /// 主题 token：颜色角色 + 字形集 + 度量。控件只读 token，不写死颜色与尺寸；

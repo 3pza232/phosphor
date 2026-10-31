@@ -12,11 +12,8 @@ namespace phos::ui {
 
 namespace {
 
-// 方向键按住重复：先等约 300ms（18 帧）再以每 3 帧一格的节奏连发。
-// 按帧而不是秒：Frame 没有 dt，按帧实现也让单测可复现
-constexpr int kRepeatDelayFrames = 18;
-constexpr int kRepeatEveryFrames = 3;
-
+// 方向键按住重复的节奏来自 Theme::metrics（skin 的 ui.metrics 可覆盖）；Frame 不写死帧数。
+// 按帧而不是秒：Frame 没有 dt，按帧实现也让单测可复现。
 Color resolve_fg(const Node& node, const Theme& theme) {
     if (node.props.has_fg) return node.props.fg;
     if (node.props.danger) return theme.danger;
@@ -279,8 +276,13 @@ std::vector<Event> Frame::run() {
     }
 
     std::vector<Event> events;
-    // 方向键：点按立即生效；按住超过延迟后按固定帧间隔重复（列表翻长页时不必连点）
-    const auto nav = [&screen, this](const std::string& key, bool pressed) {
+    // 方向键：点按立即生效；按住超过延迟后按固定帧间隔重复（列表翻长页时不必连点）。
+    // 延迟/间隔来自主题度量：skin.lua 的 ui.metrics 可覆盖，默认 18/3 帧（≈300ms/50ms@60Hz）。
+    // 这里再夹一次下限：Theme 可被代码直接构造，坏值不应把重复逻辑变成除零/死循环
+    const int repeat_delay = std::max(1, theme_.metrics.repeat_delay);
+    const int repeat_interval = std::max(1, theme_.metrics.repeat_interval);
+    const auto nav = [&screen, this, repeat_delay, repeat_interval](const std::string& key,
+                                                                    bool pressed) {
         if (pressed) {
             screen.repeat_key = key;
             screen.repeat_frames = 0;
@@ -299,8 +301,8 @@ std::vector<Event> Frame::run() {
             return false;
         }
         ++screen.repeat_frames;
-        if (screen.repeat_frames < kRepeatDelayFrames) return false;
-        return (screen.repeat_frames - kRepeatDelayFrames) % kRepeatEveryFrames == 0;
+        if (screen.repeat_frames < repeat_delay) return false;
+        return (screen.repeat_frames - repeat_delay) % repeat_interval == 0;
     };
     const bool up = nav(keys_.up, input_->pressed(keys_.up));
     const bool down = nav(keys_.down, input_->pressed(keys_.down));

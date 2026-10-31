@@ -394,6 +394,44 @@ TEST(ui_list_hold_repeats) {
     CHECK_EQ(state.screen("t").widgets["list"].cursor, 4);
 }
 
+TEST(ui_list_hold_repeats_custom_theme_metrics) {
+    // 主题可覆盖重复节奏：delay=3、interval=2 时，按住后第 3 帧首次重复，之后每 2 帧一次
+    ui::Theme theme;
+    theme.metrics.repeat_delay = 3;
+    theme.metrics.repeat_interval = 2;
+    ui::State state;
+    Input input;
+    ui::Rect area{0, 0, 10, 4};
+    ui::Frame frame("t", state, theme, area, &input);
+    ui::Node& list = frame.root().add_list("list", {"0", "1", "2", "3", "4", "5", "6", "7"});
+    list.props.height = 4;
+    frame.run();
+
+    input.set_key("down", true);
+    frame.run();  // 点按那一帧：光标 0 → 1
+    CHECK_EQ(state.screen("t").widgets["list"].cursor, 1);
+
+    // 第 1、2 帧按住不重复
+    for (int i = 0; i < 2; ++i) {
+        input.next_frame();
+        frame.run();
+    }
+    CHECK_EQ(state.screen("t").widgets["list"].cursor, 1);
+
+    // 第 3 帧（延迟帧）首次重复
+    input.next_frame();
+    frame.run();
+    CHECK_EQ(state.screen("t").widgets["list"].cursor, 2);
+
+    // interval=2：第 4 帧不动，第 5 帧再重复
+    input.next_frame();
+    frame.run();
+    CHECK_EQ(state.screen("t").widgets["list"].cursor, 2);
+    input.next_frame();
+    frame.run();
+    CHECK_EQ(state.screen("t").widgets["list"].cursor, 3);
+}
+
 TEST(ui_settings_geometry_matches_shell_layout) {
     SettingsContext ctx;
     ctx.lang = Lang::zh;

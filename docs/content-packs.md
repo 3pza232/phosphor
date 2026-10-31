@@ -164,7 +164,8 @@ return {
   - `ui.glyphs`：`h / v / tl / tr / bl / br / cursor / bullet / scroll_thumb / scroll_track / table_rule`。
     值必须是**恰好一个非控制字符**的字符串（如 `"─"`、`"▶"`；空串/多字符/控制字符会被忽略并 warning）。
   - `ui.metrics`：`pad_x / pad_y / gap / label_w / indent`，整数。间距类允许 0..16，`label_w` 允许 1..80；
-    超出范围或非整数会被忽略并 warning。
+    另有 `repeat_delay`（方向键按住后首次重复前的等待帧数，1..120，默认 18 ≈ 300ms@60Hz）与
+    `repeat_interval`（重复间隔帧数，1..30，默认 3 ≈ 50ms@60Hz）。超出范围或非整数会被忽略并 warning。
   - 缺省/非法字段回退出厂字形与度量；`--check-packs` 会把这些软错误列在 skin 的 warning 里。
 - 内容区尺寸由主机固定为 80x45（所有皮肤共享）；整机网格大小由皮肤几何（上下装饰行数、左右留白）决定
 

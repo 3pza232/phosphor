@@ -38,6 +38,9 @@ Theme theme_from_skin(const Skin& skin) {
     if (overrides.metrics.gap) theme.metrics.gap = *overrides.metrics.gap;
     if (overrides.metrics.label_w) theme.metrics.label_w = *overrides.metrics.label_w;
     if (overrides.metrics.indent) theme.metrics.indent = *overrides.metrics.indent;
+    if (overrides.metrics.repeat_delay) theme.metrics.repeat_delay = *overrides.metrics.repeat_delay;
+    if (overrides.metrics.repeat_interval)
+        theme.metrics.repeat_interval = *overrides.metrics.repeat_interval;
     return theme;
 }
 

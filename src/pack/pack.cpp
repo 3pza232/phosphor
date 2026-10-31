@@ -297,6 +297,9 @@ bool load_skin(const std::string& dir, Skin& out, std::string& err,
             read_metric("gap", out.ui.metrics.gap, 0, kSkinUiSpacingMax);
             read_metric("label_w", out.ui.metrics.label_w, 1, kSkinUiLabelMax);
             read_metric("indent", out.ui.metrics.indent, 0, kSkinUiSpacingMax);
+            read_metric("repeat_delay", out.ui.metrics.repeat_delay, 1, kSkinUiRepeatDelayMax);
+            read_metric("repeat_interval", out.ui.metrics.repeat_interval, 1,
+                        kSkinUiRepeatEveryMax);
         } else if (metrics.get_type() != sol::type::nil) {
             warn_ui("ui.metrics must be a table");
         }

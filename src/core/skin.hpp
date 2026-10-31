@@ -20,6 +20,8 @@ struct SkinUiGlyphs {
 
 struct SkinUiMetrics {
     std::optional<int> pad_x, pad_y, gap, label_w, indent;
+    /// 方向键按住重复：首次重复前的等待帧数 / 重复间隔帧数
+    std::optional<int> repeat_delay, repeat_interval;
 };
 
 struct SkinUi {
@@ -28,8 +30,10 @@ struct SkinUi {
 };
 
 /// 度量安全范围（超出范围视为坏值、忽略并 warning）
-inline constexpr int kSkinUiSpacingMax = 16;  // pad_x / pad_y / gap / indent
-inline constexpr int kSkinUiLabelMax = 80;    // label_w
+inline constexpr int kSkinUiSpacingMax = 16;       // pad_x / pad_y / gap / indent
+inline constexpr int kSkinUiLabelMax = 80;         // label_w
+inline constexpr int kSkinUiRepeatDelayMax = 120;  // repeat_delay（帧）
+inline constexpr int kSkinUiRepeatEveryMax = 30;   // repeat_interval（帧）
 
 /// ui.glyphs 的单个值必须是"恰好一个非控制码点"的字符串。
 /// 返回 false 时 out 不变（调用方回退默认并在 --check-packs 里 warning）。
