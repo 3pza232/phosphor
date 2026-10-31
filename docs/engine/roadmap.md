@@ -234,7 +234,7 @@ E 从 A 开始持续，不等其它阶段。
    再谈渲染 IR 与批处理；先有**像素 golden**，再动合成顺序。
 4. **音频**：声部优先级/抢占、音乐状态查询、流式采样、总线；停止/暂停淡出**已做**（暂停/恢复/master 突变/stop 的 6ms 线性斜坡）、ducking **已做**（phos.audio.duck，只压音乐）。
 5. **绘制/精灵**：`line/box/ring` 几何（**已做**：line/outline/circle + Region 同名方法，含预裁剪与有界半径）、`sprite` 亮度（**已做**：brightness 贯通 step 语义定稿）/实心/多字节键、粒子与转场原语。
-6. **内容包**：统一清单校验（`--check-packs`）、依赖与版本、UI 主题包、包预览、热重载。
+6. **内容包**：统一清单校验**已做**（`phosphor --check-packs [--root] [--json]`：六类包逐项 error/warning，有 error 退出码 2，只读）、依赖与版本、UI 主题包、包预览、热重载。
 
 ### M6 生态（远期，不在本轮承诺）
 

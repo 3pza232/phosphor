@@ -16,7 +16,10 @@ namespace phos {
 std::vector<Palette> scan_palettes(const std::string& dir);
 
 /// 解析单个 palette 包目录（只需 palette.lua；显示名取文件夹名）。
-bool load_palette(const std::string& dir, Palette& out, std::string& err);
+/// warnings 非空时收集"可回退的声明问题"（类型不对等）：扫描路径不传，行为不变；
+/// DevKit 的 --check-packs 用它把坏包原因列出来
+bool load_palette(const std::string& dir, Palette& out, std::string& err,
+                  std::vector<std::string>* warnings = nullptr);
 
 /// 扫描 theme/skin/ 下全部游戏机主题包
 std::vector<Skin> scan_skins(const std::string& dir);
@@ -30,6 +33,8 @@ struct BootPack {
 
 /// 扫描 theme/boot/ 下全部启动动画包
 std::vector<BootPack> scan_boots(const std::string& dir);
+/// 解析单个启动动画包目录（只做结构检查：main.lua 必须存在；脚本能否执行由调用方用沙箱验证）
+bool load_boot(const std::string& dir, BootPack& out, std::string& err);
 
 /// 卡带架样式包（只需 shelf.lua：可选 update(dt)，必须有 draw(ctx)）
 struct ShelfPack {
@@ -46,6 +51,10 @@ struct ShelfPack {
 
 /// 扫描 theme/shelf/ 下全部卡带架样式包
 std::vector<ShelfPack> scan_shelves(const std::string& dir);
+/// 解析单个卡带架样式包目录（只读声明：shelf.lua 存在、顶层 name/cols 类型；draw(ctx)
+/// 契约由 Cartridge::load_shelf 验证——扫描路径不传 warnings，行为不变）
+bool load_shelf_pack(const std::string& dir, ShelfPack& out, std::string& err,
+                     std::vector<std::string>* warnings = nullptr);
 
 /// 一条覆盖层 Mod 的**清单**（`mods/<id>/mod.lua`，必需）。
 /// 清单既提供 UI 显示名/说明，也**显式声明**本 mod 的内容覆盖到哪里（overrides）
@@ -87,9 +96,13 @@ struct SoundPack {
 
 /// 扫描 theme/sound/ 下全部音效包
 std::vector<SoundPack> scan_sounds(const std::string& dir);
+/// 解析单个音效包目录（sounds.lua 必须存在且返回表；warnings 非空时收集可跳过的条目问题）
+bool load_sound(const std::string& dir, SoundPack& out, std::string& err,
+                std::vector<std::string>* warnings = nullptr);
 
-/// 解析单个 skin 包目录（只需 skin.lua）。
-bool load_skin(const std::string& dir, Skin& out, std::string& err);
+/// 解析单个 skin 包目录（只需 skin.lua）。warnings 语义同 load_palette。
+bool load_skin(const std::string& dir, Skin& out, std::string& err,
+               std::vector<std::string>* warnings = nullptr);
 
 /// 一套字体方案（`theme/font/<名称>/`）。文件夹名即方案名（与其它内容包同一约定）
 struct FontScheme {
@@ -109,5 +122,10 @@ struct FontScheme {
 /// stem 为 `font` 的主字体在前，其余按文件名排序。没有 `font.lua` 时整套用它；
 /// 坏脚本留痕并按文件名规则继续
 std::vector<FontScheme> scan_font_schemes(const std::string& dir);
+
+/// 解析单个字体方案目录（字体文件枚举 + 可选 font.lua）。目录里没有任何字体文件时
+/// 返回 false 并填 err；font.lua 坏掉只进 warnings（按文件名规则继续，与扫描一致）
+bool load_font_scheme(const std::string& dir, FontScheme& out, std::string& err,
+                      std::vector<std::string>* warnings = nullptr);
 
 } // namespace phos

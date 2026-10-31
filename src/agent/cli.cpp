@@ -63,6 +63,8 @@ std::optional<std::string> parse_cli(int argc, char** argv, CliOptions& out) {
             out.check_cart = argv[++i];
         } else if (arg == "--check-api") {
             out.check_api = true;
+        } else if (arg == "--check-packs") {
+            out.check_packs = true;
         } else if (arg == "--control") {
             if (auto err = need_value("--control")) return err;
             out.control = std::atoi(argv[++i]);

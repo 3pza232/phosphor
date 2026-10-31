@@ -14,7 +14,7 @@
 | 形态 | 绿色免安装的单文件主机（`phosphor.exe`），双击即用 |
 | 画面 | `80x45` 字符网格 + 显像管后处理（扫描线、孔径格栅、辉光、色调） |
 | 卡带 | 一个文件夹或一个 `.phos` 单文件，丢进 `carts/` 就被扫到；Lua 沙箱，碰不到文件系统；网络只能走 `phos.net` |
-| 外观 | 机台外壳、主题配色、启动动画、系统音效、字体全是**内容包**，都可替换或新增；界面语言内置中 / 英两套文案 |
+| 外观 | 机台外壳、主题配色、启动动画、系统音效、字体全是**内容包**，都可替换或新增（`--check-packs` 只读校验坏包）；界面语言内置中 / 英两套文案 |
 | 界面 | 声明式界面（`phos.ui.render`）与场景栈：外壳与卡带共用同一套组件、焦点、主题与度量 |
 | 卡带工具 | 引擎内建排行榜、声明式观测、共享词表、数值格式化、存档 v2（槽位）与静态检查（`--check-cart`） |
 | 面向 agent | 画面即文本（无需截图与视觉模型）、带控制通道可注入输入与精确步进、卡带可自报玩法状态（`phos.observe`，兼容 `debug_state`），声明式界面可读出控件树（`state.query.ui`） |
@@ -43,6 +43,7 @@ phosphor --pack carts/mygame                    # 产出 dist/mygame.phos
 ```bash
 phosphor --cart carts/mygame --control 7654 --headless
 phosphor --check-api                            # 校验 API 注解与实现一致
+phosphor --check-packs                          # 只读校验 theme/ 下的内容包（主题/色板/开机/音效/字体）
 ```
 
 ## 从源码构建
@@ -66,6 +67,7 @@ cd build-dev && python ../tools/unit_smoke.py   # 或 cd build-dev && ./phosphor
 ```
 
 **内容改哪里**：改卡带/主题/文档改 `package/` 与 `docs/` 下的源文件，构建时同步进 `build/`。
+改完内容包可跑 `phosphor --check-packs` 提前看坏包原因（只读，不初始化窗口/音频、不写配置/存档）。
 若运行目录里的同一份文件在上次同步之后被就地改过，构建会**跳过它并告警**（不会静默覆盖）——
 要么把它拷回 `package/`，要么直接改 `package/` 再构建。
 

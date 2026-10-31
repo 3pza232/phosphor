@@ -124,6 +124,42 @@ phosphor --check-cart carts/mygame --json   # 机器可读
 有 error 退出码 `2`；warning 只报告不阻塞——静态检查只看字面写法，宁可漏报不误报。
 门禁脚本 `tools/cart_lint.py` 会对全部出厂卡带跑同一套检查。
 
+## 内容包检查：`--check-packs`
+
+主机对坏包通常是**安静回退**（主题从列表消失、音效变静音、开机退回内置自检）——
+发布内容前跑一遍，就能提前看到每一处回退的原因。它只读：不开窗、不初始化音频、
+不写配置与存档；脚本在既有沙箱里执行（100ms 看门狗，不会被死循环卡住）。
+
+```bash
+phosphor --check-packs                     # 检查当前内容根（同运行模式：--root 优先，其次 exe 目录）
+phosphor --check-packs --root path/to/content
+phosphor --check-packs --json              # 机器可读
+```
+
+检查项（六类包：skin / palette / boot / sound / shelf / font）：
+
+- **必需脚本存在且能执行**：`skin.lua` / `palette.lua` / `boot/<id>/main.lua` /
+  `sound/<id>/sounds.lua` / `shelf/<id>/shelf.lua`（`font.lua` 可选）；shelf 还会验
+  `draw(ctx)` 契约——缺了它整包不可用。
+- **声明类型**：脚本顶层必须返回表；`screen` / `top` / `bottom` / `colors` / `lamps` /
+  `name` / `cols` / `order` / `file` / `wave` / `perc` / 数值字段类型不对时列 warning
+  （运行期这些都会被静默回退，于是"为什么没生效"很难查）。
+- **引用文件**：皮肤声明的 `palette` 色板是否存在；音效包 `file` 指向的音频是否存在、
+  扩展名是否在 wav/mp3/flac 内；字体方案目录里有没有字体文件、`font.lua` 的 `order`
+  能否匹配到实际文件。
+- **其它 warning**：字体方案目录为空 / 没有 `default` 方案、外壳字符画行宽超过网格、
+  指示灯坐标越界、开机时长会被钳制等。
+- **同名覆盖**：`theme/<type>/<id>` 与 `system/<type>/<id>` 同名时提示"用户包覆盖出厂包"。
+  内容包 id 恒等于目录名（没有额外的 id 字段），所以同名覆盖是唯一的"id 冲突"可能。
+
+输出按包分组（`[类型] 目录` + `error`/`warn` 列表），末尾汇总
+`checked N pack(s): E error(s), W warning(s)`。**有 error 退出码 2**（与 `--check-cart`
+一致），warning 只报告；`--json` 输出
+`{"ok":…,"packs":…,"errors":…,"warnings":…,"issues":[{pack,id,dir,severity,message}]}`。
+
+不在检查范围：`mods/` 覆盖层（请用干净内容根检查）、脚本运行期的动态资源引用
+（只检查声明里能看到的引用）。
+
 ## 几条常见出错点
 
 **1. 画面以可玩区为准**

@@ -17,6 +17,7 @@ struct CliOptions {
     std::optional<std::string> recent;    // 最近打开记录路径（默认 recent.txt；工具脚本据此隔离架子顺序）
     std::optional<std::string> root;      // 内容根（默认：exe 目录；显式给出时以它为准）
     bool check_api = false;             // 校验 API 注解与实装是否一致
+    bool check_packs = false;           // 校验内容根下 theme/ 的全部内容包（DevKit）
     std::optional<std::string> check_cart;  // 静态检查一张卡带（DevKit）
     std::optional<std::string> id;      // 新建卡带的 id（缺省取目录名）
     std::optional<std::string> name;    // 新建卡带的显示名（缺省与 id 相同）

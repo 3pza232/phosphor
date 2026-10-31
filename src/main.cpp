@@ -8,6 +8,7 @@
 #include "platform/paths.hpp"
 #include "core/version.hpp"
 #include "devkit/api_check.hpp"
+#include "devkit/check_packs.hpp"
 #include "devkit/packer.hpp"
 
 #include <cstdio>
@@ -122,6 +123,45 @@ static int run_check_cart(const std::string& dir, bool json) {
                     report.warnings());
     }
     return report.ok() ? 0 : 2;
+}
+
+/// --check-packs：只读校验内容根下 theme/ 的全部内容包（不初始化窗口/音频，不写配置/存档）。
+/// 有 error 时退出码 2（与 --check-cart 一致）；warning 只报告
+static int run_check_packs(const std::string& root, bool json) {
+    const phos::devkit::PackCheckResult result = phos::devkit::check_packs(root);
+    const auto severity_name = [](phos::devkit::PackSeverity severity) -> const char* {
+        return severity == phos::devkit::PackSeverity::error ? "error" : "warn";
+    };
+
+    if (json) {
+        std::printf("{\"ok\":%s,\"packs\":%zu,\"errors\":%d,\"warnings\":%d,\"issues\":[",
+                    result.ok() ? "true" : "false", result.count(), result.errors(),
+                    result.warnings());
+        bool first = true;
+        for (const auto& pack : result.packs) {
+            for (const auto& issue : pack.issues) {
+                if (!first) std::printf(",");
+                first = false;
+                std::printf(
+                    "{\"pack\":\"%s\",\"id\":\"%s\",\"dir\":\"%s\",\"severity\":\"%s\","
+                    "\"message\":\"%s\"}",
+                    pack.kind.c_str(), phos::json::escape(pack.id).c_str(),
+                    phos::json::escape(pack.dir).c_str(), severity_name(issue.severity),
+                    phos::json::escape(issue.message).c_str());
+            }
+        }
+        std::printf("]}\n");
+    } else {
+        for (const auto& pack : result.packs) {
+            if (pack.issues.empty()) continue;
+            std::printf("[%s] %s\n", pack.kind.c_str(), pack.dir.c_str());
+            for (const auto& issue : pack.issues)
+                std::printf("  %-5s %s\n", severity_name(issue.severity), issue.message.c_str());
+        }
+        std::printf("checked %zu pack(s): %d error(s), %d warning(s)\n", result.count(),
+                    result.errors(), result.warnings());
+    }
+    return result.ok() ? 0 : 2;
 }
 
 /// --pack：把卡带目录打包成 .phos
@@ -272,6 +312,7 @@ int main(int argc, char** argv) {
                 "  --root <目录>        内容根（默认 exe 所在目录；从别处启动也能找到 carts/theme）\n"
                 "  --check-api          核对 devkit/phos.lua 与已注册 API 是否一致\n"
                 "  --check-cart <目录>  静态检查一张卡带（manifest/入口/常见错误写法）\n"
+                "  --check-packs        只读校验 theme/ 下全部内容包（skin/palette/boot/sound/shelf/font）\n"
                 "  --json               机器可读输出\n"
                 "\n"
                 "信息：\n"
@@ -295,6 +336,11 @@ int main(int argc, char** argv) {
     if (opts.create) return run_create(opts, devkit_path("devkit/template"));
     if (opts.check_api) return run_check_api(devkit_path("devkit/phos.lua"), opts.json);
     if (opts.check_cart) return run_check_cart(*opts.check_cart, opts.json);
+    if (opts.check_packs) {
+        // 与运行模式同一套根解析（--root 优先，其次 exe 目录兜底）：校验的是"主机看到的内容根"
+        resolve_content_root(opts.root);
+        return run_check_packs(std::filesystem::current_path().string(), opts.json);
+    }
 
     resolve_content_root(opts.root);
     phos::App app;
