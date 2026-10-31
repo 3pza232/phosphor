@@ -60,6 +60,17 @@ def main() -> int:
         checks.check("move" in text and "next" in text, "hint 渲染键位提示")
         checks.check("STATUS" in text, "侧栏（surface=panel）独立渲染")
 
+        print("  -- 网格 / 滚动 / option --")
+        checks.check("CARD 1" in text and "CARD 6" in text, "卡片墙（2×3，等宽列）渲染")
+        card_row = next((line for line in text.splitlines() if "CARD 1" in line), "")
+        checks.check("CARD 2" in card_row and "CARD 3" in card_row,
+                     "grid 按 cols 逐行排（CARD 1/2/3 同一行）")
+        checks.check("LOG 05" in text and "LOG 08" in text and "LOG 04" not in text,
+                     "scroll 视口按初始偏移裁出 4 行（视口外的行不画）")
+        checks.check("COL001" not in text and "beta gamma" in text,
+                     "scroll_x 横向裁剪（初始偏移 10 列）")
+        checks.check("画质: MID" in text, "option 渲染卡带格式化的当前取值")
+
         print("  -- 表格 --")
         checks.check("RANK" in text and "SCORE" in text, "表头渲染")
         checks.check("ALPHA" in text and "1200" in text and "GAMMA" in text, "数据行渲染")

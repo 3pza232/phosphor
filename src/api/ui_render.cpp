@@ -98,6 +98,7 @@ ui::Kind kind_from_name(const std::string& name) {
     if (name == "button") return ui::Kind::button;
     if (name == "hint") return ui::Kind::hint;
     if (name == "table") return ui::Kind::table;
+    if (name == "grid") return ui::Kind::grid;
     if (name == "scroll") return ui::Kind::scroll;
     return ui::Kind::column;
 }

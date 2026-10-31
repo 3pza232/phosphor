@@ -290,8 +290,9 @@ local Panel = require("ui.panel")  -- ui/panel.lua
 出厂卡带 `carts/snake/`、`carts/runner/`、`carts/bricks/`、`carts/tetris/`、`carts/life/`、`carts/chomp/`、`carts/crawl/`、`carts/ballbattle/`、`carts/xiangqi/`、`carts/worms/`、`carts/towerdef/`（11 张全部已迁到新栈：组件侧栏/场景栈/score/observe/存档 v2 表值）是把这些新能力用起来的参考实现：
 侧栏用 `phos.ui.render` 声明、排行榜用 `phos.score`、暂停浮窗用 `phos.scene`、
 观测用 `phos.observe`、通用词用 `phos.lang.shared`。
-`devkit/examples/ui/`（声明式界面：列表 / 勾选 / 文本域 / 进度条 / 键位提示，以及侧栏
-`input = false` 不抢按键的写法）。
+`devkit/examples/ui/`（声明式界面：列表 / 表格 / 2×3 卡片墙 / 纵向滚动与 `scroll_x`
+横向裁剪 / 勾选 / 文本域 / option / 进度条 / 键位提示，以及侧栏 `input = false` 不抢按键的写法；
+声明式 `grid` 暂时用等价的两个 `row` 演示，原因见示例内注释）。
 
 ## 编辑器补全
 
