@@ -674,20 +674,40 @@ void register_host_api(sol::state& lua, HostContext& host) {
     register_net_api(lua, host);
 }
 
-HostCartBinding::HostCartBinding(HostContext& host, Cartridge* cart,
+HostCartBinding::HostCartBinding(HostContext& host, std::unique_ptr<Cartridge> cart,
                                  std::function<void()> on_release)
-    : on_release_(std::move(on_release)) {
-    if (!cart) return;  // 内置开机自检：没有脚本对象，只保留"会话结束清空"的契约
-    // 能在这里装上的入口先装上（构造=绑定）。cart_files 只在 Cartridge::assemble 里装，
-    // 因为那时才打开包；两者写的是同一批字段，值相同
-    host.cart = cart;
-    host.cart_info = &cart->info();
-    host.save = cart->save();
-    host.scenes = &cart->scenes();
+    : host_(host), cart_(std::move(cart)), on_release_(std::move(on_release)) {
+    install_host_entries();
 }
 
 HostCartBinding::~HostCartBinding() {
-    if (on_release_) on_release_();  // 统一清空 HostContext 的脚本态（幂等）
+    // 顺序是有意的：先清 HostContext，再销毁卡带。卡带析构（Lua state / 场景栈 / UI 态）
+    // 期间不会再有人从 HostContext 拿到它
+    if (on_release_) on_release_();
+    cart_.reset();
+}
+
+void HostCartBinding::install_host_entries() {
+    if (!cart_) return;
+    // cart_files 只在 Cartridge::assemble 里装（那时才打开包）；这里装不依赖 Lua 装配的入口
+    host_.cart = cart_.get();
+    host_.cart_info = &cart_->info();
+    host_.save = cart_->save();
+    host_.scenes = &cart_->scenes();
+}
+
+void HostCartBinding::detach_host_entries() {
+    host_.cart = nullptr;
+    host_.cart_info = nullptr;
+    host_.cart_files = nullptr;
+    host_.save = nullptr;
+    host_.scenes = nullptr;
+}
+
+void HostCartBinding::replace_cart(std::unique_ptr<Cartridge> cart) {
+    detach_host_entries();     // HostContext 先不再指向旧脚本
+    cart_ = std::move(cart);   // 旧脚本在此销毁
+    install_host_entries();    // 新脚本就位（assemble 还会写 cart_files 等）
 }
 
 } // namespace phos

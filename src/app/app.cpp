@@ -190,8 +190,8 @@ void App::step_frame(const CliOptions& opts, Renderer* renderer, Window* window,
 
 void App::end_boot() {
     mode_ = Mode::shelf;  // 开机结束进系统界面（卡带装载是另一条转换：直接进 playing）
-    boot_script_.reset();
-    script_binding_.reset();  // 开机会话结束：绑定析构统一清 HostContext 的脚本态（幂等）
+    script_binding_.reset();  // 先清 HostContext（开机会话结束）
+    boot_script_.reset();     // 再销毁开机脚本
     shell_.set_external_boot(false);
     shell_.to_shelf();
 }
@@ -227,17 +227,17 @@ void App::tick_playing(float dt) {
     const auto t0 = clock::now();
     // 场景栈：栈上有 pause_world 时跳过卡带 update（世界冻结），但场景本身照常推进
     const bool scene_pauses_world = host_.scenes != nullptr && host_.scenes->pause_world();
-    bool ok = frozen || scene_pauses_world || cart_->update(dt);  // 冻结时不推进卡带（短路 ||）
+    bool ok = frozen || scene_pauses_world || cart()->update(dt);  // 冻结时不推进卡带（短路 ||）
     if (ok && !frozen && host_.scenes != nullptr && host_.scenes->depth() > 0)
-        ok = cart_->scene_update(dt);
+        ok = cart()->scene_update(dt);
     const auto t1 = clock::now();
     // 插卡瞬间的画面抖动：隔帧跳过一次绘制，形成电压不稳的闪烁
     const bool flicker = insert_flash_ > 0.0f && (frame_count_ % 3 == 0);
     const bool drawn = ok && !flicker;
-    if (drawn) ok = cart_->draw();
+    if (drawn) ok = cart()->draw();
     // 场景画在卡带之后：它们是界面/模态层，必须压在世界之上
     if (ok && drawn && !frozen && host_.scenes != nullptr && host_.scenes->depth() > 0)
-        ok = cart_->scene_draw();
+        ok = cart()->scene_draw();
     const auto t2 = clock::now();
 
     // 插卡闪烁画在**合成之前**：它是外壳的效果，要留在"底"上被渲染出来，
@@ -279,7 +279,7 @@ void App::tick_playing(float dt) {
     }
 
     if (!ok) {
-        last_error_ = cart_->error();
+        last_error_ = cart()->error();
         log_cart_error(last_error_);  // 卡带脚本出错：日志里留下现场，便于事后定位
         eject_cart();
         shell_.show_error(last_error_);
@@ -310,8 +310,8 @@ void App::tick_boot(float dt) {
         // 必须留痕——静默回退会让作者以为自己的脚本生效了，排查时无从下手
         log::warn("boot script failed, falling back to built-in self-check: " +
                   boot_script_->error());
-        boot_script_.reset();
-        script_binding_.reset();  // 开机脚本回退到内置自检：绑定析构清掉它的 HostContext 指针
+        script_binding_.reset();  // 先清 HostContext（脚本回退到内置自检）
+        boot_script_.reset();     // 再销毁出错的脚本
         shell_.set_external_boot(false);
     }
     input_.next_frame();
@@ -384,17 +384,18 @@ ui::Rect App::content_rect() const {
 void App::start_boot_animation() {
     boot_elapsed_ = 0.0f;
     mode_ = Mode::boot;
-    boot_script_.reset();
-    clear_host_cart();  // 上一段会话先收起（无绑定对象时走兼容清理；本函数只在启动时调用）
+    clear_host_cart();   // 先清 HostContext（上一段会话，若有）
+    boot_script_.reset();  // 再销毁上一段开机脚本（本函数只在启动时调用）
 
     // dir 为空 = 内置兜底项（一个 boot 包都没有时 ContentLibrary 保证 [0] 有效）
     if (!packs_.boots[static_cast<size_t>(packs_.boot_index)].dir.empty()) {
         boot_script_ = std::make_unique<Cartridge>();
-        arm_script_binding(boot_script_.get());  // 先绑定再加载：失败出口由析构统一清理
+        // 开机脚本不交给绑定持有（它与卡带会话不完全重叠）；绑定在这里只承担 HostContext 清理
+        arm_script_binding(nullptr);
         if (!boot_script_->load_entry(packs_.boots[static_cast<size_t>(packs_.boot_index)].dir,
                                       "main.lua", host_)) {
-            boot_script_.reset();  // 加载失败：回退内置自检动画
-            script_binding_.reset();
+            script_binding_.reset();  // 先清 HostContext
+            boot_script_.reset();     // 再销毁脚本；此后回退内置自检动画
         }
     }
     // 开机时长：动画脚本可自报（`duration = 秒` 或 `function duration()`）；没写就用出厂值
@@ -619,7 +620,7 @@ int App::run_windowed(const CliOptions& opts) {
             renderer.set_crt(active_crt_);  // 仪表盘可直接调参并即时生效
             // 调试台改过的卡带参数：帧末写回（不在渲染中途改卡带状态）。
             // 参数在**分组树**里，递归收"改过的"叶子，按它们各自登记的下标写回
-            if (cart_) {
+            if (cart()) {
                 std::vector<const DebugParam*> changed;
                 auto collect = [&changed](const DebugGroup& group, auto&& self) -> void {
                     for (const DebugParam& p : group.params)
@@ -628,7 +629,7 @@ int App::run_windowed(const CliOptions& opts) {
                 };
                 collect(params_root_, collect);
                 for (const DebugParam* p : changed)
-                    cart_->debug_param_write(p->index, p->value);
+                    cart()->debug_param_write(p->index, p->value);
             }
         }
         // 输入法开关：本帧有框声明要中文就打开系统输入法，否则关（见 HostContext::ime_wanted）。

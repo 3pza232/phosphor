@@ -9,6 +9,7 @@
 #include "ui/frame.hpp"
 
 #include <functional>
+#include <memory>
 #include <random>
 
 namespace sol { class state; }
@@ -95,24 +96,40 @@ struct HostContext {
 ///
 /// 生命周期归属：HostContext 里的 `save` / `cart_files` / `cart_info` / `cart` / `scenes`
 /// 都指向当前脚本对象（Cartridge）——脚本装配时写入（`Cartridge::assemble`），脚本销毁前
-/// 必须置空，否则 API 层手里就是悬垂指针。清理本体在 `App::unbind_host_cart()`；本对象
-/// 决定它**何时**发生：会话一结束（含加载失败、脚本报错回退等出口）析构即清理，不必在
-/// 每个出口各记一次"别忘了清"。
-///   * 构造 = 会话开始：把脚本对象挂进 HostContext（`cart_files` 由 assemble 在打开包时
-///     写入，构造函数不重复）；
-///   * 析构 = 会话结束：调用 on_release 统一清空（on_release 由 App 提供，即上面那份清理，
-///     含 App 自持的 toast 与场景音频标志）。
-/// 脚本对象可以早于本对象析构：析构只把指针置空，不访问脚本。
+/// 必须置空，否则 API 层手里就是悬垂指针。清理本体在 `App::unbind_host_cart()`。
+///
+/// **所有权**：卡带脚本对象由本对象持有（`std::unique_ptr<Cartridge>`）。于是"重置绑定"是一个
+/// 原子语义：先清 HostContext 的脚本字段，再销毁卡带——不存在"忘了单独 reset 卡带"这条路。
+/// 内置开机自检没有脚本对象，持 nullptr；开机动画 / 架子包脚本仍由 App 持有（生命周期与
+/// 卡带会话不完全重叠），本对象只负责清 HostContext。
+///
+/// 析构顺序是契约：先 on_release() 清 HostContext，再销毁 `cart_`。卡带（Lua state /
+/// 场景栈 / UI 态）析构期间，谁都不可能再从 HostContext 拿到它。
 class HostCartBinding {
 public:
-    /// cart 可为 nullptr（内置开机自检没有脚本对象）。
-    /// on_release 必须幂等，且不得再访问脚本对象（调用时它可能已析构）。
-    HostCartBinding(HostContext& host, Cartridge* cart, std::function<void()> on_release);
+    /// 接管 cart 的所有权（可为 nullptr：没有脚本对象的会话）。
+    /// on_release 必须幂等，且不得访问正在被销毁的卡带。
+    HostCartBinding(HostContext& host, std::unique_ptr<Cartridge> cart,
+                    std::function<void()> on_release);
     ~HostCartBinding();
     HostCartBinding(const HostCartBinding&) = delete;
     HostCartBinding& operator=(const HostCartBinding&) = delete;
 
+    /// 当前卡带（不转移所有权；没有脚本对象时为 nullptr）
+    Cartridge* cart() const { return cart_.get(); }
+
+    /// 同一会话内换脚本对象（重载 / 开机期间插卡）：先摘掉 HostContext 里指向旧对象的指针，
+    /// 再销毁旧对象、接管新的。会话级的 UI/toast 清理不在这里做——调用方按旧时点清
+    void replace_cart(std::unique_ptr<Cartridge> cart);
+
 private:
+    /// 把 cart_ 的入口挂进 HostContext（`cart_files` 仍由 Cartridge::assemble 打开包时写入）
+    void install_host_entries();
+    /// 只摘 HostContext 里指向脚本的 5 个指针（不动 toast / UI 态）
+    void detach_host_entries();
+
+    HostContext& host_;
+    std::unique_ptr<Cartridge> cart_;
     std::function<void()> on_release_;
 };
 

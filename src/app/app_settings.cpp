@@ -41,7 +41,7 @@ void App::apply_skin(int index, Window* window, Renderer* renderer) {
     active_palette_ = packs_.palette();
     host_.panel_bg = skin.panel;  // 侧栏默认底色随主题（卡带 init 里就会读到）
     apply_crt(config_.crt_level, renderer);
-    if (cart_) cart_->apply_palette(active_palette_);
+    if (cart()) cart()->apply_palette(active_palette_);
 
     config_.skin = skin.id;
     save_config_now();

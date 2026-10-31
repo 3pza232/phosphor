@@ -119,11 +119,11 @@ std::string App::control_state_json() const {
 
     // 卡带注册的可调参数（phos.debug.number）当前值；无卡带或未注册为空数组
     out << ",\"debug_params\":[";
-    if (cart_) {
+    if (cart()) {
         const bool english = config_.language == "en";  // 名字按当前语言给，与人看到的篮子一致
-        const size_t count = cart_->debug_param_count();
+        const size_t count = cart()->debug_param_count();
         for (size_t i = 0; i < count; ++i) {
-            const Cartridge::DebugParamView view = cart_->debug_param(i);
+            const Cartridge::DebugParamView view = cart()->debug_param(i);
             // 分组路径用 '/' 拼成串（json_lite 不解析数组）：同名参数（如每件武器的"伤害"）靠它区分
             std::string group;
             for (const Localized& seg : view.group) {
@@ -151,15 +151,15 @@ std::string App::control_state_json() const {
         << ",\"index\":" << audio_.music_section_index()
         << ",\"count\":" << audio_.music_section_count() << "}";
 
-    if (cart_) {
-        const CartInfo& info = cart_->info();
+    if (cart()) {
+        const CartInfo& info = cart()->info();
         out << ",\"cart\":{\"id\":" << json::quote(info.id)
             << ",\"name\":" << json::quote(info.name.get(config_.language == "en"))
             << ",\"version\":" << json::quote(info.version)
             << ",\"author\":" << json::quote(info.author)
             << ",\"path\":" << json::quote(cart_path_)
             << ",\"sidebar_w\":" << info.sidebar_w
-            << ",\"lua_mem_kb\":" << cart_->lua_memory_kb()
+            << ",\"lua_mem_kb\":" << cart()->lua_memory_kb()
             << ",\"update_ms\":" << timing_.update_ms << ",\"draw_ms\":" << timing_.draw_ms
             << ",\"update_peak_ms\":" << timing_.update_peak_ms
             << ",\"draw_peak_ms\":" << timing_.draw_peak_ms << "}";
@@ -402,12 +402,12 @@ void App::execute_control(const ControlCommand& command) {
         // 深入卡带 Lua 状态：显式路径查询 + 卡带自报的 debug_state()
         if (args.has("path")) {
             const std::string path = args.str("path");
-            const std::string value = cart_ ? cart_->global_json(path) : std::string();
+            const std::string value = cart() ? cart()->global_json(path) : std::string();
             payload += ",\"path\":" + json::quote(path) +
                        ",\"value\":" + (value.empty() ? "null" : value);
         }
-        if (cart_) {
-            const std::string debug = cart_->debug_state_json();
+        if (cart()) {
+            const std::string debug = cart()->debug_state_json();
             if (!debug.empty()) payload += ",\"debug\":" + debug;
         }
 
@@ -522,7 +522,7 @@ void App::execute_control(const ControlCommand& command) {
 
     if (name == "debug.set") {
         // 与调试台同一处落地（debug_param_write）：agent 也能实时调卡带的可调参数
-        if (!cart_) {
+        if (!cart()) {
             control_.reply_error(command.id, "no cart loaded");
             return;
         }
@@ -553,8 +553,8 @@ void App::execute_control(const ControlCommand& command) {
         };
         int match = -1;
         int hits = 0;
-        for (size_t i = 0; i < cart_->debug_param_count(); ++i) {
-            const Cartridge::DebugParamView view = cart_->debug_param(i);
+        for (size_t i = 0; i < cart()->debug_param_count(); ++i) {
+            const Cartridge::DebugParamView view = cart()->debug_param(i);
             if (view.name.get(english) != param) continue;
             if (!want_group.empty() && group_of(view) != want_group) continue;
             ++hits;
@@ -568,7 +568,7 @@ void App::execute_control(const ControlCommand& command) {
             control_.reply_error(command.id, "ambiguous name; pass 'group': " + param);
             return;
         }
-        written = cart_->debug_param_write(static_cast<size_t>(match), static_cast<float>(value));
+        written = cart()->debug_param_write(static_cast<size_t>(match), static_cast<float>(value));
         if (!written) {  // 卡带的 set 缺失或出错：如实回报，别假装写成功
             control_.reply_error(command.id, "cart rejected value for: " + param);
             return;
@@ -590,7 +590,7 @@ void App::execute_control(const ControlCommand& command) {
             control_.reply_error(command.id, "missing 'id'");
             return;
         }
-        if (!cart_) {
+        if (!cart()) {
             control_.reply_error(command.id, "no cart loaded");
             return;
         }

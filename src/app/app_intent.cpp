@@ -16,8 +16,8 @@ void App::handle_escape() {
     }
     if (in_boot()) {
         mode_ = Mode::shelf;
-        boot_script_.reset();
-        script_binding_.reset();  // 跳过开机会话：绑定析构统一清 HostContext 的脚本态
+        script_binding_.reset();  // 先清 HostContext（跳过开机会话）
+        boot_script_.reset();     // 再销毁开机脚本
         shell_.set_external_boot(false);
         shell_.to_shelf();
         return;
@@ -130,7 +130,7 @@ void App::handle_intent(const Shell::Intent& intent, Renderer* renderer, Window*
     if (intent.eject) {
         // 拔卡的顺序有讲究：先记住"玩的是哪张"，再重排架子（刚玩过的会排到最前），
         // 最后把光标停在它身上——玩家不必在新顺序里再找一遍
-        const std::string played = cart_ ? cart_->info().id : std::string();
+        const std::string played = cart() ? cart()->info().id : std::string();
         eject_cart();
         refresh_shelf_order();
         shell_.focus_cart(played);
@@ -138,12 +138,12 @@ void App::handle_intent(const Shell::Intent& intent, Renderer* renderer, Window*
     }
     if (intent.open_tape) {
         // 磁带码界面刚打开：把当前卡带的码交过去（Shell 自己拿不到存档）
-        SaveStore* save = cart_ ? cart_->save() : nullptr;
-        shell_.set_tape(cart_ ? cart_->info().name.get(config_.language == "en") : std::string(),
+        SaveStore* save = cart() ? cart()->save() : nullptr;
+        shell_.set_tape(cart() ? cart()->info().name.get(config_.language == "en") : std::string(),
                         save ? save->export_code() : std::string(), save != nullptr);
     }
     if (intent.tape_import) {
-        SaveStore* save = cart_ ? cart_->save() : nullptr;
+        SaveStore* save = cart() ? cart()->save() : nullptr;
         if (!save) {
             shell_.set_tape_result(Shell::TapeResult::no_save);
         } else {

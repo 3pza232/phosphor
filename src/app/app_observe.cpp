@@ -41,12 +41,12 @@ void App::fill_debug_info(DebugInfo& info) {
     info.update_ms = timing_.update_ms;
     info.draw_ms = timing_.draw_ms;
 
-    if (cart_) {
-        info.cart_id = cart_->info().id;
-        info.cart_name = cart_->info().name.get(config_.language == "en");
-        info.cart_version = cart_->info().version;
-        info.cart_author = cart_->info().author;
-        info.lua_mem_kb = cart_->lua_memory_kb();
+    if (cart()) {
+        info.cart_id = cart()->info().id;
+        info.cart_name = cart()->info().name.get(config_.language == "en");
+        info.cart_version = cart()->info().version;
+        info.cart_author = cart()->info().author;
+        info.lua_mem_kb = cart()->lua_memory_kb();
     }
     info.cart_error = last_error_;
 
@@ -65,9 +65,9 @@ void App::fill_debug_info(DebugInfo& info) {
     // 递归渲染。文案按当前界面语言解析——切换语言后篮子文案跟着变
     const bool english = config_.language == "en";
     params_root_ = DebugGroup{};
-    if (cart_) {
-        for (size_t i = 0; i < cart_->debug_param_count(); ++i) {
-            const Cartridge::DebugParamView view = cart_->debug_param(i);
+    if (cart()) {
+        for (size_t i = 0; i < cart()->debug_param_count(); ++i) {
+            const Cartridge::DebugParamView view = cart()->debug_param(i);
             DebugGroup* node = &params_root_;
             for (const Localized& seg : view.group) {
                 const std::string label = seg.get(english);

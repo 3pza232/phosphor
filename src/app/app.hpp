@@ -70,9 +70,13 @@ private:
     /// 脚本态清理的**唯一实现**：清空 HostContext 里指向脚本的字段与随脚本存在的 UI 态，
     /// 并清 toast、复位场景音频标志。由绑定析构或兼容入口调用，不要在别处内联复制一份
     void unbind_host_cart();
-    /// 武装一次宿主脚本会话：cart 为当前脚本对象（内置开机自检可传 nullptr）。
-    /// 已在会话中则不重复武装（重载/换卡沿用同一绑定，析构时清理由当时指向的脚本）
-    void arm_script_binding(Cartridge* cart);
+    /// 武装一次宿主脚本会话并**移交**脚本对象：绑定接管 cart 的所有权（nullptr = 没有
+    /// 脚本对象，如内置开机自检）。已在会话中时在同一会话内换脚本对象（重载 / 开机期插卡），
+    /// 不重置 UI/toast 态。于是"重置绑定" = 清 HostContext + 销毁卡带，App 不再单独 reset 卡带
+    void arm_script_binding(std::unique_ptr<Cartridge> cart);
+    /// 当前卡带：由 script_binding_ 持有（无卡带 / 开机 / 架子会话时为 nullptr）。
+    /// 调用点自己判空；const 方法也可调用（访问器只是转发，不转移所有权）
+    Cartridge* cart() const { return script_binding_ ? script_binding_->cart() : nullptr; }
     /// 重扫卡带目录并按"最近打开"重排架子（启动时与拔卡回架子后各调用一次）
     void refresh_shelf_order();
 
@@ -177,7 +181,6 @@ private:
     Input input_;
     HostContext host_;
     Shell shell_;
-    std::unique_ptr<Cartridge> cart_;
     std::unique_ptr<Cartridge> boot_script_;
     /// 当前卡带架样式包脚本（`theme/shelf/<id>/shelf.lua`）；无包时为 nullptr
     std::unique_ptr<Cartridge> shelf_script_;
@@ -279,7 +282,8 @@ private:
     std::string cart_path_;  // 当前卡带路径（供 cart.reload）
 
     /// 当前宿主脚本会话的 RAII 绑定（见 api/host_api.hpp 的 HostCartBinding）。
-    /// 声明在最后：App 析构时它**先**析构，on_release 仍能安全访问 toasts_ /
+    /// 它**持有当前卡带的所有权**（App 不直接持有卡带对象）：重置绑定 = 先清 HostContext、
+    /// 再销毁卡带。声明在最后：App 析构时它**先**析构，on_release 仍能安全访问 toasts_ /
     /// scene_audio_paused_ 等成员（成员逆序析构，这行就是清理顺序的保证）
     std::unique_ptr<HostCartBinding> script_binding_;
 };

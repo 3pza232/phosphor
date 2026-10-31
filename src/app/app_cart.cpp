@@ -6,6 +6,7 @@
 #include "render/renderer.hpp"
 
 #include <cstdio>
+#include <utility>
 
 namespace phos {
 
@@ -22,10 +23,9 @@ void App::load_cart_path(const std::string& path) {
     host_.pending_ui_activate.clear();
     audio_.stop_music();  // 上一张卡带的音乐到此为止
     net_.stop();          // 联机随卡带生命周期：换卡/重载都先收线，端口不跨卡带留
-    cart_ = std::make_unique<Cartridge>();
-    // 先武装会话绑定（构造=把脚本资源挂进 HostContext）：之后任何出口只要 reset 绑定，
-    // 脚本态就由析构统一清掉，不必在每个失败/退出路径各记一次清理
-    arm_script_binding(cart_.get());
+    // 会话绑定接管卡带所有权：从这里起"重置绑定"= 先清 HostContext、再销毁卡带；
+    // 失败 / 卸载 / 重载都不再单独 reset 卡带
+    arm_script_binding(std::make_unique<Cartridge>());
     host_.time = 0.0;
     host_.layers.reset(host_.content_w, host_.content_h);  // 层随卡带：新卡带从零开始
     display_.chrome.resize(host_.content_w, host_.content_h);  // 主机 chrome 铺满内容区（每帧重画）
@@ -35,12 +35,11 @@ void App::load_cart_path(const std::string& path) {
     capture_escape_ = false;    // Esc 接管随上一张卡带一起收（phos.sys.capture_escape）
     host_.rng.seed(rng_seed_);  // RNG 每张卡带从同一起始态开始：卡带间不串随机序列
 
-    if (!cart_->load(path, host_)) {
-        last_error_ = cart_->error();
-        // 先解绑再销毁脚本：HostContext 不会出现"指向已析构卡带"的窗口
+    if (!cart()->load(path, host_)) {
+        last_error_ = cart()->error();
+        // 重置绑定：绑定析构先清 HostContext、再销毁卡带——不会出现"指向已析构卡带"的窗口
         script_binding_.reset();
-        cart_.reset();
-        // 退出 playing：否则"正在玩时 reload 失败"会让下一帧 tick_playing 去 cart_->update()
+        // 退出 playing：否则"正在玩时 reload 失败"会让下一帧 tick_playing 去 cart()->update()
         // 一个空指针。加载失败就该回到错误屏、不再推进卡带。开机期间失败则保持 boot——
         // 一张坏卡带不该打断开机动画。
         // （**不清 cart_path_**：一次失败的 reload 不该让后续 cart.reload 变成"没有卡带可重载"）
@@ -58,9 +57,9 @@ void App::load_cart_path(const std::string& path) {
     insert_flash_ = kInsertFlashTime;  // 插卡瞬间的电压闪烁（时长与闪烁共同构成仪式感）
     play_event("insert");
 
-    const CartInfo& info = cart_->info();
+    const CartInfo& info = cart()->info();
     log::info("cart loaded: id=" + info.id + " name=" + info.name.get(false) + " version=" + info.version +
-              " sidebar_w=" + std::to_string(cart_->sidebar_width()) + " path=" + cart_path_);
+              " sidebar_w=" + std::to_string(cart()->sidebar_width()) + " path=" + cart_path_);
     control_.send_event("cart.loaded", "\"id\":" + json::quote(info.id) +
                                             ",\"path\":" + json::quote(cart_path_));
 }
@@ -68,7 +67,7 @@ void App::load_cart_path(const std::string& path) {
 
 void App::eject_cart() {
     net_.stop();  // 拔卡即离线（端口/线程随卡带一起收）
-    if (cart_) {
+    if (cart()) {
         eject_collapse_ = kEjectCollapseTime;  // 拔卡仪式：画面收缩熄灭
         audio_.set_paused(false);              // 保证拔卡音能听到
         audio_.stop_music();
@@ -76,13 +75,12 @@ void App::eject_cart() {
         log::info("cart ejected");
         control_.send_event("cart.ejected", "");
     }
-    cart_.reset();
     cart_path_.clear();
     // 拔卡回到系统界面；开机期间拔卡保持 boot（不打断开机动画）
     if (playing()) mode_ = Mode::shelf;
     capture_escape_ = false;  // Esc 接管随卡带一起收：否则拔卡后系统界面再也收不到 Esc
     host_.panel_w = 0;
-    clear_host_cart();  // save / cart_files / cart_info / cart 全是指向这张卡带的指针，一并清
+    clear_host_cart();  // 重置绑定：先清 HostContext、再销毁卡带（所有权在绑定里）
     host_.layers.reset(host_.content_w, host_.content_h);  // 层随卡带销毁
     timing_.reset();  // 卡带逐帧耗时归零：否则拔卡后 state.query 还报着上一张的耗时
     shell_.set_lamps_solid(false);
@@ -115,9 +113,14 @@ void App::unbind_host_cart() {
     host_.cart = nullptr;
 }
 
-void App::arm_script_binding(Cartridge* cart) {
-    if (script_binding_) return;  // 重载/换卡沿用同一会话：析构时清理由当时指向的脚本
-    script_binding_ = std::make_unique<HostCartBinding>(host_, cart, [this] { unbind_host_cart(); });
+void App::arm_script_binding(std::unique_ptr<Cartridge> cart) {
+    if (!script_binding_) {
+        script_binding_ = std::make_unique<HostCartBinding>(host_, std::move(cart),
+                                                            [this] { unbind_host_cart(); });
+        return;
+    }
+    // 已有会话（重载 / 开机期插卡）：同一会话内换脚本对象，不重置 UI/toast 态
+    script_binding_->replace_cart(std::move(cart));
 }
 
 
