@@ -59,6 +59,11 @@
 - 手柄：GLFW 标准布局 → 现有虚拟键（摇杆死区 0.35、热插拔、键盘/手柄共存、失焦释放）。
 - 磁带码集中入口、存档管理入口（本版新增）。
 
+### 修复
+
+- 窗口模式按任意物理键崩溃（Window 移动构造/赋值后，handlers 里的键盘/手柄按键集指针仍指向旧对象，
+  首次按键 0xC0000005）；控制通道注入与 headless 不受影响。
+
 ### 内部结构
 
 - App 拆出 `app/` 组装层与 DisplayState/FontState/SoundState/ShelfPlayback/BootSequence/TapeGlue/
