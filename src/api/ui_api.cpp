@@ -3,6 +3,7 @@
 #include "api/draw_region.hpp"
 #include "api/host_api.hpp"
 #include "api/lua_value.hpp"
+#include "api/ui_render.hpp"
 #include "core/log.hpp"
 #include "core/ui.hpp"
 
@@ -193,6 +194,9 @@ void register_ui_api(sol::state& lua, HostContext& host) {
            sol::optional<int> step) {
             r.sprite(x, y, api::read_rows(rows), color_map(colors), step.value_or(1));
         });
+
+    // 声明式界面：与主机外壳共用 ui/ 的组件树（见 api/ui_render.cpp）
+    register_cart_ui_api(lua, host);
 
     ui["region"] = [&host](int x, int y, int w, int h, sol::optional<sol::table> opts) {
         std::string anchor = "screen";

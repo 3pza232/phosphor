@@ -12,6 +12,9 @@ namespace phos {
 void App::load_cart_path(const std::string& path) {
     if (path.empty()) return;
 
+    // 界面状态随卡带：换卡/重载不把上一张的焦点、滚动、输入缓冲带进来
+    host_.cart_ui.screens.clear();
+    host_.last_ui_focus.clear();
     audio_.stop_music();  // 上一张卡带的音乐到此为止
     net_.stop();          // 联机随卡带生命周期：换卡/重载都先收线，端口不跨卡带留
     cart_ = std::make_unique<Cartridge>();

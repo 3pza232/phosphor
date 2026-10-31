@@ -118,6 +118,11 @@ struct Node {
     Node& add_spacer(std::string child_id);
     Node& add_list(std::string child_id, std::vector<std::string> items);
     Node& add_option(std::string child_id, std::string text);
+    Node& add_checkbox(std::string child_id, std::string text);
+    Node& add_button(std::string child_id, std::string text);
+    Node& add_field(std::string child_id, std::string text);
+    Node& add_bar(std::string child_id, float ratio);
+    Node& add_stat(std::string child_id, std::string label, std::string value);
     Node& add_hint(std::string child_id);
 };
 

@@ -52,6 +52,37 @@ Node& Node::add_option(std::string child_id, std::string text) {
     return node;
 }
 
+Node& Node::add_checkbox(std::string child_id, std::string text) {
+    Node& node = add(Kind::checkbox, std::move(child_id));
+    node.props.text = std::move(text);
+    return node;
+}
+
+Node& Node::add_button(std::string child_id, std::string text) {
+    Node& node = add(Kind::button, std::move(child_id));
+    node.props.text = std::move(text);
+    return node;
+}
+
+Node& Node::add_field(std::string child_id, std::string text) {
+    Node& node = add(Kind::field, std::move(child_id));
+    node.props.text = std::move(text);
+    return node;
+}
+
+Node& Node::add_bar(std::string child_id, float ratio) {
+    Node& node = add(Kind::bar, std::move(child_id));
+    node.props.ratio = ratio;
+    return node;
+}
+
+Node& Node::add_stat(std::string child_id, std::string label, std::string value) {
+    Node& node = add(Kind::stat, std::move(child_id));
+    node.props.text = std::move(label);
+    node.props.value = std::move(value);
+    return node;
+}
+
 Node& Node::add_hint(std::string child_id) { return add(Kind::hint, std::move(child_id)); }
 
 Node make_root(std::string id) {

@@ -95,6 +95,26 @@ TEST(ui_focus_order_and_events) {
     CHECK_EQ(events[0].delta, 1);
 }
 
+TEST(ui_tab_moves_focus_out_of_list) {
+    ui::Theme theme;
+    ui::State state;
+    Input input;
+    ui::Rect area{0, 0, 20, 10};
+    ui::Frame frame("t", state, theme, area, &input);
+    ui::Node& list = frame.root().add_list("list", {"a", "b"});
+    list.props.height = 2;
+    frame.root().add_checkbox("chk", "C");
+    frame.run();
+    CHECK_EQ(frame.focused_id(), std::string("list"));
+
+    input.set_key("tab", true);
+    frame.run();
+    input.next_frame();
+    input.set_key("tab", false);
+    input.next_frame();
+    CHECK_EQ(frame.focused_id(), std::string("chk"));
+}
+
 TEST(ui_list_cursor_wraps_and_scrolls) {
     ui::Theme theme;
     ui::State state;

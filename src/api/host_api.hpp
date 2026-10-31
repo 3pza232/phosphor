@@ -7,6 +7,7 @@
 #include "core/palette.hpp"
 #include "core/screen.hpp"
 #include "core/text.hpp"
+#include "ui/frame.hpp"
 
 #include <functional>
 #include <random>
@@ -32,6 +33,12 @@ struct HostContext {
     Net* net = nullptr;                 // 局域网联机（未接时为 nullptr，phos.net 安全空壳）
     const CartFiles* cart_files = nullptr;  // 当前卡带包（读取包内音频等资源）
     const CartInfo* cart_info = nullptr;    // 当前卡带的身份（来自 manifest.lua；见 phos.cart）
+    /// 卡带侧声明式界面（phos.ui.render）的跨帧状态：焦点/滚动/勾选/文本域。
+    /// 随卡带生命周期重建，不同卡带之间不串状态
+    ui::State cart_ui;
+    /// 最近一次 phos.ui.render 的焦点与屏 id（供 phos.ui.focus / checked / field_text 查询）
+    std::string last_ui_focus;
+    std::string last_ui_screen = "cart";
     /// 当前卡带（供 `phos.debug.number` 把可调参数注册到它上面）。由 Cartridge 装配时挂上、
     /// 拔卡时清空；无卡带时为 nullptr，phos.debug.* 安全无效
     Cartridge* cart = nullptr;

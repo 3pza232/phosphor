@@ -63,6 +63,10 @@ struct Keys {
     std::string down = "down";
     std::string left = "left";
     std::string right = "right";
+    /// 焦点遍历：Tab 下一个、Shift(select) 上一个。列表内部用上下移动光标，
+    /// 离开列表（去勾选框/输入框）靠这两个键
+    std::string next_focus = "tab";
+    std::string prev_focus = "select";
 
     static Keys host();  ///< 主机界面：Enter 确认、Esc 取消（虚拟手柄键不参与）
     static Keys pad();   ///< 卡带：A 确认、B 取消
@@ -89,6 +93,9 @@ public:
 
     bool checked(std::string_view id) const;
     void set_checked(std::string_view id, bool value);
+    /// 仅当控件还没有状态时写入初值（之后由控件自己维护，宿主每帧传初值不会覆盖用户操作）
+    void ensure_checked(std::string_view id, bool value);
+    void ensure_field_text(std::string_view id, std::string value);
     const std::string& field_text(std::string_view id) const;
     void set_field_text(std::string_view id, std::string value);
 
@@ -96,7 +103,8 @@ private:
     WidgetState& widget(std::string_view id);
     const WidgetState* find_widget(std::string_view id) const;
     void handle_focus_nav(std::vector<Node*>& focusables, std::vector<Event>& events,
-                          bool up, bool down, bool left, bool right, bool confirm, bool cancel);
+                          bool up, bool down, bool left, bool right, bool confirm,
+                          bool next_focus, bool prev_focus);
 
     std::string screen_id_;
     State& state_;

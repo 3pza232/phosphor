@@ -1,0 +1,362 @@
+#include "api/ui_render.hpp"
+
+#include "api/host_api.hpp"
+#include "api/lua_value.hpp"
+#include "core/log.hpp"
+#include "ui/element.hpp"
+#include "ui/frame.hpp"
+#include "ui/theme.hpp"
+
+#include <sol/sol.hpp>
+
+#include <algorithm>
+#include <string>
+#include <vector>
+
+namespace phos {
+
+namespace {
+
+constexpr int kMaxDepth = 8;  // 元素树深度上限：坏输入不该把栈撑爆
+
+std::string str_field(const sol::table& t, const char* key, const std::string& fallback = {}) {
+    sol::object value = t[key];
+    return value.is<std::string>() ? value.as<std::string>() : fallback;
+}
+
+bool bool_field(const sol::table& t, const char* key, bool fallback = false) {
+    sol::object value = t[key];
+    return value.is<bool>() ? value.as<bool>() : fallback;
+}
+
+bool has_field(const sol::table& t, const char* key) {
+    sol::object value = t[key];
+    return value.valid() && value.get_type() != sol::type::nil;
+}
+
+int int_field(const sol::table& t, const char* key, int fallback = 0) {
+    sol::object value = t[key];
+    if (value.is<int>()) return value.as<int>();
+    if (value.is<double>()) return static_cast<int>(value.as<double>());
+    return fallback;
+}
+
+float float_field(const sol::table& t, const char* key, float fallback = 0.0f) {
+    sol::object value = t[key];
+    if (value.is<double>()) return static_cast<float>(value.as<double>());
+    if (value.is<int>()) return static_cast<float>(value.as<int>());
+    return fallback;
+}
+
+/// 内边距/外边距：数字 = 四边同值；表 = {l,t,r,b} 或 {x,y}
+ui::Insets insets_field(const sol::table& t, const char* key) {
+    ui::Insets out;
+    sol::object value = t[key];
+    if (value.is<int>()) {
+        const int all = value.as<int>();
+        out = ui::Insets{all, all, all, all};
+    } else if (value.is<double>()) {
+        const int all = static_cast<int>(value.as<double>());
+        out = ui::Insets{all, all, all, all};
+    } else if (value.is<sol::table>()) {
+        sol::table map = value.as<sol::table>();
+        if (has_field(map, "x") || has_field(map, "y")) {
+            const int x = int_field(map, "x"), y = int_field(map, "y");
+            out = ui::Insets{x, y, x, y};
+        } else {
+            out = ui::Insets{int_field(map, "l"), int_field(map, "t"), int_field(map, "r"),
+                             int_field(map, "b")};
+        }
+    }
+    return out;
+}
+
+ui::Align align_field(const sol::table& t, const char* key, ui::Align fallback) {
+    const std::string name = str_field(t, key);
+    if (name == "start") return ui::Align::start;
+    if (name == "center") return ui::Align::center;
+    if (name == "end") return ui::Align::end;
+    if (name == "stretch") return ui::Align::stretch;
+    return fallback;
+}
+
+ui::Kind kind_from_name(const std::string& name) {
+    if (name == "row") return ui::Kind::row;
+    if (name == "box") return ui::Kind::box;
+    if (name == "text") return ui::Kind::text;
+    if (name == "divider") return ui::Kind::divider;
+    if (name == "spacer") return ui::Kind::spacer;
+    if (name == "list") return ui::Kind::list;
+    if (name == "stat") return ui::Kind::stat;
+    if (name == "option") return ui::Kind::option;
+    if (name == "checkbox") return ui::Kind::checkbox;
+    if (name == "field") return ui::Kind::field;
+    if (name == "bar") return ui::Kind::bar;
+    if (name == "button") return ui::Kind::button;
+    if (name == "hint") return ui::Kind::hint;
+    return ui::Kind::column;
+}
+
+ui::Overflow overflow_from_name(const std::string& name) {
+    if (name == "clip") return ui::Overflow::clip;
+    if (name == "wrap") return ui::Overflow::wrap;
+    return ui::Overflow::ellipsis;
+}
+
+ui::Border border_from_name(const std::string& name) {
+    if (name == "single") return ui::Border::single;
+    if (name == "double") return ui::Border::double_line;
+    return ui::Border::none;
+}
+
+ui::FieldFilter filter_from_name(const std::string& name) {
+    if (name == "ascii") return ui::FieldFilter::ascii;
+    if (name == "digits") return ui::FieldFilter::digits;
+    if (name == "hex") return ui::FieldFilter::hex;
+    if (name == "letters") return ui::FieldFilter::letters;
+    if (name == "any") return ui::FieldFilter::any;
+    return ui::FieldFilter::printable;
+}
+
+Color color_field(const HostContext& host, const sol::table& t, const char* key, Color fallback) {
+    sol::object value = t[key];
+    if (value.is<std::string>()) {
+        // 允许用色板槽名（"green" / "dark_gray"…），与 phos.color.* 同一套名字
+        const std::string name = value.as<std::string>();
+        if (host.palette) {
+            for (size_t i = 0; i < kPaletteSlots; ++i)
+                if (name == kPaletteSlotNames[i])
+                    return host.palette->slots[i];
+        }
+        return fallback;
+    }
+    return api::read_color(value, fallback);
+}
+
+std::vector<std::string> strings_field(const sol::table& t, const char* key) {
+    sol::object value = t[key];
+    if (!value.is<sol::table>()) return {};
+    return api::read_rows(value);
+}
+
+/// items + disabled：disabled 可写成下标数组 {2,5} 或等长布尔数组
+void apply_disabled(const sol::table& t, const std::vector<std::string>& items, ui::Props& out) {
+    sol::object value = t["disabled"];
+    if (!value.is<sol::table>()) return;
+    sol::table list = value.as<sol::table>();
+    out.disabled.assign(items.size(), false);
+    for (size_t i = 1; i <= list.size(); ++i) {
+        sol::object item = list[i];
+        if (item.is<bool>()) {
+            if (i - 1 < out.disabled.size() && item.as<bool>()) out.disabled[i - 1] = true;
+        } else if (item.is<int>() || item.is<double>()) {
+            const int index = static_cast<int>(item.as<double>());
+            if (index >= 0 && index < static_cast<int>(out.disabled.size()))
+                out.disabled[static_cast<size_t>(index)] = true;
+        }
+    }
+}
+
+struct Builder {
+    HostContext& host;
+
+    void props_from_table(const sol::table& t, ui::Props& out) {
+        out.width = int_field(t, "width");
+        out.height = int_field(t, "height");
+        out.min_w = int_field(t, "min_w");
+        out.min_h = int_field(t, "min_h");
+        out.max_w = int_field(t, "max_w");
+        out.max_h = int_field(t, "max_h");
+        out.grow = int_field(t, "grow");
+        out.gap = int_field(t, "gap", out.gap);
+        out.margin = insets_field(t, "margin");
+        out.padding = insets_field(t, "padding");
+        out.align_h = align_field(t, "align_h", out.align_h);
+        out.align_v = align_field(t, "align_v", out.align_v);
+        out.opaque = bool_field(t, "opaque", out.opaque);
+        if (has_field(t, "bg")) {
+            out.has_bg = true;
+            out.bg = color_field(host, t, "bg", out.bg);
+        }
+        if (has_field(t, "fg")) {
+            out.has_fg = true;
+            out.fg = color_field(host, t, "fg", out.fg);
+        }
+        out.border = border_from_name(str_field(t, "border"));
+        out.title = str_field(t, "title");
+        out.dim = bool_field(t, "dim", out.dim);
+        out.accent = bool_field(t, "accent", out.accent);
+        out.danger = bool_field(t, "danger", out.danger);
+        out.scale = int_field(t, "scale", out.scale);
+        out.overflow = overflow_from_name(str_field(t, "overflow", "ellipsis"));
+        out.lines = int_field(t, "lines", out.lines);
+        out.enabled = bool_field(t, "enabled", out.enabled);
+        out.indent = int_field(t, "indent", out.indent);
+        out.text_gap = int_field(t, "text_gap", out.text_gap);
+        out.label_w = int_field(t, "label_w", out.label_w);
+        out.filter = filter_from_name(str_field(t, "filter"));
+        out.max_chars = int_field(t, "max_chars", out.max_chars);
+        out.text = str_field(t, "text");
+        out.value = str_field(t, "value");
+        out.items = strings_field(t, "items");
+        out.ratio = float_field(t, "ratio");
+        out.absolute = bool_field(t, "absolute", out.absolute);
+        out.x = int_field(t, "x");
+        out.y = int_field(t, "y");
+        apply_disabled(t, out.items, out);
+    }
+
+    ui::Node build(const sol::table& t, const std::string& parent_id, int index, int depth) {
+        ui::Node node;
+        node.kind = kind_from_name(str_field(t, "kind", "column"));
+        node.id = str_field(t, "id", parent_id + "/" + std::to_string(index));
+        props_from_table(t, node.props);
+
+        // 勾选/文本域初值：只在控件还没有状态时写入（之后归控件维护）
+        if (node.kind == ui::Kind::checkbox && has_field(t, "checked")) ok_checked.emplace_back(
+            node.id, bool_field(t, "checked"));
+        if (node.kind == ui::Kind::field && has_field(t, "value"))
+            ok_field.emplace_back(node.id, node.props.value);
+
+        if (depth < kMaxDepth) {
+            sol::object children = t["children"];
+            if (children.is<sol::table>()) {
+                sol::table list = children.as<sol::table>();
+                for (size_t i = 1; i <= list.size(); ++i) {
+                    sol::object child = list[i];
+                    if (child.is<sol::table>())
+                        node.children.push_back(build(child.as<sol::table>(), node.id,
+                                                      static_cast<int>(i), depth + 1));
+                }
+            }
+        }
+        return node;
+    }
+
+    // 初值收集：build 是纯函数化的，副作用只在调用方 run 之前统一应用
+    std::vector<std::pair<std::string, bool>> ok_checked;
+    std::vector<std::pair<std::string, std::string>> ok_field;
+};
+
+ui::Rect area_for(const HostContext& host, const std::string& surface, const sol::table& spec) {
+    ui::Rect area{host.content_x, host.content_y, host.content_w, host.content_h};
+    if (surface == "panel") {
+        area = ui::Rect{host.panel_origin_x(), host.content_y, host.panel_w, host.content_h};
+    } else if (surface == "playfield") {
+        const int divider = host.panel_w > 0 ? 1 : 0;
+        area.w = host.content_w - host.panel_w - divider;
+    }
+    sol::object rect = spec["rect"];
+    if (rect.is<sol::table>()) {
+        sol::table r = rect.as<sol::table>();
+        area = ui::Rect{area.x + int_field(r, "x"), area.y + int_field(r, "y"),
+                        int_field(r, "w", area.w), int_field(r, "h", area.h)};
+    }
+    return area;
+}
+
+sol::table events_to_table(sol::state& lua, const std::vector<ui::Event>& events) {
+    sol::table out = lua.create_table();
+    int index = 1;
+    for (const ui::Event& event : events) {
+        sol::table item = lua.create_table();
+        switch (event.kind) {
+            case ui::EventKind::activated: item["kind"] = "activated"; break;
+            case ui::EventKind::changed: item["kind"] = "changed"; break;
+            case ui::EventKind::submitted: item["kind"] = "submitted"; break;
+            case ui::EventKind::cancelled: item["kind"] = "cancelled"; break;
+        }
+        item["id"] = event.id;
+        // Lua 侧下标统一 1 基（与 items 表一致）：C++ 内部 0 基，只在绑定处 +1
+        if (event.index >= 0) item["index"] = event.index + 1;
+        if (event.delta != 0) item["delta"] = event.delta;
+        if (event.confirm) item["confirm"] = true;
+        if (event.kind == ui::EventKind::changed) item["checked"] = event.flag;
+        if (!event.text.empty()) item["text"] = event.text;
+        out[index++] = item;
+    }
+    return out;
+}
+
+} // namespace
+
+void register_cart_ui_api(sol::state& lua, HostContext& host) {
+    sol::table ui = lua["phos"]["ui"];
+
+    /// 声明并绘制一帧界面；返回本帧事件数组。
+    /// 必须在 draw() 里调用：它直接写当前帧的屏幕，并消费本帧输入。
+    ui["render"] = [&lua, &host](sol::table spec) -> sol::table {
+        if (!host.screen || !host.input) return lua.create_table();
+
+        const std::string surface = str_field(spec, "surface", "content");
+        if (surface == "panel" && host.panel_w <= 0) return lua.create_table();  // 无侧栏
+        const std::string screen_id = str_field(spec, "screen", "cart");
+
+        Builder builder{host};
+        ui::Node root;
+        sol::object kind = spec["kind"];
+        if (kind.is<std::string>()) {
+            root = builder.build(spec, screen_id, 1, 0);
+        } else {
+            root = ui::make_root(screen_id);
+            for (size_t i = 1; i <= spec.size(); ++i) {
+                sol::object child = spec[i];
+                if (child.is<sol::table>())
+                    root.children.push_back(builder.build(child.as<sol::table>(), screen_id,
+                                                          static_cast<int>(i), 1));
+            }
+        }
+
+        const ui::Theme theme = host.palette ? ui::theme_from_palette(*host.palette) : ui::Theme{};
+        // 一帧只让"负责输入"的那次 render 消费按键：同一帧多次 render（世界 UI + 侧栏 +
+        // 浮窗）时，后面的用 input=false 只画，否则同一次按键会被多个界面各处理一遍
+        const bool consume_input = bool_field(spec, "input", true);
+        ui::Frame frame(screen_id, host.cart_ui, theme, area_for(host, surface, spec),
+                        consume_input ? host.input : nullptr, ui::Keys::pad());
+        frame.root() = std::move(root);
+        for (const auto& [id, value] : builder.ok_checked) frame.ensure_checked(id, value);
+        for (const auto& [id, value] : builder.ok_field) frame.ensure_field_text(id, value);
+
+        std::vector<ui::Event> events = frame.run();
+        if (consume_input) {
+            // 查询接口以"负责输入的那一屏"为准：同一帧还有只画的界面时，焦点不跟着它走
+            host.last_ui_focus = frame.focused_id();
+            host.last_ui_screen = screen_id;
+        }
+        frame.paint(*host.screen);
+        return events_to_table(lua, events);
+    };
+
+    /// 当前焦点控件的 id（agent 与自测读界面状态用；无控件时为空串）
+    ui["focus"] = [&host]() -> std::string { return host.last_ui_focus; };
+
+    /// 勾选态读（与 render 的 checked 初值互补：宿主每帧传初值时用这个）
+    ui["checked"] = [&host](const std::string& id, sol::optional<std::string> screen_id) {
+        const auto screen =
+            host.cart_ui.screens.find(screen_id.value_or(host.last_ui_screen));
+        if (screen == host.cart_ui.screens.end()) return false;
+        const auto widget = screen->second.widgets.find(id);
+        return widget != screen->second.widgets.end() && widget->second.checked;
+    };
+    ui["set_checked"] = [&host](const std::string& id, bool value,
+                                sol::optional<std::string> screen_id) {
+        host.cart_ui.screen(screen_id.value_or(host.last_ui_screen)).widgets[id].checked = value;
+    };
+    /// 文本域当前内容（控件由 render 创建后才有值）
+    ui["field_text"] = [&host](const std::string& id,
+                               sol::optional<std::string> screen_id) -> std::string {
+        const auto screen =
+            host.cart_ui.screens.find(screen_id.value_or(host.last_ui_screen));
+        if (screen == host.cart_ui.screens.end()) return {};
+        const auto widget = screen->second.widgets.find(id);
+        if (widget == screen->second.widgets.end() || !widget->second.input) return {};
+        return widget->second.input->value();
+    };
+    /// 清空全部界面状态（换屏/换场景时调用，避免旧焦点/滚动串到新界面）
+    ui["reset"] = [&host]() {
+        host.cart_ui.screens.clear();
+        host.last_ui_focus.clear();
+    };
+}
+
+} // namespace phos

@@ -106,6 +106,16 @@ bool Frame::checked(std::string_view id) const {
 
 void Frame::set_checked(std::string_view id, bool value) { widget(id).checked = value; }
 
+void Frame::ensure_checked(std::string_view id, bool value) {
+    if (find_widget(id)) return;
+    widget(id).checked = value;
+}
+
+void Frame::ensure_field_text(std::string_view id, std::string value) {
+    if (find_widget(id) && find_widget(id)->input) return;
+    set_field_text(id, std::move(value));
+}
+
 const std::string& Frame::field_text(std::string_view id) const {
     const WidgetState* state = find_widget(id);
     if (!state || !state->input) return scratch_text_;
@@ -183,6 +193,8 @@ std::vector<Event> Frame::run() {
     std::vector<Event> events;
     const bool up = input_->pressed(keys_.up);
     const bool down = input_->pressed(keys_.down);
+    const bool next_focus = input_->pressed(keys_.next_focus);
+    const bool prev_focus = input_->pressed(keys_.prev_focus);
     const bool left = input_->pressed(keys_.left);
     const bool right = input_->pressed(keys_.right);
     const bool confirm = any_pressed(*input_, keys_.confirm);
@@ -195,18 +207,28 @@ std::vector<Event> Frame::run() {
         events.push_back(std::move(event));
     }
 
-    handle_focus_nav(focusables, events, up, down, left, right, confirm, false);
+    handle_focus_nav(focusables, events, up, down, left, right, confirm, next_focus, prev_focus);
     return events;
 }
 
 void Frame::handle_focus_nav(std::vector<Node*>& focusables, std::vector<Event>& events, bool up,
-                             bool down, bool left, bool right, bool confirm, bool cancel) {
-    (void)cancel;
+                             bool down, bool left, bool right, bool confirm, bool next_focus,
+                             bool prev_focus) {
     if (focusables.empty()) return;
 
     ScreenState& screen = state_.screen(screen_id_);
     int focus_index = index_of(focusables, focused_id_);
     if (focus_index < 0) focus_index = 0;
+
+    // Tab / Shift(Tab) 显式换焦点：列表用上下移动光标，靠它才能离开列表去表单控件
+    if (next_focus || prev_focus) {
+        const int count = static_cast<int>(focusables.size());
+        const int step = next_focus ? 1 : -1;
+        focus_index = ((focus_index + step) % count + count) % count;
+        screen.focus = focusables[static_cast<size_t>(focus_index)]->id;
+        focused_id_ = screen.focus;
+        return;
+    }
 
     // 方向键落入列表内部：列表自己移动光标（焦点留在列表上），这是"一个列表就是一屏"的形态
     if (focusables[static_cast<size_t>(focus_index)]->kind == Kind::list) {

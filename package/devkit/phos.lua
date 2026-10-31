@@ -302,6 +302,43 @@ function phos.ui.sprite(x, y, rows, colors, step) end
 ---@return integer index, string action "none"|"confirm"|"cancel"
 function phos.ui.nav(count, current) end
 
+---声明式界面：提交一棵元素树，引擎负责布局/焦点/绘制，返回本帧事件数组。
+---在 draw() 里调用（它直接写当前帧画面）；事件只在本帧有效，通常在下一帧 update 里处理。
+---
+---顶层字段：kind/id/children/surface（content|panel|playfield）/rect={x,y,w,h}/screen（状态命名空间）
+---元素字段：text/value/items/title/width/height/grow/gap/padding/margin/align_h/align_v/
+---  opaque/bg/fg/border/dim/accent/danger/scale/overflow/lines/indent/text_gap/label_w/
+---  ratio/enabled/absolute/x/y/filter/max_chars/checked
+---颜色可写 {r,g,b} 或色板名（"green"/"dark_gray"…）。
+---@param spec table 元素树
+---@return table[] events 每项 { kind="activated"|"changed"|"submitted"|"cancelled", id, index?, delta?, confirm?, checked?, text? }
+function phos.ui.render(spec) end
+
+---当前焦点控件的 id（agent/自测读界面状态用；无控件时为空串）
+---@return string
+function phos.ui.focus() end
+
+---读取 checkbox 的勾选态。screen 缺省 = 最近一次负责输入的界面（phos.ui.render 的 screen 字段）
+---@param id string
+---@param screen string|nil
+---@return boolean
+function phos.ui.checked(id, screen) end
+
+---设置 checkbox 的勾选态（宿主自己持有真值时用）
+---@param id string
+---@param value boolean
+---@param screen string|nil
+function phos.ui.set_checked(id, value, screen) end
+
+---文本域当前内容。screen 缺省 = 最近一次负责输入的界面
+---@param id string
+---@param screen string|nil
+---@return string
+function phos.ui.field_text(id, screen) end
+
+---清空界面状态（换屏/换场景时调用，避免旧焦点与滚动串到新界面）
+function phos.ui.reset() end
+
 ---音频：合成音 / 音符 / 打击乐 / 音序器音乐 / 采样
 ---@class phos.audio
 phos.audio = {}

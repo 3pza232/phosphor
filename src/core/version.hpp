@@ -12,7 +12,9 @@ namespace phos {
 /// 0.8.2：内容包扩容——卡带架样式成为内容包（`theme/shelf/<名>/shelf.lua`：可注册绘制、二维导航、
 ///         本地化样式名）；Mod 改命名化（`mods/<id>/` + 可选 `mod.lua` 清单，游戏内 `M` 键开关、
 ///         改动后重启生效）；新增三个开机动画 + 主题（深海声呐 / 东方翰墨 / 黄铜机械）
-inline constexpr const char* kVersion = "0.8.2";
+/// 0.9.0：卡带侧声明式界面（`phos.ui.render`）——与主机外壳共用一套组件、布局、焦点与主题；
+///         卡带 API 进世代 7
+inline constexpr const char* kVersion = "0.9.0";
 /// 产品名
 inline constexpr const char* kProductName = "PHOSPHOR";
 /// 卡带 API 世代：manifest 声明 `phos_api` 高于它就拒绝加载，
@@ -25,6 +27,8 @@ inline constexpr const char* kProductName = "PHOSPHOR";
 ///   5 = 主题携带内容色板：`phos.color.*` 随主题变；卡带默认前景/背景取自色板，
 ///       面板与浮层默认底色取自主题（卡带不必改代码，但配色会随主题变）
 ///   6 = 同屏多字号：`put`/`print` 增加可选 `scale`（>=2 时那一个字占 scale 列 x scale 行）
-inline constexpr int kPhosApiVersion = 6;
+///   7 = 声明式界面（`phos.ui.render` 与 focus / checked / set_checked / field_text / reset）：
+///       布局、焦点、滚动、勾选、文本域由引擎负责，卡带只声明元素树
+inline constexpr int kPhosApiVersion = 7;
 
 } // namespace phos
