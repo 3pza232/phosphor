@@ -2,6 +2,7 @@
 
 #include "core/audio.hpp"
 #include "core/defaults.hpp"
+#include "core/version.hpp"
 #include "core/palette.hpp"
 #include "core/skin.hpp"
 
@@ -10,6 +11,21 @@
 #include <vector>
 
 namespace phos {
+
+/// 内容包可选声明的 API 世代检查（纯逻辑；Lua 读取层把 invalid 当"忽略字段"、
+/// too_new 当"整包不可用"）。缺省 = 不限制，兼容旧包。
+enum class PackApiStatus {
+    absent,     ///< 没声明：不限制
+    supported,  ///< 1..kPhosApiVersion：可用
+    invalid,    ///< 非整数/<1：忽略声明并 warning，包仍可用
+    too_new,    ///< 高于主机：整包跳过（报 requires/host 版本）
+};
+
+inline PackApiStatus pack_api_status(int required) {
+    if (required > kPhosApiVersion) return PackApiStatus::too_new;
+    if (required < 1) return PackApiStatus::invalid;
+    return PackApiStatus::supported;
+}
 
 /// 扫描 theme/palette/ 下全部显像管色板包。损坏包跳过
 /// （调用方保证列表非空，空列表时用 builtin_palette() 兜底）。

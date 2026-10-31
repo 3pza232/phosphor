@@ -58,6 +58,20 @@ theme/skin/rust-cabinet/
 > （`entry` / `screen` / `sidebar` / `save`…）；内容包没有这类数据，
 > 再加一个只放"名字"的文件，就产生了第二套命名，两处可能漂移。
 
+### 可选：API 世代声明 `phos_api`
+
+每种内容包的主脚本都可在**顶层**声明 `phos_api = <整数>`：表示"这个包用到的最低主机
+API 世代"，语义与卡带 `manifest.lua` 的 `phos_api` 相同。
+
+- 返回表的主脚本（`skin.lua` / `palette.lua` / `sounds.lua` / `font.lua`）：写在返回表顶层。
+- `shelf.lua`：与 `name` / `cols` 一样写**顶层变量**（该脚本的声明是全局，不返回表）。
+- `boot/main.lua`：**当前不读取**（启动脚本在完整宿主里执行，包扫描只做结构检查）；
+  boot 包暂不支持该字段，需要版本门槛的开机动画请等后续。
+- 缺省 = 不限制（兼容旧包）。`1`..当前主机世代（`kPhosApiVersion`，当前 7）可用；
+  **高于主机** → 主机跳过该包并 log warning（附带 requires / 主机版本），`--check-packs`
+  报 error；**非法类型或 <1** → 忽略声明并 warning（`--check-packs` 报 warning，
+  包仍按"未声明"加载）。
+
 ## 三、列表来源与回退顺序
 
 ```

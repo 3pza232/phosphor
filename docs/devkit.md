@@ -143,7 +143,8 @@ phosphor --check-packs --json              # 机器可读
 - **必需脚本存在且能执行**：`skin.lua` / `palette.lua` / `boot/<id>/main.lua` /
   `sound/<id>/sounds.lua` / `shelf/<id>/shelf.lua`（`font.lua` 可选）；shelf 还会验
   `draw(ctx)` 契约——缺了它整包不可用。
-- **声明类型**：脚本顶层必须返回表；`screen` / `top` / `bottom` / `colors` / `lamps` /
+- **声明类型**：脚本顶层必须返回表；`phos_api`（可选，内容包 API 世代，见
+  [content-packs.md](content-packs.md)）/ `screen` / `top` / `bottom` / `colors` / `lamps` /
   `ui`（skin 的可选字形/度量覆盖；度量含按键重复 `repeat_delay` / `repeat_interval`，
   范围与默认见 [content-packs.md](content-packs.md)）/ `name` / `cols` / `order` / `file` / `wave` / `perc` /
   数值字段类型不对时列 warning（运行期这些都会回退，于是"为什么没生效"很难查）。

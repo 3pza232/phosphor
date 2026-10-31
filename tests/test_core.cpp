@@ -14,6 +14,7 @@
 #include "core/layered_screen.hpp"
 #include "core/palette.hpp"
 #include "core/screen_draw.hpp"
+#include "pack/pack.hpp"
 #include "core/screen_store.hpp"
 #include "core/screen_text.hpp"
 #include "core/skin.hpp"
@@ -2369,6 +2370,16 @@ TEST(input_action_state_and_default_mapping) {
     input.set_key("space", true);
     input.set_key("a", false);
     CHECK(action_state(input, "jump", &jump, ActionState::pressed));
+}
+
+TEST(pack_api_status_validation) {
+    // 内容包 phos_api：缺省不限制；1..主机世代可用；高于主机=too_new；<1=invalid
+    CHECK(pack_api_status(1) == PackApiStatus::supported);
+    CHECK(pack_api_status(kPhosApiVersion) == PackApiStatus::supported);
+    CHECK(pack_api_status(kPhosApiVersion + 1) == PackApiStatus::too_new);
+    CHECK(pack_api_status(1000) == PackApiStatus::too_new);
+    CHECK(pack_api_status(0) == PackApiStatus::invalid);
+    CHECK(pack_api_status(-3) == PackApiStatus::invalid);
 }
 
 } // namespace

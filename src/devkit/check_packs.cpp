@@ -171,8 +171,9 @@ void check_font(PackReport& report, const std::string& dir) {
     std::string err;
     std::vector<std::string> warnings;
     if (!load_font_scheme(dir, scheme, err, &warnings)) {
-        // 空目录会被扫描跳过；能跑但少了这个方案，算可修的警告
-        add(report, PackSeverity::warning, err);
+        // 空目录会被扫描跳过（可修警告）；但 phos_api 高于主机是**不可用**的硬错误
+        const bool api_too_new = err.find("requires phos_api") != std::string::npos;
+        add(report, api_too_new ? PackSeverity::error : PackSeverity::warning, err);
         return;
     }
     for (const std::string& warning : warnings) add(report, PackSeverity::warning, warning);

@@ -44,6 +44,35 @@ void open_pack_api(sol::state& lua) {
     text["truncate"] = [](const std::string& s, int cols) { return text::truncate(s, cols); };
 }
 
+/// 读内容包顶层声明的 phos_api（缺省 = 不限制，兼容旧包）。
+/// invalid（类型/范围）只 warning 并忽略声明；too_new 填 err 并让调用方跳过整包。
+bool check_pack_api(const sol::object& declared, const std::string& id, std::string& err,
+                    std::vector<std::string>* warnings) {
+    if (declared.get_type() == sol::type::nil) return true;
+    const auto note = [warnings](const std::string& message) {
+        if (warnings) warnings->push_back(message);
+        else log::warn(message);  // 运行期也要留痕；--check-packs 走 warnings
+    };
+    if (!declared.is<double>() && !declared.is<int>()) {
+        note("phos_api must be an integer");
+        return true;
+    }
+    const double raw = declared.is<int>() ? static_cast<double>(declared.as<int>())
+                                          : declared.as<double>();
+    if (!std::isfinite(raw) || raw != std::floor(raw) || raw < 1.0) {
+        note("phos_api must be an integer >= 1");
+        return true;
+    }
+    if (raw > kPhosApiVersion) {
+        const std::string required =
+            raw <= 1000000.0 ? std::to_string(static_cast<int>(raw)) : ">=1000000";
+        err = "pack '" + id + "' requires phos_api " + required + ", host supports " +
+              std::to_string(kPhosApiVersion);
+        return false;
+    }
+    return true;
+}
+
 } // namespace
 
 bool load_palette(const std::string& dir, Palette& out, std::string& err,
@@ -72,6 +101,7 @@ bool load_palette(const std::string& dir, Palette& out, std::string& err,
         return false;
     }
     sol::table t = r.get<sol::object>().as<sol::table>();
+    if (!check_pack_api(t["phos_api"], id, err, warnings)) return false;
 
     out = builtin_palette();  // 未声明的槽位/参数回退默认
     out.id = std::move(id);
@@ -133,6 +163,7 @@ bool load_skin(const std::string& dir, Skin& out, std::string& err,
         return false;
     }
     sol::table t = r.get<sol::object>().as<sol::table>();
+    if (!check_pack_api(t["phos_api"], id, err, warnings)) return false;
 
     out = builtin_skin();
     out.id = std::move(id);
@@ -399,6 +430,8 @@ bool load_shelf_pack(const std::string& dir, ShelfPack& out, std::string& err,
         warn("shelf pack declarations unreadable (using folder name): " + out.dir);
         return true;  // 包仍在列表里（设置可见、可选中），只是用回退值
     }
+    // shelf.lua 的声明是**全局变量**（name/cols 同一层），phos_api 也读这里
+    if (!check_pack_api(lua["phos_api"], out.id, err, warnings)) return false;
     // 顶层 name 与 manifest 的本地化读法同一套（字符串 = 中英同文）
     const sol::object declared = lua["name"];
     if (declared.get_type() != sol::type::nil && !declared.is<std::string>() &&
@@ -554,6 +587,7 @@ bool load_sound(const std::string& dir, SoundPack& out, std::string& err,
         return false;
     }
     sol::table events = script.get<sol::object>().as<sol::table>();
+    if (!check_pack_api(events["phos_api"], out.id, err, warnings)) return false;
 
     const auto check_number = [&warn](const sol::table& spec, const char* key) {
         const sol::object v = spec[key];
@@ -562,6 +596,8 @@ bool load_sound(const std::string& dir, SoundPack& out, std::string& err,
     };
 
     for (auto& kv : events) {
+        if (kv.first.is<std::string>() && kv.first.as<std::string>() == "phos_api")
+            continue;  // 元数据不是事件
         if (!kv.first.is<std::string>()) {
             warn("sound pack has a non-string event key");
             continue;
@@ -649,6 +685,7 @@ bool load_font_scheme(const std::string& dir, FontScheme& out, std::string& err,
         auto r = lua.safe_script_file(script, &sol::script_pass_on_error);
         if (r.valid() && r.get<sol::object>().is<sol::table>()) {
             sol::table t = r.get<sol::object>().as<sol::table>();
+            if (!check_pack_api(t["phos_api"], out.name, err, warnings)) return false;
             const auto check_number = [&warn](const sol::table& table, const char* key) {
                 const sol::object v = table[key];
                 if (v.get_type() != sol::type::nil && !v.is<double>() && !v.is<int>())
@@ -738,7 +775,12 @@ std::vector<FontScheme> scan_font_schemes(const std::string& dir) {
         FontScheme scheme;
         std::string err;
         std::vector<std::string> warnings;
-        if (!load_font_scheme(it->path().generic_string(), scheme, err, &warnings)) continue;
+        if (!load_font_scheme(it->path().generic_string(), scheme, err, &warnings)) {
+            // 空目录等旧失败保持静默（与从前一致）；phos_api 高于主机要留痕
+            if (err.find("requires phos_api") != std::string::npos)
+                log::warn("font scheme skipped: " + err);
+            continue;
+        }
         for (const std::string& warning : warnings) log::warn(warning);
         schemes.push_back(std::move(scheme));
     }
