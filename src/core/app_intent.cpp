@@ -17,7 +17,7 @@ void App::handle_escape() {
     if (in_boot()) {
         mode_ = Mode::shelf;
         boot_script_.reset();
-        clear_host_cart();
+        script_binding_.reset();  // 跳过开机会话：绑定析构统一清 HostContext 的脚本态
         shell_.set_external_boot(false);
         shell_.to_shelf();
         return;

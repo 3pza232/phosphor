@@ -91,6 +91,31 @@ struct HostContext {
     int panel_origin_x() const { return content_x + content_w - panel_w; }
 };
 
+/// 一次"宿主脚本会话"的 RAII 绑定（卡带 / 开机动画 / 卡带架样式包）。
+///
+/// 生命周期归属：HostContext 里的 `save` / `cart_files` / `cart_info` / `cart` / `scenes`
+/// 都指向当前脚本对象（Cartridge）——脚本装配时写入（`Cartridge::assemble`），脚本销毁前
+/// 必须置空，否则 API 层手里就是悬垂指针。清理本体在 `App::unbind_host_cart()`；本对象
+/// 决定它**何时**发生：会话一结束（含加载失败、脚本报错回退等出口）析构即清理，不必在
+/// 每个出口各记一次"别忘了清"。
+///   * 构造 = 会话开始：把脚本对象挂进 HostContext（`cart_files` 由 assemble 在打开包时
+///     写入，构造函数不重复）；
+///   * 析构 = 会话结束：调用 on_release 统一清空（on_release 由 App 提供，即上面那份清理，
+///     含 App 自持的 toast 与场景音频标志）。
+/// 脚本对象可以早于本对象析构：析构只把指针置空，不访问脚本。
+class HostCartBinding {
+public:
+    /// cart 可为 nullptr（内置开机自检没有脚本对象）。
+    /// on_release 必须幂等，且不得再访问脚本对象（调用时它可能已析构）。
+    HostCartBinding(HostContext& host, Cartridge* cart, std::function<void()> on_release);
+    ~HostCartBinding();
+    HostCartBinding(const HostCartBinding&) = delete;
+    HostCartBinding& operator=(const HostCartBinding&) = delete;
+
+private:
+    std::function<void()> on_release_;
+};
+
 /// 向 Lua 沙箱注册 phos.* API（见 docs/api-reference.md）。
 /// 这是全工程唯一允许接触 Lua 的模块。
 void register_host_api(sol::state& lua, HostContext& host);

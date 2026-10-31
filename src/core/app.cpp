@@ -191,7 +191,7 @@ void App::step_frame(const CliOptions& opts, Renderer* renderer, Window* window,
 void App::end_boot() {
     mode_ = Mode::shelf;  // 开机结束进系统界面（卡带装载是另一条转换：直接进 playing）
     boot_script_.reset();
-    clear_host_cart();  // 宿主动画脚本的 save / cart_files / cart_info / cart 注册随它一起收
+    script_binding_.reset();  // 开机会话结束：绑定析构统一清 HostContext 的脚本态（幂等）
     shell_.set_external_boot(false);
     shell_.to_shelf();
 }
@@ -311,7 +311,7 @@ void App::tick_boot(float dt) {
         log::warn("boot script failed, falling back to built-in self-check: " +
                   boot_script_->error());
         boot_script_.reset();
-        clear_host_cart();
+        script_binding_.reset();  // 开机脚本回退到内置自检：绑定析构清掉它的 HostContext 指针
         shell_.set_external_boot(false);
     }
     input_.next_frame();
@@ -385,15 +385,16 @@ void App::start_boot_animation() {
     boot_elapsed_ = 0.0f;
     mode_ = Mode::boot;
     boot_script_.reset();
-    clear_host_cart();  // 上一段动画脚本（若有）的 host 指针收干净
+    clear_host_cart();  // 上一段会话先收起（无绑定对象时走兼容清理；本函数只在启动时调用）
 
     // dir 为空 = 内置兜底项（一个 boot 包都没有时 ContentLibrary 保证 [0] 有效）
     if (!packs_.boots[static_cast<size_t>(packs_.boot_index)].dir.empty()) {
         boot_script_ = std::make_unique<Cartridge>();
+        arm_script_binding(boot_script_.get());  // 先绑定再加载：失败出口由析构统一清理
         if (!boot_script_->load_entry(packs_.boots[static_cast<size_t>(packs_.boot_index)].dir,
                                       "main.lua", host_)) {
             boot_script_.reset();  // 加载失败：回退内置自检动画
-            clear_host_cart();
+            script_binding_.reset();
         }
     }
     // 开机时长：动画脚本可自报（`duration = 秒` 或 `function duration()`）；没写就用出厂值

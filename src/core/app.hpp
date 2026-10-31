@@ -62,9 +62,17 @@ private:
     void load_cart(int index);
     void load_cart_path(const std::string& path);
     void eject_cart();
-    /// 卡带 / 宿主动画脚本被销毁后，清空 HostContext 里指向它的那几个指针
-    /// （save / cart_files / cart_info / cart）——否则它们成了悬垂指针。销毁点统一调它
+    /// 结束当前宿主脚本会话并清空 HostContext 的脚本态（幂等）。正常路径走 RAII 绑定：
+    /// 已有 script_binding_ 时 reset() 它，由 HostCartBinding 析构统一清理；没有绑定对象时
+    /// （架子包的装配在 app_settings，尚未接入绑定）直接走 unbind_host_cart()。
+    /// **新代码优先用 arm_script_binding + 绑定 reset**，不要再在这里加手工清理点
     void clear_host_cart();
+    /// 脚本态清理的**唯一实现**：清空 HostContext 里指向脚本的字段与随脚本存在的 UI 态，
+    /// 并清 toast、复位场景音频标志。由绑定析构或兼容入口调用，不要在别处内联复制一份
+    void unbind_host_cart();
+    /// 武装一次宿主脚本会话：cart 为当前脚本对象（内置开机自检可传 nullptr）。
+    /// 已在会话中则不重复武装（重载/换卡沿用同一绑定，析构时清理由当时指向的脚本）
+    void arm_script_binding(Cartridge* cart);
     /// 重扫卡带目录并按"最近打开"重排架子（启动时与拔卡回架子后各调用一次）
     void refresh_shelf_order();
 
@@ -269,6 +277,11 @@ private:
     };
     AgentSession agent_;
     std::string cart_path_;  // 当前卡带路径（供 cart.reload）
+
+    /// 当前宿主脚本会话的 RAII 绑定（见 api/host_api.hpp 的 HostCartBinding）。
+    /// 声明在最后：App 析构时它**先**析构，on_release 仍能安全访问 toasts_ /
+    /// scene_audio_paused_ 等成员（成员逆序析构，这行就是清理顺序的保证）
+    std::unique_ptr<HostCartBinding> script_binding_;
 };
 
 } // namespace phos

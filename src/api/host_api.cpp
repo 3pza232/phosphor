@@ -24,6 +24,7 @@
 #include <cmath>
 #include <cstdio>
 #include <set>
+#include <utility>
 
 namespace phos {
 
@@ -665,6 +666,22 @@ void register_host_api(sol::state& lua, HostContext& host) {
     register_layer_api(lua, host);
     // 局域网联机（默认休眠：卡带不调 host/join 就完全不占端口、不起线程）
     register_net_api(lua, host);
+}
+
+HostCartBinding::HostCartBinding(HostContext& host, Cartridge* cart,
+                                 std::function<void()> on_release)
+    : on_release_(std::move(on_release)) {
+    if (!cart) return;  // 内置开机自检：没有脚本对象，只保留"会话结束清空"的契约
+    // 能在这里装上的入口先装上（构造=绑定）。cart_files 只在 Cartridge::assemble 里装，
+    // 因为那时才打开包；两者写的是同一批字段，值相同
+    host.cart = cart;
+    host.cart_info = &cart->info();
+    host.save = cart->save();
+    host.scenes = &cart->scenes();
+}
+
+HostCartBinding::~HostCartBinding() {
+    if (on_release_) on_release_();  // 统一清空 HostContext 的脚本态（幂等）
 }
 
 } // namespace phos

@@ -120,11 +120,13 @@
 | `App::CartTiming` | 卡带逐帧耗时（update / draw / 峰值 / 图层合成） | 纯数据；换卡 / 拔卡一次 `reset()` |
 | `Display` | 三块显示面（`screen` / `base` / `chrome`）与合成顺序（`present`） | 只依赖 core 与 `Renderer`（向下），**不吃 `HostContext`**，故是纯展示单元 |
 | `App::AgentSession` | agent 控制通道的**会话语义**（单步推进 / 待回包的请求 / 注入按键的定时释放） | 纯数据；与通道的 I/O（`ControlChannel`）分开 |
+| `HostCartBinding` | 宿主脚本会话（卡带 / 开机动画 / 架子包）在 `HostContext` 上的 RAII 绑定：构造挂入口、析构统一清 | 只依赖 `HostContext` + 回调；清理本体在 `App::unbind_host_cart`；绑定不拥有脚本对象 |
 
 **判据**：一个关切若"只依赖 core/ 或同层、且不含设备副作用"，就抽成独立单元；若它需要反过来
 调用 App 的大量行为（卡带生命周期、控制通道命令分发），则先给它一个**注入式窄接口**
 （回调/接口，见第一节"跨层向上通信用回调/接口注入"）再抽；直接传 `App&` 相当于换个
 位置的上帝对象。`HostContext` 是 API 层与 App 的共享上下文，按设计就是聚合，不强行收窄。
+其中**脚本字段**（cart / cart_info / save / scenes / UI 态）的生命周期由 `HostCartBinding` 表达；新子系统不要直接改这些字段。
 
 **第五步的结论：卡带生命周期 / 音频事件 / 控制命令分发不外抽。** 它们要动 shell / audio /
 net / input / host / control 多个协作者、且依赖 `HostContext`（api 层），而 `cart/` 按第一节
