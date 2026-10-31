@@ -46,7 +46,28 @@ jobs:
 
       - name: 无头门禁（14 项：includes/api/unit/control/draw/layer/ui/scene/toolkit/lint/packs/portable/cart/net）
         working-directory: build-ci
-        run: python ../tools/run_checks.py
+        run: python ../tools/run_checks.py --json checks.json
+
+      - name: 门禁摘要
+        if: always()
+        working-directory: build-ci
+        run: |
+          python - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json
+          from pathlib import Path
+          p = Path("checks.json")
+          if not p.exists():
+              print("## 门禁\n\n未生成 checks.json（构建/运行可能提前失败）")
+              raise SystemExit
+          data = json.loads(p.read_text(encoding="utf-8"))
+          print("## 门禁\n")
+          print("| gate | exit | seconds |")
+          print("|---|---|---|")
+          for gate in data["gates"]:
+              print(f"| {gate['key']} | {gate['exit']} | {gate['seconds']} |")
+          print()
+          print("**结果**：" + ("全部通过" if data["ok"] else "失败：" + ", ".join(data["failures"])))
+          PY
 
       # 性能预算不是门禁（共享 runner 的绝对值会抖）：跑一份报告附到 job summary 并留档，
       # 方便事后对比某个 PR 是否让某张卡带突然变慢

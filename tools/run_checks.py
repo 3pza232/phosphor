@@ -103,6 +103,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="PHOSPHOR 门禁一键跑")
     parser.add_argument("--gui", action="store_true", help="连开窗门禁一起跑（需要图形环境）")
     parser.add_argument("--list", action="store_true", help="只列出门禁，不运行")
+    parser.add_argument("--json", metavar="PATH", help="把每项门禁的结果/耗时写成 JSON（失败也写）")
     args = parser.parse_args()
 
     gates = list(HEADLESS_GATES) + (list(GUI_GATES) if args.gui else [])
@@ -113,10 +114,22 @@ def main() -> int:
 
     print(f"PHOSPHOR 门禁：{len(gates)} 项（{'含' if args.gui else '不含'}开窗）\n")
     failures = []
+    results = []
     for key, what, run in gates:
         print(f"── {key}: {what} ──")
-        if run() != 0:
+        started = time.time()
+        code = run()
+        elapsed = time.time() - started
+        results.append({"key": key, "what": what, "exit": code, "seconds": round(elapsed, 1)})
+        if code != 0:
             failures.append(key)
+
+    if args.json:
+        import json
+        Path(args.json).write_text(
+            json.dumps({"ok": not failures, "gates": results, "failures": failures,
+                        "total": len(gates)}, ensure_ascii=False, indent=1),
+            encoding="utf-8")
 
     print()
     if failures:
