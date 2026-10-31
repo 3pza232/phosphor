@@ -71,15 +71,9 @@ private:
     std::vector<std::unique_ptr<Face>> faces_;  // faces_[0] 为主字体
 };
 
-/// 字体方案内的角色命名：stem 恰为 `font` 的文件是**主字体**（决定 ASCII 与整机字形风格），
-/// 其余按名称排序作回退（约定用 `font-cn` 之类补齐它缺的码位）。
-/// 扩展名 .ttf / .otf / .ttc 均可（TTC 取第 0 号）。
-inline constexpr const char* kFontPrimaryStem = "font";
+/// 字体文件的**默认回退顺序**（主字体在前、其余按名称排序）归 `core/font_files`；
+/// 本模块只负责"给路径就加载"。这个入口保留给 App 的兜底分支（方案名不在扫描表里时现取一次），
+/// 规则不在这里重复实现
 
-/// 一个字体方案目录里的文件顺序：主字体在最前，其余按名称排序。
-/// 方案目录不存在或没有可用字体时返回空列表（调用方决定如何回退）。
-/// 方案可用 `theme/font/<方案>/font.lua` 显式声明回退顺序，那是 `pack/pack.hpp` 的
-/// `scan_font_schemes`：它用本函数得到默认顺序，再按声明重排
-std::vector<std::string> collect_font_files(const std::string& scheme_dir);
 
 } // namespace phos

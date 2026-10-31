@@ -4,10 +4,10 @@
 #include "api/lua_sandbox.hpp"
 #include "api/lua_value.hpp"
 #include "core/defaults.hpp"
+#include "core/font_files.hpp"
 #include "core/log.hpp"
 #include "core/mods.hpp"
 #include "core/text.hpp"
-#include "render/font.hpp"
 
 #include <sol/sol.hpp>
 
@@ -454,7 +454,7 @@ std::vector<FontScheme> scan_font_schemes(const std::string& dir) {
         if (!it->is_directory(ec)) continue;
         const std::string scheme_dir = it->path().generic_string();
         // 默认回退顺序（主字体在前、其余按名排序）；没有任何字体文件的目录不算方案
-        std::vector<std::string> remaining = collect_font_files(scheme_dir);
+        std::vector<std::string> remaining = font_files_in_scheme(scheme_dir);
         if (remaining.empty()) continue;
 
         FontScheme scheme;

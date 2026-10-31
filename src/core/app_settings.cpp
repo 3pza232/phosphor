@@ -2,7 +2,7 @@
 
 #include "core/log.hpp"
 #include "platform/window.hpp"
-#include "render/font.hpp"
+#include "core/font_files.hpp"
 #include "render/renderer.hpp"
 
 #include <algorithm>
@@ -67,7 +67,7 @@ void App::load_font_chain(const std::string& wanted) {
             font_max_px_ = s->max_size;  // 方案（或其 Mod 覆盖）声明的可调上限
         } else {
             // 方案不在表里（目录被删 / 名字写错）：现取一次，取不到再由下面兜底
-            font_files_ = collect_font_files(std::string(kFontDir) + "/" + name);
+            font_files_ = font_files_in_scheme(std::string(kFontDir) + "/" + name);
         }
     };
 

@@ -94,7 +94,7 @@ bool load_skin(const std::string& dir, Skin& out, std::string& err);
 /// 一套字体方案（`theme/font/<名称>/`）。文件夹名即方案名（与其它内容包同一约定）
 struct FontScheme {
     std::string name;                // 方案名 = 文件夹名
-    std::vector<std::string> files;  // 回退顺序（首个为主字体）
+    std::vector<std::string> files;  // 回退顺序（首个为主字体；默认顺序由 core/font_files 给出）
     int size = 0;                    // 方案声明的字号（像素）；0 = 未声明（用全局默认）
     int min_size = kMinFontPx;       // 可调范围下限（方案声明；缺省 12）
     int max_size = kMaxFontPx;       // 可调范围上限（方案声明；缺省 24；Mod 可抬高，硬上限 kMaxFontPxCeiling）
@@ -104,8 +104,10 @@ struct FontScheme {
 /// 方案里的 `font.lua`（可选）显式声明：
 ///   return { size = 16, min = 12, max = 24, order = { "font", "font-cn" } }
 /// `size` 是默认字号，`min`/`max` 是设置界面可调范围（`max` 抬高即"更大字号"，Mod 可覆盖）。
-/// `order` 按 stem 或文件名给出回退顺序，未列出的文件按默认规则（主字体在前、其余按名排序）
-/// 附在其后。没有 `font.lua` 时整套回退到文件名规则。坏脚本留痕并按文件名规则继续
+/// `order` 按 stem 或文件名给出回退顺序，未列出的文件按默认规则附在其后。
+/// 默认规则由 `core/font_files` 的 `font_files_in_scheme` 给出：只收 .ttf/.otf/.ttc，
+/// stem 为 `font` 的主字体在前，其余按文件名排序。没有 `font.lua` 时整套用它；
+/// 坏脚本留痕并按文件名规则继续
 std::vector<FontScheme> scan_font_schemes(const std::string& dir);
 
 } // namespace phos

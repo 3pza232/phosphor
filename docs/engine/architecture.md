@@ -63,14 +63,15 @@
    第三个要核对注解与实现。`core/`、`render/`、`shell/`、`platform/` 出现 `sol.hpp` / `lua.hpp` 即违规
 3. **OpenGL 只出现在 `render/` 与 `platform/window.cpp`**：前者是渲染后端，
    后者创建上下文并加载函数指针。其他模块出现 `glad.h` 即违规
-4. `cart/`、`pack/`、`agent/` 三者互不依赖，都只依赖 `core/`；把脚本里的表读成引擎类型时
-   装配脚本沙箱/读本地化字段时可复用 `api/ 的纯宿主辅助：`api/lua_value.hpp`（值读取：`{r,g,b}` → `Color`）、`api/lua_guard.hpp`（预算/print 重定向）、`api/lua_sandbox.hpp`（沙箱底线 + manifest 本地化字段读法）——规则只写一份。
-   **现状有三处例外**（已知债务，清单只减不增）：
-   - `pack/pack.cpp` include `render/font.hpp` 并调 `collect_font_files`（字体文件的默认
-     回退顺序）——`pack` → `render` 反向依赖；目标见「pack」与「render/font」两节
+4. `cart/`、`pack/`、`agent/` 三者互不依赖，都只依赖 `core/`；把脚本里的表读成引擎类型、
+   装配脚本沙箱或读本地化字段时，可复用 `api/ 的纯宿主辅助：`api/lua_value.hpp`（值读取：
+   `{r,g,b}` → `Color`）、`api/lua_guard.hpp`（预算 / print 重定向）、`api/lua_sandbox.hpp`
+   （沙箱底线 + manifest 本地化字段读法）——规则只写一份。
+   **现状有两处例外**（已知债务，清单只减不增）：
    - `agent/cart_json.hpp` include `cart/cartridge.hpp`，实际只用 `CartInfo`（纯数据）——
      改 include `cart/cart_info.hpp` 即可断开，或把 `cart_json` 移进 `cart/`
-   - `pack/pack.cpp` include `api/lua_sandbox.hpp`：内容包脚本与卡带/清单共用同一套沙箱底线与本地化字段读法（`api/lua_guard.hpp` 原本已在用）
+   - `pack/pack.cpp` include `api/lua_sandbox.hpp`：内容包脚本与卡带/清单共用同一套沙箱底线
+     与本地化字段读法（`api/lua_guard.hpp` 原本已在用）
 5. 第三方库 include 只允许出现在对应封装模块内，禁止散布全工程
 
 `tools/check_includes.py` 机械核查第 1–3、5 条（core / render / shell 的禁止表、Lua、OpenGL）；
@@ -96,6 +97,7 @@
 | `crt` | 显像管参数与档位（扫描线/孔径格栅/辉光/亮度补偿） |
 | `text` | 文本工具：UTF-8 码点解码、显示宽度（全角算 2 格）、截断/折行/补齐/居中、删除事件约定 |
 | `text_input` | 界面文本输入缓冲：过滤、退格（按码点）、限长、计数——输入进入界面的唯一入口 |
+| `font_files` | 字体方案目录里的字体文件枚举与**默认回退顺序**（纯路径，不加载字形）：内容包扫描与字体加载共用，二者不必互相依赖 |
 | `defaults` / `version` | 跨模块常量与产品信息的**单一来源** |
 
 `Screen` 是逻辑与渲染之间的核心抽象：一个二维字符网格（字符 + 前景色 + 背景色）。
@@ -190,13 +192,13 @@ net / input / host / control 多个协作者、且依赖 `HostContext`（api 层
 skin / boot 列表为空时插入内置项）。App 只负责把选中项**应用出去**（要动渲染 / 音频设备，
 是主机行为）——于是"列清单 / 按 id 定位 / 由主题解析色板"不再散落在 App 的各成员里。
 
-字体方案是**现状例外**：`FontScheme` 与 `scan_font_schemes` 在 `pack/`，而文件回退顺序规则
-（`collect_font_files`）在 `render/font`，于是 `pack/pack.cpp` 反向 include `render/font.hpp`
-（见第一节第 4 条）。目标：`FontScheme` 与扫描整体移入 `render/font`，`pack/` 只做内容包。
+字体方案的**文件枚举与默认回退顺序**在 `core/font_files`（纯路径，不加载字形）：`pack/` 用它
+产出 `FontScheme::files`，`render/font` 按给定路径加载——两者因此不必互相依赖。`FontScheme` 与
+`scan_font_schemes` 留在 `pack/`（内容包布局归 pack），render 不感知内容包目录。
 
 ### render/font —— 字体链与全角字符
 
-**字体链**（`FontChain`）封装 stb_truetype：在生效的字体方案（`theme/font/<方案>/`，
+**字体链**（`FontChain`）按 pack 产出的路径顺序加载（目录枚举与默认顺序在 `core/font_files`，render 不感知内容包布局）；封装 stb_truetype：在生效的字体方案（`theme/font/<方案>/`，
 方案名取自配置 `font`，缺省 `default`）内按 `font.* → font-*` 依次取第一个含该字形的字体。
 第三方头只出现在 `render/font.cpp` 内，
 接口不暴露 stbtt 类型；`STB_TRUETYPE_IMPLEMENTATION` 也只在那个 TU 定义
@@ -390,7 +392,7 @@ PHOSPHOR/
 - 渲染后端抽象（**目标，未做**）：当前是具体的 `Renderer` 类，直接绑定 OpenGL 与内联
   shader；对外只有 `draw(Screen)` / `draw_layers` / `draw_overlay` / `read_frame` 这类
   网格级方法，没有"后端接口"这一层抽象。换 Vulkan 需先把"网格 → 顶点 / 纹理"的中间层抽出来
-- 分层收口：把字体方案归入 `render/font`（第一节第 4 条；`cart` ↔ `api` 头文件环已在 M0 断开）；
+- 分层收口：字体枚举已下沉 `core/font_files`，`pack` 保留 `FontScheme` 扫描（第一节第 4 条；`cart` ↔ `api` 头文件环已在 M0 断开）；`render/font` 不再保留目录枚举入口（`core/app_settings.cpp` 的方案兜底也直接用 `core/font_files`）；
   `core/display` 对 `Renderer` 的调用改为注入窄接口或移出 core，解除 core ↔ render 互依
 - API 注册表开放：为主机插件（Lua Plugin）预留
 - Input 多源已完成于架构期（agent 需求倒逼），不得退化为直接读 GLFW

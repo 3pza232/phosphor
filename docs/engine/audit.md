@@ -97,7 +97,7 @@
 | S5 | `cart` ↔ `api` 头文件环 | 旧：`cart/cartridge.hpp` include `api/host_api.hpp`，反向亦 include | 依赖方向与 `architecture.md:43-46` 相反 | ✅ **已断开**：两侧改用前向声明（`HostContext` / `SaveStore`），需要完整类型的 TU（`cartridge.cpp` / `score_api.cpp`）各自直接 include；`check_includes` 通过、构建与 12 项门禁全绿 |
 | S6 | 三份帧步进、三份沙箱、三份本地化解析 | 旧：`app.cpp` 三处 advance→计数→释放→回包→dump；cartridge/pack/host_api/devkit api_check 各一份沙箱或本地化 | 三处已开始分叉；改一处漏两处 | ✅ **已修复**：帧步进收口到 `App::step_frame`（advance 只剩一个调用点）；沙箱装配收口到 `api/lua_sandbox.hpp`（cart/pack/devkit api_check 共用）；manifest 本地化读取收口到 `lua_sandbox::read_localized`（cart/pack/host_api 共用）；环境节流/空闲外壳仍按各自循环保留 |
 | S7 | `Screen` 过载 | `core/screen.hpp:22-190`：存储 + 宽字续格 + 缩放块 + 稀疏笔迹 + 子位累积 + alpha + 文本导出 | 每个新绘制特性都要改它并同时改三条消费路径；不变式从公共写入口漏出（C10） |
-| S8 | 反向依赖 `pack → render` | `pack/pack.cpp:8` include `render/font.hpp`；`FontScheme` 定义在 `pack/pack.hpp:95-101` | 与 `architecture.md:127-129` 相反；字体方案想独立演进就会被 pack 拖住 |
+| S8 | 反向依赖 `pack → render` | 旧：`pack/pack.cpp` include `render/font.hpp`；`FontScheme` 定义在 `pack/pack.hpp` | 与 `architecture.md` 方向相反 | ✅ **已修复**：字体文件枚举与默认顺序下沉 `core/font_files`（纯路径）；`pack` 不再 include `render/`，`render/font` 只按路径加载、不再保留枚举入口；`core/app_settings.cpp` 的方案兜底也直接用 `core/font_files` |
 | S9 | 全局可变状态 | `core/log.cpp:13-15`、`platform/window.cpp:23`、`core/mods.cpp:11-20`、`cartridge.cpp:24-25` | 与 `code-style.md:70` 冲突；不可重入，无法并行跑两台主机/两个测试 |
 | S10 | 底层健壮性未收口 | `core/config.cpp:128-142`（非原子）、`core/json_lite.*`（转义/窄化，待补测试）、`platform/socket` 无 SIGPIPE 处理 | 设置/日志/联机在异常路径的失败方式不可预测 |
 | S11 | Lua 绑定层重复而非抽象 | `api/host_api.cpp:82-132`（screen/panel）、`api/ui_api.cpp:129-195`（region）、`api/ui_api.cpp:37-116`（顶层 ui）、`api/draw_region.cpp:122-162`（frame/divider/bar/menu/body/sprite 各写一遍） | 一处语义修正要改三到四处；`sprite.step` 的"缩放/downsample"分歧就是这么来的（`core/ui.cpp:149` vs `api-reference.md:300`） |
@@ -186,7 +186,7 @@ towerdef 用存档 v2 表值（旧 RLE 存档兼容解码）+ `phos.observe` 验
 |---|---|---|
 | `architecture.md:300-301`：磁盘上一个内容包都没有也能开机 | boots 为空即 UB（§3.1 C1） | ✅ **已修正**；C1 已修（`content_library.cpp:58`、`app.cpp:350`） |
 | `architecture.md:105`：CRT 有暗角/畸变 | 着色器只有扫描线/孔径格栅/辉光/亮度补偿/色调（`render/renderer.cpp:49-100`） | ✅ **已修正** |
-| `architecture.md:127-129`：`pack/` 不向上依赖 `render/` | `pack/pack.cpp:9` include `render/font.hpp` | ✅ **文档已记为债务**（S8）；代码仍待改 |
+| `architecture.md:127-129`：`pack/` 不向上依赖 `render/` | 旧：`pack/pack.cpp:9` include `render/font.hpp` | ✅ **已完成**：枚举规则移入 `core/font_files`，pack 只依赖 core/api |
 | `architecture.md:43-46`：`cart/` 只可复用 `api/lua_value.hpp` | `cart/cartridge.hpp:3` include `api/host_api.hpp`（头文件环） | ✅ **文档已记为债务**（S5）；代码仍待改 |
 | `architecture.md` 分层图（旧） | `core/app.hpp` 反向 include 全层；render ↔ core 互依 | ✅ **已修正**（本轮补 `ui` 层与组装点说明） |
 | `architecture.md:315`：渲染后端按"可换 Vulkan"设计 | 接口是具体 `Renderer` + 内联 shader 字符串；无抽象缝 | ✅ **已修正**（改写为"目标，未做"） |
