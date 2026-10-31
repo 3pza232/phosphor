@@ -121,6 +121,12 @@ void key_callback(GLFWwindow* window, int key, int, int action, int) {
         *handlers->settings_flag = true;
         return;
     }
+    // F12：系统截图（与 --screenshot 同一条 CPU 光栅化路径）。放在 input_block 之前——
+    // 调试台打开时也能截，且不让卡带输入吃掉
+    if (key == GLFW_KEY_F12 && action == GLFW_PRESS) {
+        *handlers->screenshot_flag = true;
+        return;
+    }
     if (*handlers->input_block) return;  // 调试台打开期间输入不注入游戏
 
     // 退格：GLFW 的字符回调不为它触发，所以这里补一次 '\b' 给**文本通道**

@@ -14,6 +14,7 @@ struct WindowHandlers {
     Input* input;          // 虚拟手柄输入注入
     bool* escape_flag;     // Esc 按下置位（主机保留键，App 按模式解释）
     bool* settings_flag;   // F2 按下置位（主机保留键：打开设置）
+    bool* screenshot_flag; // F12 按下置位（主机保留键：保存当前画面 PNG）
     bool* console_flag;    // ` 键按下置位（调试台开关）
     bool* input_block;     // true 时物理输入不注入游戏（调试台打开期间）
     bool* capture_escape;  // true 时卡带接管 Esc：Esc 作为普通键注入，不再触发主机暂停

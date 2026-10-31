@@ -1,5 +1,6 @@
 #include "app/app.hpp"
 
+#include "app/tape_glue.hpp"
 #include "cart/cart_scanner.hpp"
 #include "cart/cart_info.hpp"
 #include "core/effects.hpp"
@@ -12,12 +13,38 @@
 #include <algorithm>
 #include <chrono>
 #include <cstdio>
+#include <ctime>
+#include <filesystem>
 #include <fstream>
 #include <optional>
 #include <sstream>
 #include <thread>
 
 namespace phos {
+
+namespace {
+
+/// F12 截图路径：运行目录下 screenshots/<本地时间戳>.png（带毫秒，避免同秒覆盖）
+std::string screenshot_file_path() {
+    const auto now = std::chrono::system_clock::now();
+    const std::time_t seconds = std::chrono::system_clock::to_time_t(now);
+    std::tm local{};
+#ifdef _WIN32
+    localtime_s(&local, &seconds);
+#else
+    localtime_r(&seconds, &local);
+#endif
+    const long long millis =
+        std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count() %
+        1000;
+    char stamp[32];
+    std::snprintf(stamp, sizeof(stamp), "%04d%02d%02d-%02d%02d%02d-%03lld",
+                  local.tm_year + 1900, local.tm_mon + 1, local.tm_mday, local.tm_hour,
+                  local.tm_min, local.tm_sec, millis);
+    return std::string("screenshots/") + stamp + ".png";
+}
+
+} // namespace
 
 int App::run(const CliOptions& opts) {
     if (opts.config) config_path_ = *opts.config;
@@ -102,7 +129,7 @@ int App::run(const CliOptions& opts) {
 
     headless_ = opts.headless;
     control_port_ = (opts.control && *opts.control > 0) ? *opts.control : 0;
-    if (opts.save_dir) host_.save_dir = *opts.save_dir;  // 工具脚本用它隔离真实存档
+    TapeGlue::apply_save_dir(host_, opts.save_dir);  // 工具脚本用它隔离真实存档
     if (opts.headless) host_.fps = kLogicFps;  // 无头模式没有真实渲染帧率，报逻辑帧率
 
     // 控制通道（agent 接口）：仅在显式请求时开启，且只监听本机回环地址
@@ -499,11 +526,31 @@ int App::run_headless(const CliOptions& opts) {
     return 0;
 }
 
+void App::save_screenshot_shortcut() {
+    std::error_code ec;
+    std::filesystem::create_directories("screenshots", ec);
+    int width = 0, height = 0;
+    std::string error;
+    const std::string path = screenshot_file_path();
+    const bool ok = !ec && write_screenshot(path, width, height, error);
+    const bool english = config_.language == "en";
+    if (ok) {
+        log::info("screenshot saved: " + path + " (" + std::to_string(width) + "x" +
+                  std::to_string(height) + ")");
+        toasts_.push((english ? "Screenshot saved: " : "截图已保存：") + path);
+    } else {
+        const std::string reason = ec ? ec.message() : error;
+        log::warn("screenshot failed: " + reason);
+        toasts_.push((english ? "Screenshot failed: " : "截图失败：") + reason);
+    }
+}
+
 int App::run_windowed(const CliOptions& opts) {
     std::string error;
     const Skin& skin = packs_.skin();
-    const WindowHandlers handlers{&input_,      &escape_flag_, &settings_flag_,
-                                  &console_flag_, &input_blocked_, &capture_escape_};
+    const WindowHandlers handlers{&input_,      &escape_flag_,     &settings_flag_,
+                                  &screenshot_flag_, &console_flag_, &input_blocked_,
+                                  &capture_escape_};
     Window window = Window::create(skin.grid_w() * font_px_, skin.grid_h() * font_px_,
                                    kProductName, handlers, error);
     if (!window.valid()) {
@@ -566,6 +613,10 @@ int App::run_windowed(const CliOptions& opts) {
         if (settings_flag_) {
             settings_flag_ = false;
             shell_.open_settings();
+        }
+        if (screenshot_flag_) {
+            screenshot_flag_ = false;
+            save_screenshot_shortcut();
         }
 
         const auto now = clock::now();

@@ -1,5 +1,6 @@
 #include "app/app.hpp"
 
+#include "app/tape_glue.hpp"
 #include "core/log.hpp"
 #include "platform/relaunch.hpp"
 #include "platform/window.hpp"
@@ -136,23 +137,9 @@ void App::handle_intent(const Shell::Intent& intent, Renderer* renderer, Window*
         shell_.focus_cart(played);
         shell_.to_shelf();
     }
-    if (intent.open_tape) {
-        // 磁带码界面刚打开：把当前卡带的码交过去（Shell 自己拿不到存档）
-        SaveStore* save = cart() ? cart()->save() : nullptr;
-        shell_.set_tape(cart() ? cart()->info().name.get(config_.language == "en") : std::string(),
-                        save ? save->export_code() : std::string(), save != nullptr);
-    }
-    if (intent.tape_import) {
-        SaveStore* save = cart() ? cart()->save() : nullptr;
-        if (!save) {
-            shell_.set_tape_result(Shell::TapeResult::no_save);
-        } else {
-            const bool ok = save->import_code(intent.tape_code);
-            // 卡带在 init 里读自己的存档，导入后要重新插卡才会用上新数据——如实写在状态行里
-            shell_.set_tape_result(ok ? Shell::TapeResult::ok : Shell::TapeResult::invalid);
-            log::info(std::string("tape import: ") + (ok ? "ok" : "rejected"));
-        }
-    }
+    if (intent.open_tape) TapeGlue::open(shell_, cart(), config_.language == "en");
+    if (intent.tape_import)
+        TapeGlue::import(shell_, TapeGlue::save_of(cart()), intent.tape_code);
     if (intent.mods_applied) {
         // 确认且启用集**确有变化**（Shell 已用集合语义判过）：写盘，然后重启才生效——
         // 覆盖层是启动期扫描进表的，运行中改不回去

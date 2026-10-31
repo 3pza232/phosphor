@@ -158,6 +158,8 @@ private:
     /// 当前画面写成 PNG（CPU 光栅化，无头可用）；成功填宽高，失败填 error
     bool write_screenshot(const std::string& path, int& width, int& height,
                           std::string& error) const;
+    /// F12 快捷键：存到运行目录 screenshots/<时间戳>.png，日志+toast 报告结果
+    void save_screenshot_shortcut();
 
     static constexpr float kLogicStep = 1.0f / static_cast<float>(kLogicFps);
     static constexpr const char* kConfigPath = "config.json";
@@ -242,6 +244,7 @@ private:
     /// 场景栈当前是否把音频暂停着（只在"要变"时调用 set_paused，避免与卡带自己的暂停互相盖）
     bool scene_audio_paused_ = false;
     bool settings_flag_ = false;
+    bool screenshot_flag_ = false;
     bool console_flag_ = false;
     bool input_blocked_ = false;
     std::string last_error_;
