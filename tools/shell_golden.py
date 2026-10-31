@@ -53,7 +53,10 @@ def _dump_screen(frames: int, seed: int = 1) -> str:
 #: 固定种子：boot 动画与部分内容用 phos.sys.random，不固定种子基线就不稳定。
 #: --recent 指向运行目录下的文件：卡带架顺序来自"最近打开"，不能借用玩家的 recent.txt，
 #: 否则同一份基线在干净目录与开发目录里不一致。
-SEED = ("--seed", "1", "--recent", "tests-out/golden-recent.txt")
+SEED = ("--seed", "1", "--recent", "tests-out/golden-recent.txt",
+        # 存档也隔离：磁带码屏会列出本机存档，若共用运行目录的 saves/
+        # 基线会随"谁跑过哪张卡带"漂移
+        "--save-dir", "tests-out/golden-saves")
 
 
 def _normalize_shelf_order(host: Host) -> None:
@@ -120,6 +123,9 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="外壳界面文本基线")
     parser.add_argument("--write", action="store_true", help="重建基线文件")
     args = parser.parse_args()
+
+    import shutil
+    shutil.rmtree("tests-out/golden-saves", ignore_errors=True)
 
     shots = _screens()
     GOLDEN_DIR.mkdir(parents=True, exist_ok=True)
