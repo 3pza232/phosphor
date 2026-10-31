@@ -58,7 +58,7 @@ return {
   desc     = { zh = "在终端里觅食的蛇。", en = "A snake hunting in the terminal." },
   sidebar  = { w = 16 },         -- 右侧栏面板宽度（0~32，缺省无侧栏）
   save     = true,               -- 是否需要存档空间（声明后 phos.save 可用）
-  phos_api = 1,                  -- 目标 API 版本（当前世代 1~6，见「九、版本兼容」）
+  phos_api = 1,                  -- 目标 API 版本（当前世代 1~7，见「九、版本兼容」）
 
   -- 像素图标（卡带架展示；'.' 与空格为透明）
   icon = {
@@ -242,7 +242,9 @@ end
   （`phos.screen.blend`）、半格绘制（`plot` / `quadrant` / `cell_of`）与独立底色
   （`back` / `back_rect`，及各自的区域版）；4 = 局域网联机（`phos.net`）；
   5 = 主题携带内容色板（`phos.color.*` 与默认前景/背景随主题变）；
-  6 = 同屏多字号（`put` / `print` 的可选末参 `scale`）**。
+  6 = 同屏多字号（`put` / `print` 的可选末参 `scale`）；
+  7 = 声明式界面（`phos.ui.render` 与 `focus` / `checked` / `set_checked` /
+  `field_text` / `reset`）——布局、焦点、滚动、勾选、文本域由引擎负责，卡带只声明元素树**。
   声明到所用接口的那一代：声明更高会在卡带架上被明确拒绝，更低则在运行到那一行时才失败。
   不用新接口的卡带声明 `1` 时，兼容的主机版本范围更大
 

@@ -16,7 +16,8 @@ phosphor --pack carts/mygame                       # 产出 dist/mygame.phos
 ```
 
 要改的东西在 `manifest.lua`（身份）与 `main.lua`（入口，标了「填」）。
-规则写成模块放 `game.lua`，右栏内容放 `panel.lua`。
+规则写成模块放 `game.lua`，右栏内容放 `panel.lua`（用 `phos.ui.render` 声明）。
+世界画面仍用 `phos.screen` 原语逐格画；菜单 / 浮窗 / 侧栏用声明式界面。
 
 ## 从零做一张卡带
 
@@ -32,13 +33,16 @@ phosphor --new carts/mygame --id mygame --name "My Game" --author "你"
 
 **2. 起名与身份**——全在 `manifest.lua`：`id` / `name` / `desc`（后两者均可双语）/ `version`、
 是否要右栏（`sidebar = { w = 18 }`）、是否要存档（`save = true`）、
-目标接口世代（`phos_api`：图层写 `2`，墨迹 / 半格 / 独立底色写 `3`，联机 `phos.net` 写 `4`，主题携带色板（`phos.color.*` 随主题）写 `5`，同屏多字号（`put`/`print` 的 `scale`）写 `6`；
+目标接口世代（`phos_api`：图层写 `2`，墨迹 / 半格 / 独立底色写 `3`，联机 `phos.net` 写 `4`，主题携带色板（`phos.color.*` 随主题）写 `5`，同屏多字号（`put`/`print` 的 `scale`）写 `6`，声明式界面（`phos.ui.render`）写 `7`；
 旧主机便会在卡带架上明确拒绝它，而不是运行到那一行才失败——见 [cart-format.md](cart-format.md) 的「版本兼容」）。
 字段逐个说明见 [cart-format.md](cart-format.md)。
 
 **3. 写玩法**——模板已经把缝摆好：
 规则长在 `game.lua`（不读键盘、不画东西、不发声音），
 输入与画法留在 `main.lua`。需要更多模块就 `require("music")` 这样加文件。
+
+界面不用手排坐标：侧栏与浮窗用 `phos.ui.render` 声明元素树，布局 / 焦点 / 滚动 / 勾选 /
+文本域由引擎负责（见 [api-reference.md](api-reference.md) 的「声明式界面」）。
 
 **4. 一边写一边跑**
 
@@ -70,10 +74,10 @@ phosphor --pack carts/mygame --json         # 机器可读结果
 
 | 文件 | 你要改什么 |
 |------|-----------|
-| `manifest.lua` | 身份：`id` / `name` / `desc`（均可双语）/ `version`；`sidebar = { w = 18 }` 决定右栏宽度（删掉这行 = 无右栏，也可运行时 `phos.panel.resize(w)`）；`save = true` 才有 `phos.save.*`；`entry` 指向入口；用了图层（`phos.layer`）写 `phos_api = 2`，墨迹 / 半格 / 独立底色（`blend` / `plot` / `back` 等）写 `3`，局域网联机（`phos.net`）写 `4`，主题携带色板（`phos.color.*` 随主题）写 `5`，同屏多字号（`put`/`print` 的 `scale`）写 `6` |
-| `main.lua` | 入口三件事：装配模块、把输入翻成"意图"、把状态画出来。「填」集中在文案表 `Text`、`init`、`update`、`draw`、`debug_state` |
+| `manifest.lua` | 身份：`id` / `name` / `desc`（均可双语）/ `version`；`sidebar = { w = 18 }` 决定右栏宽度（删掉这行 = 无右栏，也可运行时 `phos.panel.resize(w)`）；`save = true` 才有 `phos.save.*`；`entry` 指向入口；用了图层（`phos.layer`）写 `phos_api = 2`，墨迹 / 半格 / 独立底色（`blend` / `plot` / `back` 等）写 `3`，局域网联机（`phos.net`）写 `4`，主题携带色板（`phos.color.*` 随主题）写 `5`，同屏多字号（`put`/`print` 的 `scale`）写 `6`，声明式界面（`phos.ui.render`）写 `7` |
+| `main.lua` | 入口三件事：装配模块、把输入翻成"意图"、把状态画出来。「填」集中在文案表 `Text`、`init`、`update`、`draw`、`debug_state`；世界画面仍用 `phos.screen` / `phos.panel` 原语逐格绘制 |
 | `game.lua` | 玩法规则。不读键盘、不画东西、不发声音；要出声就 `return` 一张事件表 |
-| `panel.lua` | 右栏内容。坐标是面板局部的；定宽文案一律过 `phos.text.fit(text, pw - 2)` |
+| `panel.lua` | 右栏内容，用 `phos.ui.render{ surface = "panel", input = false }` 声明（只显示，输入归主画面）；面板宽度运行时可变，每次 draw 重新声明即可 |
 | `README.txt` | 该改哪里的速查（随卡带走，给接手的人看） |
 | `assets/` | 可选：分语言文本示例（`motd.zh.txt` / `motd.en.txt`，取不到回落 `motd.txt`） |
 
@@ -200,7 +204,9 @@ local Panel = require("ui.panel")  -- ui/panel.lua
 想读**分层**写法，看 `carts/tetris/`（井 / 下落块 / 特效 / 浮窗四层）与
 `carts/worms/`（按**类别**分六层：特效 / 瞄准线 / 角色 / 雨雪天气 / 读数 / 浮窗 ——
 一张大卡带怎么把每类东西放进各自那一层）；
-`devkit/examples/inks/`（同一格叠两笔、只写底色、子位落笔、叠画上限）。
+`devkit/examples/inks/`（同一格叠两笔、只写底色、子位落笔、叠画上限）、
+`devkit/examples/ui/`（声明式界面：列表 / 勾选 / 文本域 / 进度条 / 键位提示，以及侧栏
+`input = false` 不抢按键的写法）。
 
 ## 编辑器补全
 

@@ -293,7 +293,7 @@ function phos.ui.center_text(y, text) end
 ---@param y integer
 ---@param rows string[]
 ---@param colors table<string, phos.Color|integer[]>
----@param step integer|nil 缩放步长（1 = 原尺寸）
+---@param step integer|nil 降采样步长（1 = 原尺寸，2 = 每 2 行/列取一格、成品半尺寸；不是放大倍数）
 function phos.ui.sprite(x, y, rows, colors, step) end
 
 ---列表导航：返回新下标（0-based）与动作
@@ -304,12 +304,16 @@ function phos.ui.nav(count, current) end
 
 ---声明式界面：提交一棵元素树，引擎负责布局/焦点/绘制，返回本帧事件数组。
 ---在 draw() 里调用（它直接写当前帧画面）；事件只在本帧有效，通常在下一帧 update 里处理。
+---同一帧多次 render 时，只有负责输入的那次传 input=true，其余 input=false 只画。
 ---
----顶层字段：kind/id/children/surface（content|panel|playfield）/rect={x,y,w,h}/screen（状态命名空间）
----元素字段：text/value/items/title/width/height/grow/gap/padding/margin/align_h/align_v/
----  opaque/bg/fg/border/dim/accent/danger/scale/overflow/lines/indent/text_gap/label_w/
----  ratio/enabled/absolute/x/y/filter/max_chars/checked
+---顶层字段：kind/id/children/surface（content|panel|playfield）/rect={x,y,w,h}/
+---  screen（状态命名空间，缺省 "cart"）/input（boolean，缺省 true）
+---元素字段：text/value/items/title/width/height/min_w/min_h/max_w/max_h/grow/gap/
+---  padding/margin（数字或 {x,y} 或 {l,t,r,b}）/align_h/align_v/opaque/bg/fg/border/
+---  dim/accent/danger/scale/overflow/lines/indent/text_gap/label_w/ratio/enabled/
+---  absolute/x/y/filter/max_chars/checked/disabled
 ---颜色可写 {r,g,b} 或色板名（"green"/"dark_gray"…）。
+---事件 index 为 1 基（与 items 数组一致）。
 ---@param spec table 元素树
 ---@return table[] events 每项 { kind="activated"|"changed"|"submitted"|"cancelled", id, index?, delta?, confirm?, checked?, text? }
 function phos.ui.render(spec) end

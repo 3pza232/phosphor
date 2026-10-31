@@ -15,8 +15,10 @@ PHOSPHOR 的画面是**纯文本字符网格**：脚本不需要截图、不需�
 2. **与人力平权**：agent 能做的每件事，人类也能做（反之不必成立）
 3. **只读与注入**：agent 接口只观察状态与注入输入，不产生游戏逻辑副作用
 4. **协议带版本**：`hello` 事件携带协议版本，向后兼容演进
-5. **默认安全**：控制通道只监听 `127.0.0.1`，且需显式开启
-6. **零外部依赖**：宿主自带极简 JSON 读写（仅覆盖本协议所需），
+5. **界面可寻址**：声明式界面（`phos.ui.render`）的控件有稳定 id——agent 读控件树、
+   按 id 激活，不必数按键，与"画面即文本"同一层级的可观测性
+6. **默认安全**：控制通道只监听 `127.0.0.1`，且需显式开启
+7. **零外部依赖**：宿主自带极简 JSON 读写（仅覆盖本协议所需），
    不引入第三方解析库；代价是**命令对象必须是扁平对象**（嵌套值被忽略）
 
 ## 二、命令行接口
@@ -131,6 +133,9 @@ phosphor --pack carts/snake --json
 | `cart.reload` | — | 热重载当前卡带（改完代码立即生效） |
 | `cart.eject` | — | 弹出卡带，回到系统界面 |
 | `debug.set` | `name`, `value`, `group?` | 设置卡带注册的可调参数（`phos.debug.number`）当前值——与调试台同一处落地。名字**随界面语言变**，须用 `state.query.debug_params` 里报出的那个；重名参数（如每件武器的"伤害"）要带 `group`（同 `state.query.debug_params` 的字段）消歧，否则回 `ambiguous name` |
+| `ui.list` | — | 当前声明式界面的控件树快照：`{"ui": …}`（无界面时 `{"ui": null}`），形状同 `state.query.ui` |
+| `ui.focus` | `id` | 把焦点移到该控件；请求在**下一逻辑帧的 `render`** 生效，命令立即回 `{"queued": true}` |
+| `ui.activate` | `id` | 与玩家按确认（A）**同一语义**激活控件（见下节「界面」）；下一逻辑帧生效，立即回 `{"queued": true}` |
 | `quit` | — | 关闭主机进程 |
 
 ### `state.query` 字段表
@@ -165,6 +170,7 @@ phosphor --pack carts/snake --json
 | `cart` | 卡带元信息与开销：`id` / `name` / `version` / `author` / `path` / `sidebar_w`；`update_ms` / `draw_ms`（最近一帧）、`update_peak_ms` / `draw_peak_ms`（约 1 秒窗口峰值，查偶发卡顿看这个）、`lua_mem_kb`（Lua 堆）。未插卡时为 `null` |
 | `merge_ms` | 图层合成耗时（**卡带没建层时恒为 0**） |
 | `layers` | 该卡带的图层清单（名称 / z / 可见性，z 升序；空数组 = 没建层） |
+| `ui` | 卡带声明式界面的控件树快照（见下节「界面」）；**没有界面时为 `null`** |
 | `debug_params` | 卡带注册的可调参数（`phos.debug.number/integer/toggle`）当前值：`[{name, group, kind, value}, ...]`（`kind` = `number`/`integer`/`boolean`；空数组 = 没注册）。`name` **随界面语言变**（写入时必须用它）；`group` 是分组路径串（如 `"武器/火箭筒"`，顶层为空串）——重名时用来消歧。人用调试台拖，agent 用这个读、`debug.set` 写 |
 | `held_keys` | 当前按住的虚拟键名数组 |
 | `save` | 存档概况 `{ available, entries }` |
@@ -172,6 +178,51 @@ phosphor --pack carts/snake --json
 | `last_error` | 最近一次卡带错误（**命令失败本身即时以 `error` 回包，不写入这里**） |
 | `path` / `value` | 仅当请求带 `path` 时：所查路径与其 Lua 值（不可序列化的值表示为 `{"__type": "…"}`） |
 | `debug` | 仅当卡带定义 `debug_state()` 时：它返回的内容 |
+
+### 界面：读控件树、按 id 操作
+
+声明式界面（`phos.ui.render`）把控件树也交出来：agent 不用数按键，直接按 id 读状态、激活。
+**只暴露"负责输入的那一屏"**——同帧 `input = false` 的显示界面不入表，也无法聚焦
+（设计如此：显示界面没有交互）。
+
+`state.query` 的 `ui` 字段（`ui.list` 返回同一形状）：
+
+```jsonc
+{"ui": {
+  "screen": "pause",
+  "focus": "pause/list",
+  "widgets": [
+    {"id": "pause/list", "role": "list", "label": "继续",
+     "state": {"selected": 1, "count": 3}},
+    {"id": "name/input", "role": "field", "label": "昵称",
+     "state": {"text": ""}}
+  ]
+}}
+```
+
+- `role`：`list` / `checkbox` / `field` / `option` / `button`（其余不可交互元素不入表）
+- `state`：list = `{"selected": 1 基行号, "count": 行数}`；checkbox = `{"checked": bool}`；
+  field = `{"text": "当前内容"}`；option / button = `{}`
+- `label`：控件显示文案（list 取**当前选中行**的文本）
+- 最多 64 个控件；超出时对象顶层带 `"truncated": true`
+- 没有卡带界面时 `state.query.ui` 为 `null`
+
+`ui.focus{id}` 只移动焦点；`ui.activate{id}` 与玩家按 A **同一语义**：
+
+| 控件 | `ui.activate` 的效果 |
+|---|---|
+| list | 触发 `activated`（`index` = 当前光标行，1 基） |
+| checkbox | 切换勾选并触发 `changed(checked)` |
+| field | 触发 `submitted`（`text` = 当前内容） |
+| option | 触发 `changed(delta = 1, confirm = true)` |
+| button | 触发 `activated` |
+
+- 两条命令都是"**下一逻辑帧的 `render` 时生效**"，命令本身立即回 `{"queued": true}`；
+  agent 接着 `time.step` 推进一帧即可看到事件效果。
+- 事件回到卡带的方式与真实按键完全一致（卡带在下一帧 `update` 消费），宿主不替卡带改状态。
+
+> 主机的**外壳界面**（卡带架 / 设置 / 暂停…）仍用 `state.query.cursor` + `escape` / `start`
+> 驱动，尚未接入控件树；界面快照与 `ui.*` 命令当前只覆盖卡带的声明式界面。
 
 ### 事件
 
@@ -239,6 +290,7 @@ input.inject 注入按键  →  time.step 精确推进若干帧
 |------|------|------|
 | `screen.read` | 任何卡带 | 字符屏幕本身就是纯文本，零 OCR、零视觉模型；代价是要自己解析 |
 | `state.query` 的 `debug` | 卡带声明了 `debug_state()` | 直接拿到玩法状态（坐标、分数、血量…），步骤最少；卡带报了 `(x, y)` 时用它可免去从画面反推地形 |
+| `state.query` 的 `ui` | 卡带用声明式界面（`phos.ui.render`） | 读控件 id / label / state，用 `ui.activate` 按 id 操作——不必数按键 |
 
 `state.query` 还支持按路径读卡带全局变量：
 

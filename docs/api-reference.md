@@ -13,7 +13,7 @@
 
 ```lua
 phos.screen   -- 字符屏幕：一切画面表达
-phos.ui       -- 组件层：边框/浮窗/菜单/进度条/正文/精灵/导航/绘制区域
+phos.ui       -- 界面层：声明式 render（布局/控件/焦点/主题）+ 底层绘制原语/裁剪区域
 phos.layer    -- 可选图层：把世界 / 下落物 / 特效 / 浮窗分开画（见下节）
 phos.panel    -- 右侧栏面板（需 manifest 声明 sidebar）
 phos.text     -- 文本度量与定宽裁剪（宽度单位是"列"，不是字节）
@@ -118,7 +118,9 @@ ch, fg, bg = phos.screen.get(x, y)
 `blend` 是"再画一笔"（叠加）。两笔在渲染时各自按**字形覆盖率**混合 ——
 于是"两种内容落在同一格"两笔都看得见，重叠处后面那笔的颜色占优。
 
-- 只收半角字形；同一格最多叠 **3 笔**（含 `put` 那一笔）。满了 `blend` 返回 `false`
+- 只收半角字形，且**只能落在有字形槽的格**：宽字的续格、被缩放的块覆盖的格没有字形槽，
+  `blend` 直接返回 `false`（日志只报一次）
+- 同一格最多叠 **3 笔**（含 `put` 那一笔）。满了 `blend` 返回 `false`
   并且**不画**（已画上的内容只增不减），日志里留一次痕
 - **`plot` 管半格**：一格分 2×2 子位，多次 `plot` 落在同一格会合并成一个象限字形
   （位序由引擎定义：左上 / 右上 / 左下 / 右下），卡带不必自带那张字形表
@@ -262,13 +264,232 @@ phos.audio.stop_sample(hit)
 
 ## phos.ui
 
-主机组件层：边框、浮窗、菜单、进度条、正文、像素精灵、列表导航。
-与系统界面**共用同一套绘制原语**，因此卡带界面与主机界面风格天然一致；
-配色取自当前主题声明的色板（与 `phos.color` 同源）。
+界面分两层：
+
+- **声明式界面**（`phos_api = 7`，推荐）：`phos.ui.render(spec)` 提交一棵元素树，
+  布局、焦点、滚动、勾选、文本输入与主题配色由引擎负责——卡带只声明"有什么"。
+- **绘制原语**（更低层，旧卡带继续可用）：`frame` / `modal` / `menu` / `bar` / `text` /
+  `divider` / `center_text` / `sprite` / `nav`，配合 `phos.ui.region` 的裁剪矩形使用。
+
+两层的配色都取自当前主题声明的色板（与 `phos.color` 同源）。坐标是**内容区局部坐标**
+（0-based）；`surface = "panel"` 时是面板局部坐标。
+
+### 声明式界面：`phos.ui.render(spec)`
+
+在 `draw()` 里提交一棵元素树；引擎按**盒模型**排版、维护焦点与控件状态，然后直接画到
+当前帧的画面。返回本帧的**事件数组**。
+
+**三条使用约定**
+
+1. **在 `draw()` 里调用**：它写的是当前帧画面。`update()` 之后画，画面才属于这一帧。
+2. **事件在下一帧 `update()` 里处理**：事件表只在本帧有效，不跨帧保存。
+3. **同一帧只让一个界面消费输入**：世界 UI、侧栏、浮窗同帧出现时，给**负责输入**的那次传
+   `input = true`（默认），其余传 `input = false`（只画）。否则同一次按 A 会被几个界面
+   各处理一遍。
+
+```lua
+local pending = {}                       -- 上一帧 draw 返回的事件
+
+function update(dt)
+  for _, e in ipairs(pending) do         -- 先消费，再清空
+    if e.kind == "activated" and e.id == "pause/list" then
+      if e.index == 1 then paused = false end
+    elseif e.kind == "cancelled" then
+      close_top()
+    end
+  end
+  pending = {}
+end
+
+function draw()
+  phos.screen.clear()
+  draw_world()                           -- 世界画面仍用 phos.screen 原语
+  draw_ui()                              -- 界面见下面三个例子
+end
+```
+
+**例一：侧栏（`surface = "panel"`，只显示）**
+
+```lua
+phos.ui.render{
+  screen = "panel", surface = "panel", input = false,
+  kind = "column", padding = { x = 1, y = 1 }, gap = 1,
+  children = {
+    { kind = "text", text = phos.cart.info().name, accent = true },
+    { kind = "divider", fg = "dark_gray" },
+    { kind = "stat", text = "SCORE", value = tostring(score) },
+    { kind = "stat", text = "BEST",  value = tostring(best), accent = true },
+    { kind = "spacer", grow = 1 },       -- 把后面的内容压到侧栏底部
+    { kind = "hint", items = {
+        phos.input.key_name("a"), "开始",
+        phos.input.key_name("start"), "暂停",
+      } },
+  },
+}
+```
+
+`surface = "panel"` 要求 manifest 声明了 `sidebar`；没有侧栏时这次 render 是空操作
+（不画、不消费输入、返回空表）。
+
+**例二：暂停浮窗（`rect` 定位，唯一消费输入的界面）**
+
+```lua
+pending = phos.ui.render{
+  screen = "pause", surface = "content", input = true,
+  rect = { x = 25, y = 18, w = 30, h = 9 },     -- 内容区局部坐标
+  kind = "box", title = "PAUSED", border = "double", opaque = true,
+  children = {
+    { kind = "list", id = "pause/list",
+      items = { "继续", "设置", "退出" }, indent = 2, text_gap = 2 },
+    { kind = "hint", items = { phos.input.key_name("a"), "确认",
+                               phos.input.key_name("b"), "返回" } },
+  },
+}
+-- 事件：{ kind = "activated", id = "pause/list", index = 1 }（index 从 1 起）
+```
+
+**例三：文本域**
+
+```lua
+pending = phos.ui.render{
+  screen = "name", surface = "content", input = true,
+  rect = { x = 20, y = 16, w = 40, h = 7 },
+  kind = "column", gap = 1, padding = { x = 2, y = 1 },
+  children = {
+    { kind = "text", text = "输入昵称", dim = true },
+    { kind = "field", id = "name/input", width = 24, max_chars = 12,
+      filter = "printable", text = "最多 12 字" },   -- text 是占位提示
+    { kind = "hint", items = { phos.input.key_name("a"), "确认",
+                               phos.input.key_name("b"), "取消" } },
+  },
+}
+-- 事件：{ kind = "submitted", id = "name/input", text = "..." }
+-- 当前值：phos.ui.field_text("name/input", "name")
+```
+
+- 文本域聚焦时，引擎自动接管 `phos.input.text()`；被其他控件聚焦时不读。
+- `filter`：`"printable"`（默认）/ `"ascii"` / `"digits"` / `"hex"` / `"letters"` / `"any"`；
+  `max_chars` 是**码点数**上限（0 = 不限）；退格按码点处理。
+- 每个界面用独立的 `screen`（例里 `"panel"` / `"pause"` / `"name"`）：焦点、滚动、勾选与
+  文本域状态按它分开存，互不串。
+- **输入法**：声明式文本域目前**不向主机请求系统输入法**（物理键盘的中文拼音输入待接入）；
+  `input.text` 注入的多字节文本可以进入，ASCII / 数字输入不受影响。
+
+**顶层字段**
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `kind` | string? | 根元素种类；省略时把 spec 本身当容器，数组部分即子元素 |
+| `id` | string? | 根 id；缺省 = `screen` |
+| `children` | table? | 子元素数组 |
+| `surface` | string? | `"content"`（默认，内容区）/ `"panel"`（侧栏，需 manifest 声明 sidebar）/ `"playfield"`（内容区扣掉右栏与分隔线）；未知值按 `content` |
+| `rect` | table? | `{x, y, w, h}`：在 surface 区域内的**偏移与大小**；省略 = 占满该区域。顶层元素占满该 rect——根上的 `width` / `height` 不生效，排版写在子元素上 |
+| `screen` | string? | 跨帧状态的命名空间（焦点/滚动/勾选/文本域），缺省 `"cart"` |
+| `input` | boolean? | 本帧是否消费输入，缺省 `true`；同一帧多次 render 只应有一次 `true` |
+
+**元素种类（`kind`）**
+
+| kind | 作用 | 交互 |
+|---|---|---|
+| `column` | 纵向容器（缺省根种类） | — |
+| `row` | 横向容器 | — |
+| `box` | 带边框 / 标题 / 内边距的容器 | — |
+| `text` | 一段文字（`overflow` / `lines` / `scale`） | — |
+| `divider` | 一条横线 | — |
+| `spacer` | 占位（用 `grow` 撑开） | — |
+| `list` | 可选列表（光标 + 滚动 + 禁用行） | A → `activated(index)` |
+| `stat` | "标签 …… 取值"行（取值右对齐） | — |
+| `option` | 左右改值的一行（显示 `text`，卡带自己格式化） | 左右 → `changed(delta)`；A → `changed(delta=1, confirm=true)` |
+| `checkbox` | 勾选项（`[x]` / `[ ]`） | A → `changed(checked)` |
+| `field` | 文本输入框 | A → `submitted(text)` |
+| `bar` | 进度条（`ratio` 0..1） | — |
+| `button` | 按钮行 | A → `activated` |
+| `hint` | 页脚键位提示（`items` 为 `[键, 说明]` 交替） | — |
+
+**元素字段**
+
+| 字段 | 类型 | 默认 | 说明 |
+|---|---|---|---|
+| `width` / `height` | integer | 0 | **内容尺寸**（边框与内边距另加）；0 = 自动 |
+| `min_w` / `min_h` / `max_w` / `max_h` | integer | 0 | 尺寸约束（0 = 不限） |
+| `grow` | integer | 0 | 父容器主轴上的伸展权重（>0 参与分配剩余空间） |
+| `gap` | integer | 1 | 容器内子项间距；顶层省略 `kind` 时根容器默认 0（子项紧贴） |
+| `padding` / `margin` | integer 或 table | 0 | 数字 = 四边同值；`{x, y}` 或 `{l, t, r, b}` |
+| `align_h` | string | `"stretch"` | `start` / `center` / `end` / `stretch` |
+| `align_v` | string | `"start"` | `start` / `center`（目前用于单段文本的垂直居中） |
+| `opaque` | boolean | false | 是否铺实底；**只有 true 时 `bg` 才生效**（默认透明，透出世界/下层） |
+| `bg` / `fg` | 色板名或 `{r,g,b}` | 主题角色 | 底色 / 前景色；色板名如 `"green"`、`"dark_gray"` |
+| `border` | string | `"none"` | `none` / `single` / `double` |
+| `title` | string | — | 边框标题（嵌在上边框，需有 border） |
+| `dim` / `accent` / `danger` | boolean | false | 用主题的次要 / 强调 / 危险色作前景（`fg` 优先） |
+| `scale` | integer | 1 | 文字字号倍率（>=2 成块放大） |
+| `overflow` | string | `"ellipsis"` | `clip` / `ellipsis` / `wrap` |
+| `lines` | integer | 1 | `wrap` 时的最大行数 |
+| `text` | string | — | text / option / button / stat 的正文；field 的**占位提示** |
+| `value` | string | — | stat 的右值；field 的**初始内容**（只在首次出现时写入） |
+| `items` | string[] | — | list 的行；hint 的 `[键, 说明]` 交替 |
+| `disabled` | table? | — | list 中不可选的行：下标数组 `{2, 5}` 或等长布尔数组 |
+| `ratio` | number | 0 | bar 的比例（0..1，越界按 0/1 画） |
+| `checked` | boolean | false | checkbox 的**初值**；之后以用户操作为准 |
+| `filter` / `max_chars` | string / integer | `"printable"` / 0 | field 的输入过滤与码点数上限 |
+| `enabled` | boolean | true | false = 不可聚焦、按主题的禁用色画 |
+| `indent` / `text_gap` | integer | 0 / 1 | 选中标记的缩进、正文相对标记的间距 |
+| `label_w` | integer | 0 | stat 的标签列宽；0 = 主题默认（16） |
+| `absolute` / `x` / `y` | boolean / integer | false / 0 | true = 相对父内容区定位，不参与流式布局 |
+
+**交互与焦点**
+
+- 按 **A 确认、B 取消**（卡带键位；主机的 Esc/F2 仍归主机）。**Tab 下一个焦点、Shift 上一个**。
+- 初始焦点 = 声明顺序里第一个可聚焦且 `enabled` 的元素；焦点与滚动按 `screen` 跨帧保留。
+- 列表聚焦时，上下移动光标（循环、跳过 `disabled` 行），A 触发 `activated`。
+- 表单（option / checkbox / button / field）聚焦时，上下 / Tab / Shift 移动焦点，A 确认。
+- 可聚焦的种类只有 list / option / checkbox / field / button；文本、框、分隔线不参与焦点。
+
+**事件表**
+
+| 事件 | 附加字段 | 触发 |
+|---|---|---|
+| `activated` | `id`、`index`（list 行号，**1 基**） | A 在列表 / 按钮上确认 |
+| `changed` | `id`、`delta`（option，-1/+1）、`confirm`（option）、`checked`（checkbox 新值） | 改值 / 勾选 |
+| `submitted` | `id`、`text` | A 在文本域上提交 |
+| `cancelled` | `id`（取消时的焦点 id，可能为空串） | B |
+
+事件只出现在 `input = true` 的那次 render 的返回值里。
+
+**查询与状态**
+
+| 调用 | 说明 |
+|---|---|
+| `phos.ui.focus()` | 最近一次负责输入的 render 的焦点 id；没有焦点时为 `""` |
+| `phos.ui.checked(id, screen?)` | checkbox 当前勾选态；`screen` 缺省 = 最近一次负责输入的界面 |
+| `phos.ui.set_checked(id, value, screen?)` | 设置勾选态（卡带自己持有真值时用） |
+| `phos.ui.field_text(id, screen?)` | 文本域当前内容；未知 id / 非文本域返回 `""` |
+| `phos.ui.reset()` | 清空全部界面状态（焦点 / 滚动 / 勾选 / 文本域）；换场景时调用 |
+
+- `checked` 与 field 的 `value` 是**初值**，只在控件第一次出现时写入；之后以用户操作为准。
+- 元素树每帧重建：不要把 spec 或控件对象存起来跨帧用；跨帧状态只有上面那张表里的东西。
+- `id` 建议显式给出且同屏唯一：焦点、事件与 agent/自测观测都以它为键；省略时按
+  "父 id/序号" 派生，不要依赖自动 id 跨版本稳定。
+- `input = false` 的 render 不返回事件，也不更新 `focus()` 的查询目标。
+
+**agent 可观测（只读）**
+
+- `state.query` 的顶层 `ui` 字段（没有卡带界面时为 `null`）：
+  `{"screen", "focus", "widgets": [{"id", "role", "label", "state"}]}`。只列**可交互控件**
+  （list / checkbox / field / option / button）与**负责输入的那一屏**（`input = false` 的
+  显示界面不入表、也无法聚焦）；最多 64 个，超出带 `"truncated": true`。
+  `state`：list = `{"selected": 1 基, "count"}`，checkbox = `{"checked"}`，field = `{"text"}`。
+- 控制命令 `ui.list`（同一快照）/ `ui.focus{id}` / `ui.activate{id}`：`ui.activate` 与玩家按 A
+  完全同语义，请求在下一逻辑帧的 render 生效。字段与示例见
+  [agent-interface.md](agent-interface.md) 的「界面：读控件树、按 id 操作」一节。
+
+### 绘制原语（更低层）
+
+以下函数是**无状态**绘制原语：调用时立刻往当前网格写，不持有焦点、滚动或控件状态。
+旧卡带与特效继续可用；新代码优先用上面的 `render`。
 
 **约定**：坐标为内容区局部坐标（0-based）；`phos.ui` 的**菜单索引同样 0-based**
-（与屏幕坐标一致，菜单索引也 0-based）。
-`items` 表本身仍是普通 Lua 数组——两者互不影响。
+（与屏幕坐标一致）。`items` 表本身仍是普通 Lua 数组——两者互不影响。
 
 ```lua
 -- 边框（标题嵌在上边框，可留空）

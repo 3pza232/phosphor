@@ -7,31 +7,36 @@
 ## 一、分层与依赖铁律
 
 ```
-┌──────────────────────────────────────────────────────────────┐
-│ shell    外壳层：待机界面 / 系统菜单 / 氛围装饰              │
-├──────────────────────────────────────────────────────────────┤
-│ api      Lua 桥：Host API（卡带与主机插件的唯一入口）        │
-├──────────────────────────────────────────────────────────────┤
-│ cart · pack · agent    同层；互不依赖（见第 4 条）           │
-├──────────────────────────────────────────────────────────────┤
-│ net      局域网：TCP 房间 + UDP 发现（依赖 core / platform） │
-├──────────────────────────────────────────────────────────────┤
-│ render   渲染：Screen / CrtParams → OpenGL / 离屏 PNG        │
-├──────────────────────────────────────────────────────────────┤
-│ core     Screen / Surface / Input / ui / audio / text        │
-├──────────────────────────────────────────────────────────────┤
-│ platform OS 封装：窗口 / socket / 重启自身                   │
-└──────────────────────────────────────────────────────────────┘
+┌───────────────────────────────────────────────────────────────────────┐
+│ shell    外壳层：待机界面 / 系统菜单 / 氛围装饰                       │
+├───────────────────────────────────────────────────────────────────────┤
+│ api      Lua 桥：Host API（卡带与主机插件的唯一入口）                 │
+├───────────────────────────────────────────────────────────────────────┤
+│ cart · pack · agent    同层；互不依赖（见第 4 条）                    │
+├───────────────────────────────────────────────────────────────────────┤
+│ ui       界面组件：布局 / 控件 / 焦点 / 主题（shell 与 api 共用）     │
+├───────────────────────────────────────────────────────────────────────┤
+│ net      局域网：TCP 房间 + UDP 发现（依赖 core / platform）          │
+├───────────────────────────────────────────────────────────────────────┤
+│ render   渲染：Screen / CrtParams → OpenGL / 离屏 PNG                 │
+├───────────────────────────────────────────────────────────────────────┤
+│ core     Screen / Surface / Input / text / audio（含旧 core/ui 原语） │
+├───────────────────────────────────────────────────────────────────────┤
+│ platform OS 封装：窗口 / socket / 重启自身                            │
+└───────────────────────────────────────────────────────────────────────┘
 ```
 
 > **组装点**：`App`（`core/app.*`）是唯一允许知道全部层的单元——它持有 `shell` / `api` / `cart` /
 > `pack` / `agent` / `net` 的对象并负责注入，因此 `core/app.hpp` 反向 include 这些层的头文件。
-> 图中 `core` 一行指**其余** core 单元（`screen` / `surface` / `input` / `text` / `ui` /
-> `audio` / `crt` …），它们不得向上 include。
+> 图中 `core` 一行指**其余** core 单元（`screen` / `surface` / `input` / `text` /
+> `audio` / `crt` / 旧 `core/ui` 原语 …），它们不得向上 include。
 >
 > `render` 消费 core 的 `Screen` / `CrtParams`（render → core），`core/display` 又调用
 > `Renderer`：两者在文件级**互相依赖**；门禁对这对方向都放行（不把 `render` 当作 core 的上层），
 > 收口方向见「演进预留」。
+>
+> `ui` 只**向下**依赖 `core/`（Screen / Surface / Text / Color）；`shell` 与 `api` 是它的
+> 消费者（外壳界面与卡带的 `phos.ui.render` 共用同一实现）。
 >
 > `net` 只**向下**依赖 `core/`（日志 / JSON）与 `platform/socket`；`api/net_api` 向上把
 > `net` 包成 `phos.net`。设计见 `networking.md`。
@@ -50,6 +55,8 @@
    - `render/` 不得 include `shell/` / `api/` / `cart/` / `pack/` / `agent/` / `net/`
    - `shell/` 不得 include `cart/` / `pack/` / `agent/` / `net/`（现存 4 处
      `cart/` include 在门禁白名单内，原因与 TODO 写在那里）
+   - `ui/` 不得 include `shell/` / `api/` / `render/` / `cart/` / `pack/` / `agent/` / `net/`
+     （新层，门禁尚未覆盖，见「ui」一节）
    跨层向上通信用回调/接口注入。`core` 与 `render` 互相 include（`Screen` / `Renderer`），
    门禁对这对方向都放行——收口见「演进预留」。
 2. **Lua 类型只出现在 `api/`、`cart/`、`pack/`、`devkit/`**：前两者是 Lua 的宿主（装载并运行脚本），
@@ -69,7 +76,7 @@
 5. 第三方库 include 只允许出现在对应封装模块内，禁止散布全工程
 
 `tools/check_includes.py` 机械核查第 1–3、5 条（core / render / shell 的禁止表、Lua、OpenGL）；
-第 4 条（`cart` / `pack` / `agent`）尚未进门禁，按上面的例外清单人工守。
+第 4 条（`cart` / `pack` / `agent`）与 `ui/` 的方向检查尚未进门禁，按上面的清单人工守。
 
 若某条约束已经不成立，可以改代码去满足它（当它确实更优），
 也可以改本章去记录新的现状（当新做法确实更满足约束）——两者都可以，含糊其辞地留着不行。
@@ -86,7 +93,7 @@
 | `Surface` | 网格上的一块**可写矩形**（内容区 / 侧栏面板 / 卡带绘制区域）：越界裁剪、透明底、宽字符占格的**唯一一份规则** |
 | `Input` | 统一输入队列。物理键盘与 agent 注入在此汇流（**没有手柄支持**），消费者无从分辨来源 |
 | `Audio` | 音频子系统：软件混音（波形/包络/扫频/噪声/音序器/采样），三层音量 |
-| `ui` | 界面绘制原语：边框/菜单/进度条/正文/精灵/导航（主机与卡带共用） |
+| `core/ui` | **旧**界面绘制原语：边框/菜单/进度条/正文/精灵/导航——低层保留给旧 API 与特效；新界面用 `ui/` 层（见下） |
 | `effects` | 仪式感动效：插卡电压闪烁、拔卡画面收缩 |
 | `crt` | 显像管参数与档位（扫描线/孔径格栅/辉光/亮度补偿） |
 | `text` | 文本工具：UTF-8 码点解码、显示宽度（全角算 2 格）、截断/折行/补齐/居中、删除事件约定 |
@@ -134,6 +141,34 @@ net / input / host / control 多个协作者、且依赖 `HostContext`（api 层
 （`> 0` 时优先）与整体色调 `tint`，所以换主题会换质感。扫描线周期、暗线相位、亮度损失
 系数这类结构常量集中在 `core/crt.hpp`，CPU 与 GL 两条光栅路径共用。渲染器自身不硬编码
 任何"风格数值"。
+
+### ui —— 界面组件层
+
+**位置**：core 之上、shell / api 之下；只依赖 `core/`（`Screen` / `Surface` / `Text` /
+`Color`），不碰 render / shell / api / Lua。外壳界面与卡带的 `phos.ui.render` 是它的两个
+消费者——**同一套组件、布局、焦点与主题**。
+
+**职责**：把"声明一棵元素树"变成"布局 + 焦点 + 输入 + 绘制"：
+
+| 文件 | 职责 |
+|------|------|
+| `ui/element.*` | 元素种类（column / row / box / text / divider / spacer / list / stat / option / checkbox / field / bar / button / hint）、`Props`（盒模型 / 外观 / 文本 / 控件 / 定位）、`Node`（每帧重建，只描述） |
+| `ui/layout.*` | 测量与排布：盒模型、grow 分配剩余空间、对齐、绝对定位；按视觉顺序收集可聚焦项 |
+| `ui/frame.*` | 一帧 = `run()`（测量 → 排布 → 焦点 → 输入 → 事件）+ `paint()`（写 `Screen`）；跨帧状态 `State`（按 screen id 存焦点 / 滚动 / 勾选 / 文本域） |
+| `ui/theme.*` | 主题 token：颜色角色 + 边框 / 光标字形集 + 度量；两条派生：`theme_from_skin`（外壳）、`theme_from_palette`（卡带，与 `phos.color` 同源） |
+
+**与旧 `core/ui` 原语的关系**：`core/ui.*` 的 9 个无状态绘制函数（`frame` / `menu` /
+`bar` / `text_block` / `icon` / `navigate` …）**保留**为底层原语——旧卡带 API 与主机特效仍在
+用；`ui/` 是它们之上的一层，控件自己用 `Surface` 写屏，不经过那些函数。`phos.ui` 的旧函数
+（`frame` / `menu` / …）仍是原语的薄绑定，新卡带用 `phos.ui.render`。
+
+**迁移状态**：外壳的**设置屏与错误屏**已完成迁移（`shell/settings_view.cpp` 只把数据填进
+`ui::Node`，不再写坐标；错误屏同理）；其余屏（暂停 / Mod / 磁带码 / 卡带架 / 开机自检）正陆续
+接到组件树，整合后由 `shell_golden.py` 重生成基线。卡带侧 `phos.ui.render` 已随 API 世代 7
+发布，出厂卡带尚未迁移（旧路径逐字节不变）。
+
+**`ui/` 的改动要过外壳文本基线**：`tools/shell_golden.py` 对 7 个外壳屏做逐字节快照，
+迁移或改布局前后都拿它对照（见 `tests/golden/shell/`）。
 
 ### api —— Lua 桥
 
@@ -270,15 +305,18 @@ miniaudio 封装：软件混音（波形 / 包络 / 扫频 / 噪声）、采样�
 ```
 phosphor/
 ├── CMakeLists.txt
+├── CMakePresets.json      # 构建 preset（dev / release，见 README 的构建一节）
+├── .github/               # CI：Windows(MinGW) + Linux 构建与全部门禁
 ├── .gitignore             # 忽略构建产物与运行期生成物
 ├── docs/                  # 文档：根级 = 发行文档（玩家 / 卡带作者 / API 参考）；
 │                          #        engine/ = 引擎实现文档（你正在读的这些，不随发行包）
 ├── extern/                # 全部第三方依赖（glfw/glad/imgui/lua/sol2/stb/miniaudio/miniz）
 ├── src/                   # 主机源码
 │   ├── main.cpp
-│   ├── agent/  api/  cart/  core/  devkit/  pack/  platform/  render/  shell/
+│   ├── agent/  api/  cart/  core/  devkit/  net/  pack/  platform/  render/  shell/  ui/
 ├── package/               # 程序包内容源（构建时整份复制到输出目录）
-│   ├── carts/             # 出厂卡带（snake / bricks / life / chomp / runner / tetris / worms）
+│   ├── carts/             # 11 张出厂卡带（ballbattle / bricks / chomp / crawl / life / runner /
+│   │                      #   snake / tetris / towerdef / worms / xiangqi）
 │   ├── theme/             # 出厂内容包：skin / boot / shelf / palette / sound / font，另有 icon 窗口图标
 │   ├── devkit/            # 模板卡带 / phos.lua 注解 / 说明
 │   └── mods/  saves/      # 覆盖层与存档目录（各带 README 引导）

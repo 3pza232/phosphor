@@ -66,15 +66,19 @@ E 从 A 开始持续，不等其它阶段。
 
 **目标**：把"会崩/会丢数据/会挂 agent"的问题先关掉，并把文档与实现拉回一致。
 
+> **状态（2026-10-31）**：M0 基本完成。P0 已修 9 项（`C1 C2 C3 C4 C5 C10 C12 C13 C16`，
+> 证据逐条见 `audit.md` §3.1）；**剩余 `C6`（`time.step` 在途回包）与 `C11`（内容根）**。
+> 绘制一致性按 `C7` 修复（`273d090`，`drawing.md` 已改为"两路同规则"）。CI 与基线见下表。
+
 **交付**
 
-| 项 | 内容 |
-|---|---|
-| P0 修复 | `C1` boots 空表（内置兜底 + 判空）、`C2` 存档原子写（临时文件 + rename）、`C3` 配置原子写 + 转义、`C4` chunk name + traceback、`C5` 包脚本也走看门狗、`C6` `time.step` 在途回包取消语义、`C10` `Screen::blend` 边界、`C11` 可执行文件相对内容根（保留 `--root` 覆盖）、`C12` 窗口路径退出码、`C13` JSON `\u` 转义、`C16` Lua `print` 重定向 |
-| 合成器保真 | 先让 CPU 截图/文本与 GL 对"续格/被覆盖格上的笔迹"给出一致结果（或明确降级并写进文档），并加契约用例 |
-| 文档纠偏 | 修正 `audit.md` §4 的 22 处漂移；在 `docs/engine/README.md` 登记本文件与体检文件 |
-| CI 骨架 | Windows（MinGW）+ Linux（GCC/Clang）构建 + `run_checks.py` + 单测；把 `--check-api` 纳入门禁；PR 必须绿 |
-| 基线先行 | 为外壳 7 个屏建立**文本快照**（`to_text()` 逐字节）；为 2 套皮肤建立截图基线 |
+| 项 | 内容 | 状态 |
+|---|---|---|
+| P0 修复 | `C1` boots 空表、`C2` 存档原子写、`C3` 配置原子写 + 转义、`C4` chunk name + traceback、`C5` 包脚本看门狗、`C6` `time.step` 在途回包取消语义、`C10` `Screen::blend` 边界、`C11` 内容根、`C12` 窗口退出码、`C13` JSON `\u` 转义、`C16` Lua `print` 重定向 | ✅ `C1 C2 C3 C4 C5 C10 C12 C13 C16`；❌ `C6 C11`（证据见 `audit.md` §3.1） |
+| 合成器保真 | CPU 截图与 GL 对"续格/被覆盖格上的笔迹"给出一致结果，并加契约用例 | ✅ 已完成（`273d090`；`screen_image.cpp` 三条路径同 `pens` 趟，`drawing.md` 写明契约） |
+| 文档纠偏 | 修正 `audit.md` §4 的 22 处漂移；在 `docs/engine/README.md` 登记本文件与体检文件 | ✅ 已完成（§4 逐条标"已修正 / 仍待代码修"；两份入口已加） |
+| CI 骨架 | Windows（MinGW）+ Linux（GCC/Clang）构建 + `run_checks.py` + 单测；把 `--check-api` 与 include 方向纳入门禁；PR 必须绿 | ✅ 已完成（`.github/workflows/ci.yml`、`CMakePresets.json`；`run_checks.py` 无头 9 项含 `includes` / `api` / `ui`） |
+| 基线先行 | 为外壳 7 个屏建立**文本快照**（`to_text()` 逐字节）；为 2 套皮肤建立截图基线 | ⚠ 文本快照 ✅（`tools/shell_golden.py` + `tests/golden/shell/`）；截图基线 ❌ |
 
 **验收**：新增 6 个 P0 用例（boots 兜底、存档掉电模拟、配置转义、错误信息含文件、包脚本看门狗、`time.step` 取消）；
 `run_checks.py` 与 CI 全绿；文本快照作为后续所有迁移的对照物。
@@ -85,6 +89,14 @@ E 从 A 开始持续，不等其它阶段。
 
 **目标**：建立 `src/ui/` —— 布局、控件、焦点、主题、裁剪、屏幕栈的**唯一实现**，
 先用外壳两个屏做"真迁移"验证。
+
+> **状态（2026-10-31）**：**主体已完成**。`src/ui/` 已落地（8 文件 1,310 行：
+> `element` / `layout` / `frame` / `theme`——规划里的 widget/nav/screen 合并进
+> element/layout/frame）；布局、控件 v1、焦点、主题 token、文本域已实装；
+> **屏幕栈 `ScreenStack` 与 Modal 未做**（M3 一起补）。设置屏 + 错误屏已迁到组件树，
+> `tools/shell_golden.py` 的文本快照守住迁移前后一致；单测 `tests/test_ui.cpp` 6 条
+> （布局/焦点/滚动），`tools/ui_smoke.py` 已进 `run_checks`（9 项）。
+> 剩余：Scroll/Grid/Table/Toast、按键重复、屏幕栈、像素基线。
 
 **交付**
 
@@ -108,6 +120,10 @@ E 从 A 开始持续，不等其它阶段。
 
 **目标**：外壳 7 屏全部由组件树描述，`Shell` 退化为"状态 + 数据 + 意图"，
 不再持有任何版面常量。
+
+> **状态（2026-10-31）**：**进行中**。设置屏与错误屏已完成迁移；暂停 / Mod / 磁带码 /
+> 卡带架 / 开机自检正陆续接到组件树（另一位协作者迁移中），`paused` / `mods` 两屏的文本
+> 基线待整合后由 Lead 重新生成。
 
 **交付**
 
@@ -133,6 +149,13 @@ E 从 A 开始持续，不等其它阶段。
 
 **目标**：把同一套组件暴露给 Lua（`phos.ui` v2 / `phos.scene`），让卡带不再手写界面；
 至少迁移 3 张卡带作为样板。
+
+> **状态（2026-10-31）**：**部分落地**。卡带侧 API 已发布：`phos.ui.render` + 查询
+> （`focus/checked/set_checked/field_text/reset`）+ agent 接口（`state.query.ui`、
+> `ui.list/focus/activate`），随 `phos_api = 7` / 0.9.0 发布；模板 `panel.lua` 已改用
+> 声明式界面；样板卡带 `devkit/examples/ui/` 已加，`ui_smoke.py` 覆盖组件/焦点/事件。
+> **未做**：`phos.scene` 场景栈与 Modal、3 张出厂卡带迁移、模板 `main.lua` 的"十条约定"
+> 精简。验收里的"3 张卡带 UI 代码下降 ≥40%"尚不成立。
 
 **交付**
 
@@ -193,6 +216,13 @@ Web 端卡带架/商店式分发、性能预算自动回归。
 ---
 
 ## 四、UI 框架设计规格（本轮核心）
+
+> **落地差异（2026-10-31，以代码为准）**：本节是设计规格，实际实现做了三处精简——
+> (1) 规划中的 `widget` / `nav` / `screen` 合并进 `element` / `layout` / `frame`，
+> `ScreenStack` 与 `Modal` 尚未实现；(2) 旧 `core/ui` 的 9 个绘制函数**没有**搬到
+> `ui/draw`，仍留在 core 作为底层原语；(3) 卡带 API 不是 4.9 的 `ui.panel(function…)`
+> 草案，而是 `phos.ui.render(spec)` 的声明式表（实现见 `api/ui_render.cpp`，
+> 字段表见 `api-reference.md`）。
 
 ### 4.1 目标与非目标
 
@@ -414,7 +444,7 @@ phos.ui.field{ "name", label = t.name, field = field, on_submit = start_game }
 | 文本快照 | `to_text()` 逐字节 | 外壳 7 屏 × 2 语言；卡带侧栏样板 |
 | 像素基线 | `--screenshot` + 容差 | 外壳 7 屏 × 2 皮肤；卡带 3 张关键帧 |
 | 交互契约 | `tools/ui_smoke.py`（控制通道注入） | 焦点移动/循环、禁用跳过、弹窗拦截、文本域输入、左右改值、Esc 逐层退栈 |
-| 兼容回归 | 既有 6 项门禁 + `agent_shell_demo` | 旧卡带逐字节不变、外壳流程不变 |
+| 兼容回归 | 既有 9 项门禁 + `agent_shell_demo` | 旧卡带逐字节不变、外壳流程不变 |
 
 ### 4.13 性能预算
 
