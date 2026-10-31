@@ -23,6 +23,7 @@ int App::run(const CliOptions& opts) {
     if (opts.config) config_path_ = *opts.config;
     if (opts.recent) recent_path_ = *opts.recent;
     config_ = load_config(config_path_);
+    init_agent_services();  // 控制通道的窄接口：动作回调 + 状态快照（不依赖后续初始化顺序）
 
     // Mod：先落两个配置列表（决定哪些 mod 生效），再由 pack 读各 mod.lua 建覆盖表。
     // 覆盖表必须先于任何内容扫描落地，否则被覆盖的包/卡带会先按原样扫一遍

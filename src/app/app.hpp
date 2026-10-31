@@ -126,6 +126,10 @@ private:
     void fill_debug_info(DebugInfo& info);
 
     // 控制通道（agent 接口；实现见 app_control.cpp）
+    /// 构造 AgentServices（动作回调 + 状态快照来源）；run() 启动时调用一次
+    void init_agent_services();
+    /// state.query 的快照：把跨子系统当前值收成纯数据（AgentController 负责排版 JSON）
+    AgentState capture_agent_state() const;
     void poll_control();
     void execute_control(const ControlCommand& command);
     void complete_step_request();
@@ -256,8 +260,10 @@ private:
     /// agent 控制通道的会话语义（单步/待回包/按键定时释放）：定义与实现见
     /// app/agent_controller.hpp；保留为 App 成员，因为主循环与换卡路径都直接读写它
     AgentSession agent_;
-    /// 控制通道的语义侧：单步回包 / frame.read 落地 / 按键定时释放 / 观察面 JSON
+    /// 控制通道的语义侧：命令分发 / 单步回包 / frame.read 落地 / 按键释放 / 观察面 JSON
     AgentController agent_controller_;
+    /// AgentController 的窄接口：动作回调 + 状态快照来源（不持有 App）
+    AgentServices agent_services_;
     std::string cart_path_;  // 当前卡带路径（供 cart.reload）
 
     /// 当前宿主脚本会话的 RAII 绑定（见 api/host_api.hpp 的 HostCartBinding）。
