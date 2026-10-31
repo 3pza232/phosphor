@@ -13,6 +13,7 @@
 - 文本 golden（外壳 8 屏）+ 像素 golden（7 场景，含设置/Mod/磁带码/UI 示例）作为回归对照。
 - `--check-cart`（manifest/入口/隐式全局/阻塞调用）与 `--check-packs`（六类内容包 error/warn，
   退出码 2）静态检查；`tools/release_check.py` 汇总发布前检查。
+- 发行：`tools/package_release.py` 生成带清单/校验的 win64 zip；Debug/Sanity preset。
 
 ### 声明式 UI（`phos.ui` v2）
 
@@ -52,6 +53,7 @@
   反引号键打开调试台。
 - 设置搜索（`/` 过滤、Esc 先退搜索）；关于页（版本/按键/内容根/致谢）。
 - 动作映射 `phos.input.action`（动作→多键、默认同名、随卡带生命周期清理）。
+- 按键重绑定：设置 F4（config.json 的 `input_bindings` 物理键→虚拟键；冲突覆盖提示）。
 - 设置屏主题样张（当前主题色板/字形/文字/选中/BAR 即时预览）。
 - 手柄：GLFW 标准布局 → 现有虚拟键（摇杆死区 0.35、热插拔、键盘/手柄共存、失焦释放）。
 - 磁带码集中入口、存档管理入口（本版新增）。
