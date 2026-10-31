@@ -18,6 +18,7 @@
 | Release（发行） | `cmake --preset release && cmake --build --preset release` | 产物在 `build/`，可直接分发 |
 | Dev（测试） | `cmake --preset dev` / `sanity` | 开测试目标、带调试信息 |
 | 干净重建 | 删 `build/` 后重跑 release | 验证内容同步（carts/docs/theme/devkit/mods） |
+| Debug（断言） | `cmake --preset debug && cmake --build --preset debug` | `build-debug/`：NDEBUG 关掉、assert 生效，跑一遍单测/门禁 |
 
 发布目录必须包含：`phosphor.exe`、`carts/ theme/ devkit/ mods/ docs/`、`lib*.dll`（如有）。
 CI 额外跑 `--gui` 门禁（gl/window），release_check 只跑无头（跨机稳定）。

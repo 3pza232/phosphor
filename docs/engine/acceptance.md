@@ -9,7 +9,7 @@
 
 ```sh
 ninja -j16                                  # 构建
-./phosphor_tests.exe                        # 135 用例 / 1,572 断言
+./phosphor_tests.exe                        # 136 用例 / 1,589 断言
 python ../tools/run_checks.py --gui         # 14 项无头 + 2 项开窗门禁
 ./phosphor.exe --check-api                 # 150/150
 ./phosphor.exe --check-packs --root ../package   # 45 包 0 error / 0 warning
@@ -17,7 +17,7 @@ python ../tools/pixel_golden.py            # 7 场景像素基线（非门禁）
 python ../tools/perf_budget.py             # 性能预算报告（非门禁）
 ```
 
-当前基线：**14 门禁全绿、135 单测 / 1,572 断言、150/150 API、45 包 0/0、像素 7/7**。
+当前基线：**14 门禁全绿、136 单测 / 1,589 断言、150/150 API、45 包 0/0、像素 10/10**。
 性能预算（本机，headless）：11 张出厂卡带 p95 update 均 ≤ 3.13 ms（life 最高，预算 16.67 ms）。
 
 ## M0 止血与纠偏
@@ -26,7 +26,7 @@ python ../tools/perf_budget.py             # 性能预算报告（非门禁）
   证据见 audit §3.1/§3.2。
 - 门禁从 9 项扩到 14 项（includes/api/unit/control/draw/layer/ui/scene/toolkit/lint/packs/portable/cart/net），
   CI（Windows + MSYS2）构建 + 单测 + 门禁 + 性能/像素非门禁报告全绿。
-- 文本 golden（shell 8 屏）与像素 golden（7 场景）成为后续所有迁移的对照物。
+- 文本 golden（shell 8 屏）与像素 golden（10 场景）成为后续所有迁移的对照物。
 
 ## M1 UI 内核
 
@@ -66,7 +66,7 @@ python ../tools/perf_budget.py             # 性能预算报告（非门禁）
 ## M5 体验与子系统（进行中）
 
 已完成：
-- 输入：失焦释放、scroll 焦点跟随/滚动条、**手柄**、**动作映射**（phos.input.action）；按键重复参数化、重绑定 UI 待做。
+- 输入：失焦释放、scroll 焦点跟随/滚动条、**手柄**、**动作映射**、**按键重复参数化**（skin ui metrics）；重绑定 UI 待做。
 - 音频：6ms 暂停/恢复/stop 淡出；声部优先级/抢占（48 + 8 尾巴）；三路总线（music/sfx/ui）；
   ducking；`music_state()`；主机事件音分档。
 - 绘制/精灵：line/outline/circle（预裁剪/有界半径）+ Region 同名方法；sprite step/brightness/solid、

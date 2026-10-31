@@ -51,11 +51,24 @@
         "PHOSPHOR_BUILD_TESTS": "ON"
       }
     }
+,
+    {
+      "name": "debug",
+      "displayName": "debug — build-debug/（断言/调试）",
+      "description": "Debug + 单元测试；用 assert 与调试符号排查 Release 里被 NDEBUG 掉的问题",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build-debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "PHOSPHOR_BUILD_TESTS": "ON"
+      }
+    }
   ],
   "buildPresets": [
     { "name": "release", "configurePreset": "release" },
     { "name": "dev", "configurePreset": "dev" },
     { "name": "sanity", "configurePreset": "sanity" },
+    { "name": "debug", "configurePreset": "debug" },
     { "name": "ci", "configurePreset": "ci" }
   ]
 }
