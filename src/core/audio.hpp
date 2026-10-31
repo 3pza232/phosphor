@@ -83,7 +83,8 @@ public:
     void set_music_volume(float volume);
     float music_volume() const { return music_volume_.load(); }
 
-    /// 暂停/恢复全部声音（音乐随之暂停并原地续播，用于游戏暂停）
+    /// 暂停/恢复全部声音（音乐随之暂停并原地续播，用于游戏暂停）。
+    /// 切换走 ~6ms 的增益斜坡（淡出到静音 / 从静音淡入），不硬切波形
     void set_paused(bool paused);
     bool paused() const { return paused_.load(); }
 
@@ -175,6 +176,9 @@ private:
     /// 把音加进声部表（仅音频线程调用：请求队列与音序器共用同一套落地逻辑）
     void spawn_voice(const ToneSpec& spec, bool music);
     void spawn_voice_note(const std::string& note, const ToneSpec& base, bool music);
+    /// 给一个声部挂上 ~6ms 停止淡出（stop_all / stop_sample 的共同落点）：先渐弱到 0
+    /// 再失活，免得正在响的波形被瞬间切断；已在淡出中的声部不重复挂
+    void start_voice_stop(Voice& voice);
 
     void advance_sequencer(uint32_t frames);
     /// 进入下一个乐段（order 推进）；order 耗尽且不循环时停止音乐
@@ -207,6 +211,15 @@ private:
     std::atomic<float> sfx_volume_{kDefaultSfxVolume / 100.0f};
     std::atomic<bool> paused_{false};
     std::atomic<bool> host_paused_{false};  // 主机级暂停（调试台），与 paused_ 取或
+
+    // 输出增益斜坡（音频线程独占的普通成员，不加锁；主线程只写上面的 atomic）。
+    // "该静音"与 master 音量在音频线程收成同一条逐样本斜坡，暂停/恢复/音量突变因此
+    // 都不硬切波形；稳态时 out_gain_ 等于 master 音量
+    float out_gain_ = 1.0f;    // 当前输出增益
+    float out_target_ = 1.0f;  // 上一块看到的目标增益
+    float out_step_ = 0.0f;    // 每样本步长（0 = 已到位）
+    float fade_step_ = 0.0f;   // 声部 1→0 的每样本步长（init 时按采样率算好）
+
     Tune tune_;  // 音频线程侧使用
     // 以下音乐状态被音频线程写入、主线程读取（状态查询），故用原子
     std::atomic<bool> music_on_{false};

@@ -26,6 +26,18 @@ constexpr float kFreqA4 = 440.0f;
 /// `std::clamp` 遇到 NaN 会**原样返回**，一个坏音量会污染整条混音，所以统一走这里
 float clamp01(float v) { return std::isfinite(v) ? std::clamp(v, 0.0f, 1.0f) : 0.0f; }
 
+/// 增益斜坡时长：暂停淡出、恢复淡入、master 音量突变、声部停止淡出共用这一段。
+/// 6ms 足够盖住硬切的爆音，又短到听不出"渐弱"（取 5~8ms 区间中值）
+constexpr float kFadeSeconds = 0.006f;
+
+/// 线性斜坡的一步：把 value 向 target 推 min(step, |delta|)，返回推进后的值。
+/// 所有淡入淡出共用这一份——每条路径各写一套衰减，迟早有一条忘了夹到目标值
+float ramp_toward(float& value, float target, float step) {
+    if (value < target) value = (target - value <= step) ? target : value + step;
+    else if (value > target) value = (value - target <= step) ? target : value - step;
+    return value;
+}
+
 /// 半音相对 A4 的频率
 float semitone_freq(int midi_note) {
     return kFreqA4 * std::pow(2.0f, static_cast<float>(midi_note - kSemitoneA4) / 12.0f);
@@ -138,6 +150,12 @@ struct Audio::Voice {
     uint64_t pos = 0;
     bool loop = false;
     int sample_handle = 0;
+
+    // 停止淡出（音频线程独占）：> 0 时每样本把 stop_fade 往 0 推，归零即失活，
+    // 于是 stop_all / stop_sample 不会把正在响的波形瞬间切断。
+    // stop_fade_step = 0 表示没有停止在进行（正常播放）
+    float stop_fade = 1.0f;
+    float stop_fade_step = 0.0f;
 };
 
 // ---------------------------------------------------------------- 生命周期
@@ -171,6 +189,10 @@ bool Audio::init(std::string& err) {
     }
     sample_rate_ = static_cast<int>(device_->sampleRate);
     if (sample_rate_ <= 0) sample_rate_ = 48000;
+    // 输出增益的稳态值 = master 音量；声部停止淡出用固定的 1→0 每样本步长。
+    // 都在设备启动前写好（音频线程此刻还没起，之后只由音频线程读写）
+    out_gain_ = out_target_ = master_volume_.load();
+    fade_step_ = 1.0f / (kFadeSeconds * static_cast<float>(sample_rate_));
 
     voices_.reserve(kMaxVoices);
     for (int i = 0; i < kMaxVoices; ++i) voices_.push_back(std::make_unique<Voice>());
@@ -249,6 +271,13 @@ bool Audio::push(Request&& request) {
     return true;
 }
 
+/// 给声部挂上停止淡出（stop_all / stop_sample 的共同落点）。已在淡出的不重复挂：
+/// 每次 stop 都把剩余增益重置回 1 会让"连点 stop"变成永远淡不完
+void Audio::start_voice_stop(Voice& voice) {
+    if (!voice.active || voice.stop_fade_step > 0.0f) return;
+    voice.stop_fade_step = fade_step_;
+}
+
 /// 把音加进声部表。仅音频线程调用，因此不需要任何同步。
 void Audio::spawn_voice(const ToneSpec& spec, bool music) {
     for (auto& voice : voices_) {
@@ -266,6 +295,8 @@ void Audio::spawn_voice(const ToneSpec& spec, bool music) {
         voice->t = 0.0f;
         voice->phase = 0.0f;
         voice->sample = nullptr;
+        voice->stop_fade = 1.0f;
+        voice->stop_fade_step = 0.0f;
         return;
     }
     // 声部用尽：丢弃本次触发（宁可静音也不卡音频线程），但要计入 dropped——
@@ -361,6 +392,8 @@ void Audio::apply(Request& request) {
                 voice->loop = request.loop;
                 voice->volume = clamp01(request.volume);
                 voice->sample_handle = request.handle;
+                voice->stop_fade = 1.0f;
+                voice->stop_fade_step = 0.0f;
                 spawned = true;
                 break;
             }
@@ -370,10 +403,10 @@ void Audio::apply(Request& request) {
         case Request::Kind::stop_sample:
             for (auto& voice : voices_)
                 if (voice->active && voice->is_sample && voice->sample_handle == request.handle)
-                    voice->active = false;
+                    start_voice_stop(*voice);  // 短淡出后再失活，不硬切波形
             break;
         case Request::Kind::stop_all:
-            for (auto& voice : voices_) voice->active = false;
+            for (auto& voice : voices_) start_voice_stop(*voice);
             [[fallthrough]];
         case Request::Kind::silence_music:
             music_on_ = false;
@@ -564,18 +597,46 @@ void Audio::advance_sequencer(uint32_t frames) {
 void Audio::mix(float* out, uint32_t frames) {
     std::memset(out, 0, sizeof(float) * frames * 2);
 
-    // 暂停：输出静音但不推进任何状态，恢复后原地续播
-    if (paused_.load() || host_paused_.load()) return;
+    // 该静音了（暂停 / 主机暂停）：**不能直接返回**——先把正在响的波形按斜坡淡下去，
+    // 否则高音量下硬切会在两端各留一声爆音。已经淡到 0 之后，行为与旧实现一致：
+    // 不排请求、不推进音序器与声部
+    const bool want_silence = paused_.load() || host_paused_.load();
+    if (want_silence && out_gain_ <= 0.0f) return;
 
-    // 音频线程是声部表唯一的写入者：先落地主线程排队的触发，再推进音序器
-    drain_requests();
-    advance_sequencer(frames);
+    // "要不要静音"与 master 音量都只写原子量；音频线程在这里把两者收成**同一个**
+    // 逐样本输出增益：目标一变就按 kFadeSeconds 重算步长，于是暂停/恢复与音量突变
+    // 共用同一条斜坡，不会硬切
+    const float target = want_silence ? 0.0f : master_volume_.load();
+    if (target != out_target_) {
+        out_target_ = target;
+        const float distance = std::abs(target - out_gain_);
+        const float fade_frames = kFadeSeconds * static_cast<float>(sample_rate_);
+        out_step_ = distance > 0.0f ? distance / fade_frames : 0.0f;
+    }
+    if (want_silence && out_gain_ > 0.0f && out_step_ <= 0.0f)  // 兜底：还没到 0 就必须有步长
+        out_step_ = out_gain_ / (kFadeSeconds * static_cast<float>(sample_rate_));
+
+    // 淡出时只处理"走到 0 所需的那几毫秒"：这一段**不排请求、不推进音序器**（暂停时的
+    // 音序位置因此与旧实现相同），只让当前声部走完斜坡
+    uint32_t render_frames = frames;
+    if (want_silence && out_gain_ > 0.0f && out_step_ > 0.0f) {
+        const float to_zero = out_gain_ / out_step_;
+        if (to_zero < static_cast<float>(render_frames))
+            render_frames = static_cast<uint32_t>(to_zero) + 1u;  // +1 让最后一步落到 0
+    }
+    if (render_frames > frames) render_frames = frames;
+
+    if (!want_silence) {
+        // 音频线程是声部表唯一的写入者：先落地主线程排队的触发，再推进音序器
+        drain_requests();
+        advance_sequencer(frames);
+    }
+
     int playing = 0;
     for (const auto& voice : voices_)
         if (voice->active) ++playing;
     active_voices_ = playing;
 
-    const float master = master_volume_.load();
     const float music_gain = music_volume_.load();
     const float sfx_gain = sfx_volume_.load();
     const float dt = 1.0f / static_cast<float>(sample_rate_);
@@ -588,13 +649,21 @@ void Audio::mix(float* out, uint32_t frames) {
         Voice& voice = *voice_ptr;
         if (!voice.active) continue;
 
+        // 停止淡出：本块的样本数只算到增益归零为止；归零后直接失活
+        uint32_t voice_frames = render_frames;
+        if (voice.stop_fade_step > 0.0f && voice.stop_fade > 0.0f) {
+            const float to_zero = voice.stop_fade / voice.stop_fade_step;
+            if (to_zero < static_cast<float>(voice_frames))
+                voice_frames = static_cast<uint32_t>(to_zero) + 1u;
+        }
+
         if (voice.is_sample) {
             if (!voice.sample) {
                 voice.active = false;
                 continue;
             }
             const uint64_t total = voice.sample->frames;
-            for (uint32_t i = 0; i < frames; ++i) {
+            for (uint32_t i = 0; i < voice_frames; ++i) {
                 if (voice.pos >= total) {
                     if (voice.loop) voice.pos = 0;
                     else {
@@ -604,16 +673,19 @@ void Audio::mix(float* out, uint32_t frames) {
                 }
                 const float left = voice.sample->pcm[static_cast<size_t>(voice.pos) * 2];
                 const float right = voice.sample->pcm[static_cast<size_t>(voice.pos) * 2 + 1];
-                const float gain = master * gain_of(voice);
-                out[i * 2] += left * voice.volume * gain;
-                out[i * 2 + 1] += right * voice.volume * gain;
+                const float gain = voice.volume * gain_of(voice) * voice.stop_fade;
+                out[i * 2] += left * gain;
+                out[i * 2 + 1] += right * gain;
                 ++voice.pos;
+                if (voice.stop_fade_step > 0.0f)
+                    voice.stop_fade = ramp_toward(voice.stop_fade, 0.0f, voice.stop_fade_step);
             }
+            if (voice.stop_fade_step > 0.0f && voice.stop_fade <= 0.0f) voice.active = false;
             continue;
         }
 
         // 合成音：包络 = 起振 + 保持 + 释放
-        for (uint32_t i = 0; i < frames; ++i) {
+        for (uint32_t i = 0; i < voice_frames; ++i) {
             if (voice.t >= voice.dur) {
                 voice.active = false;
                 break;
@@ -653,10 +725,22 @@ void Audio::mix(float* out, uint32_t frames) {
             if (voice.phase >= 1.0f) voice.phase -= 1.0f;
             voice.t += dt;
 
-            const float sample = value * envelope * voice.volume * master * gain_of(voice);
+            const float sample =
+                value * envelope * voice.volume * gain_of(voice) * voice.stop_fade;
             out[i * 2] += sample;
             out[i * 2 + 1] += sample;
+            if (voice.stop_fade_step > 0.0f)
+                voice.stop_fade = ramp_toward(voice.stop_fade, 0.0f, voice.stop_fade_step);
         }
+        if (voice.stop_fade_step > 0.0f && voice.stop_fade <= 0.0f) voice.active = false;
+    }
+
+    // 输出增益斜坡（暂停/恢复 + master 音量）：在软限幅**之前**乘。稳态时 out_gain_
+    // 就等于 master 音量，与旧实现（每个声部各乘一次 master）数学等价；过渡期是 6ms 斜线
+    for (uint32_t i = 0; i < frames; ++i) {
+        const float gain = ramp_toward(out_gain_, out_target_, out_step_);
+        out[i * 2] *= gain;
+        out[i * 2 + 1] *= gain;
     }
 
     // 软限幅，避免叠加削波爆音
