@@ -31,6 +31,10 @@ ToneSpec tone_from_table(const sol::object& obj, ToneSpec base) {
     base.volume = static_cast<float>(api::read_number(t, "volume", base.volume));
     base.attack = static_cast<float>(api::read_number(t, "attack", base.attack));
     base.release = static_cast<float>(api::read_number(t, "release", base.release));
+    // 池满时的抢占权重：钳到卡带可用范围（kPriorityMin..kPriorityMax），越界不报错
+    const double priority = api::read_number(t, "priority", static_cast<double>(base.priority));
+    base.priority =
+        static_cast<int>(std::clamp(priority, 0.0, static_cast<double>(kPriorityMax)));
     return base;
 }
 
@@ -236,14 +240,19 @@ void register_audio_api(sol::state& lua, HostContext& host) {
         if (!host.audio) return;
         float volume = 0.8f;
         bool loop = false;
+        int priority = kPriorityMin;
         if (opts.is<sol::table>()) {
             sol::table t = opts.as<sol::table>();
             sol::object v = t["volume"];
             if (v.is<double>() || v.is<int>()) volume = v.as<float>();
             sol::object l = t["loop"];
             if (l.is<bool>()) loop = l.as<bool>();
+            const double raw_priority =
+                api::read_number(t, "priority", static_cast<double>(kPriorityMin));
+            priority =
+                static_cast<int>(std::clamp(raw_priority, 0.0, static_cast<double>(kPriorityMax)));
         }
-        host.audio->play_sample(handle, volume, loop);
+        host.audio->play_sample(handle, volume, loop, priority);
     };
     audio["stop_sample"] = [&host](int handle) {
         if (host.audio) host.audio->stop_sample(handle);

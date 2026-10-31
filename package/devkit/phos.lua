@@ -461,6 +461,7 @@ function phos.audio.paused(pause) end
 ---@field volume number|nil 0~1
 ---@field attack number|nil
 ---@field release number|nil
+---@field priority integer|nil 池满时的抢占权重：0=氛围（默认）、10=普通音效、20=关键反馈；越大越优先；音乐声部不被抢占
 
 ---合成音
 ---@param freq number Hz
@@ -490,7 +491,7 @@ function phos.audio.stop_all() end
 function phos.audio.sample(path) end
 
 ---@param handle integer
----@param opts table|nil { volume = number, loop = boolean }
+---@param opts table|nil { volume = number, loop = boolean, priority = integer }
 function phos.audio.play_sample(handle, opts) end
 
 ---@param handle integer

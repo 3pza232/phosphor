@@ -18,6 +18,17 @@ namespace phos {
 /// 合成波形
 enum class Wave { sine, square, triangle, saw, noise };
 
+/// 声部优先级约定（ToneSpec::priority）：数字只表达顺序，越大越重要。
+/// 声部池满时，新触发只能抢占**优先级严格更低**的声部；音乐声部永远不被抢占
+/// （音乐连续优先）。卡带可传 [kPriorityMin, kPriorityMax]（越界钳制）；音序器音符
+/// 内部取 kPriorityMusic，高于任何卡带可设值——音乐触发因此可以抢占非音乐声部，
+/// 但音乐之间不互相抢占。
+inline constexpr int kPriorityMin = 0;        // 氛围 / 装饰音（ToneSpec 默认）
+inline constexpr int kPrioritySfx = 10;       // 普通音效：按键、脚步
+inline constexpr int kPriorityCritical = 20;  // 关键反馈：受击、确认、失败
+inline constexpr int kPriorityMax = 99;       // 卡带 API 允许的上限
+inline constexpr int kPriorityMusic = 100;    // 音序器内部档位
+
 /// 合成音描述：卡带音效、主机事件音、音序器音符共用同一种表达
 struct ToneSpec {
     Wave wave = Wave::square;
@@ -27,6 +38,8 @@ struct ToneSpec {
     float volume = 0.35f;     // 0..1
     float attack = 0.004f;    // 起振
     float release = 0.05f;    // 释放
+    /// 池满时的抢占权重（kPriority*）：默认 0 = 氛围音
+    int priority = kPriorityMin;
 };
 
 /// 音序器轨道。每格为一个记号：
@@ -128,14 +141,16 @@ public:
     // --- 采样（卡带包内的音频文件，内存解码） ---
     /// 解码并登记（同名重复登记返回既有句柄）。失败返回 0。
     int load_sample(const std::string& name, const std::string& bytes);
-    void play_sample(int handle, float volume, bool loop);
+    /// priority：池满时的抢占权重（kPriority*）；默认 0（采样通常按普通音效传 kPrioritySfx）
+    void play_sample(int handle, float volume, bool loop, int priority = kPriorityMin);
     void stop_sample(int handle);
 
     void stop_all();
 
-    /// 活跃声部数（诊断用；读到的可能落后一块混音）
+    /// 活跃声部数（诊断用；读到的可能落后一块混音；抢占瞬间可短暂超过 kMaxVoices——
+    /// 被抢占的声部在 ~6ms 淡出期间仍算活跃）
     int active_voices() const { return active_voices_.load(); }
-    /// 因请求队列满而被丢弃的触发数：宁可少一声，也不阻塞游戏循环
+    /// 因请求队列满、或声部池满且无法抢占而被丢弃的触发数：宁可少一声，也不阻塞游戏循环
     size_t dropped_requests() const { return dropped_.load(); }
 
 private:
@@ -169,6 +184,7 @@ private:
         int handle = 0;
         float volume = 1.0f;
         bool loop = false;
+        int priority = kPriorityMin;
         std::unique_ptr<Tune> tune;      // Kind::tune 时携带
         std::unique_ptr<Sample> sample;  // Kind::register_sample 时携带（所有权交给音频线程）
     };
@@ -177,6 +193,10 @@ private:
     void drain_requests();         // 音频线程侧：取走并应用全部请求
     void apply(Request& request);  // 音频线程侧：单个请求落地
 
+    /// 为一次触发找槽（仅音频线程）：未占满时取第一个空槽；占满后按 priority 抢占
+    /// 最低优先级的**非音乐**声部（旧声部走 start_voice_stop 淡出）。
+    /// 返回 nullptr = 本轮丢弃（已计 dropped）：尾巴槽也满，或没有更低优先级的可抢目标
+    Voice* reserve_voice(int priority);
     /// 把音加进声部表（仅音频线程调用：请求队列与音序器共用同一套落地逻辑）
     void spawn_voice(const ToneSpec& spec, bool music);
     void spawn_voice_note(const std::string& note, const ToneSpec& base, bool music);

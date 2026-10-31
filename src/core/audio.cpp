@@ -14,6 +14,9 @@ namespace phos {
 namespace {
 
 constexpr int kMaxVoices = 48;
+/// 抢占用的**尾巴槽**：被抢占的声部要 ~6ms 淡出，这期间仍占原槽，新声部因此需要额外槽位。
+/// 只在池满→抢占时使用；池未满时的并发上限仍是 kMaxVoices（未竞争行为不变）
+constexpr int kPreemptTails = 8;
 /// 可登记的采样上限：音频线程侧的 sample_table_ 按它预留，登记时不再重分配
 /// （回调正拿着表里的裸指针，重分配会把它失效）；超限在 load_sample 处就拒
 constexpr size_t kMaxSamples = 128;
@@ -25,6 +28,11 @@ constexpr float kFreqA4 = 440.0f;
 /// 音量夹到 0..1；非有限值（NaN / ±inf）当 0 处理。
 /// `std::clamp` 遇到 NaN 会**原样返回**，一个坏音量会污染整条混音，所以统一走这里
 float clamp01(float v) { return std::isfinite(v) ? std::clamp(v, 0.0f, 1.0f) : 0.0f; }
+
+/// 优先级夹到卡带可用范围（kPriorityMusic 之类的内部档位不从卡带路径进入）
+int clamp_priority(int p) {
+    return p < kPriorityMin ? kPriorityMin : (p > kPriorityMax ? kPriorityMax : p);
+}
 
 /// 增益斜坡时长：暂停淡出、恢复淡入、master 音量突变、声部停止淡出共用这一段。
 /// 6ms 足够盖住硬切的爆音，又短到听不出"渐弱"（取 5~8ms 区间中值）
@@ -152,10 +160,13 @@ struct Audio::Voice {
     int sample_handle = 0;
 
     // 停止淡出（音频线程独占）：> 0 时每样本把 stop_fade 往 0 推，归零即失活，
-    // 于是 stop_all / stop_sample 不会把正在响的波形瞬间切断。
+    // 于是 stop_all / stop_sample（以及池满时的抢占）不会把正在响的波形瞬间切断。
     // stop_fade_step = 0 表示没有停止在进行（正常播放）
     float stop_fade = 1.0f;
     float stop_fade_step = 0.0f;
+
+    // 触发优先级（池满时的抢占权重）。音乐声部固定 kPriorityMusic 且不会被抢
+    int priority = kPriorityMin;
 };
 
 // ---------------------------------------------------------------- 生命周期
@@ -194,8 +205,9 @@ bool Audio::init(std::string& err) {
     out_gain_ = out_target_ = master_volume_.load();
     fade_step_ = 1.0f / (kFadeSeconds * static_cast<float>(sample_rate_));
 
-    voices_.reserve(kMaxVoices);
-    for (int i = 0; i < kMaxVoices; ++i) voices_.push_back(std::make_unique<Voice>());
+    voices_.reserve(kMaxVoices + kPreemptTails);
+    for (int i = 0; i < kMaxVoices + kPreemptTails; ++i)
+        voices_.push_back(std::make_unique<Voice>());
     // 采样表按上限预留（此刻设备还没启动，音频线程未起）：登记时就地放入，不重分配
     sample_table_.reserve(kMaxSamples);
 
@@ -284,30 +296,61 @@ void Audio::start_voice_stop(Voice& voice) {
     voice.stop_fade_step = fade_step_;
 }
 
+Audio::Voice* Audio::reserve_voice(int priority) {
+    // 先找空槽并数活跃声部：未占满时行为与旧实现完全一致（尾巴槽只在抢占时才用得上）
+    Voice* slot = nullptr;
+    int active = 0;
+    for (auto& voice : voices_) {
+        if (voice->active) {
+            ++active;
+            continue;
+        }
+        if (!slot) slot = voice.get();
+    }
+    if (!slot) {  // 尾巴槽也满了：丢弃（诊断可见，不阻塞音频线程）
+        ++dropped_;
+        return nullptr;
+    }
+    if (active < kMaxVoices) return slot;
+
+    // 池满：只抢**非音乐、且没在淡出**的最低优先级声部。优先级必须严格更低才抢——
+    // 同档之间不互相踩，触发顺序因此可预测；音乐声部永远不被抢（音乐连续优先）
+    Voice* victim = nullptr;
+    for (auto& voice : voices_) {
+        if (!voice->active || voice->is_music || voice->stop_fade_step > 0.0f) continue;
+        if (voice->priority >= priority) continue;
+        if (!victim || voice->priority < victim->priority) victim = voice.get();
+    }
+    if (!victim) {
+        ++dropped_;  // 没有比自己更低的声部可抢：宁可少一声
+        return nullptr;
+    }
+    start_voice_stop(*victim);  // 旧声部按 ~6ms 淡出，不硬切
+    return slot;
+}
+
 /// 把音加进声部表。仅音频线程调用，因此不需要任何同步。
 void Audio::spawn_voice(const ToneSpec& spec, bool music) {
-    for (auto& voice : voices_) {
-        if (voice->active) continue;
-        voice->active = true;
-        voice->is_sample = false;
-        voice->is_music = music;
-        voice->wave = spec.wave;
-        voice->freq = spec.freq;
-        voice->freq_end = spec.freq_end;
-        voice->dur = std::max(0.01f, spec.dur);
-        voice->attack = std::max(0.0f, spec.attack);
-        voice->release = std::max(0.01f, spec.release);
-        voice->volume = clamp01(spec.volume);
-        voice->t = 0.0f;
-        voice->phase = 0.0f;
-        voice->sample = nullptr;
-        voice->stop_fade = 1.0f;
-        voice->stop_fade_step = 0.0f;
-        return;
-    }
-    // 声部用尽：丢弃本次触发（宁可静音也不卡音频线程），但要计入 dropped——
-    // 否则"少了一声"在诊断里看不见
-    ++dropped_;
+    const int priority = music ? kPriorityMusic : clamp_priority(spec.priority);
+    Voice* voice = reserve_voice(priority);
+    if (!voice) return;  // 已计 dropped：少一声也不卡音频线程
+
+    voice->active = true;
+    voice->is_sample = false;
+    voice->is_music = music;
+    voice->priority = priority;
+    voice->wave = spec.wave;
+    voice->freq = spec.freq;
+    voice->freq_end = spec.freq_end;
+    voice->dur = std::max(0.01f, spec.dur);
+    voice->attack = std::max(0.0f, spec.attack);
+    voice->release = std::max(0.01f, spec.release);
+    voice->volume = clamp01(spec.volume);
+    voice->t = 0.0f;
+    voice->phase = 0.0f;
+    voice->sample = nullptr;
+    voice->stop_fade = 1.0f;
+    voice->stop_fade_step = 0.0f;
 }
 
 void Audio::spawn_voice_note(const std::string& note, const ToneSpec& base, bool music) {
@@ -387,23 +430,20 @@ void Audio::apply(Request& request) {
                     ? sample_table_[static_cast<size_t>(request.handle - 1)].get()
                     : nullptr;
             if (!sample) break;
-            bool spawned = false;
-            for (auto& voice : voices_) {
-                if (voice->active) continue;
-                voice->active = true;
-                voice->is_sample = true;
-                voice->is_music = false;  // 采样走**音效**音量：声部会复用，不写就会继承上一支的 music 标记
-                voice->sample = sample;
-                voice->pos = 0;
-                voice->loop = request.loop;
-                voice->volume = clamp01(request.volume);
-                voice->sample_handle = request.handle;
-                voice->stop_fade = 1.0f;
-                voice->stop_fade_step = 0.0f;
-                spawned = true;
-                break;
-            }
-            if (!spawned) ++dropped_;  // 声部池用尽
+            const int priority = clamp_priority(request.priority);
+            Voice* voice = reserve_voice(priority);
+            if (!voice) break;  // 已计 dropped：池满且没有可抢目标
+            voice->active = true;
+            voice->is_sample = true;
+            voice->is_music = false;  // 采样走**音效**音量：声部会复用，不写就会继承上一支的 music 标记
+            voice->priority = priority;
+            voice->sample = sample;
+            voice->pos = 0;
+            voice->loop = request.loop;
+            voice->volume = clamp01(request.volume);
+            voice->sample_handle = request.handle;
+            voice->stop_fade = 1.0f;
+            voice->stop_fade_step = 0.0f;
             break;
         }
         case Request::Kind::stop_sample:
@@ -500,13 +540,14 @@ int Audio::load_sample(const std::string& name, const std::string& bytes) {
     return handle;
 }
 
-void Audio::play_sample(int handle, float volume, bool loop) {
+void Audio::play_sample(int handle, float volume, bool loop, int priority) {
     if (handle <= 0 || handle > static_cast<int>(sample_names_.size())) return;
     Request request;
     request.kind = Request::Kind::sample;
     request.handle = handle;
     request.volume = volume;
     request.loop = loop;
+    request.priority = clamp_priority(priority);
     push(std::move(request));
 }
 
