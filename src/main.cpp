@@ -5,12 +5,68 @@
 #include "devkit/cart_lint.hpp"
 #include "core/app.hpp"
 #include "core/log.hpp"
+#include "platform/paths.hpp"
 #include "core/version.hpp"
 #include "devkit/api_check.hpp"
 #include "devkit/packer.hpp"
 
 #include <cstdio>
+#include <filesystem>
+#include <optional>
 #include <string>
+
+namespace {
+
+/// DevKit 资源（模板/注解）：优先调用者 CWD，其次 exe 目录。
+/// 这样从任意目录跑 --check-api/--new 都能找到随发行包分发的 devkit/，
+/// 但开发仓库里仍然优先用当前工作树的那一份。
+std::string devkit_path(const std::string& relative) {
+    std::error_code ec;
+    if (std::filesystem::is_regular_file(relative, ec) ||
+        std::filesystem::is_directory(relative, ec))
+        return relative;
+    const std::string exe_dir = phos::platform::executable_dir();
+    if (!exe_dir.empty()) {
+        const std::filesystem::path candidate =
+            std::filesystem::path(exe_dir) / relative;
+        if (std::filesystem::exists(candidate, ec)) return candidate.string();
+    }
+    return relative;
+}
+
+bool has_content_root(const std::filesystem::path& dir) {
+    std::error_code ec;
+    return std::filesystem::is_directory(dir / "carts", ec) ||
+           std::filesystem::is_directory(dir / "theme", ec);
+}
+
+/// 内容根：发行形态下双击 exe（CWD 常是桌面/快捷方式目录）也要能找到 carts/theme。
+/// 规则（从窄到宽）：
+///   1. --root 显式给出 → 以它为准；
+///   2. CWD 本身是内容根（开发/工具目录）→ 不动；
+///   3. exe 目录是内容根 → 切到 exe 目录（这正是"绿色免安装"要的行为）。
+/// 只对**运行**模式生效：--scan/--pack/--new/--check-* 是开发命令，路径按调用者 CWD 解析。
+void resolve_content_root(const std::optional<std::string>& forced) {
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    if (forced && !forced->empty()) {
+        fs::current_path(*forced, ec);
+        if (ec) std::fprintf(stderr, "WARN: cannot enter --root %s: %s\n", forced->c_str(),
+                             ec.message().c_str());
+        else phos::log::info("content root: " + *forced);
+        return;
+    }
+    const fs::path cwd = fs::current_path(ec);
+    if (ec || has_content_root(cwd)) return;
+    const std::string exe_dir = phos::platform::executable_dir();
+    if (exe_dir.empty()) return;
+    const fs::path exed(exe_dir);
+    if (!has_content_root(exed)) return;
+    fs::current_path(exed, ec);
+    if (!ec) phos::log::info("content root: " + exed.string() + " (exe dir)");
+}
+
+} // namespace
 
 /// --scan：列出目录下的卡带（人读或 JSON）
 static int run_scan(const std::string& dir, bool json) {
@@ -213,6 +269,7 @@ int main(int argc, char** argv) {
                 "  --save-dir <目录>    存档目录（默认 saves）\n"
                 "  --config <文件>      配置路径（默认 config.json；测试据此隔离实测配置）\n"
                 "  --recent <文件>      「最近打开」记录路径（默认 recent.txt；测试据此让卡带架顺序可复现）\n"
+                "  --root <目录>        内容根（默认 exe 所在目录；从别处启动也能找到 carts/theme）\n"
                 "  --check-api          核对 devkit/phos.lua 与已注册 API 是否一致\n"
                 "  --check-cart <目录>  静态检查一张卡带（manifest/入口/常见错误写法）\n"
                 "  --json               机器可读输出\n"
@@ -235,10 +292,11 @@ int main(int argc, char** argv) {
 
     if (opts.scan) return run_scan(*opts.scan, opts.json);
     if (opts.pack) return run_pack(*opts.pack, opts.out.value_or(""), opts.json);
-    if (opts.create) return run_create(opts, "devkit/template");
-    if (opts.check_api) return run_check_api("devkit/phos.lua", opts.json);
+    if (opts.create) return run_create(opts, devkit_path("devkit/template"));
+    if (opts.check_api) return run_check_api(devkit_path("devkit/phos.lua"), opts.json);
     if (opts.check_cart) return run_check_cart(*opts.check_cart, opts.json);
 
+    resolve_content_root(opts.root);
     phos::App app;
     return app.run(opts);
 }

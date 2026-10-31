@@ -75,7 +75,8 @@ cmake -G Ninja -DPHOSPHOR_SANITY=ON ../    # 自检构建：慢，只用于排�
 
 | 脚本 | 用途 | 跑法 |
 |---|---|---|
-| `run_checks.py` | **一键跑全部门禁并汇总**：默认无头门禁 **12 项**（includes/api/unit/control/draw/layer/ui/scene/toolkit/lint/cart/net），`--gui` 再加开窗门禁（gl/window）。测试逻辑仍在各自脚本里，它只管调度与汇总 | `python ../tools/run_checks.py [--gui]` |
+| `portable_smoke.py` | 绿色免安装契约：在临时 CWD 启动构建产物，验证内容根按 exe 目录解析、`--check-api` 回退、`--root` 覆盖 | `python ../tools/portable_smoke.py` |
+| `run_checks.py` | **一键跑全部门禁并汇总**：默认无头门禁 **13 项**（includes/api/unit/control/draw/layer/ui/scene/toolkit/lint/portable/cart/net），`--gui` 再加开窗门禁（gl/window）。测试逻辑仍在各自脚本里，它只管调度与汇总 | `python ../tools/run_checks.py [--gui]` |
 | `unit_smoke.py` | 纯逻辑单元测试：跑 `phosphor_tests`（C++，源码在 `tests/`），覆盖颜色/文本/配置/色板/主题/UI 布局与焦点等不依赖 GL·Lua 的核心——无窗口无显卡即可跑（需构建时 `-DPHOSPHOR_BUILD_TESTS=ON`）。单跑时未启用则**跳过**；但 `run_checks.py` 的 `unit` 门禁会检查产物，**缺失即判失败**（跳过不算通过，免得掩盖红灯） | `python ../tools/unit_smoke.py` |
 | `control_test.py` | 控制通道契约：握手 / 单步精确 / 读屏 / 注入 / 热重载 / 退出 | `python ../tools/control_test.py` |
 | `window_smoke.py` | 窗口路径冒烟：菜单→开局→按键→单步 →**实时浸泡**→干净退出（确定性部分全走单步，只有最后几秒实时；需要图形环境） | `python ../tools/window_smoke.py [--seconds 3] [--cart carts/x]` |

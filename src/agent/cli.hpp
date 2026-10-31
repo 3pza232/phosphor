@@ -15,6 +15,7 @@ struct CliOptions {
     std::optional<std::string> save_dir;  // 存档目录（默认 saves/；工具脚本据此隔离）
     std::optional<std::string> config;    // 配置路径（默认 config.json；工具脚本据此隔离实测配置）
     std::optional<std::string> recent;    // 最近打开记录路径（默认 recent.txt；工具脚本据此隔离架子顺序）
+    std::optional<std::string> root;      // 内容根（默认：exe 目录；显式给出时以它为准）
     bool check_api = false;             // 校验 API 注解与实装是否一致
     std::optional<std::string> check_cart;  // 静态检查一张卡带（DevKit）
     std::optional<std::string> id;      // 新建卡带的 id（缺省取目录名）

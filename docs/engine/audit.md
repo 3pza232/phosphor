@@ -76,7 +76,7 @@
 | C8 | 每帧做文本投影 | `core/app.cpp:223-228`：建层卡带每帧 `display_.base = display_.screen` 深拷贝 + `merge_over`，而渲染不读它 | 有层卡带每帧白付一次全屏拷贝与合并；`merge_ms` 测的就是这份浪费 | ❌ **仍待修**（已限定在 `layers.active()`，但每帧仍做） |
 | C9 | 字体热重载失败回滚不完整 | `render/renderer.cpp:224-245` 旧实现：打包成功后即改写 `fonts_`/`glyphs_`，随后 `glGenTextures` 失败只回滚纹理 | 失败后 UV 与旧纹理错位，字形乱码且无法自愈 | ✅ **已修复**：`build_font_atlas` 全部先算在局部（字形/度量/装箱），纹理创建、上传与 `glGetError` 校验都通过后才一次性提交；失败时旧字体链/UV/纹理一个都不动，`reload_fonts` 无需回滚（`renderer.cpp:247-330`） |
 | C10 | `Screen::blend` 不校验宽字续格/被覆盖格 | `core/screen.cpp:188-205`：宽字笔迹拒绝；目标格 `cols == 0` 或 `scale == 0`（无字形槽）也拒绝 | 同一笔"返回成功却只在窗口可见" | ✅ **已修复**（273d090）：无字形槽的格上 `blend` 直接返回 false、日志只报一次；契约写进 `drawing.md` §3.1（叠笔只能落在有字形槽的格上） |
-| C11 | 内容根 = 进程当前目录 | `pack/content_library.cpp:13-22`、`core/app.hpp` 的固定相对路径；无 `--root` | 从资源管理器/CI/快捷方式以别的目录启动 → 无内容；与"绿色免安装、双击即用"冲突 | ❌ **仍待修** |
+| C11 | 内容根 = 进程当前目录 | `pack/content_library.cpp:13-22`、`core/app.hpp:145-152`、`devkit` 路径 | 从资源管理器/CI/快捷方式以别的目录启动 → 无内容（并触发 C1）；与「绿色免安装、双击即用」的发行形态冲突 | ✅ **已修复**：运行模式下内容根按 **exe 目录**解析（`platform/paths` + `main.cpp` 的 `resolve_content_root`；CWD 本身是内容根时不动），`--root` 可显式覆盖；DevKit 资源（模板/注解）CWD 缺失时回退 exe 目录；新门禁 `tools/portable_smoke.py` 在外部 CWD 下验证启动/`--check-api`/`--root` |
 | C12 | 窗口模式下 `--cart` 装载失败仍返回 0 | 旧：`core/app.cpp:495` 之后无失败返回，结尾恒 `return 0` | 脚本无法用退出码判断失败 | ✅ **已修复**：`core/app.cpp:417-420`（无头）与 `:498-501`（窗口）装载失败均 `return 2` |
 | C13 | NDJSON 里的 `\uXXXX` 转义被丢弃 | 旧：`core/json_lite.cpp:53-57` 直接跳过四位 | 标准 JSON 客户端注入中文时字符消失 | ✅ **已修复**：`core/json_lite.cpp:102-154` 解 `\uXXXX` 并按代理对合并（非法/孤立代理报错）；用例 `json_unicode_*` |
 | C14 | 联机的 `join`/`discover` 阻塞主线程 | `net/net.cpp:641`（TCP 连接超时 3 s）、`:740-787`（发现阻塞到 timeout） | 卡带在 `update` 里调用即超 100 ms 看门狗 | ❌ **仍待修**（文档已改为如实描述"有界阻塞"） |

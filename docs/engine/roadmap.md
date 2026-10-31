@@ -67,14 +67,14 @@ E 从 A 开始持续，不等其它阶段。
 **目标**：把"会崩/会丢数据/会挂 agent"的问题先关掉，并把文档与实现拉回一致。
 
 > **状态（2026-10-31）**：M0 基本完成。P0 已修 9 项（`C1 C2 C3 C4 C5 C10 C12 C13 C16`，
-> 证据逐条见 `audit.md` §3.1）；**剩余 `C11`（内容根）**。
+> 证据逐条见 `audit.md` §3.1）；**P0 已全部关闭**（C11 内容根随本轮修完，见 audit）。
 > 绘制一致性按 `C7` 修复（`273d090`，`drawing.md` 已改为"两路同规则"）。CI 与基线见下表。
 
 **交付**
 
 | 项 | 内容 | 状态 |
 |---|---|---|
-| P0 修复 | `C1` boots 空表、`C2` 存档原子写、`C3` 配置原子写 + 转义、`C4` chunk name + traceback、`C5` 包脚本看门狗、`C6` `time.step` 在途回包取消语义、`C10` `Screen::blend` 边界、`C11` 内容根、`C12` 窗口退出码、`C13` JSON `\u` 转义、`C16` Lua `print` 重定向 | ✅ `C1 C2 C3 C4 C5 C6 C9 C10 C12 C13 C16`、S5（头文件环已断）；❌ `C11`（证据见 `audit.md` §3.1/§3.2） |
+| P0 修复 | `C1` boots 空表、`C2` 存档原子写、`C3` 配置原子写 + 转义、`C4` chunk name + traceback、`C5` 包脚本看门狗、`C6` `time.step` 在途回包取消语义、`C10` `Screen::blend` 边界、`C11` 内容根、`C12` 窗口退出码、`C13` JSON `\u` 转义、`C16` Lua `print` 重定向 | ✅ `C1 C2 C3 C4 C5 C6 C9 C10 C11 C12 C13 C16`、S5（头文件环已断）——**M0 的 P0 全部关闭**（证据见 `audit.md` §3.1/§3.2） |
 | 合成器保真 | CPU 截图与 GL 对"续格/被覆盖格上的笔迹"给出一致结果，并加契约用例 | ✅ 已完成（`273d090`；`screen_image.cpp` 三条路径同 `pens` 趟，`drawing.md` 写明契约） |
 | 文档纠偏 | 修正 `audit.md` §4 的 22 处漂移；在 `docs/engine/README.md` 登记本文件与体检文件 | ✅ 已完成（§4 逐条标"已修正 / 仍待代码修"；两份入口已加） |
 | CI 骨架 | Windows（MinGW）+ Linux（GCC/Clang）构建 + `run_checks.py` + 单测；把 `--check-api` 与 include 方向纳入门禁；PR 必须绿 | ✅ 已完成（`.github/workflows/ci.yml`、`CMakePresets.json`；`run_checks.py` 无头 9 项含 `includes` / `api` / `ui`） |
