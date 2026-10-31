@@ -93,7 +93,10 @@ std::string App::control_state_json() const {
         << ",\"fps\":" << config_.fps
         << ",\"render_fps\":" << host_.fps
         << ",\"merge_ms\":" << timing_.merge_ms
-        << ",\"layers\":" << layers_json(host_.layers);
+        << ",\"layers\":" << layers_json(host_.layers)
+        // 卡带声明式界面的控件树（id/role/label/state）：agent 用它定位控件，
+        // 不必解析文本画面；没有界面时为 null
+        << ",\"ui\":" << (playing_ && !host_.cart_ui_json.empty() ? host_.cart_ui_json : "null");
 
     // 卡带注册的可调参数（phos.debug.number）当前值；无卡带或未注册为空数组
     out << ",\"debug_params\":[";
@@ -547,6 +550,31 @@ void App::execute_control(const ControlCommand& command) {
         }
         control_.reply(command.id,
                        "\"name\":" + json::quote(param) + ",\"value\":" + std::to_string(value));
+        return;
+    }
+
+    if (name == "ui.list") {
+        control_.reply(command.id, std::string("\"ui\":") +
+                                       (host_.cart_ui_json.empty() ? "null" : host_.cart_ui_json));
+        return;
+    }
+
+    if (name == "ui.focus" || name == "ui.activate") {
+        const std::string id = args.str("id");
+        if (id.empty()) {
+            control_.reply_error(command.id, "missing 'id'");
+            return;
+        }
+        if (!cart_) {
+            control_.reply_error(command.id, "no cart loaded");
+            return;
+        }
+        // 请求排队到下一帧的 render 生效（与玩家按键同一帧语义：下一逻辑帧可见结果）
+        if (name == "ui.focus")
+            host_.pending_ui_focus = id;
+        else
+            host_.pending_ui_activate = id;
+        control_.reply(command.id, "\"queued\":true");
         return;
     }
 

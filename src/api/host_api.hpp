@@ -39,6 +39,11 @@ struct HostContext {
     /// 最近一次 phos.ui.render 的焦点与屏 id（供 phos.ui.focus / checked / field_text 查询）
     std::string last_ui_focus;
     std::string last_ui_screen = "cart";
+    /// 最近一帧卡带界面的可观测快照（扁平控件表，JSON）；agent 用 ui.list 读
+    std::string cart_ui_json;
+    /// 控制通道请求：下一帧把焦点移到 / 激活某个控件 id（agent 用 ui.focus / ui.activate）
+    std::string pending_ui_focus;
+    std::string pending_ui_activate;
     /// 当前卡带（供 `phos.debug.number` 把可调参数注册到它上面）。由 Cartridge 装配时挂上、
     /// 拔卡时清空；无卡带时为 nullptr，phos.debug.* 安全无效
     Cartridge* cart = nullptr;

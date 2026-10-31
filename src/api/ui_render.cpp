@@ -2,9 +2,11 @@
 
 #include "api/host_api.hpp"
 #include "api/lua_value.hpp"
+#include "core/json_lite.hpp"
 #include "core/log.hpp"
 #include "ui/element.hpp"
 #include "ui/frame.hpp"
+#include "ui/layout.hpp"
 #include "ui/theme.hpp"
 
 #include <sol/sol.hpp>
@@ -155,6 +157,118 @@ void apply_disabled(const sol::table& t, const std::vector<std::string>& items, 
                 out.disabled[static_cast<size_t>(index)] = true;
         }
     }
+}
+
+ui::Node* find_by_id(ui::Node& root, const std::string& id) {
+    if (root.id == id) return &root;
+    for (ui::Node& child : root.children)
+        if (ui::Node* found = find_by_id(child, id)) return found;
+    return nullptr;
+}
+
+const ui::WidgetState* widget_of(const ui::State& state, const std::string& screen,
+                                const std::string& id) {
+    const auto it = state.screens.find(screen);
+    if (it == state.screens.end()) return nullptr;
+    const auto widget = it->second.widgets.find(id);
+    return widget == it->second.widgets.end() ? nullptr : &widget->second;
+}
+
+/// 控件树的可观测快照：只暴露"能交互的控件"与它们的值。
+/// 扁平表（id/role/label/state）让 agent 不必解析画面或数按键。
+std::string ui_snapshot(const ui::Node& root, const ui::State& state, const std::string& screen,
+                        const std::string& focus) {
+    std::string out = "{\"screen\":" + json::quote(screen) + ",\"focus\":" + json::quote(focus) +
+                      ",\"widgets\":[";
+    int emitted = 0;
+    bool truncated = false;
+    std::function<void(const ui::Node&)> walk = [&](const ui::Node& node) {
+        if (emitted >= 64) {
+            truncated = true;
+            return;
+        }
+        if (ui::focusable_kind(node.kind)) {
+            const ui::WidgetState* widget = widget_of(state, screen, node.id);
+            std::string label = node.props.text;
+            std::string state_json;
+            switch (node.kind) {
+                case ui::Kind::list: {
+                    const int cursor = widget ? widget->cursor : 0;
+                    state_json = "{\"selected\":" + std::to_string(cursor + 1) +
+                                 ",\"count\":" + std::to_string(node.props.items.size()) + "}";
+                    if (cursor >= 0 && cursor < static_cast<int>(node.props.items.size()))
+                        label = node.props.items[static_cast<size_t>(cursor)];
+                    break;
+                }
+                case ui::Kind::checkbox:
+                    state_json = std::string("{\"checked\":") +
+                                 ((widget && widget->checked) ? "true" : "false") + "}";
+                    break;
+                case ui::Kind::field: {
+                    const std::string value =
+                        widget && widget->input ? widget->input->value() : std::string();
+                    state_json = "{\"text\":" + json::quote(value) + "}";
+                    break;
+                }
+                case ui::Kind::option:
+                case ui::Kind::button: state_json = "{}"; break;
+                default: state_json = "{}"; break;
+            }
+            out += (emitted ? "," : "");
+            out += "{\"id\":" + json::quote(node.id) + ",\"role\":" +
+                   json::quote(node.kind == ui::Kind::list        ? "list"
+                               : node.kind == ui::Kind::checkbox  ? "checkbox"
+                               : node.kind == ui::Kind::field     ? "field"
+                               : node.kind == ui::Kind::option    ? "option"
+                               : node.kind == ui::Kind::button    ? "button"
+                                                                  : "widget") +
+                   ",\"label\":" + json::quote(label) + ",\"state\":" + state_json + "}";
+            ++emitted;
+        }
+        for (const ui::Node& child : node.children) walk(child);
+    };
+    walk(root);
+    out += "]";
+    if (truncated) out += ",\"truncated\":true";
+    out += "}";
+    return out;
+}
+
+/// agent 请求的"激活某个控件"：与玩家按确认等价的语义，事件交给卡带处理
+void synthesize_activation(ui::Node& root, ui::State& state, const std::string& screen,
+                           const std::string& id, std::vector<ui::Event>& events) {
+    ui::Node* node = find_by_id(root, id);
+    if (!node || !ui::focusable_kind(node->kind) || !node->props.enabled) return;
+    ui::ScreenState& screen_state = state.screen(screen);
+    screen_state.focus = node->id;
+    ui::WidgetState& widget = screen_state.widgets[node->id];
+    ui::Event event;
+    event.id = node->id;
+    switch (node->kind) {
+        case ui::Kind::list: {
+            const int count = static_cast<int>(node->props.items.size());
+            if (count <= 0) return;
+            event.kind = ui::EventKind::activated;
+            event.index = std::clamp(widget.cursor, 0, count - 1);
+            break;
+        }
+        case ui::Kind::checkbox:
+            widget.checked = !widget.checked;
+            event.kind = ui::EventKind::changed;
+            event.flag = widget.checked;
+            break;
+        case ui::Kind::field:
+            event.kind = ui::EventKind::submitted;
+            event.text = widget.input ? widget.input->value() : std::string();
+            break;
+        case ui::Kind::option:
+            event.kind = ui::EventKind::changed;
+            event.delta = 1;
+            event.confirm = true;
+            break;
+        default: event.kind = ui::EventKind::activated; break;
+    }
+    events.push_back(std::move(event));
 }
 
 struct Builder {
@@ -317,11 +431,24 @@ void register_cart_ui_api(sol::state& lua, HostContext& host) {
         for (const auto& [id, value] : builder.ok_checked) frame.ensure_checked(id, value);
         for (const auto& [id, value] : builder.ok_field) frame.ensure_field_text(id, value);
 
+        // agent 请求：先落焦点（run 时按 id 解析），再跑输入
+        if (!host.pending_ui_focus.empty()) {
+            host.cart_ui.screen(screen_id).focus = host.pending_ui_focus;
+            host.pending_ui_focus.clear();
+        }
+
         std::vector<ui::Event> events = frame.run();
+        if (!host.pending_ui_activate.empty()) {
+            synthesize_activation(frame.root(), host.cart_ui, screen_id, host.pending_ui_activate,
+                                  events);
+            host.pending_ui_activate.clear();
+        }
         if (consume_input) {
             // 查询接口以"负责输入的那一屏"为准：同一帧还有只画的界面时，焦点不跟着它走
             host.last_ui_focus = frame.focused_id();
             host.last_ui_screen = screen_id;
+            host.cart_ui_json = ui_snapshot(frame.root(), host.cart_ui, screen_id,
+                                            host.last_ui_focus);
         }
         frame.paint(*host.screen);
         return events_to_table(lua, events);

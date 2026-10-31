@@ -93,6 +93,19 @@ def main() -> int:
         debug = host.state().get("debug") or {}
         checks.check(str(debug.get("last")) == "name:neo", f"提交事件带文本（{debug.get('last')}）")
 
+        print("  -- agent 语义接口 --")
+        snapshot = host.send("ui.list").get("ui") or {}
+        widgets = snapshot.get("widgets") or []
+        ids = {w.get("id") for w in widgets}
+        checks.check("demo_list" in ids and "demo_sfx" in ids and "demo_name" in ids,
+                     f"ui.list 暴露可交互控件（{sorted(ids)}）")
+        checks.check(snapshot.get("focus") == "demo_name", "ui.list 报出当前焦点")
+        host.send("ui.activate", id="demo_sfx")
+        host.step(2)
+        debug = host.state().get("debug") or {}
+        checks.check(debug.get("checked") is False, "ui.activate 按玩家确认的语义激活控件")
+        checks.check(str(debug.get("last")) == "sound:false", "激活产生的事件回到卡带")
+
         print("  -- 退出 --")
     checks.check(host.exited_cleanly, "宿主干净退出")
     return checks.finish()
