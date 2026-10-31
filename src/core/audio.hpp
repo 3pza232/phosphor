@@ -30,6 +30,9 @@ inline constexpr int kPriorityMax = 99;       // 卡带 API 允许的上限
 inline constexpr int kPriorityMusic = 100;    // 音序器内部档位
 
 /// 合成音描述：卡带音效、主机事件音、音序器音符共用同一种表达
+/// 音量总线：音乐 / 音效 / UI。音量独立，ducking 只作用于音乐。
+enum class AudioBus { music, sfx, ui };
+
 struct ToneSpec {
     Wave wave = Wave::square;
     float freq = 440.0f;      // 起始频率（Hz）
@@ -109,13 +112,17 @@ public:
     void set_sfx_volume(float volume);
     float sfx_volume() const { return sfx_volume_.load(); }
 
+    /// UI 音量（主机事件音：确认/错误/插拔等，与游戏音效分开控制）
+    void set_ui_volume(float volume);
+    float ui_volume() const { return ui_volume_.load(); }
+
     /// 临时压低音乐（ducking）：level 为目标倍率（0..1，0 = 静音），seconds 为保持秒数（<=0 = 取消）。
     /// 切换走 kFadeSeconds 斜坡；只影响音乐声部，音效不受影响。主线程调用，只写原子请求。
     void duck(float level, float seconds);
 
     // --- 即时音（主线程只入队，不触碰声部表） ---
     /// 一条合成音：波形/频率/包络由 ToneSpec 给出
-    void play_tone(const ToneSpec& spec);
+    void play_tone(const ToneSpec& spec, AudioBus bus = AudioBus::sfx);
     /// 单个音符（"C4" 等），名字无法识别时静默
     void play_note(const std::string& note, const ToneSpec& base);
     /// 一个打击音：token 由音效包定义（'K' 底鼓、'S' 军鼓等）
@@ -142,7 +149,8 @@ public:
     /// 解码并登记（同名重复登记返回既有句柄）。失败返回 0。
     int load_sample(const std::string& name, const std::string& bytes);
     /// priority：池满时的抢占权重（kPriority*）；默认 0（采样通常按普通音效传 kPrioritySfx）
-    void play_sample(int handle, float volume, bool loop, int priority = kPriorityMin);
+    void play_sample(int handle, float volume, bool loop, int priority = kPriorityMin,
+                     AudioBus bus = AudioBus::sfx);
     void stop_sample(int handle);
 
     void stop_all();
@@ -180,7 +188,7 @@ private:
         Kind kind = Kind::tone;
         ToneSpec spec{};
         std::string note;
-        bool music = false;
+        AudioBus bus = AudioBus::sfx;
         int handle = 0;
         float volume = 1.0f;
         bool loop = false;
@@ -198,8 +206,8 @@ private:
     /// 返回 nullptr = 本轮丢弃（已计 dropped）：尾巴槽也满，或没有更低优先级的可抢目标
     Voice* reserve_voice(int priority);
     /// 把音加进声部表（仅音频线程调用：请求队列与音序器共用同一套落地逻辑）
-    void spawn_voice(const ToneSpec& spec, bool music);
-    void spawn_voice_note(const std::string& note, const ToneSpec& base, bool music);
+    void spawn_voice(const ToneSpec& spec, AudioBus bus);
+    void spawn_voice_note(const std::string& note, const ToneSpec& base, AudioBus bus);
     /// 给一个声部挂上 ~6ms 停止淡出（stop_all / stop_sample 的共同落点）：先渐弱到 0
     /// 再失活，免得正在响的波形被瞬间切断；已在淡出中的声部不重复挂
     void start_voice_stop(Voice& voice);
@@ -233,6 +241,7 @@ private:
     // 与配置默认同源：主机启动时会按用户设置覆盖，这里只是引擎兜底
     std::atomic<float> music_volume_{kDefaultMusicVolume / 100.0f};
     std::atomic<float> sfx_volume_{kDefaultSfxVolume / 100.0f};
+    std::atomic<float> ui_volume_{1.0f};
     std::atomic<bool> paused_{false};
     std::atomic<bool> host_paused_{false};  // 主机级暂停（调试台），与 paused_ 取或
 

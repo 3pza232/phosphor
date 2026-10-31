@@ -217,7 +217,7 @@ towerdef 用存档 v2 表值（旧 RLE 存档兼容解码）+ `phos.observe` 验
 | 存档 | 结构化值、schema 版本/迁移、槽位、原子写、CRC | 字符串 KV + 非原子写 |
 | 内容 | 包清单统一校验、依赖/版本、预览、UI 主题包、热重载 | 六类包各自解析；Mod 需重启 |
 | 渲染 | 已补：三条路径画同一张图（C7）；仍缺：单一合成器、绘制 IR、批处理、像素 golden | 三套消费代码仍各写一遍 + 内联管线 |
-| 音频 | 声部优先级/抢占、ducking、流式采样、总线 | `Audio` 已做暂停/恢复/master 突变/stop 的 6ms 斜坡；ducking `phos.audio.duck(level, seconds)`（只压音乐）；**优先级/抢占已实现**：`reserve_voice`（池满时严格更低才抢、音乐不被抢、8 个淡出尾巴槽、抢占走 6ms stop_fade）；仍缺流式采样、总线；主机事件音已分档（error=20，confirm/insert/eject/boot=10，key=0，经 host_event_priority） |
+| 音频 | 声部优先级/抢占、ducking、流式采样、总线 | `Audio` 已做暂停/恢复/master 突变/stop 的 6ms 斜坡；ducking `phos.audio.duck(level, seconds)`（只压音乐）；**优先级/抢占已实现**：`reserve_voice`（池满时严格更低才抢、音乐不被抢、8 个淡出尾巴槽、抢占走 6ms stop_fade）；仍缺流式采样、总线；主机事件音已分档（error=20，confirm/insert/eject/boot=10，key=0，经 host_event_priority）；**总线**：music/sfx/ui 三路音量独立（ui_volume），ducking 只压音乐、主机事件音走 ui 总线 |
 | 工具 | watch 热重载、卡带 lint、截图基线工具、包校验 | devkit 只有 new/pack/check-api |
 | 观测 | 已补：卡带声明式界面的控件树（`state.query.ui` + `ui.*`）；仍缺：外壳控件树、性能预算、崩溃报告 | 外壳仍靠 `cursor`；其余靠手搓 debug_state |
 | 治理 | CI、格式化、静态分析、覆盖率、版本政策 | 无 |

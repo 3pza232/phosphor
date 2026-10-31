@@ -172,6 +172,13 @@ void register_audio_api(sol::state& lua, HostContext& host) {
         return host.audio->sfx_volume();
     };
 
+    audio["ui_volume"] = [&host](sol::object value) -> float {
+        if (!host.audio) return 0.0f;
+        if (value.is<double>() || value.is<int>())
+            host.audio->set_ui_volume(value.as<float>());
+        return host.audio->ui_volume();
+    };
+
     // 基础合成音：beep(freq, dur [, opts])
     audio["beep"] = [&host](float freq, float dur, sol::object opts) {
         if (!host.audio) return;

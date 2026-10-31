@@ -265,14 +265,14 @@ void App::play_event(const std::string& event) {
     if (auto it = pack.files.find(event); it != pack.files.end()) {
         const int handle = sample_handle_for(event, it->second);
         if (handle > 0) {
-            audio_.play_sample(handle, 0.9f, false, priority);
+            audio_.play_sample(handle, 0.9f, false, priority, AudioBus::ui);
             return;
         }
     }
     if (auto tone = pack.tones.find(event); tone != pack.tones.end()) {
         ToneSpec spec = tone->second;
         if (spec.priority < priority) spec.priority = priority;
-        audio_.play_tone(spec);
+        audio_.play_tone(spec, AudioBus::ui);
     }
 }
 

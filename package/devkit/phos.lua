@@ -443,6 +443,12 @@ function phos.audio.music_volume(v) end
 function phos.audio.sfx_volume(v) end
 
 ---
+-- UI 音量（主机事件音：确认/错误/插拔/开机），与游戏音效分开控制。
+-- @param v number|nil 0..100；省略时返回当前值
+-- @return number 当前 UI 音量
+function phos.audio.ui_volume(v) end
+
+---
 -- 临时压低音乐（ducking，例如剧情对白/菜单提示时）。
 -- 只影响音乐声部，音效不受影响；切换走 ~6ms 斜坡。
 -- @param level number 目标倍率 0..1（0 = 静音，1 = 恢复）

@@ -138,7 +138,7 @@ struct Audio::Sample {
 struct Audio::Voice {
     bool active = false;
     bool is_sample = false;
-    bool is_music = false;  // 归属音乐轨（音量与音效独立）
+    AudioBus bus = AudioBus::sfx;  // 归属总线（音乐/音效/UI 音量独立）
 
     // 合成
     Wave wave = Wave::square;
@@ -257,6 +257,10 @@ void Audio::set_sfx_volume(float volume) {
     sfx_volume_.store(std::clamp(volume, 0.0f, 1.0f));
 }
 
+void Audio::set_ui_volume(float volume) {
+    ui_volume_.store(std::clamp(volume, 0.0f, 1.0f));
+}
+
 void Audio::set_paused(bool paused) {
     paused_.store(paused);
 }
@@ -317,7 +321,7 @@ Audio::Voice* Audio::reserve_voice(int priority) {
     // 同档之间不互相踩，触发顺序因此可预测；音乐声部永远不被抢（音乐连续优先）
     Voice* victim = nullptr;
     for (auto& voice : voices_) {
-        if (!voice->active || voice->is_music || voice->stop_fade_step > 0.0f) continue;
+        if (!voice->active || voice->bus == AudioBus::music || voice->stop_fade_step > 0.0f) continue;
         if (voice->priority >= priority) continue;
         if (!victim || voice->priority < victim->priority) victim = voice.get();
     }
@@ -330,14 +334,14 @@ Audio::Voice* Audio::reserve_voice(int priority) {
 }
 
 /// 把音加进声部表。仅音频线程调用，因此不需要任何同步。
-void Audio::spawn_voice(const ToneSpec& spec, bool music) {
-    const int priority = music ? kPriorityMusic : clamp_priority(spec.priority);
+void Audio::spawn_voice(const ToneSpec& spec, AudioBus bus) {
+    const int priority = bus == AudioBus::music ? kPriorityMusic : clamp_priority(spec.priority);
     Voice* voice = reserve_voice(priority);
     if (!voice) return;  // 已计 dropped：少一声也不卡音频线程
 
     voice->active = true;
     voice->is_sample = false;
-    voice->is_music = music;
+    voice->bus = bus;
     voice->priority = priority;
     voice->wave = spec.wave;
     voice->freq = spec.freq;
@@ -353,19 +357,20 @@ void Audio::spawn_voice(const ToneSpec& spec, bool music) {
     voice->stop_fade_step = 0.0f;
 }
 
-void Audio::spawn_voice_note(const std::string& note, const ToneSpec& base, bool music) {
+void Audio::spawn_voice_note(const std::string& note, const ToneSpec& base, AudioBus bus) {
     const float freq = note_to_freq(note);
     if (freq <= 0.0f) return;
     ToneSpec spec = base;
     spec.freq = freq;
     spec.freq_end = 0.0f;
-    spawn_voice(spec, music);
+    spawn_voice(spec, bus);
 }
 
-void Audio::play_tone(const ToneSpec& spec) {
+void Audio::play_tone(const ToneSpec& spec, AudioBus bus) {
     Request request;
     request.kind = Request::Kind::tone;
     request.spec = spec;
+    request.bus = bus;
     push(std::move(request));
 }
 
@@ -414,10 +419,10 @@ void Audio::stop_all() {
 void Audio::apply(Request& request) {
     switch (request.kind) {
         case Request::Kind::tone:
-            spawn_voice(request.spec, request.music);
+            spawn_voice(request.spec, request.bus);
             break;
         case Request::Kind::note:
-            spawn_voice_note(request.note, request.spec, request.music);
+            spawn_voice_note(request.note, request.spec, request.bus);
             break;
         case Request::Kind::register_sample:
             // 采样数据在这里**移交**给音频线程：此后只有音频线程持有它，
@@ -435,7 +440,7 @@ void Audio::apply(Request& request) {
             if (!voice) break;  // 已计 dropped：池满且没有可抢目标
             voice->active = true;
             voice->is_sample = true;
-            voice->is_music = false;  // 采样走**音效**音量：声部会复用，不写就会继承上一支的 music 标记
+            voice->bus = request.bus;  // 采样走请求指定的总线：不复位会继承上一支的标记
             voice->priority = priority;
             voice->sample = sample;
             voice->pos = 0;
@@ -540,7 +545,7 @@ int Audio::load_sample(const std::string& name, const std::string& bytes) {
     return handle;
 }
 
-void Audio::play_sample(int handle, float volume, bool loop, int priority) {
+void Audio::play_sample(int handle, float volume, bool loop, int priority, AudioBus bus) {
     if (handle <= 0 || handle > static_cast<int>(sample_names_.size())) return;
     Request request;
     request.kind = Request::Kind::sample;
@@ -548,6 +553,7 @@ void Audio::play_sample(int handle, float volume, bool loop, int priority) {
     request.volume = volume;
     request.loop = loop;
     request.priority = clamp_priority(priority);
+    request.bus = bus;
     push(std::move(request));
 }
 
@@ -603,7 +609,7 @@ void Audio::advance_sequencer(uint32_t frames) {
                 spec.volume = kMusicNoteVolume * track.volume * 0.85f;
                 spec.attack = track.attack;
                 spec.release = track.release * 2.0f;
-                spawn_voice_note(held, spec, /*music=*/true);
+                spawn_voice_note(held, spec, AudioBus::music);
                 continue;
             }
 
@@ -613,7 +619,7 @@ void Audio::advance_sequencer(uint32_t frames) {
             spec.release = track.release;
             if (token.size() == 1 && percussion_spec(token[0], spec)) {
                 spec.volume *= track.volume;  // 打击乐同样受轨道音量控制
-                spawn_voice(spec, /*music=*/true);
+                spawn_voice(spec, AudioBus::music);
                 continue;
             }
 
@@ -621,7 +627,7 @@ void Audio::advance_sequencer(uint32_t frames) {
             spec.dur = step_dur * 1.9f;  // 音符略长于一步，形成连音
             if (last_note_.size() <= index) last_note_.resize(index + 1);
             last_note_[index] = token;
-            spawn_voice_note(token, spec, /*music=*/true);
+            spawn_voice_note(token, spec, AudioBus::music);
         }
 
         ++step_;
@@ -686,6 +692,7 @@ void Audio::mix(float* out, uint32_t frames) {
 
     const float music_gain = music_volume_.load();
     const float sfx_gain = sfx_volume_.load();
+    const float ui_gain = ui_volume_.load();
     const float dt = 1.0f / static_cast<float>(sample_rate_);
 
     // ducking：主线程只发布请求；音频线程在这里锁存一次，并按 kFadeSeconds 做逐样本斜坡。
@@ -710,8 +717,12 @@ void Audio::mix(float* out, uint32_t frames) {
         return duck_target_now;
     };
 
-    auto gain_of = [music_gain, sfx_gain](const Voice& voice) {
-        return voice.is_music ? music_gain : sfx_gain;
+    auto gain_of = [music_gain, sfx_gain, ui_gain](const Voice& voice) {
+        switch (voice.bus) {
+            case AudioBus::music: return music_gain;
+            case AudioBus::ui: return ui_gain;
+            default: return sfx_gain;
+        }
     };
 
     for (auto& voice_ptr : voices_) {
@@ -743,7 +754,7 @@ void Audio::mix(float* out, uint32_t frames) {
                 const float left = voice.sample->pcm[static_cast<size_t>(voice.pos) * 2];
                 const float right = voice.sample->pcm[static_cast<size_t>(voice.pos) * 2 + 1];
                 float gain = voice.volume * gain_of(voice) * voice.stop_fade;
-                if (voice.is_music) gain *= duck_at(i);
+                if (voice.bus == AudioBus::music) gain *= duck_at(i);
                 out[i * 2] += left * gain;
                 out[i * 2 + 1] += right * gain;
                 ++voice.pos;
@@ -796,7 +807,7 @@ void Audio::mix(float* out, uint32_t frames) {
             voice.t += dt;
 
             float sample = value * envelope * voice.volume * gain_of(voice) * voice.stop_fade;
-            if (voice.is_music) sample *= duck_at(i);
+            if (voice.bus == AudioBus::music) sample *= duck_at(i);
             out[i * 2] += sample;
             out[i * 2 + 1] += sample;
             if (voice.stop_fade_step > 0.0f)
