@@ -95,6 +95,7 @@ cmake --preset sanity           # build-sanity/：自检构建，慢，只用于
 | `cart_lint.py` | 卡带静态检查门禁：对出厂卡带与 devkit 示例跑 `--check-cart`（manifest / 入口 / 隐式全局 / `screen.size()` / 阻塞版 `discover()` 与 `join()` / 观测声明），错误即失败、警告列出跟踪 | `python ../tools/cart_lint.py` |
 | `ui_smoke.py` | 声明式界面契约：跑 `devkit/examples/ui` 样板卡带，核对组件渲染、焦点顺序、事件语义（`index` / `checked` / `text`）与"侧栏 `input = false` 不抢按键"；agent 侧核对 `state.query.ui` 列表与按 id 激活 | `python ../tools/ui_smoke.py` |
 | `shell_golden.py` | 外壳界面**文本基线**：驱动 7 个外壳屏，把 `screen.read` 结果与 `tests/golden/shell/` 逐字节比对；界面有意改变时用 `--write` 重生成（迁移/改布局前后都拿它对照） | `python ../tools/shell_golden.py [--write]` |
+| `pixel_golden.py` | 画面**像素基线**（**非门禁**，Pillow）：headless 跑 3 个固定场景（snake/xiangqi 第 90 帧、卡带架第 264 帧，固定 seed、状态隔离到 `tests-out/pixel-golden/`），截图缩到 320×180 与 `tools/golden/pixel/` 比：MAD ≤ 2 且明显差异像素 ≤ 0.5% 通过；字体/驱动的跨机差异可能误报，故不进 `run_checks`，界面有意改变时用 `--update` 维护基线 | `python ../tools/pixel_golden.py [--update]` |
 | `gl_smoke.py` | GL 渲染路像素门禁：开窗用 `frame.read` 读回真实帧，核对"不是全黑""同格两笔""半格""逐层叠画"——`screenshot` 走 CPU 光栅化，覆盖不到着色器与图层叠画（需要图形环境与 Pillow） | `python ../tools/gl_smoke.py` |
 | `net_smoke.py` | 联机契约：同机起两个 `phosphor` 进程，一个开房一个加入（走 `phos.net` 与局域网发现），核对连接、对端列表、消息互通、断开事件（headless 即可，无需图形环境） | `python ../tools/net_smoke.py` |
 | `agent_play.py` | 通用 agent 玩家：开真窗口、在卡带架上挑一张卡带、按卡带自报的 `debug_state()` 操控它玩（策略用 `--policy` 接自己的文件，流速用 `--speed` 设，默认实机流速） | `python ../tools/agent_play.py [--shelf-cart bricks] [--cart carts/x] [--steps 40] [--speed 1]` |
