@@ -166,10 +166,14 @@ std::string SaveStore::Value::as_text() const {
     }
 }
 
-bool SaveStore::open(const std::string& save_dir, const std::string& cart_id) {
+bool SaveStore::open(const std::string& save_dir, const std::string& cart_id, int slot) {
     namespace fs = std::filesystem;
     data_.clear();
-    path_ = (fs::path(save_dir) / (cart_id + ".sav")).string();
+    if (slot < 0) slot = 0;
+    if (slot > kMaxSlot) slot = kMaxSlot;
+    cart_id_ = cart_id;
+    const std::string suffix = slot > 0 ? ".s" + std::to_string(slot) : std::string();
+    path_ = (fs::path(save_dir) / (cart_id + suffix + ".sav")).string();
     writable_ = false;
 
     std::error_code ec;
@@ -283,13 +287,8 @@ bool SaveStore::flush(const std::map<std::string, Value>& data) const {
 
     // 头部里的卡带 id 取自文件名：同一份文件被拷到别的 id 下会被 open() 拒绝，
     // 避免"把 A 的档当 B 的档读"（跨卡带串档比丢档更难查）
-    std::string cart_id;
-    {
-        const std::filesystem::path file(path_);
-        cart_id = file.stem().string();
-    }
     const std::string payload = json_payload(data);
-    out << kMagic << ' ' << kFormatVersion << ' ' << cart_id << ' ' << hex32(crc32(payload))
+    out << kMagic << ' ' << kFormatVersion << ' ' << cart_id_ << ' ' << hex32(crc32(payload))
         << '\n'
         << payload;
     out.flush();

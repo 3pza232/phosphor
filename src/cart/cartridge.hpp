@@ -75,6 +75,10 @@ public:
     /// 存档句柄：manifest 未声明 `save = true` 时返回 nullptr。
     /// 主机侧读存档（磁带码菜单）走这里，不必知道卡带内部怎么存
     SaveStore* save() { return info_.wants_save ? &save_ : nullptr; }
+    /// 切换存档槽（0..SaveStore::kMaxSlot）：重新打开同一卡带的对应档，
+    /// 指针不变（API 持有的 &save_ 仍然有效）；返回是否成功打开
+    bool open_save_slot(int slot);
+    int save_slot() const { return save_slot_; }
 
     /// Lua 堆占用（KB），供调试台观测
     int lua_memory_kb() const;
@@ -148,6 +152,8 @@ private:
     sol::protected_function draw_fn_;
     CartFiles files_;  // 持有包引用：卡带存活期间 API 可随时读取包内资源
     CartInfo info_;
+    std::string save_dir_;
+    int save_slot_ = 0;
     SaveStore save_;
     std::vector<DebugRegistration> debug_regs_;  // phos.debug.number 登记的参数
     std::string error_;

@@ -10,6 +10,7 @@ local shared = {}
 local board = nil
 local plays = 0          -- 数字型存档示例：读出就是 number，不必 tonumber
 local seen_intro = false -- 布尔型存档示例：读出就是 boolean，不必比字符串
+local slot1_marker, default_marker = "", "" -- 槽位隔离示例
 
 local function fmt()
   return {
@@ -30,6 +31,14 @@ end
 function init()
   shared = phos.lang.shared()
   board = phos.score.new{ max = 5, key = "toolkit_scores" }
+  -- 槽位：1 号槽写一个标记，默认槽看不到；切回默认槽后标记消失
+  phos.save.slot(1)
+  phos.save.write("slot_marker", "S1")
+  phos.save.slot(1)
+  slot1_marker = phos.save.read("slot_marker") or ""
+  phos.save.slot(0)
+  default_marker = phos.save.read("slot_marker") or ""
+
   plays = phos.save.read("plays") or 0            -- 数字/布尔按原类型取回
   seen_intro = phos.save.read("seen_intro") or false
   if not seen_intro then
@@ -47,6 +56,9 @@ function init()
     formatted = function() return fmt() end,
     shared_score = function() return shared.score or "" end,
     plays = function() return plays end,
+    slot1_marker = function() return slot1_marker end,
+    default_marker = function() return default_marker end,
+    save_slot = function() return phos.save.slot_index() end,
     seen_intro = function() return seen_intro end,
   }
 end

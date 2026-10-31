@@ -724,6 +724,16 @@ function phos.save.read(key) end
 ---@return boolean 是否写入成功
 function phos.save.erase(key) end
 
+---切换存档槽（0 = 默认档，1..9 = 独立槽位）。切换后 read/write/erase 作用于该槽；
+---同一卡带可以有多份进度。返回是否成功打开（未声明 save / 槽位越界时 false）。
+---@param slot integer
+---@return boolean
+function phos.save.slot(slot) end
+
+---当前存档槽（0 = 默认）
+---@return integer
+function phos.save.slot_index() end
+
 ---导出为可复制的磁带码文本
 ---@return string
 function phos.save.export() end

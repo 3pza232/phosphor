@@ -957,9 +957,11 @@ end
 
 ```lua
 phos.save.available()           -- 存档是否可用
-phos.save.write(key, value)     -- value 为字符串；入库成功返回 true
+phos.save.write(key, value)     -- value 为文本/数字/布尔；入库成功返回 true
 local v = phos.save.read(key)   -- 不存在返回 nil
 phos.save.erase(key)
+phos.save.slot(n)              -- 切换存档槽（0 = 默认，1..9 独立文件）；返回是否成功
+phos.save.slot_index()         -- 当前槽位
 
 local code = phos.save.export() -- 导出磁带码（可复制文本）
 local ok = phos.save.import(code) -- 从磁带码恢复（**整份替换**）；码非法返回 false 且不做改动

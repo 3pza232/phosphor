@@ -985,6 +985,33 @@ TEST(save_store_roundtrip_and_limits) {
     std::filesystem::remove_all(dir, ec);
 }
 
+TEST(save_store_slots_are_independent) {
+    const std::filesystem::path dir = unit_scratch("saves-slots");
+    std::error_code ec;
+    std::filesystem::remove_all(dir, ec);
+
+    SaveStore slot0;
+    CHECK(slot0.open(dir.string(), "game", 0));
+    CHECK(slot0.set("progress", "10"));
+
+    SaveStore slot3;
+    CHECK(slot3.open(dir.string(), "game", 3));
+    CHECK(slot3.set("progress", "30"));
+    CHECK_EQ(*slot3.get("progress"), std::string("30"));
+
+    // 两个槽位落成两个文件，互不覆盖
+    CHECK(std::filesystem::exists(dir / "game.sav"));
+    CHECK(std::filesystem::exists(dir / "game.s3.sav"));
+    SaveStore reopen0;
+    CHECK(reopen0.open(dir.string(), "game", 0));
+    CHECK_EQ(*reopen0.get("progress"), std::string("10"));
+    // 越界槽位钳到上限而不是报错崩溃
+    SaveStore clamp;
+    CHECK(clamp.open(dir.string(), "game", 99));
+
+    std::filesystem::remove_all(dir, ec);
+}
+
 TEST(save_store_typed_values_roundtrip) {
     const std::filesystem::path dir = unit_scratch("saves-typed");
     std::error_code ec;

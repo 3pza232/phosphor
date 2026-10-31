@@ -143,7 +143,9 @@ bool Cartridge::load(const std::string& cart_path, HostContext& host) {
 
     // 存档：声明 save = true 的卡带获得私有存档空间
     if (info_.wants_save) {
-        save_.open(host.save_dir, info_.id);
+        save_dir_ = host.save_dir;
+        save_slot_ = 0;
+        save_.open(save_dir_, info_.id, 0);
         host.save = &save_;
     } else {
         host.save = nullptr;
@@ -343,6 +345,14 @@ sol::object Cartridge::load_module(const std::string& name) {
         value = sol::make_object(lua_.lua_state(), true);  // 无返回值视为加载成功
     module_cache_[name] = value;
     return value;
+}
+
+bool Cartridge::open_save_slot(int slot) {
+    if (!info_.wants_save) return false;
+    if (slot < 0 || slot > SaveStore::kMaxSlot) return false;
+    if (slot == save_slot_ && save_dir_.empty()) return false;
+    save_slot_ = slot;
+    return save_.open(save_dir_, info_.id, slot);
 }
 
 int Cartridge::lua_memory_kb() const {

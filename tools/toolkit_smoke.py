@@ -79,6 +79,9 @@ def main() -> int:
                          f"TOP N 降序（{debug.get('list')}）")
             checks.check(debug.get("plays") == 3 and isinstance(debug.get("plays"), int),
                          f"数字存档按 number 取回（{debug.get('plays')!r}）")
+            checks.check(debug.get("slot1_marker") == "S1", "1 号槽写入后读回自己的数据")
+            checks.check(debug.get("default_marker") == "", "默认槽看不到 1 号槽的键")
+            checks.check(debug.get("save_slot") == 0, "当前槽回到默认 0")
             checks.check(debug.get("seen_intro") is True,
                          f"布尔存档按 boolean 取回（{debug.get('seen_intro')!r}）")
 
@@ -92,6 +95,9 @@ def main() -> int:
                          f"排行榜从存档恢复（{debug.get('list')}）")
             checks.check(debug.get("plays") == 3 and isinstance(debug.get("plays"), int),
                          f"数字存档重载后仍是 number（{debug.get('plays')!r}）")
+            checks.check(debug.get("slot1_marker") == "S1", "1 号槽写入后读回自己的数据")
+            checks.check(debug.get("default_marker") == "", "默认槽看不到 1 号槽的键")
+            checks.check(debug.get("save_slot") == 0, "当前槽回到默认 0")
             checks.check(debug.get("seen_intro") is True, "布尔存档重载后仍是 boolean")
 
             print("  -- 清空 --")

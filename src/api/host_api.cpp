@@ -431,6 +431,13 @@ void register_host_api(sol::state& lua, HostContext& host) {
                 return sol::make_object(lua.lua_state(), value->text);
         }
     };
+    // 存档槽：0 = 默认档，1..9 = 独立槽位（同一卡带的多份进度/多存档）
+    save["slot"] = [&host](int slot) -> bool {
+        return host.cart && host.cart->open_save_slot(slot);
+    };
+    save["slot_index"] = [&host]() -> int {
+        return host.cart ? host.cart->save_slot() : 0;
+    };
     save["erase"] = [&host](const std::string& key) -> bool {
         return host.save && host.save->erase(key);
     };

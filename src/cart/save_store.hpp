@@ -47,7 +47,8 @@ public:
     /// 打开（读取已有存档）；同一对象可复用，先清空上次的内容。
     /// 目录建不出来/临时文件写不进时降级为只读：读取照常，写入返回 false——绝不让卡带
     /// 以为存下了。旧档存在却读不出时也按只读处理，避免用空数据覆盖未知内容。
-    bool open(const std::string& save_dir, const std::string& cart_id);
+    /// slot 0 = 默认档 `<id>.sav`；1..9 = `<id>.s{n}.sav`（槽位互相独立）
+    bool open(const std::string& save_dir, const std::string& cart_id, int slot = 0);
 
     /// 文本视图（数字/布尔转成 JSON 字面量文本；旧调用方与磁带码用）
     std::optional<std::string> get(const std::string& key) const;
@@ -73,6 +74,7 @@ public:
     static constexpr size_t kMaxKeyLength = 64;
     static constexpr size_t kMaxValueLength = 4096;
     static constexpr size_t kMaxEntries = 256;
+    static constexpr int kMaxSlot = 9;
 
 private:
     /// 整份原子写盘（临时文件 + rename）；返回是否成功（调用方据此向卡带回报真实结果）
@@ -80,6 +82,7 @@ private:
 
     std::map<std::string, Value> data_;
     std::string path_;
+    std::string cart_id_;
     bool writable_ = false;
 };
 
