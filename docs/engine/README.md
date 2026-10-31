@@ -15,6 +15,7 @@
 | 现状体检（优势、缺陷、文档漂移） | [audit.md](audit.md) |
 | 演进路线（阶段、UI 框架规格、验收） | [roadmap.md](roadmap.md) |
 | 阶段验收清单（命令与基线、剩余项） | [acceptance.md](acceptance.md) |
+| 发布检查（自动/人工/构建矩阵/限制） | [release.md](release.md) |
 
 面向玩家 / 卡带作者 / 内容包作者的**发行文档**在上一层 [`../`](../README.md)——那一份才是
 随 `phosphor.exe` 一起分发的东西。

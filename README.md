@@ -98,6 +98,7 @@ cmake --preset sanity           # build-sanity/：自检构建，慢，只用于
 | `cart_lint.py` | 卡带静态检查门禁：对出厂卡带与 devkit 示例跑 `--check-cart`（manifest / 入口 / 隐式全局 / `screen.size()` / 阻塞版 `discover()` 与 `join()` / 观测声明），错误即失败、警告列出跟踪 | `python ../tools/cart_lint.py` |
 | `ui_smoke.py` | 声明式界面契约：跑 `devkit/examples/ui` 样板卡带，核对组件渲染、焦点顺序、事件语义（`index` / `checked` / `text`）与"侧栏 `input = false` 不抢按键"；agent 侧核对 `state.query.ui` 列表与按 id 激活 | `python ../tools/ui_smoke.py` |
 | `shell_golden.py` | 外壳界面**文本基线**：驱动 7 个外壳屏，把 `screen.read` 结果与 `tests/golden/shell/` 逐字节比对；界面有意改变时用 `--write` 重生成（迁移/改布局前后都拿它对照） | `python ../tools/shell_golden.py [--write]` |
+| `release_check.py` | 发布前检查：版本/CHANGELOG/工作树 + 门禁/API/内容包/文本/像素基线（性能仅报告） | `python tools/release_check.py` |
 | `pixel_golden.py` | 画面**像素基线**（**非门禁**，Pillow）：7 个固定场景——CLI 直出的 snake/xiangqi 第 90 帧、卡带架第 264 帧，以及控制通道驱动的设置/Mod/磁带码/UI 示例（设置与 Mod 裁到 80×45 内容区以避开边灯呼吸相位；磁带码/UI 用整屏）；固定 seed/单步次数，状态隔离到 `tests-out/pixel-golden/`，截图缩到 320×180 与 `tools/golden/pixel/` 比：MAD ≤ 2 且明显差异像素 ≤ 0.5% 通过；字体/驱动的跨机差异可能误报，故不进 `run_checks`，界面有意改变时用 `--update` 维护基线 | `python ../tools/pixel_golden.py [--update]` |
 | `gl_smoke.py` | GL 渲染路像素门禁：开窗用 `frame.read` 读回真实帧，核对"不是全黑""同格两笔""半格""逐层叠画"——`screenshot` 走 CPU 光栅化，覆盖不到着色器与图层叠画（需要图形环境与 Pillow） | `python ../tools/gl_smoke.py` |
 | `net_smoke.py` | 联机契约：同机起两个 `phosphor` 进程，一个开房一个加入（走 `phos.net` 与局域网发现），核对连接、对端列表、消息互通、断开事件（headless 即可，无需图形环境） | `python ../tools/net_smoke.py` |
