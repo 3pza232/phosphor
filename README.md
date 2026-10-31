@@ -98,7 +98,7 @@ cmake -G Ninja -DPHOSPHOR_SANITY=ON ../    # 自检构建：慢，只用于排�
 | `src/` | 主机源码（C++17） |
 | `package/` | 随包分发的内容：`carts/` 出厂卡带、`devkit/` 工具链与模板、`theme/` 内容包、`mods/` 覆盖层 |
 | `docs/` | **文档**：根级 = 发行文档（玩家手册 / 卡带作者手册 / API 参考 / 格式与内容包 / agent 接口）；`docs/engine/` = 引擎实现文档 |
-| `docs/engine/` | 引擎实现文档：分层 / 代码规范 / 绘制模型 / 图层 / 联机（**不随发行包发布**） |
+| `docs/engine/` | 引擎实现文档：分层 / 代码规范 / 绘制模型 / 图层 / 联机 / 现状体检 / 演进路线（**不随发行包发布**） |
 | `tools/` | 开发脚本（自测、演示、构建期同步） |
 | `tests/` | C++ 纯逻辑单元测试（`phosphor_tests` 目标；由 `run_checks.py` 的 unit 门禁调用） |
 | `build/` | 构建产物，**同时就是可直接分发/试玩的运行目录**：`carts/ devkit/ theme/ mods/ saves/ docs/` 与 exe 同级，全部是真实文件（不含任何路径联接） |
@@ -129,5 +129,7 @@ cmake -G Ninja -DPHOSPHOR_SANITY=ON ../    # 自检构建：慢，只用于排�
 | 绘制模型（格 / 半格 / 叠加 / 底色） | [`docs/engine/drawing.md`](docs/engine/drawing.md) |
 | 图层系统（合成 / 排序 / 按层读） | [`docs/engine/layers.md`](docs/engine/layers.md) |
 | 联机实现（传输 / 发现 / 线程） | [`docs/engine/networking.md`](docs/engine/networking.md) |
+| 现状体检：优势、缺陷清单、文档漂移 | [`docs/engine/audit.md`](docs/engine/audit.md) |
+| 演进路线：阶段计划、UI 框架规格、验收指标 | [`docs/engine/roadmap.md`](docs/engine/roadmap.md) |
 
 入口：[`docs/engine/README.md`](docs/engine/README.md)。
