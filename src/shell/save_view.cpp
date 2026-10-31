@@ -77,8 +77,13 @@ void ScreenState::build(ui::Node& root, const ui::Rect& content, Lang lang) cons
 
     root.add_text("saves/hint", en ? "ENTER = VIEW TAPE CODE" : "Enter 查看导出码")
         .props.dim = true;
+    // 存档一多就会溢出：列表放进滚动视口，焦点仍由 Frame 自动跟随；
+    // 高度留出提示行 + 两个按钮 + 间距，避免把按钮挤出屏
+    const int list_height = std::max(1, content.h - 8);
+    ui::Node& list = root.add_scroll("saves/list", list_height);
+    list.props.gap = 0;
     for (int i = 0; i < static_cast<int>(entries_.size()); ++i)
-        root.add_option(row_id(i), row_text(entries_[static_cast<std::size_t>(i)]));
+        list.add_option(row_id(i), row_text(entries_[static_cast<std::size_t>(i)]));
     ui::Node& gap = root.add_spacer("saves/gap");
     gap.props.height = 1;
     root.add_button(kDeleteId, en ? "DELETE SELECTED" : "删除选中存档");
