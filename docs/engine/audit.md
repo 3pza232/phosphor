@@ -126,6 +126,12 @@
 | U10 | 精灵语义与文档不一致 | `ui::icon` 的 `step` 仍是**降采样步长**（`core/ui.cpp`），文档已按实现改写（`api-reference.md` 与 `devkit/phos.lua`）；绑定层仍硬编码亮度 1.0，语义统一未做 | ⚠ **文档已对齐、代码待统一** |
 | U11 | 参数与单位校验缺失 | `ui::bar` 对 NaN 仍直接 `static_cast<int>`（`core/ui.cpp`）；`ui.sprite` 的宽高仍按字节算（`api/ui_api.cpp`） | ❌ **仍待修** |
 
+**内容侧试点（snake）**：首批把新栈用进真实卡带——侧栏改 `phos.ui.render`（无坐标、
+宽度运行时变化不用重算）、排行榜换 `phos.score`（删除自写的 `scores.lua` 与逗号串
+编解码）、观测换 `phos.observe`（不再维护手写快照）、通用词走 `phos.lang.shared`；
+`--check-cart` 0 error / 0 warning，control/cart 门禁全过。这说明"组件与工具层"已经
+足以承接真实内容，而不只是样板。
+
 ### 3.4 卡带工具链与内容（P2：负担最终落在作者身上）
 
 | # | 现象 | 证据 |

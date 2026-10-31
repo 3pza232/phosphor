@@ -1,57 +1,61 @@
--- panel.lua —— 侧栏面板（成绩与图鉴），只读地渲染游戏与分数状态
-
+-- panel.lua —— 侧栏面板（成绩与图例）。只读地渲染游戏与排行榜状态。
+--
+-- 界面用声明式组件描述：坐标/裁剪/对齐由引擎负责，宽度运行时变化也不用重算。
 local Panel = {}
 
--- 界面文案：跟随机器的界面语言（新增语言加一列即可）
+-- 卡带自己的专有词（通用词由 phos.lang.shared 提供）
 local Text = {
-  zh = {title = "贪吃蛇", score = "得分", best = "最高", length = "长度 ", records = "得分纪录",
-        empty = "(空)", legend = "图例", head = "@ 蛇头", body = "o 蛇身", food = "O 食物",
+  zh = {title = "贪吃蛇", length = "长度", records = "得分纪录", empty = "(空)",
+        legend = "图例", head = "@ 蛇头", body = "o 蛇身", food = "O 食物",
         menu = "ESC 暂停"},
-  en = {title = "SNAKE", score = "SCORE", best = "BEST", length = "LENGTH ", records = "HIGH SCORES",
-        empty = "(none)", legend = "LEGEND", head = "@ head", body = "o body", food = "O food",
+  en = {title = "SNAKE", length = "LENGTH", records = "HIGH SCORES", empty = "(none)",
+        legend = "LEGEND", head = "@ head", body = "o body", food = "O food",
         menu = "ESC pause"},
 }
--- 取当前语言那一列：查表规则在引擎里（`phos.lang.dict`，缺 en 回落中文）
 local function L() return phos.lang.dict(Text) end
 
-local function section(P, C, y, title)
-  P.print(1, y, title, C.dark_gray)
-end
-
-function Panel.draw(game, scores)
-  local C = phos.color
-  local P = phos.panel
-  local pw, ph = P.size()
+---@param game table 规则对象
+---@param board phos.Score 排行榜
+function Panel.draw(game, board)
+  local pw = phos.panel.size()
   if pw == 0 then return end
 
-  P.clear()
-
-  P.print(1, 1, L().title, C.green)
-  P.print(1, 2, string.rep("-", pw - 2), C.dark_gray)
-
-  P.print(1, 4, L().score, C.gray)
-  P.print(1, 5, tostring(game.score), C.yellow)
-
-  P.print(1, 7, L().best, C.gray)
-  P.print(1, 8, tostring(scores.best()), C.orange)
-
-  P.print(1, 10, L().length .. game:length(), C.cyan)
-
-  section(P, C, 12, L().records)
-  if #scores.list == 0 then
-    P.print(1, 13, L().empty, C.dark_gray)
+  local words = phos.lang.shared()
+  local t = L()
+  local rows = {
+    { kind = "text", text = t.title, accent = true },
+    { kind = "divider", fg = "dark_gray" },
+    { kind = "stat", text = words.score, value = tostring(game.score), label_w = 8 },
+    { kind = "stat", text = words.best, value = tostring(board:best()), label_w = 8, accent = true },
+    { kind = "text", text = t.length .. " " .. tostring(game:length()) },
+    { kind = "divider", fg = "dark_gray" },
+    { kind = "text", text = t.records, dim = true },
+  }
+  local records = board:list()
+  if #records == 0 then
+    rows[#rows + 1] = { kind = "text", text = t.empty, dim = true }
   else
-    for i, value in ipairs(scores.list) do
-      P.print(1, 12 + i, string.format("%d. %d", i, value),
-              i == 1 and C.orange or C.white)
+    for i, value in ipairs(records) do
+      rows[#rows + 1] = { kind = "stat", text = i .. ".", value = tostring(value), label_w = 3,
+                          accent = i == 1 }
     end
   end
+  rows[#rows + 1] = { kind = "spacer", grow = 1 }
+  rows[#rows + 1] = { kind = "text", text = t.legend, dim = true }
+  rows[#rows + 1] = { kind = "text", text = t.head, fg = "green" }
+  rows[#rows + 1] = { kind = "text", text = t.body, fg = "cyan" }
+  rows[#rows + 1] = { kind = "text", text = t.food, fg = "red" }
+  rows[#rows + 1] = { kind = "text", text = t.menu, dim = true }
 
-  section(P, C, ph - 6, L().legend)
-  P.print(1, ph - 5, L().head, C.green)
-  P.print(1, ph - 4, L().body, C.cyan)
-  P.print(1, ph - 3, L().food, C.red)
-  P.print(1, ph - 1, L().menu, C.dark_gray)
+  phos.ui.render{
+    screen = "panel",
+    surface = "panel",
+    input = false,
+    kind = "column",
+    padding = { x = 1, y = 1 },
+    gap = 0,
+    children = rows,
+  }
 end
 
 return Panel

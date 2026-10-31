@@ -13,7 +13,6 @@
 
 local Game = require("game")
 local Panel = require("panel")
-local Scores = require("scores")
 local Sfx = require("sfx")
 local Music = require("music")
 
@@ -25,17 +24,40 @@ local Text = {
 -- 取当前语言那一列：查表规则在引擎里（`phos.lang.dict`，缺 en 回落中文）
 local function L() return phos.lang.dict(Text) end
 
+
 local game
+local board
+
+-- agent 观测：字段可以是函数，主机在 state.query 时求值——不必维护手写快照。
+-- （等价于旧的 debug_state()，但这张表不会与真实状态脱节）
+local function observe_state()
+  phos.observe{
+    score = function() return game.score end,
+    alive = function() return game.alive end,
+    length = function() return game:length() end,
+    dir_x = function() return game.dx end,
+    dir_y = function() return game.dy end,
+    head_x = function() return game.body[1][1] end,
+    head_y = function() return game.body[1][2] end,
+    food_x = function() return game.food[1] end,
+    food_y = function() return game.food[2] end,
+    arena_w = Game.ARENA.w,
+    arena_h = Game.ARENA.h,
+    best = function() return board:best() end,
+  }
+end
+  -- phos.score：排行榜（排序/截断/存档键都由引擎负责）
 
 function init()
-  Scores.load()
   game = Game.new()
+  board = phos.score.new{ max = 5, key = "scores" }
   phos.audio.music(Music)  -- 开机即播放本卡带的音乐
   -- 把"移动间隔"放进调试台的可调篮子：`~` 面板里拖滑条就能实时改速度
   phos.debug.number({ zh = "移动间隔", en = "Move interval" },
                     function() return game.move_interval end,
                     function(v) game.move_interval = v end,
                     { min = 0.03, max = 0.30, step = 0.005 })
+  observe_state()
 end
 
 function update(dt)
@@ -57,7 +79,7 @@ function update(dt)
   local events = game:update(dt)
   if events.eaten then Sfx.eat() end
   if events.died then
-    Scores.add(game.score)
+    if game.score > 0 then board:add(game.score) end   -- 0 分不入榜（引擎接受 0，这里按玩法过滤）
     Sfx.die()
   end
 end
@@ -87,7 +109,7 @@ function draw()
     S.print(cx - phos.text.width(restart) // 2, cy + 2, restart, C.gray)
   end
 
-  Panel.draw(game, Scores)
+  Panel.draw(game, board)
 
   -- 底部状态条：与 LIFE 同一套做法——先画一个框，读数写在框里。
   -- 直接写在场地边框那一行会把边框吃掉，所以给它自己的框（ASCII 遥测，
@@ -98,17 +120,3 @@ function draw()
           string.format("SCORE %d | LEN %d | %s", game.score, game:length(), state), C.gray)
 end
 
--- agent 观测入口（可选约定）：主机在 state.query 时会把这里返回的表一并带上，
--- 让 agent 直接读到玩法状态，而不必从字符画面里反推
-function debug_state()
-  return {
-    score = game.score,
-    alive = game.alive,
-    length = game:length(),
-    dir_x = game.dx, dir_y = game.dy,
-    head_x = game.body[1][1], head_y = game.body[1][2],
-    food_x = game.food[1], food_y = game.food[2],
-    arena_w = Game.ARENA.w, arena_h = Game.ARENA.h,
-    best = Scores.best(),
-  }
-end
