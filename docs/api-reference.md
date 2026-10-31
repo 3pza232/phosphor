@@ -409,6 +409,7 @@ pending = phos.ui.render{
 | `button` | 按钮行 | A → `activated` |
 | `hint` | 页脚键位提示（`items` 为 `[键, 说明]` 交替） | — |
 | `table` | 表格：`columns` 表头 + `rows` 数据，列宽/对齐可指定（表头下自动画分隔线） | — |
+| `grid` | 等宽网格：按 `cols` 列逐行摆放子项（卡片/按键/头像墙） | — |
 
 **元素字段**
 
@@ -432,6 +433,7 @@ pending = phos.ui.render{
 | `text` | string | — | text / option / button / stat 的正文；field 的**占位提示** |
 | `value` | string | — | stat 的右值；field 的**初始内容**（只在首次出现时写入） |
 | `items` | string[] | — | list 的行；hint 的 `[键, 说明]` 交替 |
+| `cols` | integer | 0 | grid 的列数（0 = 全部排一行）；单元格宽度均分可用宽度 |
 | `columns` | string[] | — | table 的表头（空 = 无表头；有表头时自动加一条分隔线） |
 | `rows` | table[] | — | table 的数据行：每行一个字符串数组；数字单元格按整数/两位小数转文本 |
 | `widths` | integer[] | — | table 各列固定宽度；0 或缺省 = 按内容自适应（余量均摊铺满可用宽度） |

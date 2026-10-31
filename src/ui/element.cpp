@@ -70,6 +70,12 @@ Node& Node::add_field(std::string child_id, std::string text) {
     return node;
 }
 
+Node& Node::add_grid(std::string child_id, int cols) {
+    Node& node = add(Kind::grid, std::move(child_id));
+    node.props.cols = cols;
+    return node;
+}
+
 Node& Node::add_table(std::string child_id) {
     Node& node = add(Kind::table, std::move(child_id));
     node.focusable = false;

@@ -44,6 +44,27 @@ TEST(ui_layout_column_and_padding) {
     CHECK_EQ(b->rect.y, 8);
 }
 
+TEST(ui_grid_measure_and_arrange) {
+    ui::Theme theme;
+    ui::Node root = ui::make_root("root");
+    ui::Node& grid = root.add_grid("g", 2);
+    grid.props.gap = 1;
+    for (int i = 0; i < 4; ++i) grid.add_text("c" + std::to_string(i), "x");
+    ui::Rect area{2, 1, 21, 8};
+    ui::measure(root, area.w, theme);
+    ui::arrange(root, area, theme);
+
+    // 2 列 4 项 → 2 行、每行高 1、行间 1 格
+    CHECK_EQ(grid.natural_h, 3);
+    const ui::Node* c0 = find_node(root, "c0");
+    const ui::Node* c1 = find_node(root, "c1");
+    const ui::Node* c2 = find_node(root, "c2");
+    CHECK_EQ(c0->rect.x, 2);
+    CHECK_EQ(c1->rect.x, 13);  // (21 - 1) / 2 = 10 列宽，间隔 1
+    CHECK_EQ(c0->rect.w, 10);
+    CHECK_EQ(c2->rect.y, 3);   // 第二行（行高 1 + 间隔 1）
+}
+
 TEST(ui_table_column_widths) {
     ui::Props props;
     props.columns = {"A", "SCORE"};

@@ -80,6 +80,28 @@ Size measure(Node& node, int avail_w, const Theme& theme) {
     int content_h = 0;
 
     switch (node.kind) {
+        case Kind::grid: {
+            const int cols = props.cols > 0 ? props.cols : std::max(1, static_cast<int>(node.children.size()));
+            const int gap = std::max(0, props.gap);
+            const int rows = (static_cast<int>(node.children.size()) + cols - 1) / cols;
+            const int cell_avail = avail_w > 0 ? std::max(0, (avail_w - gap * (cols - 1)) / cols) : 0;
+            int cell_w = 0;
+            std::vector<int> row_h(static_cast<size_t>(rows), 0);
+            for (size_t i = 0; i < node.children.size(); ++i) {
+                Node& child = node.children[i];
+                const Size size = measure(child, cell_avail, theme);
+                cell_w = std::max(cell_w, size.w + child.props.margin.l + child.props.margin.r);
+                const int row = static_cast<int>(i) / cols;
+                row_h[static_cast<size_t>(row)] =
+                    std::max(row_h[static_cast<size_t>(row)],
+                             size.h + child.props.margin.t + child.props.margin.b);
+            }
+            int height = gap * (rows > 0 ? rows - 1 : 0);
+            for (int h : row_h) height += h;
+            content_w = avail_w > 0 ? avail_w : cols * cell_w + gap * (cols - 1);
+            content_h = height;
+            break;
+        }
         case Kind::column:
         case Kind::box:
         case Kind::row: {
@@ -206,6 +228,37 @@ void arrange(Node& node, Rect rect, const Theme& theme) {
                       rect.y + border + node.props.padding.t,
                       std::max(0, rect.w - border * 2 - pad_w(node)),
                       std::max(0, rect.h - border * 2 - pad_h(node))};
+
+    if (node.kind == Kind::grid) {
+        const int cols = node.props.cols > 0
+                             ? node.props.cols
+                             : std::max(1, static_cast<int>(node.children.size()));
+        const int gap = std::max(0, node.props.gap);
+        const int cell_w = std::max(0, (node.inner.w - gap * (cols - 1)) / cols);
+        const int rows = (static_cast<int>(node.children.size()) + cols - 1) / cols;
+        std::vector<int> row_h(static_cast<size_t>(rows), 0);
+        for (size_t i = 0; i < node.children.size(); ++i) {
+            Node& child = node.children[i];
+            const int row = static_cast<int>(i) / cols;
+            row_h[static_cast<size_t>(row)] =
+                std::max(row_h[static_cast<size_t>(row)],
+                         child.props.height > 0 ? child.props.height : child.natural_h);
+        }
+        int y = node.inner.y;
+        for (int row = 0; row < rows; ++row) {
+            for (int col = 0; col < cols; ++col) {
+                const size_t index = static_cast<size_t>(row) * static_cast<size_t>(cols) +
+                                     static_cast<size_t>(col);
+                if (index >= node.children.size()) break;
+                Node& child = node.children[index];
+                const int x = node.inner.x + col * (cell_w + gap);
+                arrange(child,
+                        Rect{x, y, cell_w, std::max(0, row_h[static_cast<size_t>(row)])}, theme);
+            }
+            y += row_h[static_cast<size_t>(row)] + gap;
+        }
+        return;
+    }
 
     if (node.kind != Kind::column && node.kind != Kind::row && node.kind != Kind::box) return;
 
