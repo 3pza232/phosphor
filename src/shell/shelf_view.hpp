@@ -4,6 +4,7 @@
 #include "core/screen.hpp"
 #include "core/ui.hpp"
 #include "shell/messages.hpp"
+#include "ui/theme.hpp"
 
 #include <functional>
 #include <string>
@@ -24,6 +25,8 @@ struct ShelfView {
     /// 内容区是否由外部画家（内容包）接管。为真且有画家时，`shelf::draw` 把内容区整个
     /// 交给画家；画家为空则照旧走内置样式（内容包坏掉/缺失时的回退路径）
     bool external = false;
+    /// 外壳主题：内置样式的文字/列表由 ui 组件排版，组件只认 Theme（画家仍拿 Style）
+    ui::Theme theme;
 };
 
 namespace shelf {

@@ -120,6 +120,7 @@ if(PHOSPHOR_BUILD_TESTS)
         tests/main.cpp
         tests/test_core.cpp
         tests/test_ui.cpp
+        tests/test_shell_ui.cpp
         src/core/color.cpp
         src/core/text.cpp
         src/core/text_input.cpp
@@ -143,6 +144,7 @@ if(PHOSPHOR_BUILD_TESTS)
         src/cart/save_store.cpp
         src/cart/cart_files.cpp
         src/shell/shelf_search.cpp
+        src/shell/tape_view.cpp
         src/shell/settings_view.cpp
         src/shell/messages.cpp)
     target_include_directories(phosphor_tests PRIVATE ${CMAKE_SOURCE_DIR}/src)

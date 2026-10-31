@@ -12,6 +12,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
+#include <utility>
 
 namespace phos {
 
@@ -21,6 +23,74 @@ constexpr float kBootLineInterval = 0.4f;       // 内置兜底自检动画的�
 constexpr Color kFaultColor{255, 80, 80};       // 故障红：界面语义色，非主题色
 constexpr int kModsMinWidth = 24;               // MODS 浮窗最小宽度（短名字也别太窄）
 constexpr int kModsPad = 6;                     // 列表左右留白：'>' 光标 + 文本起点 + 右边距
+
+// 组件层按 screen id 存跨帧状态（焦点/列表光标）。屏 id 与元素 id 在这里各写一次：
+// 分散成字符串字面量后，改一个忘一个就是"光标回到别处"这类难查的错
+constexpr const char* kPausedScreen = "shell.paused";
+constexpr const char* kPauseMenu = "paused/menu";
+constexpr const char* kModsScreen = "shell.mods";
+constexpr const char* kModsBox = "mods/box";
+constexpr const char* kModsConfirm = "mods/confirm";
+constexpr const char* kModsRowPrefix = "mods/row/";
+constexpr const char* kTapeScreen = "shell.tape";
+constexpr const char* kShelfScreen = "shell.shelf";
+constexpr const char* kShelfSearchField = "shelf/search";
+constexpr int kShelfSearchMaxW = 46;  // 搜索浮窗宽度上限（窄屏按可用宽度收缩）
+
+// 暂停浮窗：外框尺寸仍取 ShellLayout（逐格位置与旧版面一致）；
+// 列表在框内的缩进改写**内边距**——旧实现是 +6/+3 的硬编码坐标，与盒模型各说一套
+constexpr int kPausePadX = 5;
+constexpr int kPausePadY = 2;
+
+// MODS 行：光标贴内容区左缘，文本从它 +3 列起；"[x] " 前缀由勾选控件自己画
+constexpr int kModsIndent = 0;
+constexpr int kModsTextGap = 3;
+constexpr int kModsRowPadY = 1;   // 浮窗上下各留一行：行区从框内第二行起（旧版面同格）
+
+std::string mods_row_id(int index) { return std::string(kModsRowPrefix) + std::to_string(index); }
+
+/// 由元素 id 反解行号；不是 mod 行返回 false
+bool mods_row_index(const std::string& id, int& index) {
+    const std::string prefix = kModsRowPrefix;
+    if (id.rfind(prefix, 0) != 0) return false;
+    index = std::atoi(id.c_str() + prefix.size());
+    return true;
+}
+
+/// MODS 浮窗的键位：A / 空格切换勾选、激活确认行。方向键**不交给组件**——
+/// 单列光标要跨"滚动窗口"首尾循环，组件级的焦点导航在一个会重新排布的窗口里做不到
+ui::Keys mods_keys() {
+    ui::Keys keys;
+    keys.confirm = {"a", "space"};
+    // 方向键与 Tab 都不交给组件：旧版的 Mod 浮窗只认 A/空格，方向键由宿主做光标环绕
+    keys.up.clear();
+    keys.down.clear();
+    keys.left.clear();
+    keys.right.clear();
+    keys.next_focus.clear();
+    keys.prev_focus.clear();
+    return keys;
+}
+
+/// 绝对定位节点的 x/y 相对**父内容区**：把整屏坐标换过去（宽高仍按整框声明）
+std::pair<int, int> offset_in(const ui::Rect& area, const ui::Rect& rect) {
+    return {rect.x - area.x, rect.y - area.y};
+}
+
+/// 搜索框：压在标题栏区域的居中浮窗（盖住标题与计数是**有意的**——搜索时它才是注意力中心）
+ui::Rect search_box(const ui::Rect& content) {
+    const int room = content.w - 4;
+    const int w = std::min(room, kShelfSearchMaxW);
+    return ui::Rect{content.x + (content.w - w) / 2, content.y + ShellLayout::kTitleY, w, 3};
+}
+
+/// 某控件当前的光标（没有状态就是 0）：宿主要读回组件记的光标才能对外观测
+int widget_cursor(const ui::State& state, const char* screen_id, const char* widget_id) {
+    const auto screen = state.screens.find(screen_id);
+    if (screen == state.screens.end()) return 0;
+    const auto widget = screen->second.widgets.find(widget_id);
+    return widget == screen->second.widgets.end() ? 0 : widget->second.cursor;
+}
 
 } // namespace
 
@@ -94,6 +164,8 @@ bool Shell::settings_on_sound_row() const {
 void Shell::to_tape() {
     mode_ = ShellMode::tape;
     tape_.open();
+    // 输入页的文本域状态也归零：不清的话上次没导完的码会留在框里（旧实现的 open 同样清缓冲）
+    ui_state_.forget(kTapeScreen);
 }
 
 void Shell::set_tape(std::string cart_name, std::string code, bool available) {
@@ -156,6 +228,8 @@ void Shell::to_shelf() { mode_ = ShellMode::shelf; }
 void Shell::to_paused() {
     mode_ = ShellMode::paused;
     pause_cursor_ = 0;
+    // 光标由组件按元素 id 记着：进屏时显式归位，否则会停在上次退出的那一项
+    ui_state_.screen(kPausedScreen).widgets[kPauseMenu].cursor = 0;
 }
 
 void Shell::open_mods() {
@@ -169,7 +243,6 @@ void Shell::open_mods() {
     // 否则打开后原样确认也会被判成"有变化"而平白重启
     mods_enabled_snapshot_ = mods_enabled_now();
     mods_cursor_ = 0;
-    mods_scroll_ = 0.0f;
 }
 
 std::vector<std::string> Shell::mods_enabled_now() const {
@@ -218,21 +291,6 @@ Shell::Intent Shell::update(const Input& input, float dt) {
     const float target = static_cast<float>(shelf_cursor_);
     shelf_pos_ += (target - shelf_pos_) * (1.0f - std::exp(-10.0f * dt));
     if (std::fabs(target - shelf_pos_) < 0.001f) shelf_pos_ = target;
-
-    // MODS 浮窗的平滑滚动：一条 float 首行位置指数逼近目标（像视窗样式那样，不硬跳）
-    if (mode_ == ShellMode::mods) {
-        const int items = static_cast<int>(mods_.size()) + 1;
-        const int visible = std::max(1, mods_box().h - 4);
-        int row_target = 0;
-        if (items > visible) {
-            row_target = mods_cursor_ - visible / 2;
-            if (row_target < 0) row_target = 0;
-            if (row_target > items - visible) row_target = items - visible;
-        }
-        const float goal = static_cast<float>(row_target);
-        mods_scroll_ += (goal - mods_scroll_) * (1.0f - std::exp(-16.0f * dt));
-        if (std::fabs(goal - mods_scroll_) < 0.01f) mods_scroll_ = goal;
-    }
 
     switch (mode_) {
         case ShellMode::boot:
@@ -451,49 +509,140 @@ Shell::Intent Shell::update_settings(const Input& input) {
 
 Shell::Intent Shell::update_tape(const Input& input) {
     Intent intent;
-    // 按键、滚动、输入缓冲与过滤都在 shell/tape_view.cpp；这里只把它的请求翻成外壳意图
-    const std::string code = tape_.update(input);
-    if (!code.empty()) {
+    const ui::Rect content = content_rect();
+    // 切页与滚动在**建树前**生效：这一帧敲进来的字符要落到当前这一页上
+    tape_.update(input);
+    ui::Frame frame(kTapeScreen, ui_state_, ui_theme_, content, &input, ui::Keys::host());
+    tape_.build(frame.root(), content, lang_, frame.field_text(tape::ScreenState::kFieldId));
+    for (const ui::Event& event : frame.run()) {
+        // 输入页的文本域提交 = 请求导入。查看页没有文本域，Enter 仍然什么都不做
+        if (event.kind != ui::EventKind::submitted) continue;
+        if (event.id != tape::ScreenState::kFieldId || event.text.empty()) continue;
         intent.tape_import = true;
-        intent.tape_code = code;
+        intent.tape_code = event.text;
     }
     return intent;
 }
 
+void Shell::build_paused_menu(ui::Node& root, const ui::Rect& area) const {
+    const ui::Rect box = ui::Rect::centered(area, ShellLayout::kPauseW, ShellLayout::kPauseH);
+    const std::pair<int, int> at = offset_in(area, box);
+    ui::Node& dialog = root.add_box("paused/box", tr(lang_, Msg::pause_title));
+    // 绝对定位节点的宽高按**整框**声明（含边框与内边距）；内边距再把列表摆到旧版面的位置
+    dialog.props.absolute = true;
+    dialog.props.x = at.first;
+    dialog.props.y = at.second;
+    dialog.props.width = box.w;
+    dialog.props.height = box.h;
+    dialog.props.padding = ui::Insets{kPausePadX, kPausePadY, kPausePadX, kPausePadY};
+    dialog.props.border = ui::Border::single;
+    dialog.props.opaque = true;
+    dialog.props.gap = 0;
+
+    ui::Node& menu = dialog.add_list(kPauseMenu, {tr(lang_, Msg::pause_resume),
+                                                  tr(lang_, Msg::pause_tape),
+                                                  tr(lang_, Msg::pause_eject)});
+    menu.props.indent = 0;
+    menu.props.text_gap = 1;
+}
+
 Shell::Intent Shell::update_paused(const Input& input) {
     Intent intent;
-    constexpr int kItems = 3;
-    if (input.pressed(Key::up))   pause_cursor_ = (pause_cursor_ + kItems - 1) % kItems;
-    if (input.pressed(Key::down)) pause_cursor_ = (pause_cursor_ + 1) % kItems;
-    if (input.pressed(Key::start)) {  // Enter 确认（Esc 直接继续，见 handle_escape）
-        if (pause_cursor_ == 0) intent.resume = true;
-        else if (pause_cursor_ == 1) {
-            to_tape();
-            intent.open_tape = true;  // App 据此填入当前卡带的磁带码
-        } else
-            intent.eject = true;
+    const ui::Rect area = content_rect();
+    // 上下移动、确认都由组件处理（焦点在列表上）；Esc = 继续，由 App 统一裁决
+    ui::Frame frame(kPausedScreen, ui_state_, ui_theme_, area, &input, ui::Keys::host());
+    build_paused_menu(frame.root(), area);
+
+    for (const ui::Event& event : frame.run()) {
+        if (event.kind != ui::EventKind::activated || event.id != kPauseMenu) continue;
+        switch (event.index) {
+            case 0: intent.resume = true; break;   // 继续游戏
+            case 1:                                // 磁带码（App 据此填入本机的码）
+                to_tape();
+                intent.open_tape = true;
+                break;
+            default: intent.eject = true; break;   // 拔出卡带
+        }
     }
+    // 光标真源在组件里：读回给 cursor()，agent 读到的行号与画面高亮必须一致
+    pause_cursor_ = widget_cursor(ui_state_, kPausedScreen, kPauseMenu);
     return intent;
+}
+
+void Shell::build_mods_dialog(ui::Node& root, const ui::Rect& area) const {
+    const ui::Rect box = mods_box();
+    const std::pair<int, int> at = offset_in(area, box);
+    const int mods = static_cast<int>(mods_.size());
+    const int items = mods + 1;                 // + 确认行（取消由 Esc 承担）
+    const int visible = std::max(1, box.h - 4);  // 边框 + 上下各留一行
+
+    ui::Node& dialog = root.add_box(kModsBox, tr(lang_, Msg::mods_title));
+    dialog.props.absolute = true;
+    dialog.props.x = at.first;
+    dialog.props.y = at.second;
+    dialog.props.width = box.w;
+    dialog.props.height = box.h;
+    dialog.props.padding = ui::Insets{0, kModsRowPadY, 0, kModsRowPadY};
+    dialog.props.border = ui::Border::single;
+    dialog.props.opaque = true;
+    dialog.props.gap = 0;
+
+    // 滚动窗口：让光标停在中间，首尾夹紧——公式与旧平滑滚动的**目标行**完全相同
+    int first = 0;
+    if (items > visible) first = std::clamp(mods_cursor_ - visible / 2, 0, items - visible);
+    const int row_w = box.w - 2;  // 内容区宽（左右不留内边距）：行宽定死才能按列截断
+    for (int index = first; index < first + visible && index < items; ++index) {
+        if (index < mods) {
+            const ModOption& mod = mods_[static_cast<size_t>(index)];
+            const std::string& shown = lang_ == Lang::en ? mod.en : mod.zh;
+            const bool on = index < static_cast<int>(mods_checked_.size()) && mods_checked_[index];
+            ui::Node& row = dialog.add_checkbox(mods_row_id(index), shown.empty() ? mod.id : shown);
+            row.props.width = row_w;
+            row.props.indent = kModsIndent;
+            row.props.text_gap = kModsTextGap;
+            row.props.dim = !on;  // 未勾选 = 不生效：暗色，一眼能分辨（与旧版一致）
+        } else {
+            ui::Node& confirm = dialog.add_button(
+                kModsConfirm, std::string("[ ") + tr(lang_, Msg::mods_confirm) + " ]");
+            confirm.props.width = row_w;
+            confirm.props.indent = kModsIndent;
+            confirm.props.text_gap = kModsTextGap;
+        }
+    }
+}
+
+void Shell::sync_mods_checked(ui::Frame& frame) const {
+    for (size_t i = 0; i < mods_.size(); ++i)
+        frame.set_checked(mods_row_id(static_cast<int>(i)),
+                          i < mods_checked_.size() && mods_checked_[i]);
 }
 
 Shell::Intent Shell::update_mods(const Input& input) {
     Intent intent;
     const int mods = static_cast<int>(mods_.size());
     const int items = mods + 1;  // 单列：N 个 mod 行 + 确认（取消由 Esc 承担）
-    if (items <= 0) {            // 理论上不会（无 mod 打不开），兜底回架面
+    if (mods == 0) {             // 理论上不会（无 mod 打不开），兜底回架面
         mode_ = ShellMode::shelf;
         return intent;
     }
-    // 首尾循环
+    // 首尾循环（与旧版一致）。方向键由宿主处理：光标要在会重排的滚动窗口里循环
     if (input.pressed(Key::up))   mods_cursor_ = (mods_cursor_ + items - 1) % items;
     if (input.pressed(Key::down)) mods_cursor_ = (mods_cursor_ + 1) % items;
 
-    // A / 空格：mod 行=切换勾选；确认=执行。Enter 不在此列（与架上插卡区分开）
-    if (input.pressed(Key::a) || input.pressed("space")) {
-        if (mods_cursor_ < mods) {
-            mods_checked_[static_cast<size_t>(mods_cursor_)] =
-                !mods_checked_[static_cast<size_t>(mods_cursor_)];
-        } else {                    // 确认
+    const ui::Rect area = content_rect();
+    ui::Frame frame(kModsScreen, ui_state_, ui_theme_, area, &input, mods_keys());
+    build_mods_dialog(frame.root(), area);
+    sync_mods_checked(frame);
+    // 焦点只决定"哪一行显示光标/高亮"：A / 空格由组件翻成 changed / activated 事件
+    ui_state_.screen(kModsScreen).focus =
+        mods_cursor_ < mods ? mods_row_id(mods_cursor_) : std::string(kModsConfirm);
+
+    for (const ui::Event& event : frame.run()) {
+        int row = 0;
+        if (event.kind == ui::EventKind::changed && mods_row_index(event.id, row)) {
+            if (row >= 0 && row < static_cast<int>(mods_checked_.size()))
+                mods_checked_[static_cast<size_t>(row)] = event.flag;
+        } else if (event.kind == ui::EventKind::activated && event.id == kModsConfirm) {
             if (mods_changed()) {   // 没变就只关窗，不重启
                 intent.mods_applied = true;
                 // 按每个 mod 的 default_off 把新勾选态拆成两个列表：
@@ -556,7 +705,8 @@ ShelfView Shell::shelf_view(const std::vector<CartInfo>& shown, int cursor) cons
     const float position = shelf_search_.visible() ? static_cast<float>(cursor) : shelf_pos_;
     // 内置样式只区分 list / window；有画家 = 内容区由内容包接管（external 标记）
     const ShelfStyle style = shelf_index_ == 0 ? ShelfStyle::list : ShelfStyle::window;
-    return ShelfView{&shown, style, cursor, position, lang_, static_cast<bool>(shelf_painter_)};
+    return ShelfView{&shown, style,         cursor, position,          lang_,
+                     static_cast<bool>(shelf_painter_), ui_theme_};
 }
 
 // ---------------------------------------------------------------- 绘制
@@ -648,7 +798,7 @@ void Shell::draw_boot(Screen& screen) const {
                style_);
 }
 
-void Shell::draw_shelf(Screen& screen) const {
+void Shell::draw_shelf(Screen& screen) {
     const std::vector<int> matches = shelf_matches();
     // 视图只认"一串卡带 + 一个光标"：把命中结果拷成一份临时表递过去，
     // 渲染层不必知道有搜索这回事（搜索是外壳的状态，不是渲染的知识）
@@ -669,16 +819,25 @@ void Shell::draw_shelf(Screen& screen) const {
     shelf::draw(screen, content, shelf_view(shown, shown_cursor), style_, shelf_painter_);
 
     if (shelf_search_.visible()) {
-        // 搜索框压在上栏区域的居中位置：盖住标题与计数是有意的——正在搜索时，
-        // 它才是注意力的中心，被它盖住的两行没有信息量
-        const int room = content.w - 4;
-        const ui::Rect box{content.x + (content.w - (room < 46 ? room : 46)) / 2,
-                           content.y + ShellLayout::kTitleY, room < 46 ? room : 46, 3};
+        // 浮窗外框仍用绘制原语：它的标题是**这道浮层**的一部分，这里保持逐字节不变
+        const ui::Rect box = search_box(content);
         ui::fill(screen, box, U' ', style_.fg, style_.bg);
         ui::frame(screen, box, tr(lang_, Msg::shelf_search_title), style_);
-        const std::string field = "> " + shelf_search_.query() + (shelf_search_.editing() ? "_" : "");
-        ui::print(screen, box.x + 2, box.y + 1,
-                  text::truncate(field, box.w - 4), style_.fg, style_.bg);
+
+        // 输入行是一个真正的文本域：查询串的真源仍在 ShelfSearch（它参与匹配与输入法判定），
+        // 所以这里用"只排布/绘制"的帧，字符结算仍在 update_shelf 里——界面状态不存两份
+        ui::Frame frame(kShelfScreen, ui_state_, ui_theme_, content, nullptr, ui::Keys::host());
+        ui::Node& field = frame.root().add(ui::Kind::field, kShelfSearchField);
+        field.props.absolute = true;
+        field.props.x = box.x + 2 - content.x;
+        field.props.y = box.y + 1 - content.y;
+        field.props.width = box.w - 4;
+        field.props.text = shelf_search_.editing() ? "_" : "";  // 空查询时的光标占位
+        // 未输入时不抢焦点：否则已确认的搜索框会多挂一个光标，看起来像还在打字
+        field.props.enabled = shelf_search_.editing();
+        frame.set_field_text(kShelfSearchField, shelf_search_.query());
+        frame.run();  // draw 路径只排布
+        frame.paint(screen);
     }
 
     if (!shelf_search_.visible()) {
@@ -704,65 +863,35 @@ void Shell::draw_settings(Screen& screen) {
     draw_footer(screen, tr(lang_, Msg::settings_footer));
 }
 
-void Shell::draw_paused(Screen& screen) const {
-    const ui::Rect content = content_rect();
-    const ui::Rect box = ui::Rect::centered(content, ShellLayout::kPauseW, ShellLayout::kPauseH);
-    ui::fill(screen, box, U' ', style_.fg, style_.bg);
-    ui::frame(screen, box, tr(lang_, Msg::pause_title), style_);
-
-    const std::vector<std::string> items = {tr(lang_, Msg::pause_resume),
-                                            tr(lang_, Msg::pause_tape),
-                                            tr(lang_, Msg::pause_eject)};
-    ui::menu(screen, ui::Rect{box.x + 6, box.y + 3, box.w - 12, 5}, items, pause_cursor_, style_);
-
+void Shell::draw_paused(Screen& screen) {
+    const ui::Rect area = content_rect();
+    ui::Frame frame(kPausedScreen, ui_state_, ui_theme_, area, nullptr, ui::Keys::host());
+    build_paused_menu(frame.root(), area);
+    frame.run();  // draw 路径只排布（输入在 update_paused 里已处理）
+    frame.paint(screen);
     draw_footer(screen, tr(lang_, Msg::pause_footer));
 }
 
-void Shell::draw_mods(Screen& screen) const {
+void Shell::draw_mods(Screen& screen) {
     draw_chrome(screen, tr(lang_, Msg::mods_title), "");
-    const ui::Rect box = mods_box();
-    ui::fill(screen, box, U' ', style_.fg, style_.bg);
-    ui::frame(screen, box, tr(lang_, Msg::mods_title), style_);
-
-    const int mods = static_cast<int>(mods_.size());
-    const int items = mods + 1;  // mod 行 + 确认，单列
-    const int list_x = box.x + 3;
-    const int list_y = box.y + 2;
-    const int list_h = box.h - 4;
-    const int text_w = box.w - 5;  // '>' 与左右留白之外的可写宽度（超宽则截断）
-
-    const std::string confirm = std::string("[ ") + tr(lang_, Msg::mods_confirm) + " ]";
-
-    for (int i = 0; i < items; ++i) {
-        // 平滑滚动：以浮点首行铺排，指数逼近时行逐帧位移（不是硬跳）
-        const int y = list_y + static_cast<int>(std::lround(static_cast<float>(i) - mods_scroll_));
-        if (y < list_y || y >= list_y + list_h) continue;  // 视口外（含动画中间帧）
-        const bool sel = i == mods_cursor_;
-        if (sel) screen.put(box.x + 1, y, U'>', style_.accent, style_.bg);
-
-        if (i < mods) {
-            const ModOption& mod = mods_[static_cast<size_t>(i)];
-            const std::string& shown = lang_ == Lang::en ? mod.en : mod.zh;
-            const bool on = mods_checked_[static_cast<size_t>(i)];
-            // 行显示 mod 自己的名字（缺省已回落文件夹名），不是目标 id
-            const std::string text = text::truncate(
-                std::string(on ? "[x] " : "[ ] ") + (shown.empty() ? mod.id : shown), text_w);
-            // 未勾选 = 不生效：用暗色，一眼能分辨
-            ui::print(screen, list_x + 1, y, text,
-                      sel ? style_.accent : (on ? style_.fg : style_.dim), style_.bg);
-        } else {
-            ui::print(screen, list_x + 1, y, confirm, sel ? style_.accent : style_.fg, style_.bg);
-        }
-    }
-
+    const ui::Rect area = content_rect();
+    ui::Frame frame(kModsScreen, ui_state_, ui_theme_, area, nullptr);
+    build_mods_dialog(frame.root(), area);
+    sync_mods_checked(frame);
+    frame.run();
+    frame.paint(screen);
     draw_footer(screen, tr(lang_, Msg::mods_footer));
 }
 
-void Shell::draw_tape(Screen& screen) const {
+void Shell::draw_tape(Screen& screen) {
     // 标题栏与页脚是全机统一的，所以由外壳画；页面文案编号由界面模块报出——
     // 模块不碰语言，它只说自己"现在是哪一页、页脚该提示什么"
     draw_chrome(screen, tr(lang_, Msg::tape_title), tr(lang_, tape_.page_hint()));
-    tape_.draw(screen, content_rect(), lang_, style_);
+    const ui::Rect content = content_rect();
+    ui::Frame frame(kTapeScreen, ui_state_, ui_theme_, content, nullptr, ui::Keys::host());
+    tape_.build(frame.root(), content, lang_, frame.field_text(tape::ScreenState::kFieldId));
+    frame.run();  // draw 路径只排布（输入在 update_tape 里已处理）
+    frame.paint(screen);
     draw_footer(screen, tr(lang_, tape_.footer_hint()));
 }
 

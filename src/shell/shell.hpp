@@ -215,6 +215,13 @@ private:
     bool mods_changed() const;
     /// MODS 浮窗矩形（居中）：输入（滚动视口）与绘制共用同一份布局
     ui::Rect mods_box() const;
+    /// 暂停菜单的元素树：居中浮窗 + 列表（**焦点在列表上**）。
+    /// 光标存在组件的 ScreenState 里，Shell 只把最后一行读回给 agent 观测
+    void build_paused_menu(ui::Node& root, const ui::Rect& area) const;
+    /// MODS 浮窗的元素树：N 个勾选行 + 确认行。勾选态的**真源仍是 mods_checked_**，
+    /// 组件每帧经 sync_mods_checked 同步，切换事件再写回来
+    void build_mods_dialog(ui::Node& root, const ui::Rect& area) const;
+    void sync_mods_checked(ui::Frame& frame) const;
 
     ui::Rect content_rect() const;
     /// 设置屏的可用区域（行区 + 底部预览框的锚点）
@@ -222,13 +229,13 @@ private:
     SettingsContext make_settings_context() const;
     void draw_bezel(Screen& screen) const;
     void draw_boot(Screen& screen) const;
-    void draw_shelf(Screen& screen) const;
+    void draw_shelf(Screen& screen);
     void draw_settings(Screen& screen);
-    void draw_paused(Screen& screen) const;
+    void draw_paused(Screen& screen);
     /// 磁带码界面（两态渲染见 shell/tape_view.cpp）
-    void draw_tape(Screen& screen) const;
+    void draw_tape(Screen& screen);
     void draw_error(Screen& screen);
-    void draw_mods(Screen& screen) const;
+    void draw_mods(Screen& screen);
     void draw_chrome(Screen& screen, const std::string& title,
                      const std::string& right_text) const;
     void draw_footer(Screen& screen, const std::string& hints) const;
@@ -268,6 +275,7 @@ private:
     ShelfSearch shelf_search_;
     int settings_cursor_ = 0;
     int fps_ = kDefaultFps;
+    /// 暂停菜单光标（组件里那份的镜像，供 cursor() 观测；真源在组件的 ScreenState）
     int pause_cursor_ = 0;
 
     /// 覆盖层 Mod 清单（全部，含未启用的；带各自显示名与 default_off）与编辑/快照态
@@ -275,7 +283,6 @@ private:
     int mods_cursor_ = 0;              // 单列光标：N 个 mod 行 + 确认（Esc 即取消）
     std::vector<bool> mods_checked_;   // 编辑态勾选 = 有效启用态（下标与 mods_ 对齐）
     std::vector<std::string> mods_enabled_snapshot_;  // 打开时的有效启用集（比较用）
-    float mods_scroll_ = 0.0f;         // 平滑滚动首行（浮点，逼近目标）
 
     std::vector<std::string> skin_names_;
     int skin_index_ = 0;
