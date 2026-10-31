@@ -22,7 +22,7 @@ namespace phos::tape {
 class ScreenState {
 public:
     /// 导入结果。界面只收语义、自己按语言取词——文案属于界面层
-    enum class Result { none, ok, invalid, no_save };
+    enum class Result { none, ok, invalid, no_save, copied, clipboard_empty, clipboard_invalid };
 
     /// 输入页文本域的元素 id。码本身由组件持有（过滤/限长/退格都在 TextInput 里），
     /// 外壳经 `Frame::field_text` 取它：界面的状态不再存两份
@@ -31,10 +31,17 @@ public:
     /// App 在进入界面时填入：卡带名、本机的码、该卡带是否有存档
     void set_tape(std::string cart_name, std::string code, bool available);
     void set_result(Result result) { result_ = result; }
+    /// 剪贴板粘贴前的规整：去掉空白、转大写；调用方再用 is_valid_code 判字符合法性。
+    /// 放在这里是为了让"粘贴什么算合法码"与输入页的过滤规则只有一处真相。
+    static std::string compact_code(std::string_view raw);
+    static bool is_valid_code(std::string_view code);
+    /// 当前查看的码（Y 复制用）
+    const std::string& code() const { return code_; }
     /// 从暂停菜单进入：回到查看页、滚动归零（文本域由外壳连同本屏状态一起清空）
     void open();
 
     const std::string& cart_name() const { return cart_; }
+    bool available() const { return available_; }
     /// 标题栏右侧的状态词（查看页 / 输入页）
     Msg page_hint() const;
     /// 页脚提示：无存档时是"返回"提示，与有码时的操作提示不同

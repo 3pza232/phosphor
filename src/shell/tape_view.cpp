@@ -71,6 +71,24 @@ Msg ScreenState::page_hint() const {
 
 Msg ScreenState::footer_hint() const { return available_ ? Msg::tape_footer : Msg::tape_back_hint; }
 
+std::string ScreenState::compact_code(std::string_view raw) {
+    std::string out;
+    out.reserve(raw.size());
+    for (char ch : raw) {
+        if (ch == ' ' || ch == '\t' || ch == '\r' || ch == '\n') continue;
+        if (ch >= 'a' && ch <= 'f') ch = static_cast<char>(ch - 'a' + 'A');
+        out.push_back(ch);
+    }
+    return out;
+}
+
+bool ScreenState::is_valid_code(std::string_view code) {
+    if (code.empty() || code.size() > kMaxChars) return false;
+    for (char ch : code)
+        if (!((ch >= '0' && ch <= '9') || (ch >= 'A' && ch <= 'F'))) return false;
+    return true;
+}
+
 void ScreenState::update(const Input& input) {
     if (input.pressed(Key::left)) edit_ = false;
     if (input.pressed(Key::right)) edit_ = true;
@@ -129,9 +147,16 @@ void ScreenState::build(ui::Node& root, const ui::Rect& content, Lang lang,
     }
 
     if (result_ != Result::none) {
-        const Msg id = result_ == Result::ok        ? Msg::tape_ok
-                       : result_ == Result::invalid ? Msg::tape_invalid
-                                                    : Msg::tape_no_save;
+        Msg id = Msg::tape_no_save;
+        switch (result_) {
+            case Result::ok: id = Msg::tape_ok; break;
+            case Result::invalid: id = Msg::tape_invalid; break;
+            case Result::no_save: id = Msg::tape_no_save; break;
+            case Result::copied: id = Msg::tape_copied; break;
+            case Result::clipboard_empty: id = Msg::tape_clipboard_empty; break;
+            case Result::clipboard_invalid: id = Msg::tape_clipboard_invalid; break;
+            case Result::none: break;
+        }
         root.add_text("tape/result", tr(lang, id)).props.accent = true;
     }
 }

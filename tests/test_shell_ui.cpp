@@ -436,3 +436,30 @@ TEST(shell_controls_capture_flow_and_conflict) {
     CHECK_EQ(state.apply_capture("space"), std::string("a"));
     CHECK_EQ(state.bindings().at("space"), std::string("up"));
 }
+
+TEST(shell_tape_clipboard_code_normalization) {
+    // 剪贴板里的码常带换行/空格/小写；粘贴前统一去空白并转大写，
+    // 合法性判断与输入页的过滤（0-9/A-F）是同一套
+    CHECK_EQ(tape::ScreenState::compact_code(" a1\r\nB2\t"), std::string("A1B2"));
+    CHECK_EQ(tape::ScreenState::compact_code(""), std::string(""));
+    CHECK(tape::ScreenState::is_valid_code("0123456789ABCDEF"));
+    CHECK(!tape::ScreenState::is_valid_code(""));
+    CHECK(!tape::ScreenState::is_valid_code("A1G2"));
+    CHECK(!tape::ScreenState::is_valid_code("a1b2"));  // compact 后才是合法输入
+}
+
+TEST(shell_tape_clipboard_result_rows) {
+    tape::ScreenState state;
+    state.set_tape("SNAKE", "A1B2", true);
+    state.set_result(tape::ScreenState::Result::copied);
+    ui::Node root = build_tape(state, content_rect(), Lang::en, "");
+    const ui::Node* result = find_node(root, "tape/result");
+    CHECK(result != nullptr);
+    CHECK_EQ(result->props.text, std::string(tr(Lang::en, Msg::tape_copied)));
+
+    state.set_result(tape::ScreenState::Result::clipboard_invalid);
+    root = build_tape(state, content_rect(), Lang::zh, "");
+    result = find_node(root, "tape/result");
+    CHECK(result != nullptr);
+    CHECK_EQ(result->props.text, std::string(tr(Lang::zh, Msg::tape_clipboard_invalid)));
+}

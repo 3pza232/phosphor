@@ -679,6 +679,11 @@ int App::run_windowed(const CliOptions& opts) {
         return 3;
     }
 
+    // 磁带码 Y/P：Shell 只收字符串，剪贴板读写留在平台窗口层
+    shell_.set_clipboard_hooks(
+        [&window] { return window.clipboard_text(); },
+        [&window](const std::string& text) { window.set_clipboard_text(text); });
+
     Renderer renderer;
     if (!renderer.init(fonts_.files(), font_px_, font_px_, error)) {
         std::fprintf(stderr, "ERROR: %s\n", error.c_str());

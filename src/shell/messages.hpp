@@ -76,6 +76,9 @@ enum class Msg {
     tape_hint_no_save,
     tape_footer,
     tape_back_hint,
+    tape_copied,
+    tape_clipboard_empty,
+    tape_clipboard_invalid,
 
     // 错误屏
     error_title,

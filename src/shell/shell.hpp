@@ -131,6 +131,10 @@ public:
     using SaveCodeFn =
         std::function<bool(const save::Entry&, std::string& cart_name, std::string& code)>;
     void set_save_hooks(SaveListFn list, SaveDeleteFn remove, SaveCodeFn code);
+    /// 系统剪贴板钩子（App 注入）：磁带码 Y 复制 / P 粘贴。Shell 不直接碰平台窗口
+    using ClipboardGetFn = std::function<std::string()>;
+    using ClipboardSetFn = std::function<void(const std::string&)>;
+    void set_clipboard_hooks(ClipboardGetFn get, ClipboardSetFn set);
     /// 按键重绑定屏的钩子（App 注入）：映射快照 / 保存映射 / 开始捕获 / 取消捕获。
     /// 真实物理键捕获在 Window 层（key_callback），Shell 只做视图与冲突提示
     using ControlsListFn = std::function<std::map<std::string, std::string>()>;
@@ -355,6 +359,8 @@ private:
     SaveListFn save_list_;
     SaveDeleteFn save_delete_;
     SaveCodeFn save_code_;
+    ClipboardGetFn clipboard_get_;
+    ClipboardSetFn clipboard_set_;
     /// 磁带码是从存档管理里打开的：Esc 关掉磁带码时要回存档列表，而不是暂停菜单
     bool tape_over_saves_ = false;
     /// 按键重绑定屏：动作列表/捕获/冲突提示在 shell/controls_view.cpp；

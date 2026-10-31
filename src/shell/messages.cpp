@@ -77,9 +77,12 @@ constexpr std::array<Entry, static_cast<size_t>(Msg::count)> kTable{{
     {"此卡带没有存档", "this cart has no save"},
     {"此卡带没有存档，磁带码无处可写。",
      "This cart has no save, so there is no tape code to show or write."},
-    {"[← / →] 查看 / 输入   [Enter] 导入   [Esc] 返回",
-     "[Left / Right] VIEW / EDIT   [Enter] IMPORT   [Esc] BACK"},
+    {"[← / →] 查看 / 输入   [Y] 复制   [P] 粘贴   [Enter] 导入   [Esc] 返回",
+     "[Left / Right] VIEW / EDIT   [Y] COPY   [P] PASTE   [Enter] IMPORT   [Esc] BACK"},
     {"[Esc] 返回", "[Esc] BACK"},
+    {"已复制到剪贴板", "copied to clipboard"},
+    {"剪贴板是空的", "clipboard is empty"},
+    {"剪贴板里不是合法的磁带码", "clipboard does not hold a valid tape code"},
 
     // 错误屏
     {"卡带故障", "CARTRIDGE FAULT"},

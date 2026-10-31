@@ -348,6 +348,11 @@ void Shell::open_controls() {
     ui_state_.forget(controls::kScreenId);
 }
 
+void Shell::set_clipboard_hooks(ClipboardGetFn get, ClipboardSetFn set) {
+    clipboard_get_ = std::move(get);
+    clipboard_set_ = std::move(set);
+}
+
 void Shell::on_key_captured(const std::string& physical) {
     if (!controls_open() || !controls_.capturing()) return;
     const std::string action = controls_.selected_action();
@@ -817,6 +822,23 @@ Shell::Intent Shell::update_tape(const Input& input) {
     const ui::Rect content = content_rect();
     // 切页与滚动在**建树前**生效：这一帧敲进来的字符要落到当前这一页上
     tape_.update(input);
+    // 磁带码的跨机传递：Y 复制本机码，P 直接拿剪贴板里的码导入（与手输后 Enter 同一条 App 路径）。
+    // 剪贴板只由 App 注入的钩子访问，Shell 不依赖窗口
+    if (clipboard_set_ && input.pressed("y") && !tape_.code().empty()) {
+        clipboard_set_(tape_.code());
+        tape_.set_result(tape::ScreenState::Result::copied);
+    }
+    if (clipboard_get_ && input.pressed("p")) {
+        const std::string code = tape::ScreenState::compact_code(clipboard_get_());
+        if (code.empty()) {
+            tape_.set_result(tape::ScreenState::Result::clipboard_empty);
+        } else if (!tape::ScreenState::is_valid_code(code)) {
+            tape_.set_result(tape::ScreenState::Result::clipboard_invalid);
+        } else {
+            intent.tape_import = true;
+            intent.tape_code = code;
+        }
+    }
     ui::Frame frame(kTapeScreen, ui_state_, ui_theme_, content, &input, ui::Keys::host());
     tape_.build(frame.root(), content, lang_, frame.field_text(tape::ScreenState::kFieldId));
     for (const ui::Event& event : frame.run()) {

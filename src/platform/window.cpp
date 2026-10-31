@@ -374,6 +374,16 @@ void Window::set_title(const std::string& title) const {
     if (window_) glfwSetWindowTitle(window_, title.c_str());
 }
 
+std::string Window::clipboard_text() const {
+    if (!window_) return {};
+    const char* text = glfwGetClipboardString(window_);
+    return text ? std::string(text) : std::string();
+}
+
+void Window::set_clipboard_text(const std::string& text) const {
+    if (window_) glfwSetClipboardString(window_, text.c_str());
+}
+
 void Window::poll_events() {
     glfwPollEvents();
     poll_gamepad();

@@ -60,6 +60,10 @@ public:
     void set_ime_enabled(bool enabled);
     /// 改写标题栏文字（agent 接管时用于提示"谁在操作"）
     void set_title(const std::string& title) const;
+    /// 系统剪贴板（UTF-8）。GLFW 的剪贴板接口在 Windows/macOS/X11 都可用；
+    /// 读不到（空/不支持）返回空串，写空串在 GLFW 里是安全兜底
+    std::string clipboard_text() const;
+    void set_clipboard_text(const std::string& text) const;
     /// 轮询窗口事件并同步手柄状态（键盘/手柄任一来源按下即按下）
     void poll_events();
     void swap_buffers() const;
