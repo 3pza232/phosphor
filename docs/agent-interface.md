@@ -35,6 +35,7 @@ phosphor [选项]
   --screenshot <path>    退出时把画面写成 PNG（CPU 光栅化，无头同样可用）
   --save-dir <dir>       卡带存档的落点（默认 saves/；机台配置 config.json 固定挨着 exe）
   --config <file>        机台配置路径（默认 config.json；测试据此把实测配置与用户设置隔离）
+  --recent <file>        「最近打开」记录路径（默认 recent.txt；测试据此让卡带架顺序可复现）
   --seed <n>             固定随机种子
 
 确定性输入由**控制通道**承担（`input.inject` + `time.step`）：不需要额外文件，

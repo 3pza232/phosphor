@@ -21,6 +21,7 @@ namespace phos {
 
 int App::run(const CliOptions& opts) {
     if (opts.config) config_path_ = *opts.config;
+    if (opts.recent) recent_path_ = *opts.recent;
     config_ = load_config(config_path_);
 
     // Mod：先落两个配置列表（决定哪些 mod 生效），再由 pack 读各 mod.lua 建覆盖表。
@@ -318,13 +319,13 @@ bool App::boot_should_end() const {
 /// 按卡带架上的下标插卡（路径来自卡带列表，见 Shell::cart_path_at）
 void App::refresh_shelf_order() {
     std::vector<CartInfo> carts = scan_carts(kCartDir);
-    order_by_recent(carts, load_recent(kRecentPath));
+    order_by_recent(carts, load_recent(recent_path_));
     shell_.set_carts(std::move(carts));
 }
 
 void App::load_cart(int index) {
     // 记一次"最近打开"：拔卡回到架子时这张就排在最前
-    remember_recent(kRecentPath, shell_.cart_id_at(index));
+    remember_recent(recent_path_, shell_.cart_id_at(index));
     load_cart_path(shell_.cart_path_at(index));
 }
 

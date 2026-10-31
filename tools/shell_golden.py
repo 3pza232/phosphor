@@ -50,7 +50,24 @@ def _dump_screen(frames: int, seed: int = 1) -> str:
         return proc.stdout
 
 #: 固定种子：boot 动画与部分内容用 phos.sys.random，不固定种子基线就不稳定。
-SEED = ("--seed", "1")
+#: --recent 指向运行目录下的文件：卡带架顺序来自"最近打开"，不能借用玩家的 recent.txt，
+#: 否则同一份基线在干净目录与开发目录里不一致。
+SEED = ("--seed", "1", "--recent", "tests-out/golden-recent.txt")
+
+
+def _normalize_shelf_order(host: Host) -> None:
+    """把"最近打开"顺序归一化：按 id 升序依次装载并弹出，最后一张在最前。
+
+    卡带架首屏的顺序由 recent 决定；不归一化时，基线会在"跑过某张卡带"之后漂移。
+    走控制通道而不是直接写文件：顺序的语义由主机自己产生，测试只驱动行为。
+    """
+    ids = sorted(c["id"] for c in host.carts() if c.get("id"))
+    for cart_id in ids:
+        host.send("cart.load", path=f"carts/{cart_id}")
+        host.step(2)
+        host.send("cart.eject")
+        # 拔卡收缩动画约 21 帧：没放完之前外壳不接收输入，架子也还没画出来
+        host.step(30)
 
 
 #: 一个屏 = 一段驱动脚本 + 期望捕获的文本。boot/shelf/settings/mods/search 共用一个宿主；
@@ -61,6 +78,8 @@ def _screens() -> dict[str, str]:
 
     with Host(extra=SEED) as host:
         host.step(264)
+        _normalize_shelf_order(host)
+        host.step(4)
         shots["shelf"] = host.screen_text()
         host.key("settings")
         host.step(3)

@@ -145,6 +145,8 @@ private:
     static constexpr const char* kConfigPath = "config.json";
     /// 实际配置路径（--config 可改；工具脚本据此把实测配置与用户的 config.json 隔开）
     std::string config_path_ = kConfigPath;
+    /// 实际"最近打开"记录路径（--recent 可改；工具脚本据此让卡带架顺序可复现）
+    std::string recent_path_ = kRecentPath;
     static constexpr const char* kCartDir = "carts";
     /// 卡带架的"最近打开"记录（见 core/config.hpp 的 load_recent）
     static constexpr const char* kRecentPath = "recent.txt";

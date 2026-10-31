@@ -173,6 +173,7 @@ int main(int argc, char** argv) {
                 "  --author <作者>      --new 的卡带作者（默认取模板里的值）\n"
                 "  --save-dir <目录>    存档目录（默认 saves）\n"
                 "  --config <文件>      配置路径（默认 config.json；测试据此隔离实测配置）\n"
+                "  --recent <文件>      「最近打开」记录路径（默认 recent.txt；测试据此让卡带架顺序可复现）\n"
                 "  --check-api          核对 devkit/phos.lua 与已注册 API 是否一致\n"
                 "  --json               机器可读输出\n"
                 "\n"
