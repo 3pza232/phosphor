@@ -8,6 +8,7 @@
 
 #include "core/input.hpp"
 #include "core/version.hpp"
+#include "shell/controls_view.hpp"
 #include "shell/layout.hpp"
 #include "shell/settings_view.hpp"
 #include "shell/tape_view.hpp"
@@ -40,6 +41,16 @@ ui::Node build_tape(tape::ScreenState& state, const ui::Rect& content, Lang lang
 }
 
 ui::Rect content_rect() { return ui::Rect{2, 3, 80, 45}; }
+
+/// Controls 屏建树 → 排布（不跑输入；捕获逻辑直接调 ScreenState）
+ui::Node build_controls(controls::ScreenState& state, const ui::Rect& content, Lang lang) {
+    ui::Theme theme;
+    ui::Node root = ui::make_root("shell.controls");
+    state.build(root, content, lang);
+    ui::measure(root, content.w, theme);
+    ui::arrange(root, content, theme);
+    return root;
+}
 
 void press(tape::ScreenState& state, const char* key, int times = 1) {
     Input input;
@@ -369,4 +380,59 @@ TEST(shell_about_view_uses_version_and_host_keys) {
     build_about(en, Lang::en, area);
     CHECK_EQ(find_node(en, "about/ops/title")->props.text, std::string("BASIC CONTROLS"));
     CHECK_EQ(find_node(en, "about/credits/title")->props.text, std::string("CREDITS"));
+}
+
+TEST(shell_controls_rows_show_effective_physical_keys) {
+    // 默认（无映射）：每个动作显示同名物理键
+    controls::ScreenState state;
+    const ui::Rect content = content_rect();
+    ui::Node root = build_controls(state, content, Lang::zh);
+    const ui::Node* row0 = find_node(root, controls::row_id(0));
+    CHECK(row0 != nullptr);
+    CHECK(row0->props.text.find("LEFT") != std::string::npos);
+    CHECK(row0->props.text.find("< left >") != std::string::npos);
+    CHECK(find_node(root, controls::kBackId) != nullptr);
+
+    // 多物理键到同一动作 + 一条改绑：按物理键名字典序显示
+    state.set_bindings({{"h", "left"}, {"left", "left"}, {"space", "a"}});
+    ui::Node root2 = build_controls(state, content, Lang::en);
+    const ui::Node* row = find_node(root2, controls::row_id(0));
+    CHECK(row->props.text.find("h, left") != std::string::npos);
+    const ui::Node* row_a = find_node(root2, controls::row_id(4));
+    CHECK(row_a->props.text.find("space") != std::string::npos);
+}
+
+TEST(shell_controls_capture_flow_and_conflict) {
+    controls::ScreenState state;
+    const std::map<std::string, std::string> bindings{
+        {"h", "right"}, {"space", "a"}, {"left", "left"}};
+    state.set_bindings(bindings);
+    state.select(0);  // left
+    CHECK_EQ(std::string(state.selected_action()), std::string("left"));
+
+    state.begin_capture();
+    CHECK(state.capturing());
+    // 捕获态树：提示目标动作 + 取消按钮
+    ui::Node capture = build_controls(state, content_rect(), Lang::en);
+    CHECK(find_node(capture, "controls/capture_hint") != nullptr);
+    CHECK(find_node(capture, "controls/capture_hint")->props.text.find("left") != std::string::npos);
+    CHECK(find_node(capture, controls::kCancelId) != nullptr);
+
+    // h 原来绑在 right：覆盖并返回旧动作；捕获结束
+    const std::string replaced = state.apply_capture("h");
+    CHECK_EQ(replaced, std::string("right"));
+    CHECK(!state.capturing());
+    CHECK_EQ(state.bindings().at("h"), std::string("left"));
+
+    // 绑回同名键 = 删除显式映射（保持配置文件干净）
+    state.select(0);
+    state.begin_capture();
+    CHECK(state.apply_capture("left").empty());
+    CHECK(state.bindings().find("left") == state.bindings().end());
+
+    // 物理键 = 自己的动作且在别处有旧绑定时，也会报告被覆盖的动作
+    state.select(2);  // up
+    state.begin_capture();
+    CHECK_EQ(state.apply_capture("space"), std::string("a"));
+    CHECK_EQ(state.bindings().at("space"), std::string("up"));
 }

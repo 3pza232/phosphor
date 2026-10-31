@@ -120,6 +120,8 @@ bool shell_mode_from(std::string_view id, ShellMode& mode) {
     else if (id == "about") mode = ShellMode::settings;
     // 存档管理同样是 settings 之上的浮层：对 App 仍报告 settings
     else if (id == "saves") mode = ShellMode::settings;
+    // 按键重绑定也是 settings 之上的浮层：Esc 走同一条 to_shelf 路由
+    else if (id == "controls") mode = ShellMode::settings;
     else return false;
     return true;
 }
@@ -216,7 +218,8 @@ void Shell::open_settings() {
 bool Shell::settings_on_sound_row() const {
     // 关于页/存档管理是 settings 之上的浮层：它们没有"音效行"，
     // 别让底下的旧光标在浮层里误触发试听
-    return !about_open() && !saves_open() && mode() == ShellMode::settings &&
+    return !about_open() && !saves_open() && !controls_open() &&
+           mode() == ShellMode::settings &&
            static_cast<SettingId>(settings_cursor_) == SettingId::sound_pack;
 }
 
@@ -326,6 +329,75 @@ Shell::Intent Shell::update_saves(const Input& input) {
     return intent;
 }
 
+void Shell::set_control_hooks(ControlsListFn list, ControlsSaveFn save, CaptureFn start,
+                               CaptureFn cancel) {
+    control_list_ = std::move(list);
+    control_save_ = std::move(save);
+    control_capture_start_ = std::move(start);
+    control_capture_cancel_ = std::move(cancel);
+}
+
+bool Shell::controls_open() const { return screens_.top() == "controls"; }
+
+void Shell::open_controls() {
+    settings_search_clear(settings_search_);  // 与关于/存档浮层同一规则：进浮层先收起搜索
+    screens_.push("controls");
+    controls_.open();
+    if (control_list_) controls_.set_bindings(control_list_());
+    if (control_capture_cancel_) control_capture_cancel_();  // 上一轮没取消的捕获先关掉
+    ui_state_.forget(controls::kScreenId);
+}
+
+void Shell::on_key_captured(const std::string& physical) {
+    if (!controls_open() || !controls_.capturing()) return;
+    const std::string action = controls_.selected_action();
+    const std::string replaced = controls_.apply_capture(physical);
+    if (control_save_) control_save_(controls_.bindings());
+    const bool en = lang_ == Lang::en;
+    // 冲突策略：同一物理键已绑别的动作时**覆盖并在页面提示**（不静默吞掉旧绑定）
+    if (!replaced.empty())
+        controls_.set_status(en ? physical + " was bound to " + replaced + "; now " + action
+                                : physical + " 原绑定 " + replaced + "，已覆盖为 " + action);
+    else
+        controls_.set_status(en ? physical + " -> " + action : physical + " -> " + action);
+}
+
+Shell::Intent Shell::update_controls(const Input& input) {
+    Intent intent;
+    const ui::Rect area = content_rect();
+    ui::Frame frame(controls::kScreenId, ui_state_, ui_theme_, area, &input,
+                    ui::Keys::host());
+    controls_.build(frame.root(), area, lang_);
+
+    for (const ui::Event& event : frame.run()) {
+        if (event.kind == ui::EventKind::cancelled) {
+            const bool was_capturing = controls_.capturing();
+            controls_.cancel_capture();
+            if (control_capture_cancel_) control_capture_cancel_();
+            if (!was_capturing) pop_screen();
+            break;
+        }
+        if (event.kind != ui::EventKind::activated) continue;
+        if (event.id == controls::kBackId || event.id == controls::kCancelId) {
+            controls_.cancel_capture();
+            if (control_capture_cancel_) control_capture_cancel_();
+            if (event.id == controls::kBackId) pop_screen();
+            break;
+        }
+        if (event.id.rfind("controls/row/", 0) != 0) continue;
+        controls_.select(std::atoi(event.id.c_str() + 13));
+        if (controls_.capturing()) break;  // 已在捕获：忽略再次激活
+        controls_.begin_capture();
+        if (control_capture_start_) control_capture_start_();
+        break;
+    }
+
+    // 焦点行同步选中：上下移动后，Enter 重绑的是当前高亮项
+    const std::string& focused = frame.focused_id();
+    if (focused.rfind("controls/row/", 0) == 0) controls_.select(std::atoi(focused.c_str() + 13));
+    return intent;
+}
+
 void Shell::set_fps(int fps) {
     // 落进档位表：手改配置写了个表外的数（如 75）时，界面不能显示一个不会生效的值
     auto dist = [fps](int value) { return value > fps ? value - fps : fps - value; };
@@ -379,6 +451,17 @@ void Shell::to_boot() {
 }
 
 void Shell::to_shelf() {
+    // 按键重绑定是 settings 栈上的浮层：捕获中 Esc 只取消捕获（留在本屏），
+    // 再按一次才 pop 回设置——与"关于/存档"的逐层返回语义一致
+    if (controls_open()) {
+        if (controls_.capturing()) {
+            controls_.cancel_capture();
+            if (control_capture_cancel_) control_capture_cancel_();
+            return;
+        }
+        screens_.pop();
+        return;
+    }
     // 存档管理是 settings 栈上的浮层：Esc 先回设置（再按一次才回卡带架）
     if (saves_open()) {
         saves_.set_confirm(false);
@@ -565,11 +648,18 @@ Shell::Intent Shell::update_shelf(const Input& input) {
 
 Shell::Intent Shell::update_settings(const Input& input) {
     Intent intent;
+    if (controls_open()) return update_controls(input);  // 重绑定浮层：捕获/冲突有自己的状态
     if (saves_open()) return update_saves(input);  // 存档管理浮层有自己的选中/确认逻辑
     if (about_open()) return intent;  // 关于页只画/等 Esc；输入由 App 的 Esc 路由处理
 
     // F5：请求 App 重扫内容包（skin/sound/boot/font/shelf）；当前卡带与卡带脚本不重载
     if (input.pressed("f5")) intent.reload_content = true;
+
+    // F4：按键重绑定（数据/捕获由 App 钩子注入；Esc 由 App 转到 to_shelf() 并 pop 回设置）
+    if (input.pressed("f4")) {
+        open_controls();
+        return intent;
+    }
 
     // F3：打开存档管理（列表数据由 App 钩子注入；Esc 由 App 转到 to_shelf() 并 pop 回设置）
     if (input.pressed("f3")) {
@@ -935,7 +1025,9 @@ void Shell::draw(Screen& screen) {
         case ShellMode::boot: draw_boot(screen); break;
         case ShellMode::shelf: draw_shelf(screen); break;
         case ShellMode::settings:
-            if (saves_open()) {
+            if (controls_open()) {
+                draw_controls(screen);
+            } else if (saves_open()) {
                 draw_saves(screen);
             } else if (about_open()) {
                 draw_about(screen);
@@ -1085,6 +1177,19 @@ void Shell::draw_settings(Screen& screen) {
     frame.paint(screen);
 
     draw_footer(screen, tr(lang_, Msg::settings_footer));
+}
+
+void Shell::draw_controls(Screen& screen) {
+    const bool en = lang_ == Lang::en;
+    draw_chrome(screen, en ? "CONTROLS" : "按键设置", "");
+    const ui::Rect area = content_rect();
+    ui::Frame frame(controls::kScreenId, ui_state_, ui_theme_, area, nullptr,
+                    ui::Keys::host());
+    controls_.build(frame.root(), area, lang_);
+    frame.run();  // draw 路径只排布（输入在 update_controls 里已处理）
+    frame.paint(screen);
+    draw_footer(screen, en ? "Enter rebind   Esc back to settings"
+                           : "Enter 重绑定   Esc 返回设置");
 }
 
 void Shell::draw_saves(Screen& screen) {

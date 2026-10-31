@@ -760,6 +760,41 @@ TEST(format_percent) {
     CHECK_EQ(format::percent(0.5, 9), std::string("50.00%"));  // digits 钳到 2
 }
 
+TEST(config_input_bindings_are_validated) {
+    const std::filesystem::path path = unit_scratch("config_bindings.json");
+    {
+        std::ofstream out(path.string());
+        out << "{";
+        out << "\"input_bindings\": {";
+        out << "\"h\": \"left\", ";        // 合法
+        out << "\"bad key\": \"a\", ";      // 名字含空格：非法
+        out << "\"x\": \"\", ";             // 空值：非法
+        out << "\"n\": \"y\"";              // 合法
+        out << "}}";
+    }
+    const Config c = load_config(path.string());
+    CHECK_EQ(c.input_bindings.size(), size_t(2));
+    CHECK_EQ(c.input_bindings.at("h"), std::string("left"));
+    CHECK_EQ(c.input_bindings.at("n"), std::string("y"));
+    CHECK(c.input_bindings.find("bad key") == c.input_bindings.end());
+    CHECK(c.input_bindings.find("x") == c.input_bindings.end());
+
+    std::error_code ec;
+    std::filesystem::remove(path, ec);
+}
+
+TEST(input_binding_for_maps_or_falls_back) {
+    const std::map<std::string, std::string> none;
+    CHECK_EQ(input_binding_for(none, "h"), std::string("h"));  // 空表 = 恒等映射
+
+    const std::map<std::string, std::string> bindings{
+        {"h", "left"}, {"space", "a"}, {"x", ""}};
+    CHECK_EQ(input_binding_for(bindings, "h"), std::string("left"));
+    CHECK_EQ(input_binding_for(bindings, "space"), std::string("a"));
+    CHECK_EQ(input_binding_for(bindings, "x"), std::string("x"));  // 空值回退物理键名
+    CHECK_EQ(input_binding_for(bindings, "j"), std::string("j"));  // 未映射 = 原样
+}
+
 // ---------------------------------------------------------------- config
 
 TEST(config_defaults_when_missing) {
@@ -785,6 +820,7 @@ TEST(config_roundtrip) {
     c.music_volume = 42;
     c.sfx_volume = 13;
     c.mods_disabled = {"default", "snake"};
+    c.input_bindings = {{"h", "left"}, {"space", "a"}};
     save_config(path.string(), c);
 
     const Config r = load_config(path.string());
@@ -799,6 +835,9 @@ TEST(config_roundtrip) {
     CHECK_EQ(r.mods_disabled.size(), size_t(2));
     CHECK_EQ(r.mods_disabled[0], std::string("default"));
     CHECK_EQ(r.mods_disabled[1], std::string("snake"));
+    CHECK_EQ(r.input_bindings.size(), size_t(2));
+    CHECK_EQ(r.input_bindings.at("h"), std::string("left"));
+    CHECK_EQ(r.input_bindings.at("space"), std::string("a"));
 
     std::error_code ec;
     std::filesystem::remove(path, ec);  // 清理临时文件；删不掉也无所谓

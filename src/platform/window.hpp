@@ -2,6 +2,7 @@
 
 #include "core/input.hpp"
 
+#include <map>
 #include <memory>
 #include <set>
 #include <string>
@@ -24,6 +25,13 @@ struct WindowHandlers {
     std::set<std::string>* keyboard_down = nullptr;
     /// 手柄当前按下的虚拟键（key_callback 只读）：键盘松开时若手柄仍按着则跳过释放
     std::set<std::string>* gamepad_down = nullptr;
+    /// --- 输入重绑定 / 捕获（App 持有；Window 只读映射、回填捕获结果） ---
+    /// 物理键名 → 虚拟键名；nullptr 或空表 = 恒等映射（旧行为）
+    const std::map<std::string, std::string>* input_bindings = nullptr;
+    /// true 时下一个普通物理键只交给 App，不注入游戏（设置里的重绑定捕获）
+    bool* capture_next_key = nullptr;
+    /// 捕获到的物理键名（Window 写入，App 轮询后清空）；capture_next_key 同时被置回 false
+    std::string* captured_physical_key = nullptr;
 };
 
 /// GLFW 窗口封装（RAII）。OS 窗口与物理输入的唯一聚集地。

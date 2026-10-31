@@ -73,6 +73,15 @@ int pick_int(const json::Object* scope, const char* key, int fallback) {
 
 int clamp_volume(int value) { return value < 0 ? 0 : (value > 100 ? 100 : value); }
 
+/// 重绑定键名的最小合法性：可见 ASCII、非空、长度受限（与虚拟键名同一套限制）
+bool valid_binding_name(const std::string& name) {
+    if (name.empty() || name.size() > 64) return false;
+    for (unsigned char c : name) {
+        if (c < 33 || c > 126) return false;
+    }
+    return true;
+}
+
 /// 读一个字符串数组：去空、去重（手改文件写重复项也只算一次）
 std::vector<std::string> read_id_array(const json::Object* scope, const char* key) {
     std::vector<std::string> out;
@@ -157,6 +166,21 @@ Config load_config(const std::string& path) {
     // 各自去重去空，手改文件写重复项也只算一次
     cfg.mods_disabled = read_id_array(&root, "mods_disabled");
     cfg.mods_enabled = read_id_array(&root, "mods_enabled");
+
+    // 输入重绑定：物理键名 → 虚拟键名。空/缺省 = 恒等映射（旧行为）；
+    // 非法项忽略并留痕（手写配置写坏一个条目不应让整份配置退回默认）
+    if (const json::Object* bindings = root.object("input_bindings")) {
+        for (const std::string& physical : bindings->keys()) {
+            const std::string virtual_key = bindings->str(physical);
+            if (!valid_binding_name(physical) || !valid_binding_name(virtual_key)) {
+                log::warn("config: invalid input binding ignored: " + physical);
+                continue;
+            }
+            cfg.input_bindings[physical] = virtual_key;
+        }
+    } else if (root.has("input_bindings")) {
+        log::warn("config: input_bindings must be an object");
+    }
     return cfg;
 }
 
@@ -177,6 +201,14 @@ void save_config(const std::string& path, const Config& cfg) {
     text += "  \"fps\": " + std::to_string(cfg.fps) + ",\n";
     text += "  \"music_volume\": " + std::to_string(cfg.music_volume) + ",\n";
     text += "  \"sfx_volume\": " + std::to_string(cfg.sfx_volume) + ",\n";
+    text += "  \"input_bindings\": {";
+    bool first_binding = true;
+    for (const auto& [physical, virtual_key] : cfg.input_bindings) {
+        text += first_binding ? "" : ", ";
+        text += json::quote(physical) + ": " + json::quote(virtual_key);
+        first_binding = false;
+    }
+    text += "},\n";
     text += "  \"mods_disabled\": [";
     for (size_t i = 0; i < cfg.mods_disabled.size(); ++i)
         text += (i == 0 ? "" : ", ") + json::quote(cfg.mods_disabled[i]);
@@ -207,6 +239,14 @@ std::vector<std::string> load_recent(const std::string& path) {
         if (std::find(ids.begin(), ids.end(), line) == ids.end()) ids.push_back(line);
     }
     return ids;
+}
+
+std::string input_binding_for(const std::map<std::string, std::string>& bindings,
+                              std::string_view physical) {
+    if (bindings.empty()) return std::string(physical);
+    const auto it = bindings.find(std::string(physical));
+    if (it == bindings.end() || it->second.empty()) return std::string(physical);
+    return it->second;  // 有映射：Window 注入虚拟键名，Input/卡带无感
 }
 
 void remember_recent(const std::string& path, const std::string& cart_id) {

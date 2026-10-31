@@ -1,5 +1,6 @@
 #include "platform/window.hpp"
 
+#include "core/config.hpp"
 #include "core/log.hpp"
 #include "core/text.hpp"
 
@@ -166,6 +167,20 @@ void key_callback(GLFWwindow* window, int key, int, int action, int) {
         *handlers->screenshot_flag = true;
         return;
     }
+    // 重绑定捕获：下一个普通物理键只交给 App、不注入游戏。Esc/F2/F12/` 已在上面
+    // 按主机保留键处理（Esc 因此天然是"取消捕获"而不是一个可绑定键）
+    if (handlers->capture_next_key && *handlers->capture_next_key &&
+        (action == GLFW_PRESS || action == GLFW_RELEASE)) {
+        if (action == GLFW_PRESS) {
+            const std::string physical = key_name_from_glfw(key);
+            if (!physical.empty()) {
+                *handlers->capture_next_key = false;
+                if (handlers->captured_physical_key) *handlers->captured_physical_key = physical;
+            }
+        }
+        return;  // 捕获期间该键不注入游戏（松开也不注入）
+    }
+
     if (*handlers->input_block) return;  // 调试台打开期间输入不注入游戏
 
     // 退格：GLFW 的字符回调不为它触发，所以这里补一次 '\b' 给**文本通道**
@@ -176,8 +191,12 @@ void key_callback(GLFWwindow* window, int key, int, int action, int) {
     }
 
     if (action == GLFW_PRESS || action == GLFW_RELEASE) {
-        const std::string name = key_name_from_glfw(key);
-        if (name.empty()) return;
+        const std::string physical = key_name_from_glfw(key);
+        if (physical.empty()) return;
+        // 重绑定只在这一层转换：物理键名 → 虚拟键名；Input/卡带/agent 仍只见虚拟键
+        const std::string name = handlers->input_bindings
+                                     ? input_binding_for(*handlers->input_bindings, physical)
+                                     : physical;
         const bool down = action == GLFW_PRESS;
         note_keyboard(name, down);
         // 手柄仍按着同名键：键盘松开不能把它清掉（任一来源按下即按下）

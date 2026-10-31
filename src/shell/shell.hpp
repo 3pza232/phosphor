@@ -8,6 +8,7 @@
 #include "core/screen.hpp"
 #include "core/skin.hpp"
 #include "core/ui.hpp"
+#include "shell/controls_view.hpp"
 #include "shell/save_view.hpp"
 #include "shell/settings_view.hpp"
 #include "shell/shelf_search.hpp"
@@ -18,6 +19,7 @@
 #include "ui/theme.hpp"
 
 #include <functional>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -129,6 +131,14 @@ public:
     using SaveCodeFn =
         std::function<bool(const save::Entry&, std::string& cart_name, std::string& code)>;
     void set_save_hooks(SaveListFn list, SaveDeleteFn remove, SaveCodeFn code);
+    /// 按键重绑定屏的钩子（App 注入）：映射快照 / 保存映射 / 开始捕获 / 取消捕获。
+    /// 真实物理键捕获在 Window 层（key_callback），Shell 只做视图与冲突提示
+    using ControlsListFn = std::function<std::map<std::string, std::string>()>;
+    using ControlsSaveFn = std::function<void(const std::map<std::string, std::string>&)>;
+    using CaptureFn = std::function<void()>;
+    void set_control_hooks(ControlsListFn list, ControlsSaveFn save, CaptureFn start, CaptureFn cancel);
+    /// App 轮询到 Window 捕获的物理键后回调（非捕获态忽略）
+    void on_key_captured(const std::string& physical);
     /// 磁带码界面的结果行（导入成功 / 码无效…），由 App 回报
     void set_tape_result(TapeResult result) { tape_.set_result(result); }
     /// 切到磁带码界面（从暂停菜单进入）
@@ -148,7 +158,9 @@ public:
         switch (mode()) {
             case ShellMode::shelf: return shelf_cursor_;
             case ShellMode::paused: return pause_cursor_;
-            case ShellMode::settings: return saves_open() ? saves_.selected() : settings_cursor_;
+            case ShellMode::settings:
+                return controls_open() ? controls_.selected()
+                                       : (saves_open() ? saves_.selected() : settings_cursor_);
             case ShellMode::mods: return mods_cursor_;
             default: return -1;
         }
@@ -229,6 +241,10 @@ private:
     bool saves_open() const;
     void open_saves();
     Intent update_saves(const Input& input);
+    /// 按键重绑定浮层：动作列表 + 捕获下一个物理键（Esc 取消捕获/返回设置）
+    bool controls_open() const;
+    void open_controls();
+    Intent update_controls(const Input& input);
     Intent update_paused(const Input& input);
     Intent update_mods(const Input& input);
     Intent update_tape(const Input& input);
@@ -258,6 +274,7 @@ private:
     void draw_shelf(Screen& screen);
     void draw_settings(Screen& screen);
     void draw_saves(Screen& screen);
+    void draw_controls(Screen& screen);
     void draw_about(Screen& screen);
     void draw_paused(Screen& screen);
     /// 磁带码界面（两态渲染见 shell/tape_view.cpp）
@@ -340,6 +357,13 @@ private:
     SaveCodeFn save_code_;
     /// 磁带码是从存档管理里打开的：Esc 关掉磁带码时要回存档列表，而不是暂停菜单
     bool tape_over_saves_ = false;
+    /// 按键重绑定屏：动作列表/捕获/冲突提示在 shell/controls_view.cpp；
+    /// 映射保存与捕获开关由 App 钩子注入（Window 的 key_callback 真正拦截按键）
+    controls::ScreenState controls_;
+    ControlsListFn control_list_;
+    ControlsSaveFn control_save_;
+    CaptureFn control_capture_start_;
+    CaptureFn control_capture_cancel_;
 
     Lang lang_ = Lang::zh;  // 界面语言（默认中文，App 启动时按配置设定）
 

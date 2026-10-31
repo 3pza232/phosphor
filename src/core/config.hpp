@@ -2,7 +2,9 @@
 
 #include "core/defaults.hpp"
 
+#include <map>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace phos {
@@ -27,6 +29,9 @@ struct Config {
     std::vector<std::string> mods_disabled;
     /// 显式启用的"默认关闭"Mod id。空 = 所有默认关的都保持关着
     std::vector<std::string> mods_enabled;
+    /// 物理键名 → 虚拟键名的重绑定（input_bindings，空 = 恒等映射）。
+    /// 只在 Window 的 key_callback 里转换；Input/卡带/agent 仍只认虚拟键
+    std::map<std::string, std::string> input_bindings;
 };
 
 /// 读取配置；文件不存在/损坏时返回默认值（安静回退）
@@ -34,6 +39,11 @@ Config load_config(const std::string& path);
 
 /// 写入配置（设置变更时即时保存——"记忆性"）
 void save_config(const std::string& path, const Config& cfg);
+
+/// 物理键名 → 虚拟键名的唯一转换点（Window key_callback 用）。
+/// 没有映射/映射为空 = 原样返回物理键名（恒等映射，旧行为）。
+std::string input_binding_for(const std::map<std::string, std::string>& bindings,
+                              std::string_view physical);
 
 /// 卡带架的"最近打开"记录：一行一个卡带 id，最近打开的在最前。
 /// 与 config.json 分开存：那份是**人写的设置**，这份是**机器写的使用痕迹**，

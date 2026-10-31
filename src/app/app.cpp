@@ -72,6 +72,8 @@ int App::run(const CliOptions& opts) {
     config_ = load_config(config_path_);
     init_agent_services();  // 控制通道的窄接口：动作回调 + 状态快照
     bind_save_hooks();      // 存档管理屏的数据/删除钩子（Shell 只做视图）
+    input_bindings_ = config_.input_bindings;
+    bind_control_hooks();   // 按键重绑定：映射保存 + Window 捕获开关
 
     // Mod：先落两个配置列表（决定哪些 mod 生效），再由 pack 读各 mod.lua 建覆盖表。
     // 覆盖表必须先于任何内容扫描落地，否则被覆盖的包/卡带会先按原样扫一遍
@@ -578,6 +580,24 @@ void App::bind_save_hooks() {
         });
 }
 
+void App::bind_control_hooks() {
+    shell_.set_control_hooks(
+        [this] { return input_bindings_; },
+        [this](const std::map<std::string, std::string>& bindings) {
+            input_bindings_ = bindings;
+            config_.input_bindings = bindings;
+            save_config_now();  // 重绑定立即落盘（与其它设置一致的记忆性）
+        },
+        [this] {
+            capture_next_key_ = true;
+            captured_physical_key_.clear();
+        },
+        [this] {
+            capture_next_key_ = false;
+            captured_physical_key_.clear();
+        });
+}
+
 std::vector<save::Entry> App::scan_saves() const {
     std::vector<save::Entry> entries;
     std::error_code ec;
@@ -640,9 +660,18 @@ bool App::read_save_code(const save::Entry& entry, std::string& cart_name, std::
 int App::run_windowed(const CliOptions& opts) {
     std::string error;
     const Skin& skin = packs_.skin();
-    const WindowHandlers handlers{&input_,      &escape_flag_,     &settings_flag_,
-                                  &screenshot_flag_, &console_flag_, &input_blocked_,
-                                  &capture_escape_};
+    const WindowHandlers handlers{&input_,
+                                  &escape_flag_,
+                                  &settings_flag_,
+                                  &screenshot_flag_,
+                                  &console_flag_,
+                                  &input_blocked_,
+                                  &capture_escape_,
+                                  nullptr,  // keyboard_down（Window 内部回填）
+                                  nullptr,  // gamepad_down（Window 内部回填）
+                                  &input_bindings_,
+                                  &capture_next_key_,
+                                  &captured_physical_key_};
     Window window = Window::create(skin.grid_w() * font_px_, skin.grid_h() * font_px_,
                                    kProductName, handlers, error);
     if (!window.valid()) {
@@ -684,6 +713,11 @@ int App::run_windowed(const CliOptions& opts) {
         if (opts.frames > 0 && frame_count_ >= opts.frames) break;
 
         window.poll_events();
+        // 重绑定捕获：key_callback 只把物理键名交到这里，不注入游戏；交给 Shell 决定写哪一项
+        if (!captured_physical_key_.empty()) {
+            shell_.on_key_captured(captured_physical_key_);
+            captured_physical_key_.clear();
+        }
         poll_control();
 
         // agent 切换 实时/单步 时标题随之变化（只在变化时调 GLFW，避免每帧设置）

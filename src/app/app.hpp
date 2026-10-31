@@ -28,6 +28,7 @@
 #include "shell/shell.hpp"
 #include "ui/toast.hpp"
 
+#include <map>
 #include <memory>
 #include <string>
 #include <vector>
@@ -136,6 +137,9 @@ private:
     std::vector<save::Entry> scan_saves() const;
     bool delete_save(const save::Entry& entry);
     bool read_save_code(const save::Entry& entry, std::string& cart_name, std::string& code);
+
+    // 按键重绑定（Shell 只做视图；App 持有映射并写 config / 开 Window 捕获）
+    void bind_control_hooks();
 
     // 控制通道（agent 接口；实现见 app_control.cpp）
     /// 构造 AgentServices（动作回调 + 状态快照来源）；run() 启动时调用一次
@@ -257,6 +261,11 @@ private:
     bool screenshot_flag_ = false;
     bool console_flag_ = false;
     bool input_blocked_ = false;
+    /// 物理键 → 虚拟键的重绑定（config.input_bindings 的运行时副本；Window 只读它）
+    std::map<std::string, std::string> input_bindings_;
+    /// 设置里的"捕获下一个物理键"：Window 读这个开关，捕获后写 captured_physical_key_
+    bool capture_next_key_ = false;
+    std::string captured_physical_key_;
     std::string last_error_;
 
     /// 字体方案状态（方案表/当前方案/字号范围/字体链）：窗口渲染与截图/基线共用同一份
