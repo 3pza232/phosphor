@@ -16,6 +16,7 @@
 #include "core/screen_text.hpp"
 #include "core/skin.hpp"
 #include "core/surface.hpp"
+#include "ui/theme.hpp"
 #include "core/text.hpp"
 #include "core/text_input.hpp"
 #include "core/ui.hpp"
@@ -655,6 +656,62 @@ TEST(skin_builtin_geometry) {
     CHECK_EQ(r.w, s.screen_w);
     CHECK_EQ(r.h, s.screen_h);
     CHECK(!s.lamps.empty());
+}
+
+TEST(skin_ui_glyph_and_metric_validation) {
+    char32_t cp = 0;
+    CHECK(skin_ui_glyph("|", cp));
+    CHECK_EQ(int(cp), int(U'|'));
+    CHECK(skin_ui_glyph("\u2500", cp));  // 表格线/制表符：一个码点
+    CHECK_EQ(int(cp), int(U'\u2500'));
+    CHECK(skin_ui_glyph(" ", cp));  // 空格是非控制字符，允许主题显式使用
+    CHECK_EQ(int(cp), int(U' '));
+
+    cp = U'Z';
+    CHECK(!skin_ui_glyph("", cp));      // 空串
+    CHECK(!skin_ui_glyph("ab", cp));   // 两个码点
+    CHECK(!skin_ui_glyph("\n", cp));    // 控制字符
+    CHECK(!skin_ui_glyph("\x7f", cp));  // DEL
+    CHECK_EQ(int(cp), int(U'Z'));       // 失败不改 out
+
+    CHECK(skin_ui_accept_metric(0, 0, kSkinUiSpacingMax));
+    CHECK(skin_ui_accept_metric(kSkinUiSpacingMax, 0, kSkinUiSpacingMax));
+    CHECK(!skin_ui_accept_metric(-1, 0, kSkinUiSpacingMax));
+    CHECK(!skin_ui_accept_metric(kSkinUiSpacingMax + 1, 0, kSkinUiSpacingMax));
+    CHECK(skin_ui_accept_metric(1, 1, kSkinUiLabelMax));
+    CHECK(skin_ui_accept_metric(kSkinUiLabelMax, 1, kSkinUiLabelMax));
+    CHECK(!skin_ui_accept_metric(0, 1, kSkinUiLabelMax));
+}
+
+TEST(theme_from_skin_merges_ui_overrides_and_leaves_defaults) {
+    Skin skin = builtin_skin();
+    CHECK(!skin.ui.glyphs.h.has_value());  // 缺省：没有覆盖
+    skin.ui.glyphs.h = U'=';
+    skin.ui.glyphs.table_rule = U'#';
+    skin.ui.glyphs.cursor = U'\u2192';  // →
+    skin.ui.metrics.pad_x = 3;
+    skin.ui.metrics.gap = 0;
+    skin.ui.metrics.label_w = 20;
+    skin.ui.metrics.indent = 0;
+
+    const ui::Theme theme = ui::theme_from_skin(skin);
+    CHECK_EQ(int(theme.glyphs.h), int(U'='));
+    CHECK_EQ(int(theme.glyphs.table_rule), int(U'#'));
+    CHECK_EQ(int(theme.glyphs.cursor), int(U'\u2192'));
+    CHECK_EQ(int(theme.glyphs.v), int(U'|'));  // 未覆盖：保留默认
+    CHECK_EQ(int(theme.glyphs.scroll_thumb), int(U'#'));
+    CHECK_EQ(theme.metrics.pad_x, 3);
+    CHECK_EQ(theme.metrics.pad_y, 0);  // 默认
+    CHECK_EQ(theme.metrics.gap, 0);
+    CHECK_EQ(theme.metrics.label_w, 20);
+    CHECK_EQ(theme.metrics.indent, 0);
+
+    // 卡带主题由色板派生，不受 skin.ui 影响
+    Palette palette;
+    const ui::Theme cart_theme = ui::theme_from_palette(palette);
+    CHECK_EQ(int(cart_theme.glyphs.h), int(U'-'));
+    CHECK_EQ(int(cart_theme.glyphs.table_rule), int(U'\u2500'));
+    CHECK_EQ(cart_theme.metrics.pad_x, 1);
 }
 
 // ---------------------------------------------------------------- format

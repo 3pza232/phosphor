@@ -4,10 +4,39 @@
 #include "core/defaults.hpp"
 #include "core/ui.hpp"
 
+#include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace phos {
+
+/// skin.lua 可选的 ui 覆盖：只放**安全的 theme token**（字形/度量），缺省沿用
+/// ui::Theme 的默认值。颜色仍走 colors 表，避免两套颜色入口。
+struct SkinUiGlyphs {
+    std::optional<char32_t> h, v, tl, tr, bl, br, cursor, bullet, scroll_thumb,
+        scroll_track, table_rule;
+};
+
+struct SkinUiMetrics {
+    std::optional<int> pad_x, pad_y, gap, label_w, indent;
+};
+
+struct SkinUi {
+    SkinUiGlyphs glyphs;
+    SkinUiMetrics metrics;
+};
+
+/// 度量安全范围（超出范围视为坏值、忽略并 warning）
+inline constexpr int kSkinUiSpacingMax = 16;  // pad_x / pad_y / gap / indent
+inline constexpr int kSkinUiLabelMax = 80;    // label_w
+
+/// ui.glyphs 的单个值必须是"恰好一个非控制码点"的字符串。
+/// 返回 false 时 out 不变（调用方回退默认并在 --check-packs 里 warning）。
+bool skin_ui_glyph(std::string_view text, char32_t& out);
+
+/// 度量值是否落在给定闭区间（类型校验后的第二个闸门；坏值忽略并 warning）。
+bool skin_ui_accept_metric(int value, int min_value, int max_value);
 
 /// 游戏机主题（skin 内容包）：机身外壳、氛围装饰与主机界面配色。
 /// 卡带内容区（"屏幕"）由 screen_* 定义，外壳占据其余网格。
@@ -45,6 +74,9 @@ struct Skin {
         float period = 2.0f;  // 呼吸周期（秒）
     };
     std::vector<Lamp> lamps;
+
+    /// 可选 ui 覆盖（skin.lua 的 ui 表）；空 optional = 用 ui::Theme 默认
+    SkinUi ui;
 
     /// 整机网格宽（左外壳 + 内容区 + 右外壳）
     int grid_w() const { return screen_x * 2 + screen_w; }

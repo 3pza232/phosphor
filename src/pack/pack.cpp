@@ -12,6 +12,7 @@
 #include <sol/sol.hpp>
 
 #include <algorithm>
+#include <cmath>
 #include <filesystem>
 
 namespace phos {
@@ -141,6 +142,13 @@ bool load_skin(const std::string& dir, Skin& out, std::string& err,
     const auto warn = [warnings](std::string message) {
         if (warnings) warnings->push_back(std::move(message));
     };
+    // ui 覆盖是新增的软字段：坏值回退默认，但运行期也要留一条日志（不只 --check-packs）
+    const auto warn_ui = [warnings](std::string message) {
+        if (warnings)
+            warnings->push_back(message);
+        else
+            log::warn("skin ui: " + message);
+    };
     const auto read_str = [&t, &warn](const char* key, const std::string& fallback) {
         sol::object v = t[key];
         if (v.get_type() != sol::type::nil && !v.is<std::string>())
@@ -223,6 +231,77 @@ bool load_skin(const std::string& dir, Skin& out, std::string& err,
         }
     } else if (lamps.get_type() != sol::type::nil) {
         warn("lamps must be a table");
+    }
+
+    // 可选 ui 表：只收字形与度量 token（颜色仍走 colors）。所有坏值都回退默认并 warning。
+    sol::object ui = t["ui"];
+    if (ui.is<sol::table>()) {
+        sol::table ut = ui.as<sol::table>();
+
+        auto read_glyph = [&](const char* key, std::optional<char32_t>& slot) {
+            sol::object v = ut["glyphs"][key];
+            if (v.get_type() == sol::type::nil) return;
+            if (!v.is<std::string>()) {
+                warn_ui(std::string("ui.glyphs.") + key + " must be a one-character string");
+                return;
+            }
+            char32_t codepoint = 0;
+            if (!skin_ui_glyph(v.as<std::string>(), codepoint)) {
+                warn_ui(std::string("ui.glyphs.") + key +
+                        " must be exactly one non-control character");
+                return;
+            }
+            slot = codepoint;
+        };
+
+        sol::object glyphs = ut["glyphs"];
+        if (glyphs.is<sol::table>()) {
+            read_glyph("h", out.ui.glyphs.h);
+            read_glyph("v", out.ui.glyphs.v);
+            read_glyph("tl", out.ui.glyphs.tl);
+            read_glyph("tr", out.ui.glyphs.tr);
+            read_glyph("bl", out.ui.glyphs.bl);
+            read_glyph("br", out.ui.glyphs.br);
+            read_glyph("cursor", out.ui.glyphs.cursor);
+            read_glyph("bullet", out.ui.glyphs.bullet);
+            read_glyph("scroll_thumb", out.ui.glyphs.scroll_thumb);
+            read_glyph("scroll_track", out.ui.glyphs.scroll_track);
+            read_glyph("table_rule", out.ui.glyphs.table_rule);
+        } else if (glyphs.get_type() != sol::type::nil) {
+            warn_ui("ui.glyphs must be a table");
+        }
+
+        auto read_metric = [&](const char* key, std::optional<int>& slot, int min_value,
+                               int max_value) {
+            sol::object v = ut["metrics"][key];
+            if (v.get_type() == sol::type::nil) return;
+            if (!v.is<double>() && !v.is<int>()) {
+                warn_ui(std::string("ui.metrics.") + key + " must be an integer");
+                return;
+            }
+            const double raw = v.is<int>() ? static_cast<double>(v.as<int>()) : v.as<double>();
+            // 先按 double 判范围再转 int：超大 double 直接 static_cast<int> 是 UB
+            if (!std::isfinite(raw) || raw != std::floor(raw) || raw < min_value ||
+                raw > max_value) {
+                warn_ui(std::string("ui.metrics.") + key + " out of range " +
+                        std::to_string(min_value) + ".." + std::to_string(max_value));
+                return;
+            }
+            slot = static_cast<int>(raw);
+        };
+
+        sol::object metrics = ut["metrics"];
+        if (metrics.is<sol::table>()) {
+            read_metric("pad_x", out.ui.metrics.pad_x, 0, kSkinUiSpacingMax);
+            read_metric("pad_y", out.ui.metrics.pad_y, 0, kSkinUiSpacingMax);
+            read_metric("gap", out.ui.metrics.gap, 0, kSkinUiSpacingMax);
+            read_metric("label_w", out.ui.metrics.label_w, 1, kSkinUiLabelMax);
+            read_metric("indent", out.ui.metrics.indent, 0, kSkinUiSpacingMax);
+        } else if (metrics.get_type() != sol::type::nil) {
+            warn_ui("ui.metrics must be a table");
+        }
+    } else if (ui.get_type() != sol::type::nil) {
+        warn_ui("ui must be a table");
     }
     return true;
 }

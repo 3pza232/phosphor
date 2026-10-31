@@ -147,6 +147,10 @@ return {
   lamps = {           -- 指示灯：随运行时间呼吸
     { x = 0, y = 6, color = { 80, 255, 120 }, period = 2.4 },
   },
+  ui = {              -- 可选：覆盖外壳 UI 的字形/度量（不影响卡带主题）
+    glyphs = { h = "─", v = "│", cursor = "▶", table_rule = "═" },
+    metrics = { pad_x = 2, gap = 0, label_w = 18 },
+  },
 }
 ```
 
@@ -156,6 +160,12 @@ return {
   卡带与开机动画的 `phos.color.*` 取自它——设置里没有单独的"色板"项，色板是主题的一部分
 - `panel`：右侧栏面板的底色（缺省 = `ui_bg`）。**刻意与机身区分**，给侧栏一层"凹槽"的层次；
   分隔线由主机画在**所有卡带图层之上**（否则会被卡带画的世界盖住）
+- `ui`（可选，只影响**外壳主题**；卡带主题由 palette 派生，不受它影响）：
+  - `ui.glyphs`：`h / v / tl / tr / bl / br / cursor / bullet / scroll_thumb / scroll_track / table_rule`。
+    值必须是**恰好一个非控制字符**的字符串（如 `"─"`、`"▶"`；空串/多字符/控制字符会被忽略并 warning）。
+  - `ui.metrics`：`pad_x / pad_y / gap / label_w / indent`，整数。间距类允许 0..16，`label_w` 允许 1..80；
+    超出范围或非整数会被忽略并 warning。
+  - 缺省/非法字段回退出厂字形与度量；`--check-packs` 会把这些软错误列在 skin 的 warning 里。
 - 内容区尺寸由主机固定为 80x45（所有皮肤共享）；整机网格大小由皮肤几何（上下装饰行数、左右留白）决定
 
 随包主题（名字即文件夹名）：
