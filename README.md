@@ -85,7 +85,7 @@ cmake --preset sanity           # build-sanity/：自检构建，慢，只用于
 | `portable_smoke.py` | 绿色免安装契约：在临时 CWD 启动构建产物，验证内容根按 exe 目录解析、`--check-api` 回退、`--root` 覆盖 | `python ../tools/portable_smoke.py` |
 | `check_includes.py` | 依赖铁律门禁：核查 `src/` 的 include 方向（对照 `docs/engine/architecture.md` 第一节）；纯源码检查，不需要构建目录，任意目录可跑 | `python tools/check_includes.py` |
 | `perf_budget.py` | 性能预算报告（非门禁）：逐张出厂卡带采样 update/draw/merge 的 p50/p95/max，按 p95 update 排序并提示超预算的一半 | `python ../tools/perf_budget.py` |
-| `run_checks.py` | **一键跑全部门禁并汇总**：默认无头门禁 **13 项**（includes/api/unit/control/draw/layer/ui/scene/toolkit/lint/portable/cart/net），`--gui` 再加开窗门禁（gl/window）。测试逻辑仍在各自脚本里，它只管调度与汇总 | `python ../tools/run_checks.py [--gui]` |
+| `run_checks.py` | **一键跑全部门禁并汇总**：默认无头门禁 **14 项**（includes/api/unit/control/draw/layer/ui/scene/toolkit/lint/packs/portable/cart/net），`--gui` 再加开窗门禁（gl/window）。测试逻辑仍在各自脚本里，它只管调度与汇总 | `python ../tools/run_checks.py [--gui]` |
 | `unit_smoke.py` | 纯逻辑单元测试：跑 `phosphor_tests`（C++，源码在 `tests/`，当前 **115 个用例 / 1219 条断言**），覆盖颜色/文本/配置/色板/主题/存档/UI 布局与焦点等不依赖 GL·Lua 的核心——无窗口无显卡即可跑（需构建时 `-DPHOSPHOR_BUILD_TESTS=ON`，或 `cmake --preset dev`）。单跑时未启用则**跳过**；但 `run_checks.py` 的 `unit` 门禁会检查产物，**缺失即判失败**（跳过不算通过，免得掩盖红灯） | `python ../tools/unit_smoke.py` |
 | `control_test.py` | 控制通道契约：握手 / 单步精确 / 读屏 / 注入 / 热重载 / 退出 | `python ../tools/control_test.py` |
 | `window_smoke.py` | 窗口路径冒烟：菜单→开局→按键→单步 →**实时浸泡**→干净退出（确定性部分全走单步，只有最后几秒实时；需要图形环境） | `python ../tools/window_smoke.py [--seconds 3] [--cart carts/x]` |
@@ -94,6 +94,7 @@ cmake --preset sanity           # build-sanity/：自检构建，慢，只用于
 | `draw_smoke.py` | 叠加与半格契约：跑 devkit 的叠加示例卡带，读像素核对"同格两笔的墨都在""`back_rect` 铺到字形之外""`plot` 的墨落在指定子位"，并核对叠画上限（需要 Pillow） | `python ../tools/draw_smoke.py` |
 | `scene_smoke.py` | 场景栈契约：压栈 / 冻结世界 / 音频暂停 / 出栈恢复（卡带样板 `devkit/examples/scene`） | `python ../tools/scene_smoke.py` |
 | `toolkit_smoke.py` | 卡带工具层契约：排行榜持久化、共享词表、数值格式化、存档槽位（样板 `devkit/examples/toolkit`） | `python ../tools/toolkit_smoke.py` |
+| `check_packs_smoke.py` | 内容包校验契约：出厂内容根 0 error、--json 可解析、坏包退出码 2 且被点名 | `python ../tools/check_packs_smoke.py` |
 | `cart_lint.py` | 卡带静态检查门禁：对出厂卡带与 devkit 示例跑 `--check-cart`（manifest / 入口 / 隐式全局 / `screen.size()` / 阻塞版 `discover()` 与 `join()` / 观测声明），错误即失败、警告列出跟踪 | `python ../tools/cart_lint.py` |
 | `ui_smoke.py` | 声明式界面契约：跑 `devkit/examples/ui` 样板卡带，核对组件渲染、焦点顺序、事件语义（`index` / `checked` / `text`）与"侧栏 `input = false` 不抢按键"；agent 侧核对 `state.query.ui` 列表与按 id 激活 | `python ../tools/ui_smoke.py` |
 | `shell_golden.py` | 外壳界面**文本基线**：驱动 7 个外壳屏，把 `screen.read` 结果与 `tests/golden/shell/` 逐字节比对；界面有意改变时用 `--write` 重生成（迁移/改布局前后都拿它对照） | `python ../tools/shell_golden.py [--write]` |
@@ -109,7 +110,7 @@ cmake --preset sanity           # build-sanity/：自检构建，慢，只用于
 
 ## 持续集成
 
-`.github/workflows/ci.yml` 在 Windows + MSYS2 MinGW64 上配置、构建、跑单元测试与 13 项无头门禁；
+`.github/workflows/ci.yml` 在 Windows + MSYS2 MinGW64 上配置、构建、跑单元测试与 14 项无头门禁；
 性能预算（`tools/perf_budget.py`）与像素基线（`tools/pixel_golden.py`）作为**非门禁**步骤运行：
 前者附到 job summary 并留 artifact，方便对比某个改动是否让某张卡带突然变慢；后者失败时把
 实际截图留档，供人工判断是回归还是跨机差异。

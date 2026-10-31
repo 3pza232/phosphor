@@ -44,7 +44,7 @@ jobs:
         working-directory: build-ci
         run: ./phosphor_tests.exe
 
-      - name: 无头门禁（13 项：includes/api/unit/control/draw/layer/ui/scene/toolkit/lint/portable/cart/net）
+      - name: 无头门禁（14 项：includes/api/unit/control/draw/layer/ui/scene/toolkit/lint/packs/portable/cart/net）
         working-directory: build-ci
         run: python ../tools/run_checks.py
 
