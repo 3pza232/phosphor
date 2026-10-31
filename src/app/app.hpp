@@ -24,6 +24,7 @@
 #include "net/net.hpp"
 #include "pack/content_library.hpp"
 #include "pack/pack.hpp"
+#include "shell/save_view.hpp"
 #include "shell/shell.hpp"
 #include "ui/toast.hpp"
 
@@ -126,6 +127,12 @@ private:
 
     // 观测（非 const：仪表盘允许直接调参，见 app.cpp 的 console 渲染）
     void fill_debug_info(DebugInfo& info);
+
+    // 存档管理（Shell 只做视图，App 注入数据与文件操作）
+    void bind_save_hooks();
+    std::vector<save::Entry> scan_saves() const;
+    bool delete_save(const save::Entry& entry);
+    bool read_save_code(const save::Entry& entry, std::string& cart_name, std::string& code);
 
     // 控制通道（agent 接口；实现见 app_control.cpp）
     /// 构造 AgentServices（动作回调 + 状态快照来源）；run() 启动时调用一次

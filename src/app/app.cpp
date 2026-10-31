@@ -3,6 +3,7 @@
 #include "app/tape_glue.hpp"
 #include "cart/cart_scanner.hpp"
 #include "cart/cart_info.hpp"
+#include "cart/save_store.hpp"
 #include "core/effects.hpp"
 #include "core/log.hpp"
 #include "core/mods.hpp"
@@ -44,13 +45,32 @@ std::string screenshot_file_path() {
     return std::string("screenshots/") + stamp + ".png";
 }
 
+/// 存档文件的修改时间 → 界面展示串（本地时区；文件时钟与系统时钟在 C++17 只能近似换算）
+std::string format_file_time(std::filesystem::file_time_type time) {
+    using namespace std::chrono;
+    const auto delta = time - std::filesystem::file_time_type::clock::now();
+    const auto system_time =
+        system_clock::now() + duration_cast<system_clock::duration>(delta);
+    const std::time_t seconds = system_clock::to_time_t(system_time);
+    std::tm local{};
+#ifdef _WIN32
+    localtime_s(&local, &seconds);
+#else
+    localtime_r(&seconds, &local);
+#endif
+    char stamp[24];
+    std::strftime(stamp, sizeof(stamp), "%Y-%m-%d %H:%M", &local);
+    return stamp;
+}
+
 } // namespace
 
 int App::run(const CliOptions& opts) {
     if (opts.config) config_path_ = *opts.config;
     if (opts.recent) recent_path_ = *opts.recent;
     config_ = load_config(config_path_);
-    init_agent_services();  // 控制通道的窄接口：动作回调 + 状态快照（不依赖后续初始化顺序）
+    init_agent_services();  // 控制通道的窄接口：动作回调 + 状态快照
+    bind_save_hooks();      // 存档管理屏的数据/删除钩子（Shell 只做视图）
 
     // Mod：先落两个配置列表（决定哪些 mod 生效），再由 pack 读各 mod.lua 建覆盖表。
     // 覆盖表必须先于任何内容扫描落地，否则被覆盖的包/卡带会先按原样扫一遍
@@ -543,6 +563,74 @@ void App::save_screenshot_shortcut() {
         log::warn("screenshot failed: " + reason);
         toasts_.push((english ? "Screenshot failed: " : "截图失败：") + reason);
     }
+}
+
+void App::bind_save_hooks() {
+    shell_.set_save_hooks(
+        [this] { return scan_saves(); },
+        [this](const save::Entry& entry) { return delete_save(entry); },
+        [this](const save::Entry& entry, std::string& cart_name, std::string& code) {
+            return read_save_code(entry, cart_name, code);
+        });
+}
+
+std::vector<save::Entry> App::scan_saves() const {
+    std::vector<save::Entry> entries;
+    std::error_code ec;
+    if (!std::filesystem::is_directory(host_.save_dir, ec)) return entries;
+
+    for (const auto& item : std::filesystem::directory_iterator(host_.save_dir, ec)) {
+        if (!item.is_regular_file(ec)) continue;
+        const std::string name = item.path().filename().string();
+        // 命名规则：<id>.sav（槽 0）与 <id>.s{1..9}.sav；其余文件不认识，跳过
+        if (name.size() <= 4 || name.compare(name.size() - 4, 4, ".sav") != 0) continue;
+        std::string stem = name.substr(0, name.size() - 4);
+
+        save::Entry entry;
+        entry.slot = 0;
+        if (stem.size() >= 3 && stem[stem.size() - 3] == '.' && stem[stem.size() - 2] == 's' &&
+            stem.back() >= '0' && stem.back() <= '9') {
+            entry.slot = stem.back() - '0';
+            stem.resize(stem.size() - 3);
+        }
+        if (stem.empty()) continue;  // 只有 ".sav" 的文件不算存档
+
+        entry.cart_id = stem;
+        entry.path = item.path().string();
+        entry.bytes = std::filesystem::file_size(item.path(), ec);
+        if (ec) {
+            ec.clear();
+            entry.bytes = 0;
+        }
+        entry.modified = format_file_time(item.last_write_time(ec));
+        entries.push_back(std::move(entry));
+    }
+
+    std::sort(entries.begin(), entries.end(), [](const save::Entry& a, const save::Entry& b) {
+        if (a.cart_id != b.cart_id) return a.cart_id < b.cart_id;
+        return a.slot < b.slot;
+    });
+    return entries;
+}
+
+bool App::delete_save(const save::Entry& entry) {
+    std::error_code ec;
+    std::filesystem::remove(entry.path, ec);
+    if (ec) {
+        log::warn("save delete failed: " + entry.path + " | " + ec.message());
+        return false;
+    }
+    log::info("save deleted: " + entry.path);
+    return true;
+}
+
+bool App::read_save_code(const save::Entry& entry, std::string& cart_name, std::string& code) {
+    // 读码也走 SaveStore：坏档/旧格式的校验与升级逻辑不在界面层重复实现
+    SaveStore store;
+    if (!store.open(host_.save_dir, entry.cart_id, entry.slot)) return false;
+    cart_name = entry.cart_id;
+    code = store.export_code();
+    return true;
 }
 
 int App::run_windowed(const CliOptions& opts) {

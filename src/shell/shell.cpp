@@ -118,6 +118,8 @@ bool shell_mode_from(std::string_view id, ShellMode& mode) {
     else if (id == "cart_error") mode = ShellMode::cart_error;
     // 关于页是 settings 之上的普通浮层：对 App 仍报告 settings（Esc 路由不必改）
     else if (id == "about") mode = ShellMode::settings;
+    // 存档管理同样是 settings 之上的浮层：对 App 仍报告 settings
+    else if (id == "saves") mode = ShellMode::settings;
     else return false;
     return true;
 }
@@ -212,12 +214,14 @@ void Shell::open_settings() {
 }
 
 bool Shell::settings_on_sound_row() const {
-    // 关于页是 settings 之上的浮层：它没有"音效行"，别让底下的旧光标误触发试听
-    return !about_open() && mode() == ShellMode::settings &&
+    // 关于页/存档管理是 settings 之上的浮层：它们没有"音效行"，
+    // 别让底下的旧光标在浮层里误触发试听
+    return !about_open() && !saves_open() && mode() == ShellMode::settings &&
            static_cast<SettingId>(settings_cursor_) == SettingId::sound_pack;
 }
 
 void Shell::to_tape() {
+    tape_over_saves_ = saves_open();  // 从存档管理打开：关闭时回列表而不是暂停菜单
     push_screen(ShellMode::tape);
     tape_.open();
     // 输入页的文本域状态也归零：不清的话上次没导完的码会留在框里（旧实现的 open 同样清缓冲）
@@ -226,6 +230,100 @@ void Shell::to_tape() {
 
 void Shell::set_tape(std::string cart_name, std::string code, bool available) {
     tape_.set_tape(std::move(cart_name), std::move(code), available);
+}
+
+void Shell::set_save_hooks(SaveListFn list, SaveDeleteFn remove, SaveCodeFn code) {
+    save_list_ = std::move(list);
+    save_delete_ = std::move(remove);
+    save_code_ = std::move(code);
+}
+
+bool Shell::saves_open() const { return screens_.top() == "saves"; }
+
+void Shell::open_saves() {
+    settings_search_clear(settings_search_);  // 与关于页同一规则：进浮层先收起搜索
+    screens_.push("saves");
+    saves_.open();
+    if (save_list_) saves_.set_entries(save_list_());
+    ui_state_.forget(save::ScreenState::kScreenId);  // 焦点从第一项开始，不沿用上次屏幕
+}
+
+Shell::Intent Shell::update_saves(const Input& input) {
+    Intent intent;
+    const ui::Rect area = content_rect();
+    ui::Frame frame(save::ScreenState::kScreenId, ui_state_, ui_theme_, area, &input,
+                    ui::Keys::host());
+    saves_.build(frame.root(), area, lang_);
+
+    const auto row_index = [](const std::string& id) {
+        return id.rfind("saves/row/", 0) == 0 ? std::atoi(id.c_str() + 10) : -1;
+    };
+
+    for (const ui::Event& event : frame.run()) {
+        if (event.kind == ui::EventKind::cancelled) {
+            saves_.set_confirm(false);
+            pop_screen();
+            break;
+        }
+
+        // 列表行是 option：Enter 产生 changed(confirm=true)，而非 activated；
+        // 左右键的 changed(delta) 只是浏览，不该触发导出
+        const int index = row_index(event.id);
+        if (index >= 0) {
+            const bool open_code =
+                event.kind == ui::EventKind::activated ||
+                (event.kind == ui::EventKind::changed && event.confirm);
+            if (!open_code) continue;
+
+            // Enter 在一行存档上 = 查看导出码：数据由 App 钩子读（复用 SaveStore 的导出逻辑），
+            // 然后进既有磁带码界面；关掉磁带码会回到存档列表（见 to_paused）
+            saves_.select(index);
+            const save::Entry* entry = saves_.selected_entry();
+            if (!entry || !save_code_) continue;
+            std::string cart_name;
+            std::string code;
+            if (save_code_(*entry, cart_name, code)) {
+                const bool available = !code.empty();  // 先判定再 move，避免看空串
+                set_tape(std::move(cart_name), std::move(code), available);
+            } else {
+                set_tape(entry->cart_id, std::string(), false);  // 读不出：按"无存档"处理
+            }
+            to_tape();
+            return intent;
+        }
+        if (event.kind != ui::EventKind::activated) continue;
+
+        if (event.id == save::ScreenState::kBackId) {
+            saves_.set_confirm(false);
+            pop_screen();
+            break;
+        }
+        if (event.id == save::ScreenState::kDeleteId) {
+            saves_.set_confirm(true);
+            break;
+        }
+        if (event.id == save::ScreenState::kCancelId) {
+            saves_.set_confirm(false);
+            break;
+        }
+        if (event.id == save::ScreenState::kConfirmId) {
+            const save::Entry* entry = saves_.selected_entry();
+            const bool removed = entry && save_delete_ && save_delete_(*entry);
+            saves_.set_confirm(false);
+            if (removed && save_list_) {
+                saves_.set_entries(save_list_());  // 删除后刷新列表
+                // 行 id 是按下标编的：删掉一条后旧焦点可能指向不存在的行，重置到第一项
+                ui_state_.forget(save::ScreenState::kScreenId);
+            }
+            break;
+        }
+    }
+
+    // 焦点行即选中项：上下移动后，删除/导出目标必须跟着变
+    const std::string& focused = frame.focused_id();
+    const int focused_index = row_index(focused);
+    if (focused_index >= 0) saves_.select(focused_index);
+    return intent;
 }
 
 void Shell::set_fps(int fps) {
@@ -281,6 +379,12 @@ void Shell::to_boot() {
 }
 
 void Shell::to_shelf() {
+    // 存档管理是 settings 栈上的浮层：Esc 先回设置（再按一次才回卡带架）
+    if (saves_open()) {
+        saves_.set_confirm(false);
+        screens_.pop();
+        return;
+    }
     // 关于页是 settings 栈上的浮层：App 的 Esc 路由调到这里时先 pop 回设置，不离开设置。
     if (about_open()) {
         screens_.pop();
@@ -296,6 +400,12 @@ void Shell::to_shelf() {
 }
 
 void Shell::to_paused() {
+    // 从存档管理里打开的磁带码：Esc 先回存档列表，而不是暂停菜单
+    if (tape_over_saves_) {
+        tape_over_saves_ = false;
+        screens_.pop();
+        return;
+    }
     reset_screen(ShellMode::paused);
     pause_cursor_ = 0;
     // 光标由组件按元素 id 记着：进屏时显式归位，否则会停在上次退出的那一项
@@ -455,7 +565,14 @@ Shell::Intent Shell::update_shelf(const Input& input) {
 
 Shell::Intent Shell::update_settings(const Input& input) {
     Intent intent;
+    if (saves_open()) return update_saves(input);  // 存档管理浮层有自己的选中/确认逻辑
     if (about_open()) return intent;  // 关于页只画/等 Esc；输入由 App 的 Esc 路由处理
+
+    // F3：打开存档管理（列表数据由 App 钩子注入；Esc 由 App 转到 to_shelf() 并 pop 回设置）
+    if (input.pressed("f3")) {
+        open_saves();
+        return intent;
+    }
 
     // F1：在设置里打开关于页（settings 栈上 push；Esc pop 回设置）
     if (input.pressed("f1")) {
@@ -814,7 +931,9 @@ void Shell::draw(Screen& screen) {
         case ShellMode::boot: draw_boot(screen); break;
         case ShellMode::shelf: draw_shelf(screen); break;
         case ShellMode::settings:
-            if (about_open()) {
+            if (saves_open()) {
+                draw_saves(screen);
+            } else if (about_open()) {
                 draw_about(screen);
             } else {
                 draw_settings(screen);
@@ -962,6 +1081,21 @@ void Shell::draw_settings(Screen& screen) {
     frame.paint(screen);
 
     draw_footer(screen, tr(lang_, Msg::settings_footer));
+}
+
+void Shell::draw_saves(Screen& screen) {
+    const bool en = lang_ == Lang::en;
+    draw_chrome(screen, en ? "SAVES" : "存档管理", "");
+
+    const ui::Rect area = content_rect();
+    ui::Frame frame(save::ScreenState::kScreenId, ui_state_, ui_theme_, area, nullptr,
+                    ui::Keys::host());
+    saves_.build(frame.root(), area, lang_);
+    frame.run();  // draw 路径只排布（输入在 update_saves 里已处理）
+    frame.paint(screen);
+
+    draw_footer(screen, en ? "Enter view code   Esc back to settings"
+                           : "Enter 查看导出码   Esc 返回设置");
 }
 
 void Shell::draw_about(Screen& screen) {

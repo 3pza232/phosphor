@@ -8,6 +8,7 @@
 #include "core/screen.hpp"
 #include "core/skin.hpp"
 #include "core/ui.hpp"
+#include "shell/save_view.hpp"
 #include "shell/settings_view.hpp"
 #include "shell/shelf_search.hpp"
 #include "shell/shelf_view.hpp"
@@ -16,6 +17,7 @@
 #include "ui/screen_stack.hpp"
 #include "ui/theme.hpp"
 
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -118,6 +120,13 @@ public:
 
     /// 磁带码界面的数据：卡带名、码本体、该卡带是否有存档（由 App 在进入时填入）
     void set_tape(std::string cart_name, std::string code, bool available);
+    /// 存档管理屏的数据钩子（App 注入）：列表快照 / 删除 / 读取导出码。
+    /// Shell 只做视图与状态，不直接碰文件系统或 SaveStore 的读写逻辑
+    using SaveListFn = std::function<std::vector<save::Entry>()>;
+    using SaveDeleteFn = std::function<bool(const save::Entry&)>;
+    using SaveCodeFn =
+        std::function<bool(const save::Entry&, std::string& cart_name, std::string& code)>;
+    void set_save_hooks(SaveListFn list, SaveDeleteFn remove, SaveCodeFn code);
     /// 磁带码界面的结果行（导入成功 / 码无效…），由 App 回报
     void set_tape_result(TapeResult result) { tape_.set_result(result); }
     /// 切到磁带码界面（从暂停菜单进入）
@@ -137,7 +146,7 @@ public:
         switch (mode()) {
             case ShellMode::shelf: return shelf_cursor_;
             case ShellMode::paused: return pause_cursor_;
-            case ShellMode::settings: return settings_cursor_;
+            case ShellMode::settings: return saves_open() ? saves_.selected() : settings_cursor_;
             case ShellMode::mods: return mods_cursor_;
             default: return -1;
         }
@@ -214,6 +223,10 @@ private:
 
     Intent update_shelf(const Input& input);
     Intent update_settings(const Input& input);
+    /// 存档管理浮层：settings 栈上的普通浮层（Esc 由 App 转发到 to_shelf，先 pop 回设置）
+    bool saves_open() const;
+    void open_saves();
+    Intent update_saves(const Input& input);
     Intent update_paused(const Input& input);
     Intent update_mods(const Input& input);
     Intent update_tape(const Input& input);
@@ -242,6 +255,7 @@ private:
     void draw_boot(Screen& screen) const;
     void draw_shelf(Screen& screen);
     void draw_settings(Screen& screen);
+    void draw_saves(Screen& screen);
     void draw_about(Screen& screen);
     void draw_paused(Screen& screen);
     /// 磁带码界面（两态渲染见 shell/tape_view.cpp）
@@ -317,6 +331,13 @@ private:
 
     // 磁带码界面：状态、输入与绘制都在 shell/tape_view.cpp，外壳只负责转达
     tape::ScreenState tape_;
+    /// 存档管理屏：视图/选中/确认在 shell/save_view.cpp；数据由 App 的钩子注入
+    save::ScreenState saves_;
+    SaveListFn save_list_;
+    SaveDeleteFn save_delete_;
+    SaveCodeFn save_code_;
+    /// 磁带码是从存档管理里打开的：Esc 关掉磁带码时要回存档列表，而不是暂停菜单
+    bool tape_over_saves_ = false;
 
     Lang lang_ = Lang::zh;  // 界面语言（默认中文，App 启动时按配置设定）
 
