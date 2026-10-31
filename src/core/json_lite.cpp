@@ -205,6 +205,8 @@ std::string short_number(double value) {
 
 /// 数字的精确文本（17 位有效数字）：落盘后可无损回读
 std::string exact_number(double value) {
+    // 防御性兜底：调用方应拒绝非有限数；万一漏进来，输出 JSON 合法的 null 而不是 inf/nan
+    if (!std::isfinite(value)) return "null";
     char buffer[40];
     std::snprintf(buffer, sizeof(buffer), "%.17g", value);
     return buffer;

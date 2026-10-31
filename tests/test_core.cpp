@@ -427,6 +427,166 @@ TEST(json_value_reports_duplicate_keys_per_object) {
     CHECK_EQ(theme->duplicate_keys().size(), size_t(1));
     CHECK_EQ(theme->str("skin"), std::string("b"));
 }
+// S10：json_lite 严格性补测（转义 / 数字 / 结构 / 序列化稳定性）
+
+TEST(json_value_escapes_and_unterminated) {
+    json::Value value;
+    std::string err;
+    // 八个标准转义：解析结果必须与对应字符逐字节一致
+    CHECK(value.parse(R"JSON("\" \\ \/ \b \f \n \r \t")JSON", err));
+    CHECK_EQ(value.text, std::string("\" \\ / \b \f \n \r \t"));
+
+    // \uXXXX 与代理对：合并成一个 4 字节 UTF-8 码点
+    CHECK(value.parse(R"JSON("\uD83D\uDE00")JSON", err));
+    CHECK_EQ(value.text, std::string("\xF0\x9F\x98\x80"));
+
+    // 未闭合字符串（顶层与对象内）与非法转义/非法代理都必须拒绝
+    CHECK(!value.parse("\"abc", err));
+    CHECK(!value.parse("\"abc\\", err));
+    CHECK(!value.parse("{\"a\":\"x}", err));
+    CHECK(!value.parse("\"\\q\"", err));
+    CHECK(!value.parse("\"\\u12\"", err));
+    CHECK(!value.parse("\"\\uD800\"", err));
+    CHECK(!value.parse("\"\\uDE00\"", err));
+    CHECK(!err.empty());
+}
+
+TEST(json_value_number_grammar_and_17g_roundtrip) {
+    json::Value value;
+    std::string err;
+    CHECK(value.parse("-5", err));
+    CHECK_EQ(value.number, -5.0);
+    CHECK(value.parse("1e3", err));
+    CHECK_EQ(value.number, 1000.0);
+    CHECK(value.parse("-0", err));
+    CHECK_EQ(value.number, 0.0);
+    CHECK(value.parse("2.5E-3", err));
+    CHECK_EQ(value.number, 0.0025);
+
+    // JSON 数字文法：前导零/正号/裸小数点/缺指数/NaN/Infinity/溢出成 inf 全部拒绝
+    const char* bad[] = {"01",   "+1",       ".5",      "1.",     "1e",     "NaN",
+                         "Infinity", "-Infinity", "1e999", "-1e999", "1abc"};
+    for (const char* text : bad) {
+        json::Value strict;
+        std::string bad_err;
+        CHECK(!strict.parse(text, bad_err));
+        CHECK(!bad_err.empty());
+    }
+
+    // %.17g 序列化必须能无损回读（含 DBL_MAX / denormal / 非常规小数）；
+    // 同一份值重复 dump 逐字节一致
+    const double numbers[] = {0.0,
+                              -0.0,
+                              1.5,
+                              0.1,
+                              1.0 / 3.0,
+                              0.1 + 0.2,
+                              std::numeric_limits<double>::max(),
+                              std::numeric_limits<double>::denorm_min(),
+                              1e300,
+                              1e-300};
+    for (double number : numbers) {
+        const json::Value original = json::Value::of_number(number);
+        const std::string dumped = original.dump();
+        json::Value back;
+        std::string back_err;
+        CHECK(back.parse(dumped, back_err));
+        CHECK_EQ(back.number, number);
+        CHECK_EQ(back.dump(), dumped);
+    }
+    CHECK_EQ(json::Value::of_number(1.5).dump(), std::string("1.5"));
+    CHECK_EQ(json::Value::of_number(-0.0).dump(), std::string("-0"));
+}
+
+TEST(json_value_empty_and_mixed_nesting) {
+    json::Value value;
+    std::string err;
+    CHECK(value.parse("{}", err));
+    CHECK_EQ(value.dump(), std::string("{}"));
+    CHECK(value.parse("[]", err));
+    CHECK_EQ(value.dump(), std::string("[]"));
+    CHECK(value.parse(" {\"a\":[],\"b\":{}} ", err));
+    CHECK_EQ(value.dump(), std::string("{\"a\":[],\"b\":{}}"));
+
+    // 对象/数组混合嵌套：64 层恰好接受，65 层拒绝（与同构嵌套同一上限）
+    const auto mixed = [](int levels) {
+        std::string text;
+        for (int i = 0; i < levels; ++i) text += (i % 2 == 0) ? "{\"a\":" : "[";
+        text += "1";
+        for (int i = levels - 1; i >= 0; --i) text += (i % 2 == 0) ? "}" : "]";
+        return text;
+    };
+    CHECK(value.parse(mixed(json::Value::kMaxDepth), err));
+    CHECK(!value.parse(mixed(json::Value::kMaxDepth + 1), err));
+
+    // 整串消费：前导/尾随空白允许，任何尾随字符都拒绝；Object 还要求根是对象
+    json::Object object;
+    CHECK(!object.parse("[]", err));
+    CHECK(object.parse("  {\"a\":1}  ", err));
+    CHECK(!object.parse("{\"a\":1} trailing", err));
+    CHECK(!object.parse("{\"a\":1}[]", err));
+}
+
+TEST(json_value_dump_stability_and_key_order) {
+    json::Value value;
+    std::string err;
+    CHECK(value.parse(R"JSON({"b":1,"a":2,"c":{"z":1,"y":[3,2,1]}})JSON", err));
+    const std::string first = value.dump();
+    CHECK_EQ(first, std::string("{\"a\":2,\"b\":1,\"c\":{\"y\":[3,2,1],\"z\":1}}"));
+    CHECK_EQ(value.dump(), first);  // 同值重复 dump 逐字节一致
+    json::Value again;
+    CHECK(again.parse(first, err));
+    CHECK_EQ(again.dump(), first);  // dump → parse → dump 稳定
+
+    // 程序化构造：键插入顺序不影响 dump（std::map 升序），输出可回读
+    json::Value manual = json::Value::of_object();
+    manual.members["b"] = json::Value::of_number(1);
+    manual.members["a"] = json::Value::of_text("x");
+    CHECK_EQ(manual.dump(), std::string("{\"a\":\"x\",\"b\":1}"));
+
+    // 文本经 dump 后仍是合法 JSON，并能解析回同一份文本
+    const json::Value text = json::Value::of_text(std::string("a\"b\n中"));
+    const std::string text_dump = text.dump();
+    CHECK_EQ(text_dump, std::string("\"a\\\"b\\n中\""));
+    json::Value text_back;
+    CHECK(text_back.parse(text_dump, err));
+    CHECK_EQ(text_back.text, text.text);
+
+    // 重复键诊断：第 2、3 次出现各记一次；Object 视图同样给出升序顶层键
+    CHECK(value.parse(R"JSON({"k":1,"k":2,"k":3})JSON", err));
+    CHECK_EQ(value.duplicate_keys.size(), size_t(2));
+    CHECK_EQ(value.members.at("k").number, 3.0);
+
+    json::Object object;
+    CHECK(object.parse(R"JSON({"b":1,"a":2,"k":1,"k":2})JSON", err));
+    const std::vector<std::string> keys = object.keys();
+    CHECK_EQ(keys.size(), size_t(3));
+    CHECK_EQ(keys[0], std::string("a"));
+    CHECK_EQ(keys[1], std::string("b"));
+    CHECK_EQ(keys[2], std::string("k"));
+    CHECK_EQ(object.duplicate_keys().size(), size_t(1));
+}
+
+TEST(json_object_integer_boundary_narrowing) {
+    // double → int 的越界是 UB：读取必须钳到端点，而不是回绕
+    json::Object object;
+    std::string err;
+    CHECK(object.parse(
+        R"JSON({"max":2147483647,"over":2147483648,"min":-2147483648,)JSON"
+        R"JSON("under":-2147483649,"frac":2147483646.9,)JSON"
+        R"JSON("smax":"2147483648","sneg":"-2147483649"})JSON",
+        err));
+
+    CHECK_EQ(object.integer("max"), std::numeric_limits<int>::max());
+    CHECK_EQ(object.integer("over"), std::numeric_limits<int>::max());
+    CHECK_EQ(object.integer("min"), std::numeric_limits<int>::min());
+    CHECK_EQ(object.integer("under"), std::numeric_limits<int>::min());
+    CHECK_EQ(object.integer("frac"), 2147483646);  // 小数向零截断，且不越界
+    CHECK_EQ(object.integer("smax"), std::numeric_limits<int>::max());
+    CHECK_EQ(object.integer("sneg"), std::numeric_limits<int>::min());
+    CHECK_EQ(object.integer("missing", 5), 5);
+}
+
 
 // ---------------------------------------------------------------- palette / builtin
 
@@ -1852,6 +2012,13 @@ TEST(cart_files_read_cap_and_path_safety) {
     CHECK(!files.exists("../escape.txt"));
 
     std::filesystem::remove_all(dir, ec);
+}
+
+TEST(json_value_dump_nonfinite_is_null) {
+    // 防御性兜底：非有限数不应产出 inf/nan 这种非法 JSON（正常写入路径已在 Host 侧拒绝）
+    CHECK_EQ(json::Value::of_number(std::nan("")).dump(), std::string("null"));
+    CHECK_EQ(json::Value::of_number(std::numeric_limits<double>::infinity()).dump(), std::string("null"));
+    CHECK_EQ(json::Value::of_number(-std::numeric_limits<double>::infinity()).dump(), std::string("null"));
 }
 
 } // namespace

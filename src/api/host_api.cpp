@@ -143,8 +143,10 @@ bool save_key_from_lua(const sol::object& key, std::string& out) {
         return true;
     }
     if (key.is<double>()) {
+        const double number = key.as<double>();
+        if (!std::isfinite(number)) return false;
         char buffer[32];
-        std::snprintf(buffer, sizeof(buffer), "%g", key.as<double>());
+        std::snprintf(buffer, sizeof(buffer), "%g", number);
         out = buffer;
         return true;
     }
@@ -162,7 +164,12 @@ bool save_value_from_lua(const sol::object& value, json::Value& out, int depth,
                          std::set<const void*>& path) {
     switch (value.get_type()) {
         case sol::type::boolean: out = json::Value::of_boolean(value.as<bool>()); return true;
-        case sol::type::number: out = json::Value::of_number(value.as<double>()); return true;
+        case sol::type::number: {
+            const double number = value.as<double>();
+            if (!std::isfinite(number)) return false;  // NaN/inf 写进 JSON 会得到非法文档
+            out = json::Value::of_number(number);
+            return true;
+        }
         case sol::type::string: out = json::Value::of_text(value.as<std::string>()); return true;
         case sol::type::table: break;
         default: return false;
