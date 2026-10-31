@@ -8,6 +8,7 @@
 #include "shell/messages.hpp"
 #include "shell/settings_view.hpp"
 #include "ui/frame.hpp"
+#include "ui/toast.hpp"
 #include "ui/layout.hpp"
 
 #include <string>
@@ -42,6 +43,28 @@ TEST(ui_layout_column_and_padding) {
     CHECK_EQ(a->rect.h, 1);
     const ui::Node* b = find_node(root, "b");
     CHECK_EQ(b->rect.y, 8);
+}
+
+TEST(ui_toast_push_expire_and_paint) {
+    ui::Theme theme;
+    ui::Toasts toasts;
+    CHECK(toasts.empty());
+
+    toasts.push("SAVED", 1.0f);
+    CHECK_EQ(toasts.size(), size_t(1));
+
+    Screen screen(60, 20);
+    toasts.paint(screen, theme, ui::Rect{0, 0, 60, 20});
+    CHECK(screen.to_text().find("SAVED") != std::string::npos);
+
+    toasts.update(0.6f);
+    CHECK_EQ(toasts.size(), size_t(1));
+    toasts.update(0.6f);
+    CHECK(toasts.empty());
+
+    Screen blank(60, 20);
+    toasts.paint(blank, theme, ui::Rect{0, 0, 60, 20});
+    CHECK(blank.to_text().find("SAVED") == std::string::npos);
 }
 
 TEST(ui_grid_measure_and_arrange) {

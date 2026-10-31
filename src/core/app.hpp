@@ -18,6 +18,7 @@
 #include "pack/content_library.hpp"
 #include "pack/pack.hpp"
 #include "shell/shell.hpp"
+#include "ui/toast.hpp"
 
 #include <map>
 #include <memory>
@@ -186,6 +187,7 @@ private:
 
     Audio audio_;
     Net net_;  // 局域网联机（随卡带生命周期，见 app_cart.cpp）
+    ui::Toasts toasts_;  // 卡带的瞬时提示（绘制在内容区底边，不冻结世界）
     std::map<std::string, int> sample_cache_;  // 音效包内音频文件的解码句柄缓存
 
     // 仪式感动效状态

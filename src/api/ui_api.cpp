@@ -6,6 +6,7 @@
 #include "api/ui_render.hpp"
 #include "core/log.hpp"
 #include "core/ui.hpp"
+#include "ui/toast.hpp"
 
 #include <sol/sol.hpp>
 
@@ -29,6 +30,12 @@ std::map<char, Color> color_map(const sol::object& obj) {
 void register_ui_api(sol::state& lua, HostContext& host) {
     sol::table phos = lua["phos"];
     sol::table ui = phos.create_named("ui");
+
+    // 瞬时提示：底部居中浮一条消息，几秒后自动消失（不接管输入、不冻结世界）
+    ui["toast"] = [&host](const std::string& text, sol::optional<double> seconds) {
+        if (!host.toasts) return;
+        host.toasts->push(text, static_cast<float>(seconds.value_or(1.6)));
+    };
 
     // 坐标一律为内容区局部坐标；内部偏移到网格坐标
     auto rect_at = [&host](int x, int y, int w, int h) {

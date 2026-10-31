@@ -141,6 +141,7 @@ if(PHOSPHOR_BUILD_TESTS)
         src/ui/element.cpp
         src/ui/layout.cpp
         src/ui/frame.cpp
+        src/ui/toast.cpp
         src/pack/builtin.cpp
         src/cart/save_store.cpp
         src/cart/cart_files.cpp

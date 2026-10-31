@@ -44,6 +44,7 @@ function update()
       if ev.index == 1 then state.score = state.score + 100 end
       if ev.index == 2 then state.score = state.score + 10 end
       state.last = ("list:%d"):format(ev.index)
+      phos.ui.toast("PICK " .. ev.index)  -- 底部瞬时提示：自动消失，不接管输入
       phos.audio.beep(660, 0.05)
     elseif ev.kind == "changed" and ev.id == "demo_sfx" then
       state.checked = ev.checked

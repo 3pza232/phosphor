@@ -18,6 +18,9 @@ namespace phos {
 class Audio;
 class SaveStore;
 class SceneStack;
+namespace ui {
+class Toasts;
+}
 class CartFiles;
 class Cartridge;
 class Net;
@@ -79,6 +82,7 @@ struct HostContext {
     /// 卡带场景栈（`phos.scene`）：由 Cartridge 持有并在此挂指针；无卡带/主机动画时为 nullptr。
     /// App 按它决定"是否跳过卡带 update、是否暂停音频、是否在卡带 draw 之后再画场景"
     SceneStack* scenes = nullptr;
+    ui::Toasts* toasts = nullptr;  // 卡带的瞬时提示（App 持有并绘制）
 
     // 可选图层缓冲（`phos.layer`）。卡带不建层时它是空的，主循环里连一次合并都不发生；
     // 每次插卡由 App 重置，于是层随卡带生命周期

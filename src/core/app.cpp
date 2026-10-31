@@ -53,6 +53,7 @@ int App::run(const CliOptions& opts) {
     host_.language = config_.language;
     host_.audio = &audio_;
     host_.net = &net_;
+    host_.toasts = &toasts_;
     host_.capture_escape = &capture_escape_;
     rng_seed_ = opts.seed.value_or(
         static_cast<unsigned>(std::chrono::system_clock::now().time_since_epoch().count()));
@@ -193,6 +194,7 @@ void App::tick_playing(float dt) {
         audio_.set_paused(scene_pauses_audio);
     }
     if (!frozen) host_.time += dt;
+    if (!frozen) toasts_.update(dt);  // toast 计时跟逻辑帧走：暂停时冻结
     shell_.draw_chassis(display_.screen);
     shell_.set_lamps_solid(true);
 
@@ -242,6 +244,12 @@ void App::tick_playing(float dt) {
         const auto m0 = clock::now();
         host_.layers.merge_over(display_.screen, host_.content_x, host_.content_y);
         timing_.merge_ms = std::chrono::duration<float, std::milli>(clock::now() - m0).count();
+    }
+
+    // toast：画在图层合成之后（压在世界与场景之上），但只在内容区底边，不接管输入
+    if (!toasts_.empty()) {
+        const ui::Theme toast_theme = ui::theme_from_palette(active_palette_);
+        toasts_.paint(display_.screen, toast_theme, content_rect());
     }
 
     timing_.update_ms = std::chrono::duration<float, std::milli>(t1 - t0).count();

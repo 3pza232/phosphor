@@ -12,7 +12,8 @@ namespace phos {
 void App::load_cart_path(const std::string& path) {
     if (path.empty()) return;
 
-    host_.scenes = nullptr;  // 旧卡带的场景栈马上要被销毁
+    host_.scenes = nullptr;
+    toasts_.clear();  // 旧卡带的场景栈马上要被销毁
     // 界面状态随卡带：换卡/重载不把上一张的焦点、滚动、输入缓冲带进来
     host_.cart_ui.screens.clear();
     host_.cart_ui_json.clear();
@@ -85,7 +86,8 @@ void App::eject_cart() {
 }
 
 void App::clear_host_cart() {
-    host_.scenes = nullptr;  // 场景栈随卡带销毁：任何查询都不能再落到它上面
+    host_.scenes = nullptr;
+    toasts_.clear();  // 场景栈随卡带销毁：任何查询都不能再落到它上面
     scene_audio_paused_ = false;
     // 界面快照与待办也是"当前卡带的"，一并清掉：否则 state.query.ui 会报上一张卡带的控件
     host_.cart_ui_json.clear();

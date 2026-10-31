@@ -96,9 +96,9 @@ E 从 A 开始持续，不等其它阶段。
 > **屏幕栈 `ScreenStack` 与 Modal 未做**（M3 一起补）。设置屏 + 错误屏已迁到组件树，
 > `tools/shell_golden.py` 的文本快照守住迁移前后一致；单测 `tests/test_ui.cpp` 6 条
 > （布局/焦点/滚动），`tools/ui_smoke.py` 已进 `run_checks`（9 项）。
-> 剩余：Scroll/Toast、屏幕栈、像素基线（Table/Grid 已补齐：`columns`/`rows`/`widths`/`col_align`；
+> 剩余：Scroll、屏幕栈、像素基线（Table/Grid 已补齐：`columns`/`rows`/`widths`/`col_align`；
 > `grid` 按 `cols` 等宽分行；表头下自动分隔线，列宽自适应并均摊余量；
-> 按键按住重复已补：300ms 延迟 + 3 帧/格，
+> 按键按住重复已补：300ms 延迟 + 3 帧/格；`Toast` 已补（底部浮条，按时长自动消失），
 > 松开重置，单测覆盖）。
 
 **交付**

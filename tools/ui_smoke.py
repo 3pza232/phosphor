@@ -111,6 +111,12 @@ def main() -> int:
         checks.check(debug.get("checked") is False, "ui.activate 按玩家确认的语义激活控件")
         checks.check(str(debug.get("last")) == "sound:false", "激活产生的事件回到卡带")
 
+        print("  -- toast --")
+        # 上一步列表激活时卡带调用了 phos.ui.toast：先在场，随后按时长消失
+        checks.check("PICK" in host.screen_text(), "toast 出现")
+        host.step(160)  # 1.6s 显示时长 + 余量
+        checks.check("PICK" not in host.screen_text(), "toast 到时消失")
+
         print("  -- 退出 --")
     checks.check(host.exited_cleanly, "宿主干净退出")
     return checks.finish()

@@ -238,6 +238,12 @@ function phos.panel.clear(fg, bg) end
 ---@class phos.ui
 phos.ui = {}
 
+---瞬时提示：内容区底边居中浮一条消息，几秒后自动消失。
+---不接管输入、不冻结世界；连续调用时只显示最新几条。
+---@param text string
+---@param seconds? number 显示时长（缺省 1.6）
+function phos.ui.toast(text, seconds) end
+
 ---带标题的边框（标题嵌在上边框；空标题为普通边框）
 ---@param x integer
 ---@param y integer

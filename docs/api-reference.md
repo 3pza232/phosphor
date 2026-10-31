@@ -503,6 +503,16 @@ pending = phos.ui.render{
   完全同语义，请求在下一逻辑帧的 render 生效。字段与示例见
   [agent-interface.md](agent-interface.md) 的「界面：读控件树、按 id 操作」一节。
 
+### 瞬时提示：phos.ui.toast(text, seconds?)
+
+底边居中浮一条消息，几秒后自动消失；**不接管输入、不冻结世界**，连续调用只显示最新几条。
+计时跟逻辑帧走（暂停时冻结），不需要卡带自己算时间：
+
+```lua
+phos.ui.toast("SAVED")              -- 缺省 1.6 秒
+phos.ui.toast("LEVEL 3", 2.0)
+```
+
 ### 绘制原语（更低层）
 
 以下函数是**无状态**绘制原语：调用时立刻往当前网格写，不持有焦点、滚动或控件状态。
