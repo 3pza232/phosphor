@@ -43,6 +43,73 @@ class Checks:
         return 1 if self.failures else 0
 
 
+
+
+def _probe_contract(checks: "Checks") -> None:
+    """用临时测试卡带核对 parser 层契约：根 id、disabled 1 基、reset 快照。"""
+    cart = Path("tests-out") / "ui-contract-probe"
+    cart.mkdir(parents=True, exist_ok=True)
+    (cart / "manifest.lua").write_text(
+        'return { id = "ui-contract-probe", name = "PROBE", desc = "contract probe", '
+        'version = "1.0.0", entry = "main.lua", phos_api = 7 }\n',
+        encoding="utf-8")
+    (cart / "main.lua").write_text(
+        '''local st = { focus = "", last = "", skip = false }
+function update()
+  if phos.input.pressed("b") then
+    phos.ui.reset()
+    st.skip = true
+    st.last = "reset"
+  end
+end
+function draw()
+  if st.skip then
+    st.skip = false
+    phos.screen.clear()
+    st.focus = phos.ui.focus()
+    return
+  end
+  phos.screen.clear()
+  local events = phos.ui.render{
+    screen = "probe", surface = "content", input = true,
+    kind = "list", items = { "A", "B", "C" }, disabled = { 2 },
+    children = {
+      { kind = "list", id = "probe/2", items = { "X", "Y" }, disabled = { 1 } },
+    },
+  }
+  for _, e in ipairs(events) do st.last = e.kind .. ":" .. tostring(e.index or "") end
+  st.focus = phos.ui.focus()
+end
+function debug_state() return { focus = st.focus, last = st.last } end
+''',
+        encoding="utf-8")
+    print("  -- parser 契约（临时 probe 卡带）--")
+    with Host(cart=str(cart.resolve()), extra=("--seed", "1")) as host:
+        host.step(5)
+        snapshot = host.send("ui.list").get("ui") or {}
+        checks.check(snapshot.get("screen") == "probe", "根 screen 命名空间")
+        checks.check(snapshot.get("focus") == "probe",
+                     f"顶层 kind 省略 id 时根 id = screen（{snapshot.get('focus')}）")
+        host.key("down")
+        host.step(2)
+        snapshot = host.send("ui.list").get("ui") or {}
+        widget = (snapshot.get("widgets") or [{}])[0]
+        selected = (widget.get("state") or {}).get("selected")
+        checks.check(selected == 3,
+                     f"disabled 下标 1 基（禁用第 2 行，实际 selected={selected}）")
+        # ui.activate 在 disabled 行上必须与玩家按 A 一致：不产生 activated
+        host.send("ui.activate", id="probe/2")
+        host.step(2)
+        debug = host.state().get("debug") or {}
+        checks.check(str(debug.get("last")) != "activated:1",
+                     f"ui.activate 不触发 disabled 列表行（{debug.get('last')}）")
+        host.inject_key("b")
+        host.step(1)
+        checks.check(host.send("ui.list").get("ui") is None,
+                     "ui.reset 清除 ui.list/state.query.ui 快照")
+    checks.check(host.exited_cleanly, "probe 宿主干净退出")
+
+
 def main() -> int:
     checks = Checks()
     with Host(cart="devkit/examples/ui", extra=("--seed", "1")) as host:
@@ -130,6 +197,7 @@ def main() -> int:
 
         print("  -- 退出 --")
     checks.check(host.exited_cleanly, "宿主干净退出")
+    _probe_contract(checks)
     return checks.finish()
 
 

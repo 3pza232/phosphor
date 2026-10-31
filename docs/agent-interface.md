@@ -164,7 +164,7 @@ phosphor --pack carts/snake --json
 | `skin` / `palette` / `boot` / `sound` / `font` | 生效的皮肤 / 色板 / 启动动画 / 音效包 / 字体方案（**id**，稳定标识）。`palette` 由主题（skin）声明派生，非用户可切换项 |
 | `font_size` | 当前**字号 = 单元格像素边长**（默认 16）：整机字符与行距随之缩放。用户设了就用它；否则跟随字体方案 `font.lua` 声明的 `size`；再否则出厂默认 16 |
 | `font_size_max` | 字号可调上限（由字体方案 `font.lua` 的 `max` 声明；缺省 24，Mod 可抬高，硬上限 32） |
-| `ime` | 本帧是否有输入框在请求中文输入法：卡带 `phos.input.field({ime=true})` 的框被 `feed`、或卡带架搜索正在输入时为 `true`。主机据此开关系统输入法（仅 Windows 实际生效） |
+| `ime` | 本帧是否有输入框在请求中文输入法：卡带 `phos.input.field({ime=true})` 的框被 `feed`、声明式文本域（`phos.ui` 的 `field`）聚焦、或卡带架搜索正在输入时为 `true`。主机据此开关系统输入法（仅 Windows 实际生效） |
 | `packs` | 各类型可选清单：`skin` / `palette` / `boot` / `sound` 是**显示名**数组（屏幕上画的就是它，当前取包文件夹名），`*_ids` 是与之一一对应的**稳定 id**；字体只有 `font`（字体方案的标识本身就是 id）。要比对状态值或记住某一项**用 id**（显示名可能重名或随包改名，id 不会） |
 | `language` | 界面语言（`zh` / `en`） |
 | `cursor` | 菜单光标行号（`-1` = 当前模式没有菜单） |

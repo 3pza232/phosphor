@@ -13,6 +13,9 @@
 #include <sol/sol.hpp>
 
 #include <algorithm>
+#include <cmath>
+#include <cstdio>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -40,7 +43,14 @@ bool has_field(const sol::table& t, const char* key) {
 int int_field(const sol::table& t, const char* key, int fallback = 0) {
     sol::object value = t[key];
     if (value.is<int>()) return value.as<int>();
-    if (value.is<double>()) return static_cast<int>(value.as<double>());
+    if (value.is<double>()) {
+        const double number = value.as<double>();
+        // NaN / inf / 超出 int 的 double 直接 static_cast 是 UB；坏值按缺省处理
+        if (!std::isfinite(number) || number < static_cast<double>(std::numeric_limits<int>::min()) ||
+            number > static_cast<double>(std::numeric_limits<int>::max()))
+            return fallback;
+        return static_cast<int>(number);
+    }
     return fallback;
 }
 
@@ -59,8 +69,13 @@ ui::Insets insets_field(const sol::table& t, const char* key) {
         const int all = value.as<int>();
         out = ui::Insets{all, all, all, all};
     } else if (value.is<double>()) {
-        const int all = static_cast<int>(value.as<double>());
-        out = ui::Insets{all, all, all, all};
+        const double number = value.as<double>();
+        if (std::isfinite(number) &&
+            number >= static_cast<double>(std::numeric_limits<int>::min()) &&
+            number <= static_cast<double>(std::numeric_limits<int>::max())) {
+            const int all = static_cast<int>(number);
+            out = ui::Insets{all, all, all, all};
+        }
     } else if (value.is<sol::table>()) {
         sol::table map = value.as<sol::table>();
         if (has_field(map, "x") || has_field(map, "y")) {
@@ -136,7 +151,12 @@ std::string cell_string(const sol::object& value) {
     if (value.is<bool>()) return value.as<bool>() ? "true" : "false";
     if (value.is<double>()) {
         const double number = value.as<double>();
-        if (number == static_cast<long long>(number)) return std::to_string(static_cast<long long>(number));
+        if (!std::isfinite(number)) return {};  // 非有限数不进表格文本（避免 UB/NaN 文本）
+        if (number == std::trunc(number) &&
+            number >= static_cast<double>(std::numeric_limits<long long>::min()) &&
+            number <= static_cast<double>(std::numeric_limits<long long>::max())) {
+            return std::to_string(static_cast<long long>(number));
+        }
         char buffer[32];
         std::snprintf(buffer, sizeof(buffer), "%.2f", number);
         return std::string(buffer);
@@ -204,9 +224,15 @@ void apply_disabled(const sol::table& t, const std::vector<std::string>& items, 
         if (item.is<bool>()) {
             if (i - 1 < out.disabled.size() && item.as<bool>()) out.disabled[i - 1] = true;
         } else if (item.is<int>() || item.is<double>()) {
-            const int index = static_cast<int>(item.as<double>());
-            if (index >= 0 && index < static_cast<int>(out.disabled.size()))
-                out.disabled[static_cast<size_t>(index)] = true;
+            // 下标数组按 Lua 习惯 1 基（docs: {2,5} 表示第 2/5 行）
+            const double number = item.as<double>();
+            if (!std::isfinite(number) ||
+                number < static_cast<double>(std::numeric_limits<int>::min()) ||
+                number > static_cast<double>(std::numeric_limits<int>::max()))
+                continue;
+            const int index = static_cast<int>(number);
+            if (index >= 1 && index <= static_cast<int>(out.disabled.size()))
+                out.disabled[static_cast<size_t>(index - 1)] = true;
         }
     }
 }
@@ -300,8 +326,13 @@ void synthesize_activation(ui::Node& root, ui::State& state, const std::string& 
         case ui::Kind::list: {
             const int count = static_cast<int>(node->props.items.size());
             if (count <= 0) return;
+            const int index = std::clamp(widget.cursor, 0, count - 1);
+            // 与玩家按 A 一致：当前行 disabled 时不触发 activated
+            if (static_cast<size_t>(index) < node->props.disabled.size() &&
+                node->props.disabled[static_cast<size_t>(index)])
+                return;
             event.kind = ui::EventKind::activated;
-            event.index = std::clamp(widget.cursor, 0, count - 1);
+            event.index = index;
             break;
         }
         case ui::Kind::checkbox:
@@ -380,10 +411,14 @@ struct Builder {
         apply_disabled(t, out.items, out);
     }
 
-    ui::Node build(const sol::table& t, const std::string& parent_id, int index, int depth) {
+    ui::Node build(const sol::table& t, const std::string& parent_id, int index, int depth,
+                   const std::string& default_id = {}) {
         ui::Node node;
         node.kind = kind_from_name(str_field(t, "kind", "column"));
-        node.id = str_field(t, "id", parent_id + "/" + std::to_string(index));
+        // 顶层省略 id 时文档约定 = screen；子元素仍按父 id/序号派生
+        node.id = str_field(t, "id",
+                            default_id.empty() ? parent_id + "/" + std::to_string(index)
+                                               : default_id);
         props_from_table(t, node.props);
 
         // 勾选/文本域初值：只在控件还没有状态时写入（之后归控件维护）
@@ -470,7 +505,7 @@ void register_cart_ui_api(sol::state& lua, HostContext& host) {
         ui::Node root;
         sol::object kind = spec["kind"];
         if (kind.is<std::string>()) {
-            root = builder.build(spec, screen_id, 1, 0);
+            root = builder.build(spec, screen_id, 1, 0, screen_id);
         } else {
             root = ui::make_root(screen_id);
             for (size_t i = 1; i <= spec.size(); ++i) {
@@ -545,6 +580,9 @@ void register_cart_ui_api(sol::state& lua, HostContext& host) {
     ui["reset"] = [&host]() {
         host.cart_ui.screens.clear();
         host.last_ui_focus.clear();
+        host.cart_ui_json.clear();  // 否则 ui.list/state.query.ui 仍会看到上一屏快照
+        host.pending_ui_focus.clear();
+        host.pending_ui_activate.clear();
     };
 }
 

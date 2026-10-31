@@ -390,8 +390,8 @@ pending = phos.ui.render{
   `max_chars` 是**码点数**上限（0 = 不限）；退格按码点处理。
 - 每个界面用独立的 `screen`（例里 `"panel"` / `"pause"` / `"name"`）：焦点、滚动、勾选与
   文本域状态按它分开存，互不串。
-- **输入法**：声明式文本域目前**不向主机请求系统输入法**（物理键盘的中文拼音输入待接入）；
-  `input.text` 注入的多字节文本可以进入，ASCII / 数字输入不受影响。
+- **输入法**：文本域聚焦时，render 会向主机请求系统输入法（`state.query.ime` / 仅 Windows
+  实际生效）；`input.text` 注入的多字节文本也可以进入，ASCII / 数字输入不受影响。
 
 **顶层字段**
 
@@ -420,7 +420,7 @@ pending = phos.ui.render{
 | `option` | 左右改值的一行（显示 `text`，卡带自己格式化） | 左右 → `changed(delta)`；A → `changed(delta=1, confirm=true)` |
 | `checkbox` | 勾选项（`[x]` / `[ ]`） | A → `changed(checked)` |
 | `field` | 文本输入框 | A → `submitted(text)` |
-| `bar` | 进度条（`ratio` 0..1） | — |
+| `bar` | 进度条（`ratio` 0..1；`fg` 覆盖填充色，`bg` 需 `opaque = true` 才生效） | — |
 | `button` | 按钮行 | A → `activated` |
 | `hint` | 页脚键位提示（`items` 为 `[键, 说明]` 交替） | — |
 | `table` | 表格：`columns` 表头 + `rows` 数据，列宽/对齐可指定（表头下自动画分隔线） | — |
@@ -436,8 +436,8 @@ pending = phos.ui.render{
 | `grow` | integer | 0 | 父容器主轴上的伸展权重（>0 参与分配剩余空间） |
 | `gap` | integer | 1 | 容器内子项间距；顶层省略 `kind` 时根容器默认 0（子项紧贴） |
 | `padding` / `margin` | integer 或 table | 0 | 数字 = 四边同值；`{x, y}` 或 `{l, t, r, b}` |
-| `align_h` | string | `"stretch"` | `start` / `center` / `end` / `stretch` |
-| `align_v` | string | `"start"` | `start` / `center`（目前用于单段文本的垂直居中） |
+| `align_h` | string | `"stretch"` | `start` / `center` / `end` / `stretch`；column/box 控制子项水平落点；row 中子项按主轴顺序排，只有 `stretch` 会占满行高（center/end 暂无横向效果） |
+| `align_v` | string | `"start"` | `start` / `center`；目前用于 text 的垂直居中（其它值按 start） |
 | `opaque` | boolean | false | 是否铺实底；**只有 true 时 `bg` 才生效**（默认透明，透出世界/下层） |
 | `bg` / `fg` | 色板名或 `{r,g,b}` | 主题角色 | 底色 / 前景色；色板名如 `"green"`、`"dark_gray"` |
 | `border` | string | `"none"` | `none` / `single` / `double` |
@@ -455,16 +455,16 @@ pending = phos.ui.render{
 | `scrollbar` | boolean | true | scroll 内容溢出时在视口右/下画位置指示条（只显示，不可拖拽） |
 | `columns` | string[] | — | table 的表头（空 = 无表头；有表头时自动加一条分隔线） |
 | `rows` | table[] | — | table 的数据行：每行一个字符串数组；数字单元格按整数/两位小数转文本 |
-| `widths` | integer[] | — | table 各列**固定宽**；0 或缺省 = 按内容自适应。剩余宽度只均摊到自适应列（全固定列时右侧留白） |
+| `widths` | integer[] | — | table 各列**固定宽**；0 或缺省 = 按内容自适应。列间固定 2 格；剩余宽度只均摊到自适应列（全固定列时右侧留白） |
 | `col_align` | string[] | start | table 各列对齐：`left` / `center` / `right` |
-| `disabled` | table? | — | list 中不可选的行：下标数组 `{2, 5}` 或等长布尔数组 |
+| `disabled` | table? | — | list 中不可选的行：**1 基**下标数组 `{2, 5}` 或等长布尔数组 |
 | `ratio` | number | 0 | bar 的比例（0..1，越界按 0/1 画） |
 | `checked` | boolean | false | checkbox 的**初值**；之后以用户操作为准 |
 | `filter` / `max_chars` | string / integer | `"printable"` / 0 | field 的输入过滤与码点数上限 |
 | `enabled` | boolean | true | false = 不可聚焦、按主题的禁用色画 |
 | `indent` / `text_gap` | integer | 0 / 1 | 选中标记的缩进、正文相对标记的间距 |
 | `label_w` | integer | 0 | stat 的标签列宽；0 = 主题默认（16） |
-| `absolute` / `x` / `y` | boolean / integer | false / 0 | true = 相对父内容区定位，不参与流式布局 |
+| `absolute` / `x` / `y` | boolean / integer | false / 0 | true = 相对父内容区定位，不参与流式布局（column/row/box/scroll；grid 不支持绝对定位） |
 
 表格示例（表头 + 右对齐数值列）：
 
