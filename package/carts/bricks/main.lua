@@ -10,7 +10,6 @@
 local Game = require("game")
 local Panel = require("panel")
 local Sfx = require("sfx")
-local Scores = require("scores")
 
 -- 界面文案：跟随机器的界面语言。新增语言只需加一列，取值处一律走 L()
 local Text = {
@@ -24,50 +23,91 @@ local function L() return phos.lang.dict(Text) end
 local Music = require("music")
 
 local game
-local paused
+local board           -- 排行榜（引擎负责排序/截断/存档键）
 local reported        -- 本局是否已提交过纪录
 
 local function report_score()
   if reported then return end
   reported = true
-  if Scores.submit(game.score) then
+  local before = board:best()
+  board:add(game.score)
+  if game.score > 0 and board:best() > before then
     phos.sys.log(string.format("new record: %d", game.score))
   end
 end
 
+local function restart()
+  phos.scene.clear()
+  game:restart()
+  reported = false
+end
+
+-- 暂停浮窗交给场景栈：pause_world 冻结世界、audio_pause 暂停音频，出栈自动恢复
+local function pause_update(dt)
+  if phos.input.pressed("start") or phos.input.pressed("b") then
+    phos.scene.pop()
+  elseif phos.input.pressed("select") then
+    phos.scene.clear()
+    restart()
+  end
+end
+
+local function pause_draw()
+  local words = phos.lang.shared()
+  phos.ui.render{
+    screen = "pause", rect = { x = 22, y = 14, w = 36, h = 10 },
+    kind = "box", title = words.paused, border = "single", opaque = true, bg = "black",
+    children = {
+      { kind = "stat", text = words.score, value = phos.text.score(game.score), label_w = 7 },
+      { kind = "stat", text = words.best, value = phos.text.score(board:best()), label_w = 7 },
+      { kind = "divider", fg = "dark_gray" },
+      { kind = "hint", items = { phos.input.key_name("start"), "resume",
+                                 phos.input.key_name("select"), "restart" } },
+    },
+  }
+end
+
 function init()
-  Scores.load()
+  board = phos.score.new{ max = 1, key = "best" }
   game = Game.new()
   -- 把本卡带的可调常数交给 `~` 调试台（见 phos.debug.number）
   for _, t in ipairs(Game.tunables()) do
     phos.debug.number(t.name, t.get, t.set, { min = t.min, max = t.max, step = t.step })
   end
-  paused = false
   reported = false
   phos.audio.music(Music)
+  phos.observe{
+    score = function() return game.score end,
+    best = function() return board:best() end,
+    lives = function() return game.lives end,
+    level = function() return game.level end,
+    state = function() return game.state end,
+    paused = function() return phos.scene.depth() > 0 end,
+    bricks_left = function() return game.bricks_left end,
+    paddle_x = function() return math.floor(game.paddle_x) end,
+    ball_x = function() return math.floor(game.ball_x + 0.5) end,
+    ball_y = function() return math.floor(game.ball_y + 0.5) end,
+    field_w = Game.W,
+    field_h = Game.H,
+  }
 end
 
 function update(dt)
-  if phos.input.pressed("start") then
-    paused = not paused
-    phos.audio.beep(paused and 300 or 700, 0.05, { wave = "square", volume = 0.18 })
+  if phos.input.pressed("start") and phos.scene.depth() == 0 then
+    phos.scene.push{
+      id = "pause", modal = true, pause_world = true, audio_pause = true,
+      update = pause_update, draw = pause_draw,
+    }
   end
 
-  if phos.input.pressed("select") then
-    game:restart()
-    reported = false
-    paused = false
-  end
-
-  if paused then return end
+  if phos.input.pressed("select") then restart() end
 
   if phos.input.down("left") then game:move_paddle(-1, dt) end
   if phos.input.down("right") then game:move_paddle(1, dt) end
 
   if phos.input.pressed("a") then
     if game.state == "gameover" then
-      game:restart()
-      reported = false
+      restart()
     elseif game:launch() then
       Sfx.launch()
     end
@@ -115,11 +155,9 @@ function draw()
   -- 中央提示（暂停优先：否则在 ready 状态按暂停会看不出任何变化）
   local mid = math.floor(Game.H / 2) + Game.OY
   local launch_key = phos.input.key_name("a")
-  if paused and game.state ~= "gameover" then
-    phos.ui.center_text(mid, L().paused)
-  elseif game.state == "gameover" then
+  if game.state == "gameover" then
     phos.ui.center_text(mid, string.format(L().over, launch_key))
-    if Scores.best() <= game.score then
+    if board:best() <= game.score then
       phos.ui.center_text(mid + 2, string.format(L().record, game.score))
     end
   elseif game.state == "cleared" then
@@ -130,7 +168,7 @@ function draw()
 
   -- 底部状态读数：状态 / 关卡 / 挡板 / 球 / 球速（与 LIFE 的 GEN-POP 行同一套做法）。
   -- 关卡也放这里，是为了让它可被断言：面板上那份是中文界面文案，会随界面语言变
-  local status = paused and "PAUSED" or string.upper(game.state)
+  local status = string.upper(game.state)
   S.print(Game.OX, Game.OY + Game.H + 1,
           string.format("%s | LV %d | PAD %d | BALL %d,%d | SPD %d", status, game.level,
                         math.floor(game.paddle_x + 0.5), math.floor(game.ball_x + 0.5),
@@ -138,7 +176,7 @@ function draw()
 
   Panel.draw({
     score = game.score,
-    best = Scores.best(),
+    best = board:best(),
     lives = game.lives,
     level = game.level,
     time = game.time,
@@ -146,19 +184,4 @@ function draw()
   })
 end
 
-function debug_state()
-  return {
-    score = game.score,
-    best = Scores.best(),
-    lives = game.lives,
-    level = game.level,
-    state = game.state,
-    paused = paused,
-    bricks_left = game.bricks_left,
-    paddle_x = math.floor(game.paddle_x),
-    ball_x = math.floor(game.ball_x + 0.5),
-    ball_y = math.floor(game.ball_y + 0.5),
-    field_w = Game.W,
-    field_h = Game.H,
-  }
-end
+-- 观测在 init 里用 phos.observe 声明（字段为函数，查询时求值）

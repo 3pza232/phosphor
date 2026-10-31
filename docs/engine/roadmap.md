@@ -184,7 +184,10 @@ E 从 A 开始持续，不等其它阶段。
 > （`pause_world` 冻结世界、`audio_pause` 暂停音频、出栈自动恢复，删除 `paused` 标志与手写音频开关），
 > 观测同样换 `phos.observe`。两卡 `--check-cart` 均 0 error/0 warning，cart/control 门禁全过。
 > 迁移过程中发现并修复引擎问题：**压栈那一帧不该调用新场景的 update**（否则"同一个键开/关"
-> 会被同一帧误关）；`scene_smoke` 已加回归。下一张：`life` / `tetris`（列表/表格类界面）。
+> 会被同一帧误关）；`scene_smoke` 已加回归。
+> bricks：侧栏组件化（`stat` 行 + `phos.text.clock`）、最高分换 `phos.score{max=1}`
+> （删除 `scores.lua`）、暂停换场景栈、观测换 `phos.observe`。三卡均 0 error/0 warning。
+> 下一张：`tetris`（`table` 计分/下一块预览）、`life`。
 
 ### M4 卡带工具层（3–4 周，可与 M3 部分并行）
 
