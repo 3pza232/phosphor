@@ -27,7 +27,9 @@ BRICKS —— 打砖块
   panel.lua      侧栏绘制（只读）
   sfx.lua        只有音效（想改音色就换这个文件）
   music.lua      背景配乐（四段主题，按 A B A C A B D C 循环）
-  scores.lua     最高分持久化
+
+最高分由引擎排行榜（`phos.score`）存进卡带存档，没有单独的分数文件；
+观测口是 `phos.observe`，暂停浮窗走场景栈（`phos.scene`，世界与音频自动冻结）。
 
 刻意没有随机
 ------------

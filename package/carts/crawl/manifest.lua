@@ -40,5 +40,5 @@ return {
 
   -- 用了主题携带色板（phos.color.*，第 5 代）与同屏多字号（put/print 的 scale，第 6 代）：
   -- 声明 6，旧主机在卡带架上明确拒绝，而不是运行到那一行才失败（见 cart-format.md「版本兼容」）
-  phos_api = 6,
+  phos_api = 7,
 }

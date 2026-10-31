@@ -8,6 +8,8 @@ __NAME__ —— PHOSPHOR 卡带骨架
     phosphor.exe --cart carts/mygame
 自测（无窗口跑 N 帧并把字符画面打出来，适合脚本与 agent）：
     phosphor.exe --cart carts/mygame --headless --frames 60 --dump-screen
+静态检查（不运行卡带；manifest / 入口 / 隐式全局 / 阻塞调用）：
+    phosphor.exe --check-cart carts/mygame
 
 该填哪里
 --------
@@ -25,7 +27,7 @@ panel.lua      右侧栏。用 phos.ui.render 声明组件（surface = "panel"�
 assets/        可选。分语言文本示例（motd.zh.txt / motd.en.txt，取不到回落 motd.txt），
                用 phos.assets.rows("assets/motd.txt") 读；覆盖层 mod 会替换这里的内容。
 
-三条最容易踩的线
+四条最容易踩的线
 ----------------
 1) 画面只画到**可玩区**：
        local px, py, pw, ph = phos.screen.playfield()

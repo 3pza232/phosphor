@@ -17,5 +17,6 @@
   * 音频文件（配合 phos.audio.sample）
   * 调参表（平衡性数值），改完不必动代码
 
-覆盖层 Mod 也能替换这里的文件：把同名文件放到程序目录的
-mods/<卡带id>/assets/ 下即可，卡带代码无需改动。
+覆盖层 Mod 也能替换这里的文件：在 mod 自己的 mod.lua 里用 overrides 声明
+（键形如 "<卡带id>/assets/motd.txt"，值是该 mod 内的文件），卡带代码无需改动。
+规则见 docs/content-packs.md 的「六、Mod 体系」。

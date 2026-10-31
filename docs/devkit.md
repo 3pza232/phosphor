@@ -34,7 +34,9 @@ phosphor --new carts/mygame --id mygame --name "My Game" --author "你"
 
 **2. 起名与身份**——全在 `manifest.lua`：`id` / `name` / `desc`（后两者均可双语）/ `version`、
 是否要右栏（`sidebar = { w = 18 }`）、是否要存档（`save = true`）、
-目标接口世代（`phos_api`：图层写 `2`，墨迹 / 半格 / 独立底色写 `3`，联机 `phos.net` 写 `4`，主题携带色板（`phos.color.*` 随主题）写 `5`，同屏多字号（`put`/`print` 的 `scale`）写 `6`，声明式界面（`phos.ui.render`）写 `7`；
+目标接口世代（`phos_api`：图层写 `2`，墨迹 / 半格 / 独立底色写 `3`，联机 `phos.net` 写 `4`，主题携带色板（`phos.color.*` 随主题）写 `5`，同屏多字号（`put`/`print` 的 `scale`）写 `6`；**新栈接口（声明式界面 `phos.ui.render`、
+场景栈 `phos.scene`、工具层 `phos.observe/score/lang.shared/text.score|clock|percent`、
+`phos.ui.toast`、表格/网格组件、异步联机）都写 `7`**；
 旧主机便会在卡带架上明确拒绝它，而不是运行到那一行才失败——见 [cart-format.md](cart-format.md) 的「版本兼容」）。
 字段逐个说明见 [cart-format.md](cart-format.md)。
 
@@ -44,6 +46,9 @@ phosphor --new carts/mygame --id mygame --name "My Game" --author "你"
 
 界面不用手排坐标：侧栏与浮窗用 `phos.ui.render` 声明元素树，布局 / 焦点 / 滚动 / 勾选 /
 文本域由引擎负责（见 [api-reference.md](api-reference.md) 的「声明式界面」）。
+
+排行榜、观测、暂停浮窗、共享词表、存档槽位这些"每张卡带都写一遍"的东西不用自己写——
+引擎已经提供，见下节「少写重复：引擎已经提供的工具」。
 
 **4. 一边写一边跑**
 
@@ -75,12 +80,32 @@ phosphor --pack carts/mygame --json         # 机器可读结果
 
 | 文件 | 你要改什么 |
 |------|-----------|
-| `manifest.lua` | 身份：`id` / `name` / `desc`（均可双语）/ `version`；`sidebar = { w = 18 }` 决定右栏宽度（删掉这行 = 无右栏，也可运行时 `phos.panel.resize(w)`）；`save = true` 才有 `phos.save.*`；`entry` 指向入口；用了图层（`phos.layer`）写 `phos_api = 2`，墨迹 / 半格 / 独立底色（`blend` / `plot` / `back` 等）写 `3`，局域网联机（`phos.net`）写 `4`，主题携带色板（`phos.color.*` 随主题）写 `5`，同屏多字号（`put`/`print` 的 `scale`）写 `6`，声明式界面（`phos.ui.render`）写 `7` |
+| `manifest.lua` | 身份：`id` / `name` / `desc`（均可双语）/ `version`；`sidebar = { w = 18 }` 决定右栏宽度（删掉这行 = 无右栏，也可运行时 `phos.panel.resize(w)`）；`save = true` 才有 `phos.save.*`；`entry` 指向入口；用了图层（`phos.layer`）写 `phos_api = 2`，墨迹 / 半格 / 独立底色（`blend` / `plot` / `back` 等）写 `3`，局域网联机（`phos.net`）写 `4`，主题携带色板（`phos.color.*` 随主题）写 `5`，同屏多字号（`put`/`print` 的 `scale`）写 `6`，新栈接口（声明式界面 `phos.ui.render` / 场景栈 / 工具层）写 `7` |
 | `main.lua` | 入口三件事：装配模块、把输入翻成"意图"、把状态画出来。「填」集中在文案表 `Text`、`init`、`update`、`draw`、`debug_state`；世界画面仍用 `phos.screen` / `phos.panel` 原语逐格绘制 |
 | `game.lua` | 玩法规则。不读键盘、不画东西、不发声音；要出声就 `return` 一张事件表 |
 | `panel.lua` | 右栏内容，用 `phos.ui.render{ surface = "panel", input = false }` 声明（只显示，输入归主画面）；面板宽度运行时可变，每次 draw 重新声明即可 |
 | `README.txt` | 该改哪里的速查（随卡带走，给接手的人看） |
 | `assets/` | 可选：分语言文本示例（`motd.zh.txt` / `motd.en.txt`，取不到回落 `motd.txt`） |
+
+## 少写重复：引擎已经提供的工具
+
+这些在引擎侧实现（详见 [api-reference.md](api-reference.md) 对应小节），卡带只声明/调用，
+不要各抄一份：
+
+- **声明式界面** `phos.ui.render{...}`：列表 / 取值行 / 勾选 / 文本域 / 进度条 / 表格 / 网格 /
+  底部键位提示 / `phos.ui.toast`；盒模型、焦点、滚动、裁剪、主题色都归引擎。
+- **场景栈** `phos.scene`：暂停 / 设置 / 背包等浮层压栈；`modal` / `pause_world` /
+  `audio_pause` 由引擎执行，出栈自动恢复世界与音频。
+- **排行榜** `phos.score.new{ max = ..., key = ... }`：降序 TOP N、存档键、坏档容错在引擎侧
+  ——不用再自己写排行榜文件或逗号串编解码。
+- **观测** `phos.observe{ ... }`：给 agent 的声明式快照（字段可为函数，查询时求值）；
+  旧的 `debug_state()` 仍兼容。
+- **共享词表 / 格式化** `phos.lang.shared()`、`phos.text.score / clock / percent`：
+  常用词与"分数 / 时间 / 百分比"的展示统一由引擎给。
+- **存档 v2**：原子写、版本 + 卡带 id + 校验和、旧档自动升级并留 `.v1` 备份、
+  槽位 0..9（`phos.save.slot(n)` / `phos.save.slot_index()`）。
+- **异步联机** `phos.net.discover_async` / `discover_poll` / `join_async`：网络等待不阻塞主线程；
+  `update()` 里不要调用阻塞版 `discover()` / `join()`（`--check-cart` 会报）。
 
 ## 静态检查：`--check-cart`
 
@@ -93,7 +118,8 @@ phosphor --check-cart carts/mygame --json   # 机器可读
 
 它查的是**高置信度**问题：manifest / 入口脚本是否有效、顶层隐式全局（会跨卡带与
 热重载泄漏）、用 `phos.screen.size()` 当可玩宽（会被侧栏挡掉一截）、把阻塞的
-`phos.net.discover()` 放进 `update()`（会撞 100ms 看门狗）、`require` 指向不存在的模块、
+`phos.net.discover()` / `join()` 放进 `update()`（会撞 100ms 看门狗；改用
+`discover_async` / `join_async`）、`require` 指向不存在的模块、
 以及既没有 `debug_state()` 也没有 `phos.observe`（agent 看不到玩法状态）。
 有 error 退出码 `2`；warning 只报告不阻塞——静态检查只看字面写法，宁可漏报不误报。
 门禁脚本 `tools/cart_lint.py` 会对全部出厂卡带跑同一套检查。
@@ -222,9 +248,10 @@ local Panel = require("ui.panel")  -- ui/panel.lua
 `carts/worms/`（按**类别**分六层：特效 / 瞄准线 / 角色 / 雨雪天气 / 读数 / 浮窗 ——
 一张大卡带怎么把每类东西放进各自那一层）；
 `devkit/examples/inks/`（同一格叠两笔、只写底色、子位落笔、叠画上限）、
+`devkit/examples/layers/`（图层：世界 / HUD / 浮窗各占一层、按 z 叠放）、
 `devkit/examples/scene/`（场景栈：暂停浮窗冻结世界、暂停音频、出栈恢复）、
-`devkit/examples/toolkit/`（卡带工具层：排行榜持久化 / 共享词表 / 数值格式化）、
-出厂卡带 `carts/snake/`、`carts/runner/`、`carts/bricks/`、`carts/tetris/`、`carts/life/`、`carts/chomp/`、`carts/crawl/`、`carts/ballbattle/`、`carts/xiangqi/`、`carts/worms/` 是把这些新能力用起来的参考实现：
+`devkit/examples/toolkit/`（卡带工具层：排行榜持久化 / 共享词表 / 数值格式化 / 存档槽位）、
+出厂卡带 `carts/snake/`、`carts/runner/`、`carts/bricks/`、`carts/tetris/`、`carts/life/`、`carts/chomp/`、`carts/crawl/`、`carts/ballbattle/`、`carts/xiangqi/`、`carts/worms/`（这 10 张已迁到新栈；`carts/towerdef/` 仍用旧写法，迁移中）是把这些新能力用起来的参考实现：
 侧栏用 `phos.ui.render` 声明、排行榜用 `phos.score`、暂停浮窗用 `phos.scene`、
 观测用 `phos.observe`、通用词用 `phos.lang.shared`。
 `devkit/examples/ui/`（声明式界面：列表 / 勾选 / 文本域 / 进度条 / 键位提示，以及侧栏
@@ -272,19 +299,25 @@ phosphor --cart carts/mygame --control 7654 --headless
 改代码 → cart.reload → input.inject → time.step → screen.read → 判断 → 再改
 ```
 
-卡带把玩法状态交出来后，agent 不必从字符画面反推：在卡带里定义
+卡带把玩法状态交出来后，agent 不必从字符画面反推。新卡带推荐用声明式观测：
 
 ```lua
-function debug_state()
-  return { score = score, alive = alive,
-           -- 坐标一律给全 (x, y)：只给 x 会逼 agent 去读画面反推地形
-           head_x = ..., head_y = ..., food_x = ..., food_y = ... }
+phos.observe{
+  score = function() return score end,
+  alive = function() return alive end,
+  -- 坐标一律给全 (x, y)：只给 x 会逼 agent 去读画面反推地形
+  head_x = function() return head.x end,
+  head_y = function() return head.y end,
   -- 有多只实体（敌人、子弹、单位）时写成数组，一条实体一张表
-end
+}
 ```
 
-主机在 `state.query` 时会把它一并带上。值支持 number / string / boolean 与表：主机按
-**深度 4** 递归序列化（纯数组写成 JSON 数组），超过深度的表只留 `{"__table":N}` 占位。
+主机在 `state.query` 的 `debug` 字段带上它。值支持 number / string / boolean 与表
+（**深度 4**，纯数组写成 JSON 数组）；函数在查询时求值，单个字段报错只跳过该字段。
+旧的全局函数 `debug_state()` 仍兼容。
+
+用声明式界面（`phos.ui.render`）的卡带，`state.query.ui` 还会给出控件树
+（id / role / label / state）；agent 可用 `ui.focus` / `ui.activate` 按 id 操作，不必数按键。
 
 一次性验证可以用更轻的方式：
 
@@ -337,10 +370,11 @@ PNG 用于"给人看"与像素级回归。
 | **引擎开发仓库**（改 `src/`、跑 `cmake`） | `package/carts/<id>/`（真源） | `package/carts/<id>/dev/` | 构建只把**非 `dev`** 的内容同步进 `build/`，`build/` 永远保持"干净发行态" |
 | **发行包**（只有 `phosphor.exe` 与 `build/`） | `build/carts/<id>/`（就地） | `build/carts/<id>/dev/` | 没有源码树，一切都在运行目录里；`--new` 生成的骨架就自带一个 `dev/` |
 
-所有命令都**相对当前工作目录**：`--new` 落在 `carts/<名字>`、模板取自 `devkit/template`、
-卡带架扫 `carts/`、存档写 `saves/`、配置读 `config.json`——**没有一个假设引擎源码在目录之外**，
-发行目录完全自给自足。于是引擎开发时 `build/carts/*/` 里看不到 `dev/`（那份留在 `package/`），
-而用户在发行目录里建的卡带，`dev/` 就在 `build/carts/*/` 里。两者不冲突。
+**运行模式**的内容根按这个顺序找：`--root <目录>` 显式指定 → 当前工作目录本身（开发/工具目录）
+→ **exe 所在目录**。所以从桌面、快捷方式或任意目录启动，都能找到 `carts/`、`theme/`；
+发行目录完全自给自足。**开发命令**（`--new` / `--scan` / `--pack` / `--check-*`）仍相对当前工作
+目录解析（模板/注解在 CWD 找不到时回退 exe 目录），于是引擎开发时 `build/carts/*/` 里看不到
+`dev/`（那份留在 `package/`），而用户在发行目录里建的卡带，`dev/` 就在 `build/carts/*/` 里。
 
 ## 保持注解不漂移
 
@@ -367,7 +401,7 @@ phosphor --check-api --json
 |------|------|
 | 卡带没出现在卡带架上 | 目录里有没有 `manifest.lua`（或是不是 `.phos`）；用 `phosphor --scan carts` 看主机认到了什么、报了什么 |
 | 退出码 `1` | 命令行参数写错了，`--help` 是权威列表 |
-| 退出码 `2` | 卡带装载/校验失败（manifest 缺字段、入口脚本不存在、打包校验不过） |
+| 退出码 `2` | 卡带装载/校验失败（manifest 缺字段、入口脚本不存在、`--check-cart` 报错、打包校验不过） |
 | 退出码 `3` | 主机内部错误，可用 `--log host.log` 记录日志 |
 | 改了卡带没生效 | 改动未作用到运行中的那份（开发仓库里内容目录由构建时从源码同步而来，存盘即生效） |
 | 字体/语言不对 | 那是设置项与主题的事，见 [content-packs.md](content-packs.md) |

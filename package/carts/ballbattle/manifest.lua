@@ -10,7 +10,7 @@ return {
   entry = "main.lua",
   sidebar = { w = 20 },   -- 右栏：排行榜与存活时间
   save = true,            -- 最高体格记录
-  phos_api = 1,
+  phos_api = 7,
 
   icon = {
     "          ",

@@ -18,8 +18,9 @@ main.lua（读按键 → 调规则 → 绘制）入手。直接跑：
 
     phosphor.exe --cart carts/mygame
 
-或者把目录丢进 carts/ 从卡带架上选。做完之后打包：
+或者把目录丢进 carts/ 从卡带架上选。写完先静态检查、再打包：
 
+    phosphor.exe --check-cart carts/mygame      （不运行卡带：manifest/入口/常见错误写法）
     phosphor.exe --pack carts/mygame            （产出 dist/mygame.phos）
 
 
@@ -54,7 +55,8 @@ main.lua（读按键 → 调规则 → 绘制）入手。直接跑：
 
 命令：ping / state.query / screen.read / screenshot / carts.scan /
       input.inject / input.text / input.clear / time.step / time.resume /
-      save.export / save.import / cart.load / cart.reload / cart.eject / quit
+      ui.list / ui.focus / ui.activate / save.export / save.import /
+      cart.load / cart.reload / cart.eject / quit
       （参数全表见 docs/agent-interface.md）
 
 不想开通道的话，还有一次性的办法：
@@ -64,7 +66,9 @@ main.lua（读按键 → 调规则 → 绘制）入手。直接跑：
 
 参考
 ----------
-  docs/api-reference.md      每个 phos.* 调用
+  docs/api-reference.md      每个 phos.* 调用（含 phos.ui.render / scene / score / observe 等新栈）
   docs/cart-format.md        manifest 字段、生命周期、沙箱
   docs/agent-interface.md    命令行与控制通道协议
-  carts/snake/               一个多文件的完整例子（6 个模块）
+  docs/devkit.md             上手流程、模板填空表、踩坑清单
+  carts/snake/               一个多文件的完整例子（6 个文件）
+  devkit/examples/           五个可跑样板：inks / layers / scene / toolkit / ui

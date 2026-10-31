@@ -12,7 +12,7 @@ return {
   entry   = "main.lua",
   sidebar = { w = 18 },   -- 右侧栏：分数 / 速度 / 里程碑
   save    = true,         -- 需要存档空间（最高分）
-  phos_api = 1,
+  phos_api = 7,
 
   -- 卡带架展示用的像素图标（'.' 与空格透明）
   icon = {

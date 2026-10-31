@@ -44,5 +44,5 @@ return {
 	-- 本卡带用了 phos.layer（第二代）、phos.screen.blend / quadrant / cell_of（第三代）
 	-- 与 phos.net（第四代局域网联机）：声明 4，旧主机在卡带架上就明确拒绝，而不是运行到
 	-- 那一行才撞上缺失接口（见 docs/cart-format.md 的「版本兼容」）
-	phos_api = 4,
+	phos_api = 7,
 }

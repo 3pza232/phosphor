@@ -12,7 +12,7 @@ return {
   entry   = "main.lua",
   sidebar = { w = 18 },   -- 右侧栏：历史分数记录
   save    = true,         -- 需要存档空间（最高分记录）
-  phos_api = 1,           -- 目标 API 世代（高于主机支持的会被拒绝加载）
+  phos_api = 7,           -- 目标 API 世代（高于主机支持的会被拒绝加载）
 
   -- 卡带架展示用的像素图标（'.' 与空格透明）
   icon = {

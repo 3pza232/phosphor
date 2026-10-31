@@ -28,9 +28,12 @@
   weather.lua   时钟、天色、日月云星（背景）、风痕与降水（天气层）
   supply.lua    空投补给：落下 / 落地 / 领取 / 过期、AI 可达性判据
   hud.lua       顶部读数：角度 / 力度 / 风 / 倒计时 / 时钟天气 / 伤害浮字
-  panel.lua     侧栏：两队血量 / 武器网格 / 地图与键位提示
+  panel.lua     组件化侧栏：两队血量（条 + 数字）/ 两列武器网格 / 地图与键位提示
   music.lua     曲式化背景乐（乐段 + 曲序）
   assets/       分语言文本示例（motd.zh.txt / motd.en.txt，取不到回落 motd.txt）
+
+联机：发现 / 加入用非阻塞的 `phos.net.discover_async` / `join_async`（阻塞版会撞 100ms 看门狗，
+`--check-cart` 会报）。
 
 分层绘制（main.lua 的 draw，详见 dev/DESIGN.md 第 9 节）
   世界（天空 + 地形 + 水）直接写 phos.screen 底层；其余按**类别**各占一层、按 z 升序叠：

@@ -64,7 +64,23 @@ local Text = {
 
 local game          -- 「填」你的规则对象，见 game.lua
 local cart = {}
-local paused = false
+
+-- 暂停浮窗交给场景栈：pause_world 冻结世界、audio_pause 暂停音频，出栈自动恢复。
+-- 卡带不需要自己维护 paused 标志，也不用记得恢复音频。
+local function pause_update(dt)
+  if phos.input.pressed("start") or phos.input.pressed("b") then phos.scene.pop() end
+end
+
+local function pause_draw()
+  local words = phos.lang.shared()
+  phos.ui.render{
+    screen = "pause", rect = { x = 20, y = 16, w = 40, h = 8 },
+    kind = "box", title = words.paused, border = "single", opaque = true, bg = "black",
+    children = {
+      { kind = "text", text = phos.input.key_name("start") .. "  " .. words.resume },
+    },
+  }
+end
 
 function init()
   cart = phos.cart.info()      -- 标题/作者/版本以 manifest.lua 为唯一来源，不要在 Lua 里再抄一份
@@ -72,15 +88,22 @@ function init()
 
   -- 「填」需要背景音乐时：phos.audio.music({ ... })；要读包内文本资源时：
   -- local rows = phos.assets.rows("assets/motd." .. phos.sys.language() .. ".txt")
+
+  -- 给 agent 的观测：字段可以是值，也可以是函数（查询时求值，永不与真实状态脱节）
+  phos.observe{
+    score = function() return game.score end,   -- 「填」把玩法的关键量放进来
+    paused = function() return phos.scene.depth() > 0 end,
+  }
 end
 
 function update(dt)
   -- 主机保留键（Esc 返回卡带架、F2 调试台）不在这里，卡带不用管
-  if phos.input.pressed("start") then
-    paused = not paused
-    phos.audio.paused(paused)
+  if phos.input.pressed("start") and phos.scene.depth() == 0 then
+    phos.scene.push{
+      id = "pause", modal = true, pause_world = true, audio_pause = true,
+      update = pause_update, draw = pause_draw,
+    }
   end
-  if paused then return end
 
   -- 输入 → 意图：这里只回答"哪个键按下了"，能不能这么做由 game.lua 判定。
   -- 键名取虚拟手柄的抽象名；要写提示就用 phos.input.key_name() 换成键盘上真实的键
@@ -89,7 +112,10 @@ function update(dt)
   if phos.input.pressed("a") then game:act() end             -- 「填」
 
   local events = game:update(dt)        -- 「填」让规则推进一帧
-  if events.tick then phos.audio.beep(880, 0.04, { wave = "square", volume = 0.2 }) end  -- 「填」
+  if events.tick then
+    phos.audio.beep(880, 0.04, { wave = "square", volume = 0.2 })  -- 「填」
+    phos.ui.toast("TICK")                                          -- 底部瞬时提示（可删）
+  end
 end
 
 function draw()
@@ -105,9 +131,6 @@ function draw()
   -- 定宽的位置（侧栏、状态条）用 phos.text.fit() 裁剪，别让主机从右边硬切
   S.print(px + 1, py + 1, phos.text.fit(cart.name, pw - 2), C.yellow)
   S.print(px + 1, py + 3, t.hud .. "  " .. tostring(game.score), C.white)
-  if paused then
-    S.print(px + 1, py + ph - 2, t.paused, C.gray)
-  end
 
   -- 「填」键位提示写键盘上真实的键，不要写手柄按钮名（主机没有手柄）
   S.print(px + 1, py + ph - 1,
@@ -116,8 +139,5 @@ function draw()
   Panel.draw(game, cart)     -- 侧栏；不想要就在 manifest 里删掉 sidebar 这一行
 end
 
--- agent / 自测观察口：主机在 state.query 时会把这里返回的表一并带出。
--- 「填」把玩法的关键量放进来，agent 就不必从字符画面反推
-function debug_state()
-  return { paused = paused, score = game.score }
-end
+-- 观测已在 init 里用 phos.observe 声明：state.query 的 debug 字段会带上这些键，
+-- agent 因此不必从字符画面反推玩法状态。

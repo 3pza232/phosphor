@@ -10,7 +10,7 @@ return {
   entry = "main.lua",
   sidebar = { w = 26 },   -- 右栏：棋谱、吃子与键位提示
   save = false,           -- 无存档（不声明 save 就不用它）
-  phos_api = 3,           -- 用到 phos.screen.back（独立底色，世代 3）
+  phos_api = 7,           -- 用到 phos.screen.back（独立底色，世代 3）
 
   icon = {
     "          ",

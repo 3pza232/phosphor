@@ -11,7 +11,7 @@ return {
   entry = "main.lua",
   sidebar = { w = 18 },
   save = true,   -- 最高分存档
-  phos_api = 1,
+  phos_api = 7,
   icon = {
     "  #############   ",
     "  #############   ",

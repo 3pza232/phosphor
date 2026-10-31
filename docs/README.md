@@ -16,7 +16,7 @@
 
 | 想知道什么 | 看哪里 |
 |---|---|
-| 五分钟上手：照着模板填空就能开工 | [devkit.md](devkit.md) |
+| 一分钟版：照着模板填空就能开工 | [devkit.md](devkit.md) |
 | `manifest.lua` 有哪些字段、卡带的生命周期与沙箱 | [cart-format.md](cart-format.md) |
 | 每个 `phos.*` 调用（权威规格，带示例） | [api-reference.md](api-reference.md) |
 | 让卡带支持局域网联机 | [api-reference.md](api-reference.md) 的「phos.net」一节 |
@@ -41,3 +41,5 @@
 - 开发期的设计草稿与计划：已归档进 `docs/engine/` 的正式文档，不再单独存在。
 
 这份目录（发行文档）里每一条都是"怎么用、怎么写"。
+
+- 引擎内部：`docs/engine/`（[架构](engine/architecture.md)、[审计](engine/audit.md)、[路线图](engine/roadmap.md)、[代码风格](engine/code-style.md)）

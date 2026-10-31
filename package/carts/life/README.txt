@@ -26,7 +26,8 @@ LIFE —— 康威生命游戏
   main.lua            生命周期胶水：输入 → 棋盘 → 绘制
   board.lua           规则（B3/S23）与网格状态，不碰音频与存档
   patterns.lua        图案库读取
-  panel.lua           侧栏绘制（只读）
+  panel.lua           侧栏绘制（只读；已改用 phos.ui.render 声明）
+  music.lua           环境背景乐
   assets/patterns.txt 图案数据：[NAME] 之后是若干行 '#'/'.'
 
 为什么这样分
