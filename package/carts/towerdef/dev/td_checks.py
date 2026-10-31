@@ -3,7 +3,7 @@
 用法: python td_checks.py [base_seed]
 """
 import json, os, sys, time
-from td_play import Host, SAVES
+from td_play import Host, SAVES, load_saved_values
 
 PORT_BASE = 8000
 _results = []
@@ -27,14 +27,8 @@ class Game:
         self.start(diff, style)
 
     def _saved(self, key, default):
-        p = os.path.join(SAVES, str(self.seed), "towerdef.sav")
-        if os.path.exists(p):
-            with open(p, encoding="utf-8") as f:
-                for line in f:
-                    k, _, v = line.strip().partition("=")
-                    if k == key and v:
-                        return v
-        return default
+        # 值按存档里的原类型返回（v2：number/boolean/表；v1 旧档：文本）
+        return load_saved_values(self.seed).get(key, default)
 
     def start(self, diff, style):
         DIFFS = ["EASY", "NORMAL", "HARD"]

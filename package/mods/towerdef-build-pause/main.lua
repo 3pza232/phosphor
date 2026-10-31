@@ -208,8 +208,9 @@ function init()
 	if not ({ EASY = true, NORMAL = true, HARD = true })[diff] then diff = "NORMAL" end
 	local map = phos.save.read("map") or "RANDOM"
 	if not ({ OPEN = true, CANALS = true, MAZE = true, RANDOM = true })[map] then map = "RANDOM" end
-	-- 无尽模式沿用上次选择（"1"/"0"）；与 best_wave/best_score 共用一格纪录，不另开键
-	local endless = (phos.save.read("endless") == "1")
+	-- 无尽模式沿用上次选择。v2 卡带写 boolean；旧格式与本 fork 写 "1"/"0"（1/0 也认），两种都读
+	local saved_endless = phos.save.read("endless")
+	local endless = (saved_endless == true or saved_endless == "1" or saved_endless == 1)
 
 	menu = { row = menu_rows.DIFF, diff = diff, map = map, endless = endless }
 	refresh_menu_save() -- "继续"行是否出现 / 是否变灰，由存档现况决定

@@ -23,6 +23,31 @@ CART = os.path.join(ROOT, "carts", "towerdef")
 SAVES = os.path.join(WORK, "saves")
 
 
+def load_saved_values(seed):
+    """读 .sav 的键值。v2 容器是 `PHOSPHOR-SAVE 2 <id> <crc>` 头 + 一行 JSON 对象；
+    旧 v1 文件（每行 key=value、无头）也认，便于对着老存档排查。读取失败返回 {}。
+    """
+    p = os.path.join(SAVES, str(seed), "towerdef.sav")
+    try:
+        with open(p, encoding="utf-8") as f:
+            lines = [line.strip() for line in f if line.strip()]
+    except OSError:
+        return {}
+    for line in lines:
+        if not line.startswith("{"):
+            continue
+        try:
+            return json.loads(line)
+        except ValueError:
+            break
+    out = {}
+    for line in lines:
+        k, _, v = line.partition("=")
+        if k and v:
+            out[k] = v
+    return out
+
+
 class Host:
     def __init__(self, port, seed, timeout=20.0):
         self.port = port
@@ -180,14 +205,8 @@ class Bot:
 
     # ── 菜单 ──
     def _saved(self, key, default):
-        p = os.path.join(SAVES, str(self.seed), "towerdef.sav")
-        if os.path.exists(p):
-            with open(p, encoding="utf-8") as f:
-                for line in f:
-                    k, _, v = line.strip().partition("=")
-                    if k == key and v:
-                        return v
-        return default
+        # 值按存档里的原类型返回（v2：number/boolean/表；v1 旧档：文本）
+        return load_saved_values(self.seed).get(key, default)
 
     def start_game(self, diff, style, endless=False):
         DIFFS = ["EASY", "NORMAL", "HARD"]

@@ -17,6 +17,11 @@ def check(name, ok, detail=""):
     print(("  PASS " if ok else "  FAIL ") + name + ("  " + detail if detail else ""))
 
 
+def canon(value):
+    """规范化 JSON 文本：v2 快照的往返比较用（对象键序无关、结构等价即视为一致）。"""
+    return json.dumps(value, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+
+
 # ── A：无尽模式 ──────────────────────────────────────────────────────
 def run_endless_once(seed, stop_wave=21, timeout=420):
     sdir = os.path.join(SAVES, str(seed))
@@ -352,8 +357,19 @@ def test_save_continue(seed):
         g.h.step("s")
         dm = g.h.debug()
         check("I: S 后回到菜单", dm["phase"] == "menu", dm["phase"])
-        s0 = g._saved("save", "")
-        check("I: save 已写入且非空", bool(s0), "len=%d" % len(s0))
+        s0 = g._saved("save", None)
+        is_table = isinstance(s0, dict)
+        check("I: save 已写入 v2 表（v=2 / map.runs 数组 / towers 数组）",
+              is_table and s0.get("v") == 2
+              and isinstance((s0.get("map") or {}).get("runs"), list)
+              and isinstance(s0.get("towers"), list),
+              "type=%s v=%s" % (type(s0).__name__, s0.get("v") if is_table else None))
+        snap = s0 if is_table else {}
+        check("I: 快照结构对上状态（wave / credits / towers 数）",
+              snap.get("wave") == d0["wave"] and snap.get("credits") == d0["credits"]
+              and len(snap.get("towers") or []) == len(d0["towers"]),
+              "wave=%s credits=%s towers=%d" % (snap.get("wave"), snap.get("credits"),
+                                               len(snap.get("towers") or [])))
         check("I: save_used=0（可继续）", g._saved("save_used", "") == "0")
         check("I: 菜单出现继续行", g.h.debug().get("has_save") is True)
 
@@ -377,11 +393,12 @@ def test_save_continue(seed):
         check("I: 塔数量与类型一致", t0 == t1, "%s vs %s" % (t0, t1))
         check("I: 载入后 save_used=1（已消耗）", g._saved("save_used", "") == "1")
 
-        # 往返一致性：载入后立刻再 S（此帧 game:update 不跑），重存应是同一串
+        # 往返一致性：载入后立刻再 S（此帧 game:update 不跑），重存应是同一份结构
         g.h.step("s")
-        s1 = g._saved("save", "")
-        check("I: 快照往返逐字一致（snapshot→restore→snapshot）", s0 == s1,
-              "len %d vs %d" % (len(s0), len(s1)))
+        s1 = g._saved("save", None)
+        check("I: 快照往返一致（snapshot→restore→snapshot，规范化 JSON 相同）",
+              canon(s0) == canon(s1),
+              "len %d vs %d" % (len(canon(s0)), len(canon(s1))))
     finally:
         g.close()
 
