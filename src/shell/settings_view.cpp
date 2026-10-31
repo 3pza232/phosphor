@@ -4,7 +4,9 @@
 #include "core/text.hpp"
 #include "ui/frame.hpp"
 
+#include <algorithm>
 #include <array>
+#include <utility>
 
 namespace phos {
 
@@ -119,6 +121,109 @@ std::string row_text(SettingId id, const SettingsContext& ctx) {
     }
 }
 
+/// 设置项的本地化标签（搜索用：中英文名都参与匹配，与当前界面语言无关）
+Msg row_label_msg(SettingId id) {
+    switch (id) {
+        case SettingId::theme: return Msg::row_theme;
+        case SettingId::font: return Msg::row_font;
+        case SettingId::font_size: return Msg::row_font_size;
+        case SettingId::scanlines: return Msg::row_scanlines;
+        case SettingId::fps: return Msg::row_fps;
+        case SettingId::sound_pack: return Msg::row_sound;
+        case SettingId::music_volume: return Msg::row_music;
+        case SettingId::sfx_volume: return Msg::row_sfx;
+        case SettingId::boot: return Msg::row_boot;
+        case SettingId::shelf_view: return Msg::row_shelf_view;
+        case SettingId::language: return Msg::row_language;
+        case SettingId::back: return Msg::row_back;
+        default: return Msg::count;
+    }
+}
+
+std::string lower_ascii(std::string value) {
+    for (char& c : value)
+        if (c >= 'A' && c <= 'Z') c = static_cast<char>(c - 'A' + 'a');
+    return value;
+}
+
+/// 每项的搜索文本：中英文标签 + 稳定 key + 常用同义词（英文/拼音无关，只补关键词）
+std::string row_search_text(SettingId id) {
+    std::string out = tr(Lang::zh, row_label_msg(id));
+    out += ' ';
+    out += tr(Lang::en, row_label_msg(id));
+    out += ' ';
+    out += setting_key(id);
+    out += ' ';
+    switch (id) {
+        case SettingId::theme: out += "skin 主题 皮肤"; break;
+        case SettingId::font: out += "typeface 字体"; break;
+        case SettingId::font_size: out += "size 字号 大小"; break;
+        case SettingId::scanlines: out += "crt scanline 扫描线"; break;
+        case SettingId::fps: out += "framerate refresh 帧率 刷新率"; break;
+        case SettingId::sound_pack: out += "audio sound 音效包"; break;
+        case SettingId::music_volume: out += "music volume 音乐 音量"; break;
+        case SettingId::sfx_volume: out += "sfx sound volume 音效 音量"; break;
+        case SettingId::boot: out += "animation 启动动画"; break;
+        case SettingId::shelf_view: out += "shelf layout list window 卡带架 样式"; break;
+        case SettingId::language: out += "lang 语言 中文 english"; break;
+        case SettingId::back: out += "return 返回 退出"; break;
+        default: break;
+    }
+    return lower_ascii(out);
+}
+
+/// 把查询按空白切成 token；空查询 = 匹配全部
+std::vector<std::string> search_tokens(std::string_view query) {
+    std::vector<std::string> tokens;
+    std::string current;
+    for (char c : query) {
+        if (c == ' ' || c == '\t' || c == '\n') {
+            if (!current.empty()) tokens.push_back(lower_ascii(std::move(current)));
+            current.clear();
+        } else {
+            current += c;
+        }
+    }
+    if (!current.empty()) tokens.push_back(lower_ascii(std::move(current)));
+    return tokens;
+}
+
+void add_setting_item(ui::Node& root, SettingId id, const SettingsContext& ctx) {
+    const std::string row_id = std::string("settings/") + setting_key(id);
+    if (id == SettingId::back) {
+        ui::Node& back = root.add(ui::Kind::button, row_id);
+        back.props.text = row_text(id, ctx);
+        back.props.indent = 2;
+        back.props.text_gap = 2;
+    } else {
+        ui::Node& option = root.add(ui::Kind::option, row_id);
+        option.props.text = row_text(id, ctx);
+        option.props.indent = 2;
+        option.props.text_gap = 2;
+    }
+}
+
+void add_preview(ui::Node& root, const SettingsContext& ctx, const ui::Rect& area) {
+    // 字形预览：固定在区域底部的六行盒子（与旧版 layout 完全一致的位置）
+    ui::Node& preview = root.add(ui::Kind::box, "settings/preview");
+    preview.props.absolute = true;
+    preview.props.x = 2;
+    preview.props.y = std::max(0, area.h - 10);
+    preview.props.width = std::max(2, area.w - 4);
+    preview.props.height = 6;
+    preview.props.border = ui::Border::single;
+    preview.props.padding = ui::Insets{1, 0, 1, 0};
+    preview.props.gap = 0;
+    preview.props.title = tr(ctx.lang, Msg::font_preview);
+
+    auto& sample = preview.add_text("settings/preview/ascii",
+                                    "ABCDEFG abcdefg 0123456789  !?@#&%");
+    sample.props.overflow = ui::Overflow::clip;
+    auto& blank = preview.add_spacer("settings/preview/gap");
+    blank.props.height = 1;
+    preview.add_text("settings/preview/cjk", tr(ctx.lang, Msg::font_preview_cjk));
+}
+
 } // namespace
 
 const char* setting_key(SettingId id) {
@@ -161,7 +266,78 @@ int setting_item_index(SettingId id) {
     return -1;
 }
 
-void build_settings(ui::Node& root, const SettingsContext& ctx, const ui::Rect& area) {
+void settings_search_begin(SettingsSearch& search) {
+    search.active = true;
+    search.query.clear();
+}
+
+void settings_search_clear(SettingsSearch& search) {
+    search.active = false;
+    search.query.clear();
+}
+
+void settings_search_apply_text(SettingsSearch& search, std::string_view typed) {
+    if (!search.active) return;
+    std::vector<char32_t> codepoints;
+    for (char32_t cp : text::decode(search.query)) codepoints.push_back(cp);
+    for (char32_t cp : text::decode(typed)) {
+        if (cp == U'\b') {
+            if (!codepoints.empty()) codepoints.pop_back();  // 按码点退格，中文不会删半个
+            continue;
+        }
+        if (cp < 32 || cp == 127) continue;
+        if (codepoints.size() >= 64) continue;  // 查询串上限：防止坏输入无限长
+        codepoints.push_back(cp);
+    }
+    search.query.clear();
+    for (char32_t cp : codepoints) text::append_utf8(search.query, cp);
+}
+
+bool settings_search_matches(SettingId id, std::string_view query) {
+    if (id == SettingId::count) return false;
+    const std::vector<std::string> tokens = search_tokens(query);
+    if (tokens.empty()) return true;
+    const std::string haystack = row_search_text(id);
+    for (const std::string& token : tokens)
+        if (haystack.find(token) == std::string::npos) return false;
+    return true;
+}
+
+std::vector<SettingId> settings_visible_items(const SettingsSearch& search) {
+    std::vector<SettingId> items;
+    const int count = static_cast<int>(SettingId::count);
+    for (int i = 0; i < count; ++i) {
+        const SettingId id = static_cast<SettingId>(i);
+        if (!search.active || settings_search_matches(id, search.query)) items.push_back(id);
+    }
+    return items;
+}
+
+void build_settings(ui::Node& root, const SettingsContext& ctx, const ui::Rect& area,
+                    const SettingsSearch* search) {
+    if (search && search->active) {
+        const std::vector<SettingId> items = settings_visible_items(*search);
+        const bool english = ctx.lang == Lang::en;
+        std::string prompt = english ? "SEARCH: " : "搜索: ";
+        prompt += search->query;
+        prompt += english ? "  (" : "  (";
+        prompt += std::to_string(items.size());
+        prompt += english ? " matches)" : " 项)";
+        prompt += english ? "   / type   [Esc] close" : "   / 输入   [Esc] 退出";
+        ui::Node& line = root.add_text("settings/search", prompt);
+        line.props.dim = true;
+
+        if (items.empty()) {
+            ui::Node& empty =
+                root.add_text("settings/search/empty", english ? "NO MATCHES" : "无匹配设置项");
+            empty.props.dim = true;
+        } else {
+            for (SettingId id : items) add_setting_item(root, id, ctx);
+        }
+        add_preview(root, ctx, area);
+        return;
+    }
+
     int section = 0;
     bool first = true;
     int gap = 0;
@@ -177,39 +353,11 @@ void build_settings(ui::Node& root, const SettingsContext& ctx, const ui::Rect& 
             first = false;
             continue;
         }
-        const std::string id = std::string("settings/") + setting_key(row.id);
-        if (row.id == SettingId::back) {
-            ui::Node& back = root.add(ui::Kind::button, id);
-            back.props.text = row_text(row.id, ctx);
-            back.props.indent = 2;
-            back.props.text_gap = 2;
-        } else {
-            ui::Node& option = root.add(ui::Kind::option, id);
-            option.props.text = row_text(row.id, ctx);
-            option.props.indent = 2;
-            option.props.text_gap = 2;
-        }
+        add_setting_item(root, row.id, ctx);
         first = false;
     }
 
-    // 字形预览：固定在区域底部的六行盒子（与旧版 layout 完全一致的位置）
-    ui::Node& preview = root.add(ui::Kind::box, "settings/preview");
-    preview.props.absolute = true;
-    preview.props.x = 2;
-    preview.props.y = std::max(0, area.h - 10);
-    preview.props.width = std::max(2, area.w - 4);
-    preview.props.height = 6;
-    preview.props.border = ui::Border::single;
-    preview.props.padding = ui::Insets{1, 0, 1, 0};
-    preview.props.gap = 0;
-    preview.props.title = tr(ctx.lang, Msg::font_preview);
-
-    auto& sample = preview.add_text("settings/preview/ascii",
-                                    "ABCDEFG abcdefg 0123456789  !?@#&%");
-    sample.props.overflow = ui::Overflow::clip;
-    auto& blank = preview.add_spacer("settings/preview/gap");
-    blank.props.height = 1;
-    preview.add_text("settings/preview/cjk", tr(ctx.lang, Msg::font_preview_cjk));
+    add_preview(root, ctx, area);
 }
 
 } // namespace phos

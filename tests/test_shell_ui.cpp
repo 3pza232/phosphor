@@ -8,6 +8,7 @@
 
 #include "core/input.hpp"
 #include "shell/layout.hpp"
+#include "shell/settings_view.hpp"
 #include "shell/tape_view.hpp"
 #include "ui/element.hpp"
 #include "ui/layout.hpp"
@@ -146,4 +147,99 @@ TEST(shell_tape_view_without_save_only_explains_and_returns) {
     CHECK(hint != nullptr);
     CHECK_EQ(hint->rect.y, content.y + ShellLayout::kContentTop + 1);
     CHECK(find_node(root, "tape/cart") == nullptr);
+}
+
+
+TEST(shell_settings_search_filters_by_bilingual_names_and_keywords) {
+    SettingsSearch search;
+    settings_search_begin(search);
+    CHECK(search.active);
+    CHECK(search.query.empty());
+
+    settings_search_apply_text(search, "font");
+    auto items = settings_visible_items(search);
+    auto has = [&](SettingId id) {
+        for (SettingId item : items)
+            if (item == id) return true;
+        return false;
+    };
+    CHECK(has(SettingId::font));
+    CHECK(has(SettingId::font_size));
+    CHECK(!has(SettingId::theme));
+    CHECK(settings_search_matches(SettingId::font, "font"));
+
+    // 中文名也参与匹配（与当前界面语言无关），且空格分词是 AND
+    settings_search_clear(search);
+    settings_search_begin(search);
+    settings_search_apply_text(search, "字体");
+    items = settings_visible_items(search);
+    CHECK(has(SettingId::font));
+
+    settings_search_clear(search);
+    settings_search_begin(search);
+    settings_search_apply_text(search, "字号");
+    items = settings_visible_items(search);
+    CHECK(has(SettingId::font_size));
+
+    settings_search_clear(search);
+    settings_search_begin(search);
+    settings_search_apply_text(search, "font size");
+    items = settings_visible_items(search);
+    CHECK_EQ(items.size(), size_t(1));
+    CHECK_EQ(int(items[0]), int(SettingId::font_size));
+
+    // 退格按码点删；清空后恢复全部设置项
+    settings_search_apply_text(search, "\b");
+    CHECK_EQ(search.query, std::string("font siz"));
+    settings_search_apply_text(search, std::string(40, '\b'));
+    CHECK(search.query.empty());
+    CHECK_EQ(settings_visible_items(search).size(), size_t(settings_item_count()));
+
+    // 无匹配：过滤结果为空
+    settings_search_apply_text(search, "zzzz");
+    CHECK(settings_visible_items(search).empty());
+    settings_search_clear(search);
+    CHECK(!search.active);
+    CHECK_EQ(settings_visible_items(search).size(), size_t(settings_item_count()));
+}
+
+TEST(shell_settings_search_tree_matches_and_empty_state) {
+    SettingsContext ctx;
+    ctx.lang = Lang::zh;
+    const ui::Rect area{7, 11, 72, 37};
+    ui::Theme theme;
+
+    SettingsSearch search;
+    settings_search_begin(search);
+    settings_search_apply_text(search, "音量");
+    ui::Node root = ui::make_root("shell.settings");
+    build_settings(root, ctx, area, &search);
+    ui::measure(root, area.w, theme);
+    ui::arrange(root, area, theme);
+
+    const ui::Node* line = find_node(root, "settings/search");
+    CHECK(line != nullptr);
+    CHECK(line->props.text.find("搜索") != std::string::npos);
+    CHECK(line->props.text.find("画质") == std::string::npos);
+    CHECK(find_node(root, "settings/music_volume") != nullptr);
+    CHECK(find_node(root, "settings/sfx_volume") != nullptr);
+    CHECK(find_node(root, "settings/theme") == nullptr);  // 没命中的条目不出现在树里
+    CHECK(find_node(root, "settings/section_0") == nullptr);  // 搜索态不画分区标题
+    CHECK(find_node(root, "settings/preview") != nullptr);
+
+    // 无匹配：多一行提示，预览框仍在
+    settings_search_apply_text(search, "zzzz");
+    ui::Node empty_root = ui::make_root("shell.settings");
+    build_settings(empty_root, ctx, area, &search);
+    CHECK(find_node(empty_root, "settings/search/empty") != nullptr);
+    CHECK(find_node(empty_root, "settings/theme") == nullptr);
+    CHECK(find_node(empty_root, "settings/preview") != nullptr);
+
+    // 未激活/空指针：原完整树（分区标题 + 全部设置项）
+    ui::Node full = ui::make_root("shell.settings");
+    build_settings(full, ctx, area);
+    CHECK(find_node(full, "settings/search") == nullptr);
+    CHECK(find_node(full, "settings/section_0") != nullptr);
+    CHECK(find_node(full, "settings/theme") != nullptr);
+    CHECK(find_node(full, "settings/back") != nullptr);
 }

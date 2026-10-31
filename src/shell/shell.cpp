@@ -199,6 +199,7 @@ void Shell::open_settings() {
     if (mode() != ShellMode::shelf) return;
     push_screen(ShellMode::settings);
     settings_cursor_ = 0;
+    settings_search_clear(settings_search_);  // 每次进设置都是完整列表
 }
 
 bool Shell::settings_on_sound_row() const {
@@ -269,7 +270,15 @@ void Shell::to_boot() {
     boot_time_ = 0.0f;
 }
 
-void Shell::to_shelf() { reset_screen(ShellMode::shelf); }
+void Shell::to_shelf() {
+    // App 的 Esc 路由在 Shell::update 之前执行：设置搜索中按 Esc 先退出搜索、留在设置，
+    // 再按一次才回卡带架（与卡带架搜索"Esc 只清搜索"的语义一致）
+    if (mode() == ShellMode::settings && settings_search_.active) {
+        settings_search_clear(settings_search_);
+        return;
+    }
+    reset_screen(ShellMode::shelf);
+}
 
 void Shell::to_paused() {
     reset_screen(ShellMode::paused);
@@ -434,13 +443,25 @@ Shell::Intent Shell::update_settings(const Input& input) {
     const ui::Rect area = settings_area();
     const SettingsContext ctx = make_settings_context();
 
+    // 搜索：/ 进入；编辑期间把本帧文本交给 settings_view 的纯函数。
+    // 方向键/Enter 仍由组件处理，所以"过滤后上下选、Enter 改值"保持原语义。
+    if (settings_search_.active) {
+        if (!input.pressed("slash")) settings_search_apply_text(settings_search_, input.text());
+    } else if (input.pressed("slash")) {
+        settings_search_begin(settings_search_);
+    }
+
     // 界面只声明"有哪些行、当前值是什么"；上下换焦点、左右改值、事件语义由组件层负责
     ui::Frame frame("shell.settings", ui_state_, ui_theme_, area, &input, ui::Keys::host());
-    build_settings(frame.root(), ctx, area);
+    build_settings(frame.root(), ctx, area, &settings_search_);
 
     for (const ui::Event& event : frame.run()) {
         if (event.kind == ui::EventKind::cancelled) {
-            pop_screen();
+            if (settings_search_.active) {
+                settings_search_clear(settings_search_);
+            } else {
+                pop_screen();
+            }
             break;
         }
         if (event.kind != ui::EventKind::changed && event.kind != ui::EventKind::activated) continue;
@@ -448,7 +469,10 @@ Shell::Intent Shell::update_settings(const Input& input) {
         const SettingId id = setting_from_key(std::string_view(event.id).substr(9));
         if (id == SettingId::count) continue;
         if (event.kind == ui::EventKind::activated) {
-            if (id == SettingId::back) pop_screen();
+            if (id == SettingId::back) {
+                settings_search_clear(settings_search_);
+                pop_screen();
+            }
             continue;
         }
 
@@ -549,6 +573,8 @@ Shell::Intent Shell::update_settings(const Input& input) {
     if (focused.rfind("settings/", 0) == 0) {
         const int index = setting_item_index(setting_from_key(std::string_view(focused).substr(9)));
         if (index >= 0) settings_cursor_ = index;
+    } else if (settings_search_.active) {
+        settings_cursor_ = -1;  // 过滤到 0 项：没有行被选中，别让旧光标骗过"音效行试听"
     }
     return intent;
 }
@@ -902,7 +928,7 @@ void Shell::draw_settings(Screen& screen) {
 
     const ui::Rect area = settings_area();
     ui::Frame frame("shell.settings", ui_state_, ui_theme_, area, nullptr, ui::Keys::host());
-    build_settings(frame.root(), make_settings_context(), area);
+    build_settings(frame.root(), make_settings_context(), area, &settings_search_);
     frame.run();  // draw 路径只排布（输入在 update_settings 里已处理）
     frame.paint(screen);
 

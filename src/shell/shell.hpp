@@ -281,6 +281,8 @@ private:
     shelf::Painter shelf_painter_;
     ShelfSearch shelf_search_;
     int settings_cursor_ = 0;
+    /// 设置搜索态：查询缓冲/过滤是 settings_view 的纯函数，Shell 只负责把输入转过去
+    SettingsSearch settings_search_;
     int fps_ = kDefaultFps;
     /// 暂停菜单光标（组件里那份的镜像，供 cursor() 观测；真源在组件的 ScreenState）
     int pause_cursor_ = 0;

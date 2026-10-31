@@ -49,9 +49,32 @@ SettingId setting_from_key(std::string_view key);
 /// 可选中项在界面顺序里的下标（0 基）；不是可选项返回 -1
 int setting_item_index(SettingId id);
 
+/// 设置搜索状态：Shell 持有，输入文本由 Shell 转给这里的纯函数。
+/// active=false 时 build_settings 走原来的完整树（保证无搜索时像素/文本不变）。
+struct SettingsSearch {
+    bool active = false;
+    std::string query;  // 原始输入（UTF-8）；匹配时按 ASCII 大小写不敏感
+};
+
+/// 进入搜索（清空查询）/ 退出搜索（恢复完整列表）
+void settings_search_begin(SettingsSearch& search);
+void settings_search_clear(SettingsSearch& search);
+
+/// 把一帧的输入文本（Input::text()，含 '\b' 退格、可含多字节）追加到查询里。
+/// 只负责缓冲；匹配与过滤在 settings_visible_items。
+void settings_search_apply_text(SettingsSearch& search, std::string_view typed);
+
+/// 该设置项是否匹配当前查询（中英文名 + 稳定 key + 关键词；空格分词，全部命中）。
+bool settings_search_matches(SettingId id, std::string_view query);
+
+/// 过滤后的可选中设置项（顺序 = 界面顺序）。搜索未激活时返回全部项。
+std::vector<SettingId> settings_visible_items(const SettingsSearch& search);
+
 /// 把设置界面声明成一棵元素树（坐标由容器排布；预览框绝对定位在底部）。
 /// area 是整块可用区域（决定预览框位置），root 由调用方创建。
-void build_settings(ui::Node& root, const SettingsContext& ctx, const ui::Rect& area);
+/// search 为空或未激活 = 原来的完整树；激活时顶部多一行搜索提示/计数，只列命中项。
+void build_settings(ui::Node& root, const SettingsContext& ctx, const ui::Rect& area,
+                    const SettingsSearch* search = nullptr);
 
 /// 可选中项数量（不含分区标题）
 constexpr int settings_item_count() { return static_cast<int>(SettingId::count); }
