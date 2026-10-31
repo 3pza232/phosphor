@@ -232,7 +232,7 @@ E 从 A 开始持续，不等其它阶段。
    焦点丢失释放（**已做**：GLFW 失焦回调释放全部按键，避免卡键）、按键重复参数化。
 3. **渲染**：三条合成路径收成一条（`FrameComposer` → 绘制列表 + 文本投影），
    再谈渲染 IR 与批处理；先有**像素 golden**，再动合成顺序。
-4. **音频**：音乐状态查询、流式采样；声部优先级/抢占、停止/暂停淡出、ducking、**总线**（music/sfx/ui 三路音量）**已做**。
+4. **音频**：流式采样；声部优先级/抢占、停止/暂停淡出、ducking、**总线**（music/sfx/ui 三路音量）、**音乐状态查询**（`phos.audio.music_state()`）**已做**。
 5. **绘制/精灵**：`line/box/ring` 几何（**已做**：line/outline/circle + Region 同名方法，含预裁剪与有界半径）、`sprite` 亮度（**已做**：brightness 贯通 step 语义定稿）/实心/多字节键、粒子与转场原语。
 6. **内容包**：统一清单校验**已做**（`phosphor --check-packs [--root] [--json]`：六类包逐项 error/warning，有 error 退出码 2，只读）、依赖与版本、UI 主题包、包预览、热重载。
 

@@ -489,6 +489,11 @@ function phos.audio.perc(token) end
 function phos.audio.music(tune) end
 
 function phos.audio.stop_music() end
+
+---
+-- 当前音乐状态（一次性查询，agent/UI 不用拼多个调用）。
+-- @return table { playing:boolean, section:string, section_index:number, section_count:number, loop:boolean }
+function phos.audio.music_state() end
 function phos.audio.stop_all() end
 
 ---加载卡带包内音频文件（wav/mp3/flac），返回句柄（0 = 失败）

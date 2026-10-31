@@ -216,6 +216,18 @@ void register_audio_api(sol::state& lua, HostContext& host) {
     audio["stop_music"] = [&host]() {
         if (host.audio) host.audio->stop_music();
     };
+
+    // 音乐状态查询：一次性取当前曲子的可用信息（agent/UI 不用拼多个调用）
+    audio["music_state"] = [&host](sol::this_state ts) -> sol::table {
+        sol::table out = sol::state_view(ts).create_table();
+        if (!host.audio) return out;
+        out["playing"] = host.audio->music_on();
+        out["section"] = host.audio->music_section();
+        out["section_index"] = host.audio->music_section_index();
+        out["section_count"] = host.audio->music_section_count();
+        out["loop"] = host.audio->music_loop();
+        return out;
+    };
     // 音乐 ducking：level 0..1（目标倍率），seconds 保持秒数；非有限值按取消/默认处理
     audio["duck"] = [&host](sol::object level, sol::object seconds) {
         if (!host.audio) return;

@@ -182,6 +182,7 @@ phos.audio.volume(v)            -- 主音量（0..1）
 phos.audio.music_volume(v)      -- 音乐音量（音序器产出）——与设置界面 MUSIC VOLUME 同源
 phos.audio.duck(level, seconds) -- 临时压低音乐：level 0..1、保持 seconds 秒（<=0 取消）
 phos.audio.ui_volume(v)          -- UI 音量（主机事件音；与游戏音效分开）
+phos.audio.music_state()         -- { playing, section, section_index, section_count, loop }
 phos.audio.sfx_volume(v)        -- 音效音量（beep/音符/打击乐/采样）——与 SFX VOLUME 同源
 -- 三个音量接口都是「传参即设置，返回当前值」
 

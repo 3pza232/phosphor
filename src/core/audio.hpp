@@ -142,6 +142,8 @@ public:
         return music_on_.load() ? static_cast<int>(order_index_.load()) : 0;
     }
     int music_section_count() const { return static_cast<int>(order_names_.size()); }
+    /// 当前曲子是否循环（play_tune 的 loop；未在播时为 false）
+    bool music_loop() const { return music_on_.load() && music_loop_.load(); }
     /// 当前乐段名（不在播或无名时为空）
     std::string music_section() const;
 
@@ -267,6 +269,7 @@ private:
     Tune tune_;  // 音频线程侧使用
     // 以下音乐状态被音频线程写入、主线程读取（状态查询），故用原子
     std::atomic<bool> music_on_{false};
+    std::atomic<bool> music_loop_{false};
     std::atomic<size_t> order_index_{0};  // 当前乐段在 order 中的位置
     std::vector<std::string> order_names_;  // 主线程侧副本，仅供状态查询显示
     const TunePattern* pattern_ = nullptr;  // 当前乐段

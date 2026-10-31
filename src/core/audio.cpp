@@ -393,7 +393,10 @@ void Audio::play_tune(const Tune& tune) {
     request.kind = Request::Kind::tune;
     request.tune = std::make_unique<Tune>(tune);
     // 入队成功才更新查询用的名字：队列满时主机侧不该报告一个没在播的曲子
-    if (push(std::move(request))) order_names_ = tune.order;
+    if (push(std::move(request))) {
+        order_names_ = tune.order;
+        music_loop_ = tune.loop;
+    }
 }
 
 std::string Audio::music_section() const {
@@ -408,6 +411,7 @@ void Audio::stop_music() {
     request.kind = Request::Kind::silence_music;
     push(std::move(request));
     order_names_.clear();  // 清查询用的名字：否则 music_section_count() 还报上一首的段数
+    music_loop_ = false;
 }
 
 void Audio::stop_all() {
