@@ -27,7 +27,6 @@ local menu = { row = 1, side = 1, level = 2 }   -- side: 1 红 / 2 黑；level: 
 local game
 local cart = {}
 local cf, cr = 4, 9     -- 光标（初始停在自己那方的将/帅上）
-local paused = false
 local PANEL_W = 26      -- manifest 里声明的侧栏宽度（选择界面临时收起）
 
 -- 棋盘布局：文件间距 5、行距 3，河界再加一行；棋子摆在**两条格线的交点**上。
@@ -44,7 +43,6 @@ local function begin_match()
   local side = (menu.side == 1) and "r" or "b"
   game = Game.new(rng, phos.sys.time, side, menu.level)
   cf, cr = 4, (menu.side == 1) and 9 or 0   -- 光标停在**自己那方的将/帅**上
-  paused = false
   phos.panel.resize(PANEL_W)
   screen = "play"
   phos.audio.music(require("music"))   -- 选择界面不放音乐，进对局才放
@@ -56,6 +54,19 @@ function init()
   screen = "menu"
   game = nil
   phos.panel.resize(0)   -- 选择界面不需要侧栏：留着那条竖线会压在浮窗上
+  phos.observe{
+    screen = function() return screen end,
+    paused = function() return phos.scene.depth() > 0 end,
+    menu = function()
+      if screen ~= "menu" then return nil end
+      return { side = menu.side, level = menu.level, row = menu.row }
+    end,
+    status = function()
+      if screen == "play" and game then return game:status() end
+      return nil
+    end,
+    cursor = function() return cf .. "," .. cr end,
+  }
 end
 
 -- ── 选择界面 ──────────────────────────────────────────────
@@ -102,15 +113,34 @@ local function draw_menu()
 end
 
 -- ── 对局 ─────────────────────────────────────────────────
+local function pause_update(dt)
+  if phos.input.pressed("start") or phos.input.pressed("b") then
+    phos.scene.pop()
+    phos.audio.beep(760, 0.04)
+  end
+end
+
+local function pause_draw()
+  phos.ui.render{
+    screen = "pause", rect = { x = 20, y = 16, w = 40, h = 8 },
+    kind = "box", title = phos.lang.shared().paused, border = "single", opaque = true, bg = "black",
+    children = {
+      { kind = "text", text = phos.input.key_name("start") .. "  resume" },
+      { kind = "text", text = "world frozen", dim = true },
+    },
+  }
+end
+
 local function update_play(dt)
-  -- Enter 开关暂停：暂停期间整局冻结（含 AI 与音乐）
-  if phos.input.pressed("start") then
-    paused = not paused
-    phos.audio.paused(paused)
-    phos.audio.beep(paused and 300 or 760, 0.04)
+  -- Enter 暂停：交给场景栈（世界冻结、音频暂停、出栈自动恢复）
+  if phos.input.pressed("start") and phos.scene.depth() == 0 then
+    phos.scene.push{
+      id = "pause", modal = true, pause_world = true, audio_pause = true,
+      update = pause_update, draw = pause_draw,
+    }
+    phos.audio.beep(300, 0.04)
     return
   end
-  if paused then return end
 
   if phos.input.pressed("backspace") then
     if game:undo() then phos.audio.beep(420, 0.05) else phos.audio.beep(240, 0.03) end
@@ -235,9 +265,7 @@ local function draw_play()
 
   local sy = py + ROW(9) + 3
   local st = game:status()
-  if paused then
-    S.print(px + 2, sy, t.pause, C.yellow)
-  elseif game.over then
+  if game.over then
     local res = (st.winner == st.player_side) and t.win or (st.winner and t.lose or t.drawn)
     S.print(px + 2, sy, res, C.yellow)
     S.print(px + 2, sy + 1, t.exit, C.dark_gray)
@@ -259,12 +287,4 @@ function draw()
   if screen == "menu" then draw_menu() else draw_play() end
 end
 
-function debug_state()
-  if screen == "menu" then
-    return { screen = "menu", side = menu.side, level = menu.level, row = menu.row }
-  end
-  local st = game:status()
-  st.screen = "play"
-  st.cursor = cf .. "," .. cr
-  return st
-end
+-- 观测在 init 里用 phos.observe 声明（字段为函数，查询时求值）

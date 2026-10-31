@@ -199,7 +199,9 @@ E 从 A 开始持续，不等其它阶段。
 > 读写（去掉 tonumber/tostring）、观测换 `phos.observe`（返回 `world` 调试快照）。
 > ballbattle：排行榜/键位组件化、小地图仍在预留区自绘（组件布局 + 卡带像素的分工）、
 > 最高分换 `phos.score{max=1}`、观测换 `phos.observe`。
-> 八卡均 0 error/0 warning。下一张：`xiangqi` / `worms` 侧栏。
+> xiangqi：棋谱/被吃子/键位组件化（棋谱行数按面板高度自适应）、暂停换场景栈、
+> 观测换 `phos.observe`（menu/play 两种状态在查询时求值）。
+> 九卡均 0 error/0 warning。下一张：`worms` 侧栏（LAN 大厅已用异步发现/加入）。
 
 ### M4 卡带工具层（3–4 周，可与 M3 部分并行）
 
