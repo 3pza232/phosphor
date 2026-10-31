@@ -539,7 +539,7 @@ TEST(ui_grid_margins_and_unequal_row_heights) {
 }
 
 TEST(ui_table_widths_and_alignment) {
-    // widths 是各列的**基数**：余量均摊到所有列（当前实现/文档示例的约定）
+    // 显式 widths 是固定宽；只有自适应列（0/缺省）参与余量摊分
     ui::Props props;
     props.columns = {"A", "B"};
     props.rows = {{"x", "12345"}};
@@ -553,9 +553,9 @@ TEST(ui_table_widths_and_alignment) {
     CHECK_EQ(exact[1], 5);
 
     const auto stretched = ui::table_column_widths(props, 20);
-    // 20 - (4+5+2) = 9，均摊 4，余 1 给最后一列 → {8, 10}
-    CHECK_EQ(stretched[0], 8);
-    CHECK_EQ(stretched[1], 10);
+    // 20 - (4+5+2) = 9 全部给自适应列 B（A 是固定宽）→ {4, 14}
+    CHECK_EQ(stretched[0], 4);
+    CHECK_EQ(stretched[1], 14);
 
     // 对齐与截断：固定 4/4/4 三列，列间固定 2 格
     ui::Theme theme;

@@ -67,9 +67,19 @@ std::vector<int> table_column_widths(const Props& props, int available) {
     int total = kGap * (n - 1);
     for (int w : widths) total += w;
     if (available > total && n > 0) {
-        const int extra = (available - total) / n;
-        for (int& w : widths) w += extra;
-        widths.back() += (available - total) % n;
+        // 显式 widths 是"固定宽"；只有自适应列（缺省/0）参与余量摊分。
+        // 全固定列时右侧留白——想铺满就给 0，而不是让固定列被悄悄拉宽
+        std::vector<int> auto_columns;
+        for (int i = 0; i < n; ++i)
+            if (i >= static_cast<int>(props.widths.size()) ||
+                props.widths[static_cast<size_t>(i)] <= 0)
+                auto_columns.push_back(i);
+        if (!auto_columns.empty()) {
+            const int extra = (available - total) / static_cast<int>(auto_columns.size());
+            for (int index : auto_columns) widths[static_cast<size_t>(index)] += extra;
+            widths[static_cast<size_t>(auto_columns.back())] +=
+                (available - total) % static_cast<int>(auto_columns.size());
+        }
     }
     return widths;
 }

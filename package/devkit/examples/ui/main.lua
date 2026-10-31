@@ -97,7 +97,7 @@ function draw()
         indent = 2, text_gap = 2 },
       { kind = "divider", fg = "dark_gray" },
       { kind = "stat", text = L.score, value = tostring(state.score), accent = true },
-      { kind = "table", columns = { "RANK", "NAME", "SCORE" }, widths = { 4, 8, 6 },
+      { kind = "table", columns = { "RANK", "NAME", "SCORE" }, widths = { 4, 0, 6 },  -- 固定宽 / 自适应（吃掉余量）/ 固定宽
         col_align = { "left", "left", "right" },
         rows = { { "1", "ALPHA", "1200" }, { "2", "BETA", "900" }, { "3", "GAMMA", "10" } } },
       { kind = "checkbox", id = "demo_sfx", text = L.sound, checked = state.checked },

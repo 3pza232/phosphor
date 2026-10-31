@@ -681,7 +681,7 @@ void paint_node(Screen& screen, Node& node, const Theme& theme, const State& sta
             if (!node.props.columns.empty()) {
                 paint_row(node.props.columns, theme.text_dim);
                 for (int x = 0; x < node.inner.w; ++x)
-                    surface.put(x, y, U'\u2500', theme.border, bg);
+                    surface.put(x, y, theme.glyphs.table_rule, theme.border, bg);
                 ++y;
             }
             for (const auto& row : node.props.rows) paint_row(row, row_fg);

@@ -22,6 +22,7 @@ struct Glyphs {
     char32_t bullet = U'*';
     char32_t scroll_thumb = U'#';
     char32_t scroll_track = U'-';
+    char32_t table_rule = U'\u2500';  ///< 表头下的分隔线（区别于普通 divider 的 h）
 };
 
 /// 控件度量：数字进 token，控件代码里不出现魔法数字。
