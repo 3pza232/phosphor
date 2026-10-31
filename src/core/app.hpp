@@ -42,6 +42,11 @@ private:
 
     /// 推进一个逻辑帧：按当前状态分派（拔卡收缩 / 开机 / 卡带 / 外壳）
     void advance(float dt, class Renderer* renderer, class Window* window);
+    /// 推进一帧并完成帧末收口：advance → frame_count_ → 定时注入释放 → 单步回包 → dump。
+    /// 三个主循环（无头 / 窗口实时 / 窗口单步）共用的唯一一份步进语义，差异全由参数表达：
+    /// renderer/window 无头传 nullptr；consumes_step 表示本帧是否消耗一个 time.step 待推进帧。
+    void step_frame(const CliOptions& opts, class Renderer* renderer, class Window* window,
+                    bool consumes_step);
     void tick_playing(float dt);
     void tick_boot(float dt);
     void tick_shell(class Renderer* renderer, class Window* window);

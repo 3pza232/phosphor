@@ -172,6 +172,19 @@ void App::advance(float dt, Renderer* renderer, Window* window) {
     tick_shell(renderer, window);
 }
 
+void App::step_frame(const CliOptions& opts, Renderer* renderer, Window* window,
+                     bool consumes_step) {
+    advance(kLogicStep, renderer, window);
+    ++frame_count_;
+    release_expired_inputs();
+    // 单步回包：只有 time.step 驱动的那一帧才递减待推进帧数。先递减后判零——
+    // 窗口批处理路径的 while (pending_steps > 0) 已保证递减前 > 0，两条路同义，
+    // "推完最后一帧才回包"因此只有这一处实现
+    if (consumes_step && agent_.pending_steps > 0 && --agent_.pending_steps == 0)
+        complete_step_request();
+    maybe_dump(opts, frame_count_);
+}
+
 void App::end_boot() {
     in_boot_ = false;
     boot_script_.reset();
@@ -453,7 +466,9 @@ int App::run_headless(const CliOptions& opts) {
 
     using clock = std::chrono::steady_clock;
     auto last = clock::now();
-    long frame = 0;
+    // 帧预算按"本次运行推进了多少帧"算：起点记下，只判差量。不再另立一个与 frame_count_
+    // 并行递增的计数器（两份计数正是漂移的来源）；两者起点同为 0，dump 的帧号因此不变
+    const long start_frame = frame_count_;
 
     while (!quit_) {
         poll_control();
@@ -463,15 +478,11 @@ int App::run_headless(const CliOptions& opts) {
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
             continue;
         }
-        if (budget >= 0 && frame >= budget) break;
+        if (budget >= 0 && frame_count_ - start_frame >= budget) break;
 
-        advance(kLogicStep, nullptr, nullptr);
-        ++frame;
-        ++frame_count_;
-        release_expired_inputs();
-        if (agent_.stepping && agent_.pending_steps > 0 && --agent_.pending_steps == 0)
-            complete_step_request();
-        maybe_dump(opts, frame);
+        // 无头没有窗口/渲染器；无头的单步由 agent_.stepping 决定
+        // （与窗口批处理路径的 consumes_step 是同一个语义）
+        step_frame(opts, nullptr, nullptr, agent_.stepping);
 
         // 实时（非单步）且带控制通道时按逻辑帧率节流，避免空转吃满 CPU
         if (control_.running() && !control_time_driven()) {
@@ -576,20 +587,13 @@ int App::run_windowed(const CliOptions& opts) {
                     complete_step_request();
                     break;
                 }
-                advance(kLogicStep, &renderer, &window);
-                ++frame_count_;
-                release_expired_inputs();
-                if (--agent_.pending_steps <= 0) complete_step_request();
-                maybe_dump(opts, frame_count_);
+                step_frame(opts, &renderer, &window, /*consumes_step=*/true);
             }
         } else {
             accumulator += dt;
             while (accumulator >= kLogicStep) {
                 accumulator -= kLogicStep;
-                advance(kLogicStep, &renderer, &window);
-                ++frame_count_;
-                release_expired_inputs();
-                maybe_dump(opts, frame_count_);
+                step_frame(opts, &renderer, &window, /*consumes_step=*/false);
             }
         }
 
