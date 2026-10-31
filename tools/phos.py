@@ -85,8 +85,12 @@ class Host:
         self.headless = headless
         self.port = free_port()
         if config is None:
-            # 未指定：写一份确定的默认配置到临时文件，与用户的 config.json 隔离
-            config = os.path.join(tempfile.gettempdir(), f"phos-cfg-{self.port}.json")
+            # 未指定：写一份确定的默认配置到运行目录下的 tests-out/，与用户的 config.json 隔离。
+            # 用运行目录而不是系统临时目录：宿主对配置的写盘是原子的（tmp+rename），
+            # 某些受限环境只允许在运行目录内创建文件，放系统临时目录会让每次保存都告警。
+            scratch = os.path.join("tests-out")
+            os.makedirs(scratch, exist_ok=True)
+            config = os.path.join(scratch, f"host-config-{self.port}.json")
             with open(config, "w", encoding="utf-8") as handle:
                 json.dump(DEFAULT_CONFIG, handle, ensure_ascii=False)
         args = [exe]

@@ -188,7 +188,10 @@ def run() -> int:
             check(inserted.get("id") is not None,
                   f"cart={inserted.get('id')} [{inserted.get('name')}]")
             host.step(60)
-            check(bool(inserted.get("name")) and inserted["name"] in host.screen_text(),
+            # 标题可能带字距（例如"磁 芯 防 线"）：按"去掉空白后的文本"比对，
+            # 否则一个排版风格就会让"画面里有这张卡带"的检查误报
+            flat = "".join(host.screen_text().split())
+            check(bool(inserted.get("name")) and inserted["name"].replace(" ", "") in flat,
                   "cart UI is on screen")
             check(state.get("debug") is not None, "cart reports debug_state")
 

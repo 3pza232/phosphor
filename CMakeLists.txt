@@ -119,6 +119,7 @@ if(PHOSPHOR_BUILD_TESTS)
     add_executable(phosphor_tests
         tests/main.cpp
         tests/test_core.cpp
+        tests/test_ui.cpp
         src/core/color.cpp
         src/core/text.cpp
         src/core/text_input.cpp
@@ -134,10 +135,16 @@ if(PHOSPHOR_BUILD_TESTS)
         src/core/input.cpp
         src/core/mods.cpp
         src/core/ui.cpp
+        src/ui/theme.cpp
+        src/ui/element.cpp
+        src/ui/layout.cpp
+        src/ui/frame.cpp
         src/pack/builtin.cpp
         src/cart/save_store.cpp
         src/cart/cart_files.cpp
-        src/shell/shelf_search.cpp)
+        src/shell/shelf_search.cpp
+        src/shell/settings_view.cpp
+        src/shell/messages.cpp)
     target_include_directories(phosphor_tests PRIVATE ${CMAKE_SOURCE_DIR}/src)
     # 符号表：崩溃时 gdb 能指到行；不改变优化级别（测的是 Release 代码）
     if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")

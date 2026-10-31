@@ -29,6 +29,7 @@ constexpr int kModsPad = 6;                     // 列表左右留白：'>' 光�
 void Shell::set_skin(const Skin& skin) {
     skin_ = skin;
     style_ = ui::style_from_skin(skin);
+    ui_theme_ = ui::theme_from_skin(skin);
 }
 
 void Shell::set_carts(std::vector<CartInfo> carts) {
@@ -326,122 +327,124 @@ Shell::Intent Shell::update_shelf(const Input& input) {
 
 Shell::Intent Shell::update_settings(const Input& input) {
     Intent intent;
-    const int items = settings_item_count();
-    if (input.pressed(Key::up))   settings_cursor_ = (settings_cursor_ + items - 1) % items;
-    if (input.pressed(Key::down)) settings_cursor_ = (settings_cursor_ + 1) % items;
+    const ui::Rect area = settings_area();
+    const SettingsContext ctx = make_settings_context();
 
-    const bool confirm = input.pressed(Key::start);  // 主机界面：Enter 确认
-    const bool left = input.pressed(Key::left);
-    const bool right = input.pressed(Key::right);
-    const bool adjust = left || right || confirm;
+    // 界面只声明"有哪些行、当前值是什么"；上下换焦点、左右改值、事件语义由组件层负责
+    ui::Frame frame("shell.settings", ui_state_, ui_theme_, area, &input, ui::Keys::host());
+    build_settings(frame.root(), ctx, area);
 
-    // 选项行的共性：一份候选名字 + 一个当前下标。左右键（或 Enter）在这份列表上循环，
-    // 列表为空说明该功能没有可选内容，此时不动。所有"选一个"的行都走这里。
-    auto cycle = [](int index, int count, bool backward) {
-        return (index + (backward ? count - 1 : 1)) % count;
-    };
-    auto pick_next = [&](const std::vector<std::string>& names, int& index) {
-        if (names.empty() || !adjust) return false;
-        index = cycle(index, static_cast<int>(names.size()), left);
-        return true;
-    };
-    // 档位行同理，但候选是固定档数（扫描线）：左键等价于向前一档
-    auto pick_level = [&](int& level, int count) {
-        if (!adjust) return false;
-        level = (level + (right ? 1 : count - 1)) % count;
-        return true;
-    };
-    // 音量行：左右键改值，Enter 不改（与"选一个"的行区分开）
-    auto adjust_volume = [&](int& volume, bool& changed) {
-        if (!left && !right) return;
-        volume = std::clamp(volume + (right ? kVolumeStep : -kVolumeStep), 0, 100);
-        changed = true;
-    };
-
-    switch (static_cast<SettingId>(settings_cursor_)) {
-        case SettingId::theme:
-            if (pick_next(skin_names_, skin_index_)) {
-                intent.skin_changed = true;
-                intent.skin_index = skin_index_;
-            }
-            break;
-        case SettingId::font:
-            if (pick_next(font_names_, font_index_)) {
-                intent.font_changed = true;
-                intent.font_index = font_index_;
-            }
-            break;
-        case SettingId::font_size: {
-            if (!adjust) break;
-            // 候选：[方案声明的 min, max] 逐像素（无"自动"——默认就是出厂值，用户直接调）
-            const int count = font_max_ - font_min_ + 1;
-            int at = font_px_ >= font_min_ && font_px_ <= font_max_ ? font_px_ - font_min_ : 0;
-            at = (at + (right ? 1 : count - 1)) % count;
-            font_px_ = font_min_ + at;
-            intent.font_size_changed = true;
-            intent.font_size = font_px_;
+    for (const ui::Event& event : frame.run()) {
+        if (event.kind == ui::EventKind::cancelled) {
+            mode_ = ShellMode::shelf;
             break;
         }
-        case SettingId::scanlines:
-            intent.crt_changed = pick_level(crt_level_, kCrtLevelCount);
-            break;
-        case SettingId::fps: {
-            // 与扫描线同规矩：左键往前一档，Enter 也算调整（一个键就能走遍四档）
-            if (adjust) {
+        if (event.kind != ui::EventKind::changed && event.kind != ui::EventKind::activated) continue;
+        if (event.id.rfind("settings/", 0) != 0) continue;
+        const SettingId id = setting_from_key(std::string_view(event.id).substr(9));
+        if (id == SettingId::count) continue;
+        if (event.kind == ui::EventKind::activated) {
+            if (id == SettingId::back) mode_ = ShellMode::shelf;
+            continue;
+        }
+
+        const int step = event.delta;
+        auto cycle = [](int index, int count, int by) {
+            if (count <= 0) return 0;
+            return ((index + by) % count + count) % count;
+        };
+        auto pick_next = [&](const std::vector<std::string>& names, int& index) {
+            if (names.empty() || step == 0) return false;
+            index = cycle(index, static_cast<int>(names.size()), step);
+            return true;
+        };
+
+        switch (id) {
+            case SettingId::theme:
+                if (pick_next(skin_names_, skin_index_)) {
+                    intent.skin_changed = true;
+                    intent.skin_index = skin_index_;
+                }
+                break;
+            case SettingId::font:
+                if (pick_next(font_names_, font_index_)) {
+                    intent.font_changed = true;
+                    intent.font_index = font_index_;
+                }
+                break;
+            case SettingId::font_size: {
+                const int count = font_max_ - font_min_ + 1;
+                if (count <= 0 || step == 0) break;
+                int at = font_px_ >= font_min_ && font_px_ <= font_max_ ? font_px_ - font_min_ : 0;
+                at = cycle(at, count, step);
+                font_px_ = font_min_ + at;
+                intent.font_size_changed = true;
+                intent.font_size = font_px_;
+                break;
+            }
+            case SettingId::scanlines:
+                if (step != 0) {
+                    crt_level_ = cycle(crt_level_, kCrtLevelCount, step);
+                    intent.crt_changed = true;
+                }
+                break;
+            case SettingId::fps: {
+                if (step == 0) break;
                 int at = 0;
                 for (int i = 0; i < kFpsChoiceCount; ++i)
                     if (kFpsChoices[i] == fps_) at = i;
-                const int step = right ? 1 : kFpsChoiceCount - 1;
-                fps_ = kFpsChoices[(at + step) % kFpsChoiceCount];
+                fps_ = kFpsChoices[cycle(at, kFpsChoiceCount, step)];
                 intent.fps_changed = true;
+                break;
             }
-            break;
-        }
-        case SettingId::sound_pack:
-            // 左右 = 换音效包（App 会立即用**新**包试听）；Enter = 只试听**当前**包，不切换
-            if (left || right) {
-                if (pick_next(sound_names_, sound_index_)) {
+            case SettingId::sound_pack:
+                // 左右 = 换音效包（App 立即用新包试听）；确认 = 只试听当前包，不切换
+                if (event.confirm) {
+                    intent.preview_sound = true;
+                } else if (pick_next(sound_names_, sound_index_)) {
                     intent.sound_changed = true;
                     intent.sound_index = sound_index_;
                 }
-            } else if (confirm) {
-                intent.preview_sound = true;
+                break;
+            case SettingId::music_volume:
+                if (event.confirm) break;
+                music_volume_ = std::clamp(music_volume_ + step * kVolumeStep, 0, 100);
+                intent.music_volume_changed = true;
+                break;
+            case SettingId::sfx_volume:
+                if (event.confirm) break;
+                sfx_volume_ = std::clamp(sfx_volume_ + step * kVolumeStep, 0, 100);
+                intent.sfx_volume_changed = true;
+                break;
+            case SettingId::boot:
+                if (pick_next(boot_names_, boot_index_)) {
+                    intent.boot_changed = true;
+                    intent.boot_index = boot_index_;
+                }
+                break;
+            case SettingId::shelf_view: {
+                const int count = 2 + static_cast<int>(shelf_options_.size());
+                if (step == 0) break;
+                shelf_index_ = cycle(shelf_index_, count, step);
+                intent.shelf_style_changed = true;
+                intent.shelf_index = shelf_index_;
+                break;
             }
-            break;
-        case SettingId::music_volume:
-            adjust_volume(music_volume_, intent.music_volume_changed);
-            break;
-        case SettingId::sfx_volume:
-            adjust_volume(sfx_volume_, intent.sfx_volume_changed);
-            break;
-        case SettingId::boot:
-            if (pick_next(boot_names_, boot_index_)) {
-                intent.boot_changed = true;
-                intent.boot_index = boot_index_;
-            }
-            break;
-        case SettingId::shelf_view: {
-            if (!adjust) break;
-            // 候选项 = [LIST, WINDOW, <shelf 包…>]：左右键（或 Enter）在整份列表上循环。
-            // 选中包时把下标交给 App，由它加载对应的 shelf.lua 并把内容区交给它绘制
-            const int count = 2 + static_cast<int>(shelf_options_.size());
-            const int step = right ? 1 : count - 1;
-            shelf_index_ = (shelf_index_ + step) % count;
-            intent.shelf_style_changed = true;
-            intent.shelf_index = shelf_index_;
-            break;
-        }
-        case SettingId::language:
-            if (adjust) {
+            case SettingId::language:
+                if (step == 0) break;
                 lang_ = lang_ == Lang::zh ? Lang::en : Lang::zh;  // 两选一，直接翻面
                 intent.language_changed = true;
-            }
-            break;
-        case SettingId::back:
-            if (confirm) mode_ = ShellMode::shelf;
-            break;
-        default:
-            break;
+                break;
+            default:
+                break;
+        }
+    }
+
+    // 焦点即光标：state.query.cursor 与"音效行试听"都读这一个值，不再各存一份
+    const std::string& focused = frame.focused_id();
+    if (focused.rfind("settings/", 0) == 0) {
+        const int index = setting_item_index(setting_from_key(std::string_view(focused).substr(9)));
+        if (index >= 0) settings_cursor_ = index;
     }
     return intent;
 }
@@ -515,6 +518,38 @@ Shell::Intent Shell::update_mods(const Input& input) {
 
 ui::Rect Shell::content_rect() const { return phos::content_rect(skin_); }
 
+ui::Rect Shell::settings_area() const {
+    const ui::Rect content = content_rect();
+    // 行区左缘对齐分区标题（content.x+4）、首行在标题栏与分隔线之下（content.y+8）；
+    // 预览框绝对定位在底部六行，坐标与旧版逐格一致
+    return ui::Rect{content.x + 4, content.y + ShellLayout::kContentTop * 2, content.w - 8,
+                    content.h - ShellLayout::kContentTop * 2};
+}
+
+SettingsContext Shell::make_settings_context() const {
+    SettingsContext ctx;
+    ctx.skins = skin_names_;
+    ctx.fonts = font_names_;
+    ctx.boots = boot_names_;
+    ctx.sounds = sound_names_;
+    ctx.skin_index = skin_index_;
+    ctx.font_index = font_index_;
+    ctx.boot_index = boot_index_;
+    ctx.sound_index = sound_index_;
+    ctx.crt_level = crt_level_;
+    ctx.fps = fps_;
+    ctx.music_volume = music_volume_;
+    ctx.sfx_volume = sfx_volume_;
+    // 内容包显示名按**当前界面语言**解析：语言一切换，同一帧的设置行就跟着变
+    ctx.shelves.clear();
+    for (const ShelfOption& option : shelf_options_)
+        ctx.shelves.push_back(lang_ == Lang::en ? option.en : option.zh);
+    ctx.shelf_index = shelf_index_;
+    ctx.font_px = font_px_;
+    ctx.lang = lang_;
+    return ctx;
+}
+
 ShelfView Shell::shelf_view(const std::vector<CartInfo>& shown, int cursor) const {
     // 搜索生效时不做滑动动效：那个动效状态是按**整表**下标攒的，过滤后下标含义变了，
     // 混用会让图标来回窜。瞬时定位更好——搜东西时没人想等动画
@@ -528,7 +563,7 @@ ShelfView Shell::shelf_view(const std::vector<CartInfo>& shown, int cursor) cons
 
 void Shell::draw_chassis(Screen& screen) const { draw_bezel(screen); }
 
-void Shell::draw(Screen& screen) const {
+void Shell::draw(Screen& screen) {
     draw_bezel(screen);
     switch (mode_) {
         case ShellMode::boot: draw_boot(screen); break;
@@ -657,35 +692,14 @@ void Shell::draw_shelf(Screen& screen) const {
         draw_footer(screen, tr(lang_, Msg::shelf_search_hint));
 }
 
-void Shell::draw_settings(Screen& screen) const {
+void Shell::draw_settings(Screen& screen) {
     draw_chrome(screen, tr(lang_, Msg::settings_title), "");
 
-    SettingsContext ctx;
-    ctx.skins = skin_names_;
-    ctx.fonts = font_names_;
-    ctx.boots = boot_names_;
-    ctx.sounds = sound_names_;
-    ctx.skin_index = skin_index_;
-    ctx.font_index = font_index_;
-    ctx.boot_index = boot_index_;
-    ctx.sound_index = sound_index_;
-    ctx.crt_level = crt_level_;
-    ctx.fps = fps_;
-    ctx.music_volume = music_volume_;
-    ctx.sfx_volume = sfx_volume_;
-    // 内容包显示名按**当前界面语言**解析：语言一切换，同一帧的设置行就跟着变
-    ctx.shelves.clear();
-    for (const ShelfOption& option : shelf_options_)
-        ctx.shelves.push_back(lang_ == Lang::en ? option.en : option.zh);
-    ctx.shelf_index = shelf_index_;
-    ctx.font_px = font_px_;
-    ctx.lang = lang_;
-    ctx.lang_index = lang_ == Lang::en ? 1 : 0;
-
-    ui::Rect area = content_rect();
-    area.y += ShellLayout::kContentTop;
-    area.h -= ShellLayout::kContentTop + ShellLayout::kFooterGap;
-    phos::draw_settings(screen, area, ctx, style_, settings_cursor_);  // 界面布局见 settings_view.cpp
+    const ui::Rect area = settings_area();
+    ui::Frame frame("shell.settings", ui_state_, ui_theme_, area, nullptr, ui::Keys::host());
+    build_settings(frame.root(), make_settings_context(), area);
+    frame.run();  // draw 路径只排布（输入在 update_settings 里已处理）
+    frame.paint(screen);
 
     draw_footer(screen, tr(lang_, Msg::settings_footer));
 }
@@ -752,17 +766,50 @@ void Shell::draw_tape(Screen& screen) const {
     draw_footer(screen, tr(lang_, tape_.footer_hint()));
 }
 
-void Shell::draw_error(Screen& screen) const {
+void Shell::draw_error(Screen& screen) {
     const ui::Rect content = content_rect();
-    ui::fill(screen, content, U' ', style_.fg, style_.bg);
-    ui::print(screen, content.x + 2, content.y + 1, tr(lang_, Msg::error_title), kFaultColor,
-              style_.bg);
-    ui::divider(screen, content.x, content.y + 2, content.w, style_.dim, style_.bg);
-    ui::print(screen, content.x + 4, content.y + 6, tr(lang_, Msg::error_body), style_.fg,
-              style_.bg);
-    ui::text_block(screen, content.x + 4, content.y + 8, 70, error_message_, 12, style_);
-    ui::print(screen, content.x + 4, content.bottom() - 2, tr(lang_, Msg::error_footer),
-              style_.dim, style_.bg);
+
+    ui::Frame frame("shell.error", ui_state_, ui_theme_, content, nullptr, ui::Keys::host());
+    ui::Node& root = frame.root();
+    root.props.opaque = true;
+    root.props.has_bg = true;
+    root.props.bg = ui_theme_.bg;
+    root.props.has_fg = true;
+    root.props.fg = ui_theme_.text;
+
+    // 错误屏是"固定版面"：坐标与旧实现逐格一致，故意用绝对定位而不是流式布局
+    auto place = [&root](ui::Kind kind, std::string id, int x, int y, int w) -> ui::Node& {
+        ui::Node& node = root.add(kind, std::move(id));
+        node.props.absolute = true;
+        node.props.x = x;
+        node.props.y = y;
+        node.props.width = w;
+        return node;
+    };
+
+    ui::Node& title = place(ui::Kind::text, "error/title", 2, 1, content.w - 2);
+    title.props.text = tr(lang_, Msg::error_title);
+    title.props.danger = true;
+
+    ui::Node& rule = place(ui::Kind::divider, "error/rule", 0, 2, content.w);
+    rule.props.has_fg = true;
+    rule.props.fg = ui_theme_.text_dim;
+
+    ui::Node& body = place(ui::Kind::text, "error/body", 4, 6, content.w - 4);
+    body.props.text = tr(lang_, Msg::error_body);
+
+    // 卡带给出的错误原文：折行 + 最多 12 行，超出的部分不再画（与旧 text_block 一致）
+    ui::Node& message = place(ui::Kind::text, "error/message", 4, 8, 70);
+    message.props.text = error_message_;
+    message.props.overflow = ui::Overflow::wrap;
+    message.props.lines = 12;
+
+    ui::Node& footer = place(ui::Kind::text, "error/footer", 4, content.h - 3, content.w - 4);
+    footer.props.text = tr(lang_, Msg::error_footer);
+    footer.props.dim = true;
+
+    frame.run();
+    frame.paint(screen);
 }
 
 } // namespace phos

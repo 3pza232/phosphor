@@ -1,11 +1,11 @@
 #pragma once
 
 #include "core/defaults.hpp"
-#include "core/screen.hpp"
-#include "core/ui.hpp"
 #include "shell/messages.hpp"
+#include "ui/element.hpp"
 
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace phos {
@@ -27,7 +27,7 @@ enum class SettingId {
     count
 };
 
-/// 设置界面渲染所需的只读状态
+/// 设置界面构建所需的只读状态
 struct SettingsContext {
     std::vector<std::string> skins, fonts, boots, sounds;
     int skin_index = 0, font_index = 0, boot_index = 0, sound_index = 0;
@@ -40,16 +40,20 @@ struct SettingsContext {
     int shelf_index = 1;
     int font_px = kDefaultFontPx;  // 当前生效字号（= 单元格边长）
     Lang lang = Lang::zh;  // 界面语言：设置界面自己的文案也要跟着切
-    int lang_index = 0;    // 语言在可选列表里的下标（0 = 中文，1 = 英文）
 };
 
-/// 设置界面渲染（分区标题用暗色小标题，选项缩进显示）
-void draw_settings(Screen& screen, const ui::Rect& content, const SettingsContext& ctx,
-                   const ui::Style& style, int cursor);
+/// 设置项在界面上的稳定 id（焦点/事件/agent 观测都以它为键）："settings/<key>"
+const char* setting_key(SettingId id);
+/// 由元素 id 反解设置项；不是设置行返回 SettingId::count
+SettingId setting_from_key(std::string_view key);
+/// 可选中项在界面顺序里的下标（0 基）；不是可选项返回 -1
+int setting_item_index(SettingId id);
+
+/// 把设置界面声明成一棵元素树（坐标由容器排布；预览框绝对定位在底部）。
+/// area 是整块可用区域（决定预览框位置），root 由调用方创建。
+void build_settings(ui::Node& root, const SettingsContext& ctx, const ui::Rect& area);
 
 /// 可选中项数量（不含分区标题）
 constexpr int settings_item_count() { return static_cast<int>(SettingId::count); }
-
-
 
 } // namespace phos

@@ -1,0 +1,129 @@
+#!/usr/bin/env python3
+"""外壳界面的文本基线：驱动每个屏，把 screen.read 的结果逐字节存进 tests/golden/shell/。
+
+为什么需要它：UI 组件层迁移外壳时，判断"对不对"不能靠肉眼——同一屏在迁移前后必须
+逐字节一致。基线是**行为契约**，不是截图替代品：文本网格本身就零误差。
+
+跑法（在含 phosphor.exe 的构建目录）：
+
+    python ../tools/shell_golden.py --write    # 重新生成基线（界面有意改变时才做）
+    python ../tools/shell_golden.py            # 校验（不一致非零退出）
+
+基线里不含随机/时间内容：所有输入都由控制通道单步驱动，帧数固定。
+唯一的外部状态是卡带架的"最近打开"顺序（recent.txt）；在干净的构建目录里是确定的，
+若基线校验失败先看那一条。
+"""
+
+from __future__ import annotations
+
+import argparse
+import sys
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE))
+
+from phos import DEFAULT_CONFIG, Host  # noqa: E402
+
+GOLDEN_DIR = HERE.parent / "tests" / "golden" / "shell"
+
+
+def _dump_screen(frames: int, seed: int = 1) -> str:
+    """不经控制通道的一帧捕获：--frames 精确推进 N 帧后 --dump-screen。
+
+    boot 动画的字符随动画时间变化，而控制通道接管前宿主会先跑若干实时帧
+    （数量取决于进程启动耗时），文本因此不稳定。这条路径没有那个竞态。
+    """
+    import json
+    import subprocess
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as tmp:
+        config = Path(tmp) / "config.json"
+        config.write_text(json.dumps(DEFAULT_CONFIG, ensure_ascii=False), encoding="utf-8")
+        proc = subprocess.run(
+            ["./phosphor.exe", "--headless", "--frames", str(frames), "--seed", str(seed),
+             "--config", str(config), "--save-dir", str(Path(tmp) / "saves"), "--dump-screen"],
+            capture_output=True, text=True, encoding="utf-8", check=False)
+        if proc.returncode != 0:
+            raise RuntimeError(f"dump-screen failed: {proc.stderr[-800:]}")
+        return proc.stdout
+
+#: 固定种子：boot 动画与部分内容用 phos.sys.random，不固定种子基线就不稳定。
+SEED = ("--seed", "1")
+
+
+#: 一个屏 = 一段驱动脚本 + 期望捕获的文本。boot/shelf/settings/mods/search 共用一个宿主；
+#: 游戏内暂停/磁带码需要真实卡带，另起一个。
+def _screens() -> dict[str, str]:
+    shots: dict[str, str] = {}
+    shots["boot"] = _dump_screen(24)
+
+    with Host(extra=SEED) as host:
+        host.step(264)
+        shots["shelf"] = host.screen_text()
+        host.key("settings")
+        host.step(3)
+        shots["settings"] = host.screen_text()
+        host.key("escape")
+        host.step(3)
+        host.key("m")
+        host.step(3)
+        shots["mods"] = host.screen_text()
+        host.key("escape")
+        host.step(3)
+        host.key("f")
+        host.text("sn")
+        host.step(3)
+        shots["search"] = host.screen_text()
+        host.key("escape")
+        host.step(2)
+        # 错误屏：装载一张不存在的卡带，主机进入 CART_ERROR
+        host.send("cart.load", path="carts/__missing__")
+        host.step(3)
+        shots["error"] = host.screen_text()
+
+    with Host(cart="carts/snake", extra=SEED) as host:
+        host.step(60)
+        host.key("escape")
+        host.step(3)
+        shots["paused"] = host.screen_text()
+        host.key("down")
+        host.step(1)
+        host.key("start")
+        host.step(3)
+        shots["tape"] = host.screen_text()
+    return shots
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="外壳界面文本基线")
+    parser.add_argument("--write", action="store_true", help="重建基线文件")
+    args = parser.parse_args()
+
+    shots = _screens()
+    GOLDEN_DIR.mkdir(parents=True, exist_ok=True)
+
+    failed = 0
+    for name in sorted(shots):
+        path = GOLDEN_DIR / f"{name}.txt"
+        text = shots[name]
+        if args.write:
+            path.write_text(text, encoding="utf-8")
+            print(f"  wrote {path.relative_to(HERE.parent)}  ({len(text)} bytes)")
+            continue
+        if not path.exists():
+            print(f"  FAIL {name}: 基线缺失（先跑 --write）")
+            failed += 1
+            continue
+        expected = path.read_text(encoding="utf-8")
+        if expected == text:
+            print(f"  ok   {name}")
+        else:
+            print(f"  FAIL {name}: 与基线不一致")
+            failed += 1
+    return 1 if failed else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

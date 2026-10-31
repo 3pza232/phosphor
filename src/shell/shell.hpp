@@ -8,9 +8,12 @@
 #include "core/screen.hpp"
 #include "core/skin.hpp"
 #include "core/ui.hpp"
+#include "shell/settings_view.hpp"
 #include "shell/shelf_search.hpp"
 #include "shell/shelf_view.hpp"
 #include "shell/tape_view.hpp"
+#include "ui/frame.hpp"
+#include "ui/theme.hpp"
 
 #include <string>
 #include <vector>
@@ -192,7 +195,7 @@ public:
     void focus_cart(const std::string& id);
 
     Intent update(const Input& input, float dt);
-    void draw(Screen& screen) const;
+    void draw(Screen& screen);
     void draw_chassis(Screen& screen) const;
 
 private:
@@ -214,14 +217,17 @@ private:
     ui::Rect mods_box() const;
 
     ui::Rect content_rect() const;
+    /// 设置屏的可用区域（行区 + 底部预览框的锚点）
+    ui::Rect settings_area() const;
+    SettingsContext make_settings_context() const;
     void draw_bezel(Screen& screen) const;
     void draw_boot(Screen& screen) const;
     void draw_shelf(Screen& screen) const;
-    void draw_settings(Screen& screen) const;
+    void draw_settings(Screen& screen);
     void draw_paused(Screen& screen) const;
     /// 磁带码界面（两态渲染见 shell/tape_view.cpp）
     void draw_tape(Screen& screen) const;
-    void draw_error(Screen& screen) const;
+    void draw_error(Screen& screen);
     void draw_mods(Screen& screen) const;
     void draw_chrome(Screen& screen, const std::string& title,
                      const std::string& right_text) const;
@@ -238,6 +244,9 @@ private:
 
     Skin skin_;
     ui::Style style_;
+    /// UI 组件库的主题与跨帧状态（焦点/滚动/文本域值）。画布变了只换 token，控件代码不动
+    ui::Theme ui_theme_;
+    ui::State ui_state_;
     ShellMode mode_ = ShellMode::boot;
     float time_ = 0.0f;
     float boot_time_ = 0.0f;

@@ -2,7 +2,7 @@
 
 #include "core/crt.hpp"
 #include "core/text.hpp"
-#include "shell/messages.hpp"
+#include "ui/frame.hpp"
 
 #include <array>
 
@@ -35,7 +35,6 @@ constexpr Row kRows[] = {
     {false, Msg::count,           SettingId::language},
     {false, Msg::count,           SettingId::back},
 };
-constexpr int kRowCount = static_cast<int>(sizeof(kRows) / sizeof(kRows[0]));
 
 std::string pick(const std::vector<std::string>& names, int index, const char* fallback) {
     if (names.empty() || index < 0 || index >= static_cast<int>(names.size()))
@@ -44,8 +43,7 @@ std::string pick(const std::vector<std::string>& names, int index, const char* f
 }
 
 /// 档位显示名（取自文案表：加语言只需加一列，这里不必再分支）。
-/// 机器可读的档位名仍由 `crt_level_name()` 提供
-/// （`state.query` 给 agent 用，保持 ASCII，与遥测行同一套政策）
+/// 机器可读的档位名仍由 `crt_level_name()` 提供（agent 用，保持 ASCII）
 const char* crt_level_label(Lang lang, int level) {
     switch (level) {
         case 1: return tr(lang, Msg::value_crt_low);
@@ -55,12 +53,12 @@ const char* crt_level_label(Lang lang, int level) {
     }
 }
 
-/// 标签补齐到固定列宽：直接复用文本层的 pad_right（按显示宽度补，中文一列算 2 格）
+/// 标签补齐到固定列宽：复用文本层的 pad_right（按显示宽度补，中文一列算 2 格）
 std::string label(Lang lang, Msg id, int cols = 16) {
     return text::pad_right(tr(lang, id), static_cast<size_t>(cols));
 }
 
-/// 选项文案（标签 + 当前值）
+/// 选项文案（标签 + 当前值）。这是**数据格式化**，不是排版：排版由组件负责。
 std::string row_text(SettingId id, const SettingsContext& ctx) {
     const Lang lang = ctx.lang;
     switch (id) {
@@ -77,7 +75,7 @@ std::string row_text(SettingId id, const SettingsContext& ctx) {
                    crt_level_label(lang, ctx.crt_level) + " ]";
         case SettingId::fps: {
             // 读数里带上它相对实机的倍数：这台机器的逻辑是 60Hz 定步长，刷新率只改
-            // 画面顺不顺、不改游戏速度——一眼能看出这件事，比对着文档猜强
+            // 画面顺不顺、不改游戏速度
             const int fps = ctx.fps > 0 ? ctx.fps : kDefaultFps;
             std::string speed;
             if (fps != kLogicFps) {
@@ -103,14 +101,17 @@ std::string row_text(SettingId id, const SettingsContext& ctx) {
                 name = tr(lang, Msg::value_list);
             else if (ctx.shelf_index >= 2 &&
                      ctx.shelf_index - 2 < static_cast<int>(ctx.shelves.size()))
-                name = ctx.shelves[static_cast<size_t>(ctx.shelf_index - 2)];  // 内容包名 = 文件夹名
+                name = ctx.shelves[static_cast<size_t>(ctx.shelf_index - 2)];
             else
                 name = tr(lang, Msg::value_window);
             return label(lang, Msg::row_shelf_view) + "< " + name + " >";
         }
-        case SettingId::language:
+        case SettingId::language: {
+            // 语言行显示的是"当前语言"，不是"下一步会切到什么"
+            const bool english = ctx.lang == Lang::en;
             return label(lang, Msg::row_language) + "< " +
-                   tr(lang, ctx.lang_index == 0 ? Msg::language_zh : Msg::language_en) + " >";
+                   tr(lang, english ? Msg::language_en : Msg::language_zh) + " >";
+        }
         case SettingId::back:
             return tr(lang, Msg::row_back);
         default:
@@ -120,34 +121,95 @@ std::string row_text(SettingId id, const SettingsContext& ctx) {
 
 } // namespace
 
-void draw_settings(Screen& screen, const ui::Rect& content, const SettingsContext& ctx,
-                   const ui::Style& style, int cursor) {
-    int item_index = 0;
-    int y = content.y + 4;
+const char* setting_key(SettingId id) {
+    switch (id) {
+        case SettingId::theme: return "theme";
+        case SettingId::font: return "font";
+        case SettingId::font_size: return "font_size";
+        case SettingId::scanlines: return "scanlines";
+        case SettingId::fps: return "fps";
+        case SettingId::sound_pack: return "sound";
+        case SettingId::music_volume: return "music_volume";
+        case SettingId::sfx_volume: return "sfx_volume";
+        case SettingId::boot: return "boot";
+        case SettingId::shelf_view: return "shelf_view";
+        case SettingId::language: return "language";
+        case SettingId::back: return "back";
+        default: return "";
+    }
+}
 
-    for (int i = 0; i < kRowCount; ++i, ++y) {
-        const Row& row = kRows[i];
+SettingId setting_from_key(std::string_view key) {
+    static constexpr SettingId kAll[] = {
+        SettingId::theme,      SettingId::font,     SettingId::font_size,
+        SettingId::scanlines,  SettingId::fps,      SettingId::sound_pack,
+        SettingId::music_volume, SettingId::sfx_volume, SettingId::boot,
+        SettingId::shelf_view, SettingId::language, SettingId::back,
+    };
+    for (SettingId id : kAll)
+        if (key == setting_key(id)) return id;
+    return SettingId::count;
+}
+
+int setting_item_index(SettingId id) {
+    int index = 0;
+    for (const Row& row : kRows) {
+        if (row.header) continue;
+        if (row.id == id) return index;
+        ++index;
+    }
+    return -1;
+}
+
+void build_settings(ui::Node& root, const SettingsContext& ctx, const ui::Rect& area) {
+    int section = 0;
+    bool first = true;
+    int gap = 0;
+    for (const Row& row : kRows) {
         if (row.header) {
-            if (i != 0) ++y;  // 分区之间留一行空白
-            ui::print(screen, content.x + 4, y, tr(ctx.lang, row.label), style.dim, style.bg);
+            if (!first) {
+                ui::Node& blank = root.add_spacer("settings/gap_" + std::to_string(gap++));
+                blank.props.height = 1;
+            }
+            ui::Node& title = root.add_text("settings/section_" + std::to_string(section++),
+                                            tr(ctx.lang, row.label));
+            title.props.dim = true;
+            first = false;
             continue;
         }
-
-        const bool selected = item_index == cursor;
-        screen.put(content.x + 6, y, selected ? U'>' : U' ', style.accent, style.bg);
-        ui::print(screen, content.x + 8, y, row_text(row.id, ctx),
-                  selected ? style.accent : style.fg, style.bg);
-        ++item_index;
+        const std::string id = std::string("settings/") + setting_key(row.id);
+        if (row.id == SettingId::back) {
+            ui::Node& back = root.add(ui::Kind::button, id);
+            back.props.text = row_text(row.id, ctx);
+            back.props.indent = 2;
+            back.props.text_gap = 2;
+        } else {
+            ui::Node& option = root.add(ui::Kind::option, id);
+            option.props.text = row_text(row.id, ctx);
+            option.props.indent = 2;
+            option.props.text_gap = 2;
+        }
+        first = false;
     }
 
-    // 字形预览：一排"各类字形"样本，用**当前方案与字号**画（整屏本就同一套字体，
-    // 这里给的是排版样本：大小写/数字/标点/中文与全角标点）。切方案或字号时一眼看效果
-    const ui::Rect box{content.x + 6, content.y + content.h - 8, content.w - 12, 6};
-    ui::frame(screen, box, tr(ctx.lang, Msg::font_preview), style);
-    ui::print(screen, box.x + 2, box.y + 1, "ABCDEFG abcdefg 0123456789  !?@#&%",
-              style.fg, style.bg);
-    ui::print(screen, box.x + 2, box.y + 3, tr(ctx.lang, Msg::font_preview_cjk),
-              style.fg, style.bg);
+    // 字形预览：固定在区域底部的六行盒子（与旧版 layout 完全一致的位置）
+    ui::Node& preview = root.add(ui::Kind::box, "settings/preview");
+    preview.props.absolute = true;
+    preview.props.x = 2;
+    preview.props.y = std::max(0, area.h - 10);
+    preview.props.width = std::max(2, area.w - 4);
+    preview.props.height = 6;
+    preview.props.border = ui::Border::single;
+    preview.props.padding = ui::Insets{1, 0, 1, 0};
+    preview.props.gap = 0;
+    preview.props.title = tr(ctx.lang, Msg::font_preview);
+
+    auto& sample = preview.add_text("settings/preview/ascii",
+                                    "ABCDEFG abcdefg 0123456789  !?@#&%");
+    sample.props.overflow = ui::Overflow::clip;
+    auto& blank = preview.add_spacer("settings/preview/gap");
+    blank.props.height = 1;
+    preview.add_text("settings/preview/cjk", tr(ctx.lang, Msg::font_preview_cjk));
 }
 
 } // namespace phos
