@@ -55,6 +55,9 @@ public:
     /// 数组里的数字/布尔按原样文本收（`1` → "1"），嵌套对象/数组跳过
     std::vector<std::string> string_array(std::string_view key) const;
 
+    /// 顶层键名（升序）。需要遍历对象的调用方（如存档容器）用它配合 str() 取值
+    std::vector<std::string> keys() const;
+
     /// 上一次 parse 中重复出现的键。"一个键只写一次"的配置文件据此提醒用户
     const std::vector<std::string>& duplicate_keys() const { return duplicates_; }
 

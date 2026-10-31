@@ -1,13 +1,25 @@
 #include "cart/save_store.hpp"
 
+#include "core/json_lite.hpp"
+#include "core/log.hpp"
+
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <sstream>
+#include <string_view>
 
 namespace phos {
 
 namespace {
 
-/// 入库校验：磁带码是 key=value 换行拼接的十六进制，因此键值不得含换行，键不得含 '='
+/// 容器格式：第一行是带版本/卡带 id/校验和的头部，正文是一行 JSON 对象。
+/// 旧格式（`key=value` 每行一条、无头部）继续可读，并在首次写入时自动升级；
+/// 升级前留一份 `.v1` 备份——玩家的旧存档不该因为升级而变得不可回退。
+constexpr std::string_view kMagic = "PHOSPHOR-SAVE";
+constexpr int kFormatVersion = 2;
+
+/// 入库校验：值不允许换行（磁带码与 JSON 都按单行值组织），键不得含 '='
 bool entry_within_limits(const std::string& key, const std::string& value) {
     if (key.empty() || key.size() > SaveStore::kMaxKeyLength) return false;
     if (value.size() > SaveStore::kMaxValueLength) return false;
@@ -22,8 +34,41 @@ int hex_nibble(char c) {
     return -1;
 }
 
-/// 删掉半份写出的临时文件（失败路径的清理；删不掉也没有更好的补救）。
-/// 只删普通文件：临时文件位置被别的东西（例如目录）占住时不动它
+uint32_t crc32(std::string_view data) {
+    uint32_t crc = 0xFFFFFFFFu;
+    for (unsigned char byte : data) {
+        crc ^= byte;
+        for (int bit = 0; bit < 8; ++bit)
+            crc = (crc >> 1) ^ (0xEDB88320u & (0u - (crc & 1u)));
+    }
+    return ~crc;
+}
+
+std::string hex32(uint32_t value) {
+    static const char* kDigits = "0123456789abcdef";
+    std::string out(8, '0');
+    for (int i = 7; i >= 0; --i) {
+        out[static_cast<size_t>(i)] = kDigits[value & 0xFu];
+        value >>= 4;
+    }
+    return out;
+}
+
+std::string json_payload(const std::map<std::string, std::string>& data) {
+    std::string out = "{";
+    bool first = true;
+    for (const auto& [key, value] : data) {
+        if (!first) out += ',';
+        first = false;
+        out += json::quote(key);
+        out += ':';
+        out += json::quote(value);
+    }
+    out += '}';
+    return out;
+}
+
+/// 删掉半份写出的临时文件（失败路径的清理；删不掉也没有更好的补救）
 void discard_tmp(const std::string& tmp) {
     std::error_code ec;
     if (std::filesystem::is_regular_file(tmp, ec)) std::filesystem::remove(tmp, ec);
@@ -35,6 +80,56 @@ bool probe_writable(const std::string& tmp) {
     if (!probe) return false;
     probe.close();
     discard_tmp(tmp);
+    return true;
+}
+
+/// 旧格式解析（`key=value` 每行一条）：既用于迁移，也用于磁带码导入
+bool parse_legacy(std::string_view text, std::map<std::string, std::string>& out) {
+    size_t begin = 0;
+    while (begin <= text.size()) {
+        const size_t end = text.find('\n', begin);
+        std::string_view line = text.substr(
+            begin, end == std::string_view::npos ? std::string_view::npos : end - begin);
+        if (!line.empty() && line.back() == '\r') line.remove_suffix(1);
+        const size_t eq = line.find('=');
+        if (eq != std::string_view::npos) {
+            const std::string key(line.substr(0, eq));
+            const std::string value(line.substr(eq + 1));
+            // 存档文件亦不可信：越界项跳过，而不是让整份存档作废
+            if (entry_within_limits(key, value) &&
+                !(out.size() >= SaveStore::kMaxEntries && out.find(key) == out.end()))
+                out[key] = value;
+        }
+        if (end == std::string_view::npos) break;
+        begin = end + 1;
+    }
+    return true;
+}
+
+struct Header {
+    std::string cart_id;
+    uint32_t crc = 0;
+    std::string payload;
+};
+
+bool parse_v2(std::string_view text, Header& header) {
+    const size_t newline = text.find('\n');
+    if (newline == std::string_view::npos) return false;
+    std::istringstream line{std::string(text.substr(0, newline))};
+    std::string magic;
+    int version = 0;
+    std::string crc_hex;
+    line >> magic >> version >> header.cart_id >> crc_hex;
+    if (magic != kMagic || version != kFormatVersion) return false;
+    if (crc_hex.size() != 8) return false;
+    uint32_t crc = 0;
+    for (char c : crc_hex) {
+        const int nibble = hex_nibble(c);
+        if (nibble < 0) return false;
+        crc = (crc << 4) | static_cast<uint32_t>(nibble);
+    }
+    header.crc = crc;
+    header.payload = std::string(text.substr(newline + 1));
     return true;
 }
 
@@ -53,22 +148,53 @@ bool SaveStore::open(const std::string& save_dir, const std::string& cart_id) {
     std::error_code exists_ec;
     if (!fs::exists(path_, exists_ec)) return writable_;  // 新存档：空数据
 
-    std::ifstream in(path_);
+    std::ifstream in(path_, std::ios::binary);
     if (!in) {
         // 旧档存在却读不出（权限/介质错误）：只读运行，绝不用空数据覆盖未知内容
         writable_ = false;
         return false;
     }
-    std::string line;
-    while (std::getline(in, line)) {
-        if (!line.empty() && line.back() == '\r') line.pop_back();
-        const size_t eq = line.find('=');
-        if (eq == std::string::npos) continue;
-        const std::string key = line.substr(0, eq);
-        const std::string value = line.substr(eq + 1);
-        if (!entry_within_limits(key, value)) continue;  // 存档文件亦不可信
-        if (data_.size() >= kMaxEntries && data_.find(key) == data_.end()) continue;
-        data_[key] = value;
+    std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    in.close();
+
+    Header header;
+    if (parse_v2(text, header)) {
+        if (header.cart_id != cart_id) {
+            log::warn("save: " + path_ + " belongs to cart '" + header.cart_id + "', ignoring");
+            writable_ = false;
+            return false;
+        }
+        if (crc32(header.payload) != header.crc) {
+            log::warn("save: checksum mismatch in " + path_);
+            writable_ = false;
+            return false;
+        }
+        json::Object object;
+        std::string err;
+        if (!object.parse(header.payload, err)) {
+            log::warn("save: bad payload in " + path_ + ": " + err);
+            writable_ = false;
+            return false;
+        }
+        for (const std::string& key : object.keys()) {
+            const std::string value = object.str(key);
+            if (entry_within_limits(key, value)) data_[key] = value;
+        }
+        return true;
+    }
+
+    // 旧格式：读入后立刻升级；保留 .v1 备份，升级失败也不动原文件
+    const bool loaded = parse_legacy(text, data_);
+    if (!loaded) return false;
+    if (writable_) {
+        const std::string backup = path_ + ".v1";
+        std::error_code backup_ec;
+        if (!fs::exists(backup, backup_ec)) {
+            std::error_code copy_ec;
+            fs::copy_file(path_, backup, fs::copy_options::none, copy_ec);
+            if (copy_ec) log::warn("save: cannot back up legacy file: " + copy_ec.message());
+        }
+        if (!flush(data_)) log::warn("save: cannot upgrade " + path_ + " to format 2");
     }
     return true;
 }
@@ -110,9 +236,20 @@ bool SaveStore::erase(const std::string& key) {
 
 bool SaveStore::flush(const std::map<std::string, std::string>& data) const {
     const std::string tmp = path_ + ".tmp";
-    std::ofstream out(tmp, std::ios::trunc);
+    std::ofstream out(tmp, std::ios::trunc | std::ios::binary);
     if (!out) return false;
-    for (const auto& [key, value] : data) out << key << '=' << value << '\n';
+
+    // 头部里的卡带 id 取自文件名：同一份文件被拷到别的 id 下会被 open() 拒绝，
+    // 避免"把 A 的档当 B 的档读"（跨卡带串档比丢档更难查）
+    std::string cart_id;
+    {
+        const std::filesystem::path file(path_);
+        cart_id = file.stem().string();
+    }
+    const std::string payload = json_payload(data);
+    out << kMagic << ' ' << kFormatVersion << ' ' << cart_id << ' ' << hex32(crc32(payload))
+        << '\n'
+        << payload;
     out.flush();
     if (!out) {
         discard_tmp(tmp);
@@ -134,7 +271,8 @@ bool SaveStore::flush(const std::map<std::string, std::string>& data) const {
 }
 
 std::string SaveStore::export_code() const {
-    // 磁带码：key=value\n 拼接后的十六进制（保证纯文本可复制）
+    // 磁带码：仍然用旧版 `key=value\n` 的十六进制——跨版本/跨机器都能读，
+    // 导入端解析后按当前格式落盘
     static const char* kHex = "0123456789ABCDEF";
     std::string payload;
     for (const auto& [k, v] : data_) payload += k + "=" + v + "\n";
@@ -169,28 +307,13 @@ bool SaveStore::import_code(const std::string& code) {
 
     // 先全量校验再落地：任何一处非法都保持原存档不变
     std::map<std::string, std::string> parsed;
-    size_t begin = 0;
-    while (begin <= payload.size()) {
-        const size_t end = payload.find('\n', begin);
-        const std::string line =
-            payload.substr(begin, end == std::string::npos ? std::string::npos : end - begin);
-        if (!line.empty()) {
-            const size_t eq = line.find('=');
-            if (eq == std::string::npos) return false;
-            const std::string key = line.substr(0, eq);
-            const std::string value = line.substr(eq + 1);
-            if (!entry_within_limits(key, value)) return false;
-            if (parsed.size() >= kMaxEntries && parsed.find(key) == parsed.end()) return false;
-            parsed[key] = value;
-        }
-        if (end == std::string::npos) break;
-        begin = end + 1;
-    }
+    if (!parse_legacy(payload, parsed)) return false;
 
-    // 先写盘、成功了才换内存：失败时原内存与旧档都还在
-    if (!flush(parsed)) return false;
+    std::map<std::string, std::string> previous = data_;
     data_ = std::move(parsed);
-    return true;
+    if (flush(data_)) return true;
+    data_ = std::move(previous);
+    return false;
 }
 
 } // namespace phos

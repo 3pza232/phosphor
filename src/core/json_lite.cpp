@@ -474,6 +474,16 @@ const Object* Object::object(std::string_view key) const {
     return it->second.object.get();
 }
 
+std::vector<std::string> Object::keys() const {
+    std::vector<std::string> out;
+    out.reserve(values_.size());
+    for (const auto& [key, unused] : values_) {
+        (void)unused;
+        out.push_back(key);
+    }
+    return out;
+}
+
 std::vector<std::string> Object::string_array(std::string_view key) const {
     auto it = values_.find(std::string(key));
     if (it == values_.end() || it->second.kind != Kind::array) return {};

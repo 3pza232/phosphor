@@ -1088,15 +1088,54 @@ TEST(save_store_reads_legacy_text_format) {
     CHECK_EQ(*store.get("best"), std::string("7"));
     CHECK_EQ(*store.get("a"), std::string("b=c"));  // 值里可以带 '='
 
-    // 写入后仍是同名同路径的 key=value 文本，旧条目原样保留
+    // 首次打开即升级为 v2 容器：头部带版本/卡带 id/校验和，正文是 JSON；
+    // 旧文件保留为 .v1 备份，升级失败也不会丢原档
     CHECK(store.set("best", "8"));
-    std::ifstream in(dir / "old.sav");
+    std::ifstream in(dir / "old.sav", std::ios::binary);
     std::string text, line;
+    std::getline(in, line);
+    CHECK(line.rfind("PHOSPHOR-SAVE 2 old ", 0) == 0);
     while (std::getline(in, line)) text += line + "\n";
     in.close();
-    CHECK(text.find("best=8") != std::string::npos);
-    CHECK(text.find("high=42") != std::string::npos);
+    CHECK(text.find("\"best\":\"8\"") != std::string::npos);
+    CHECK(text.find("\"high\":\"42\"") != std::string::npos);
 
+    std::ifstream backup(dir / "old.sav.v1", std::ios::binary);
+    std::string legacy((std::istreambuf_iterator<char>(backup)),
+                       std::istreambuf_iterator<char>());
+    CHECK(legacy.find("best=7") != std::string::npos);
+    CHECK(legacy.find("high=42") != std::string::npos);
+
+    fs::remove_all(dir, ec);
+}
+
+TEST(save_store_rejects_corrupted_v2) {
+    namespace fs = std::filesystem;
+    const fs::path dir = unit_scratch("saves-corrupt");
+    std::error_code ec;
+    fs::remove_all(dir, ec);
+    {
+        SaveStore store;
+        CHECK(store.open(dir.string(), "corrupt"));
+        CHECK(store.set("best", "7"));
+    }
+
+    // 改掉正文里的一个字节：校验和不再匹配
+    {
+        std::ifstream in(dir / "corrupt.sav", std::ios::binary);
+        std::string text((std::istreambuf_iterator<char>(in)),
+                         std::istreambuf_iterator<char>());
+        in.close();
+        const size_t payload = text.find('\n');
+        if (payload != std::string::npos && payload + 2 < text.size())
+            text[payload + 2] = text[payload + 2] == 'a' ? 'b' : 'a';
+        std::ofstream out(dir / "corrupt.sav", std::ios::binary | std::ios::trunc);
+        out << text;
+    }
+
+    SaveStore store;
+    CHECK(!store.open(dir.string(), "corrupt"));  // 校验失败：按不可读处理
+    CHECK(!store.set("best", "9"));                // 只读：绝不覆盖未知内容
     fs::remove_all(dir, ec);
 }
 
