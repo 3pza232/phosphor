@@ -7,9 +7,10 @@ phosphor.exe 跑固定场景，把 CPU 光栅化截图缩到 320x180 后与基�
 
 场景有两类：
 * CLI 直出（--frames/--seed/--screenshot）：snake / xiangqi / 卡带架；
-* 控制通道驱动（tools/phos.py 的 Host）：设置 / Mod / 磁带码 / UI 示例。外壳屏
-  （设置、Mod）整屏含机身边框，而边灯是呼吸动画（相位取决于控制通道接管前的实时帧），
-  所以这两屏在缩略前裁到 80x45 内容区；卡带画面（磁带码/UI）不带呼吸灯，保留整屏。
+* 控制通道驱动（tools/phos.py 的 Host）：设置 / 关于 / 设置搜索 / 存档管理 / Mod /
+  磁带码 / UI 示例。外壳屏（设置、关于、设置搜索、存档、Mod）整屏含机身边框，而边灯
+  是呼吸动画（相位取决于控制通道接管前的实时帧），所以这些屏在缩略前裁到 80x45 内容区；
+  卡带画面（磁带码/UI）不带呼吸灯，保留整屏。
 
 **非门禁**：不同机器的字体光栅化/驱动差异会造成几十个像素的差异，误报率不值得。
 界面有意改变时手动跑 --update 重建基线并在 review 里看 diff。
@@ -63,6 +64,31 @@ def _drive_settings(host) -> None:
     host.step(3)
 
 
+def _drive_about(host) -> None:
+    """设置 → F1 关于。"""
+    host.step(264)
+    host.key("settings")
+    host.key("f1")
+    host.step(3)
+
+
+def _drive_settings_search(host) -> None:
+    """设置 → / 搜索 → 控制通道注入 "font"。"""
+    host.step(264)
+    host.key("settings")
+    host.key("slash")
+    host.text("font", frames=1)
+    host.step(3)
+
+
+def _drive_saves_empty(host) -> None:
+    """设置 → F3 存档管理（独立空 saves 目录）。"""
+    host.step(264)
+    host.key("settings")
+    host.key("f3")
+    host.step(3)
+
+
 def _drive_mods(host) -> None:
     host.step(264)
     host.key("m")
@@ -92,10 +118,14 @@ CLI_SCENES = (
 )
 
 #: 控制通道场景：(名字, 卡带, 驱动, 是否裁内容区)。
-#: 设置/Mod 是闲置外壳屏，机身边灯呼吸相位受控制通道接管前的实时帧影响 → 裁掉机身。
+#: 设置/关于/搜索/存档/Mod 是闲置外壳屏，机身边灯呼吸相位受控制通道接管前的实时帧影响
+#: → 裁掉机身。
 #: 磁带码/UI 在卡带画面路径上，边灯常亮，整屏截图本身可复现。
 HOST_SCENES = (
     ("settings", None, _drive_settings, True),
+    ("about", None, _drive_about, True),
+    ("settings_search", None, _drive_settings_search, True),
+    ("saves_empty", None, _drive_saves_empty, True),
     ("mods", None, _drive_mods, True),
     ("tape_f66", "carts/snake", _drive_tape, False),
     ("ui_example_f12", "devkit/examples/ui", _drive_ui_example, False),
@@ -195,7 +225,7 @@ def _phos():
 def capture_host(exe: Path, workdir: Path, name: str, cart: str | None, drive, crop: bool):
     """控制通道驱动到目标屏，发 screenshot 命令，按需裁内容区后缩略。"""
     phos = _phos()
-    # 与 shell_golden 用同一份 DEFAULT_CONFIG：设置/Mod/磁带码测的就是文本基线的那一屏
+    # 与 shell_golden 用同一份 DEFAULT_CONFIG：设置/关于/搜索/存档/Mod/磁带码测的就是文本基线的那一屏
     config_text = json.dumps(phos.DEFAULT_CONFIG, ensure_ascii=False)
     scene_dir, config, saves, recent, raw = _prepare_scene(workdir, name, config_text)
     Host = phos.Host
