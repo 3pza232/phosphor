@@ -42,4 +42,4 @@
 
 这份目录（发行文档）里每一条都是"怎么用、怎么写"。
 
-- 引擎内部：`docs/engine/`（[架构](engine/architecture.md)、[审计](engine/audit.md)、[路线图](engine/roadmap.md)、[代码风格](engine/code-style.md)）
+- 引擎内部：`docs/engine/`（[架构](engine/architecture.md)、[审计](engine/audit.md)、[路线图](engine/roadmap.md)、[验收清单](engine/acceptance.md)、[代码风格](engine/code-style.md)）
