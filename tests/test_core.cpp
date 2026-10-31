@@ -28,6 +28,19 @@
 #include <string>
 
 using namespace phos;
+
+namespace {
+
+/// 单元测试的落盘目录：项目内（运行时目录下的 tests-out/unit），不依赖 OS 临时目录。
+/// 受限环境/只读 %TEMP% 下测试照样能跑，且崩溃残留可直接查看。
+std::filesystem::path unit_scratch(const char* name = nullptr) {
+    const std::filesystem::path dir = std::filesystem::path("tests-out") / "unit";
+    std::error_code ec;
+    std::filesystem::create_directories(dir, ec);
+    return name ? dir / name : dir;
+}
+
+} // namespace
 using namespace phos::text;
 
 namespace {
@@ -263,7 +276,7 @@ TEST(config_defaults_when_missing) {
 
 TEST(config_roundtrip) {
     const std::filesystem::path path =
-        std::filesystem::temp_directory_path() / "phosphor_unit_config.json";
+        unit_scratch("config.json");
 
     Config c;
     c.skin = "neon-husk";
@@ -570,7 +583,7 @@ TEST(json_flag_variants) {
 
 TEST(config_clamps_and_validates) {
     const std::filesystem::path path =
-        std::filesystem::temp_directory_path() / "phosphor_unit_config_clamp.json";
+        unit_scratch("config_clamp.json");
     {
         std::ofstream out(path.string());
         out << R"({"crt_level":99,"music_volume":999,"sfx_volume":-5,"fps":90,)"
@@ -590,7 +603,7 @@ TEST(config_clamps_and_validates) {
 
 TEST(config_font_size_scope_and_clamp) {
     const std::filesystem::path path =
-        std::filesystem::temp_directory_path() / "phosphor_unit_font_size.json";
+        unit_scratch("config_font_size.json");
     const auto load_json = [&path](const char* text) {
         std::ofstream out(path.string());
         out << text;
@@ -654,7 +667,7 @@ TEST(ui_navigate_wrap_and_actions) {
 
 TEST(save_store_roundtrip_and_limits) {
     const std::filesystem::path dir =
-        std::filesystem::temp_directory_path() / "phosphor_unit_saves";
+        unit_scratch("saves");
     std::error_code ec;
     std::filesystem::remove_all(dir, ec);
 
@@ -687,7 +700,7 @@ TEST(save_store_roundtrip_and_limits) {
 
 TEST(save_store_export_import_roundtrip) {
     const std::filesystem::path dir =
-        std::filesystem::temp_directory_path() / "phosphor_unit_saves2";
+        unit_scratch("saves2");
     std::error_code ec;
     std::filesystem::remove_all(dir, ec);
 
@@ -764,7 +777,7 @@ TEST(cart_id_validation) {
 
 TEST(cart_files_read_cap_and_path_safety) {
     namespace fs = std::filesystem;
-    const fs::path dir = fs::temp_directory_path() / "phosphor_unit_cart";
+    const fs::path dir = unit_scratch("cart");
     std::error_code ec;
     fs::remove_all(dir, ec);
     fs::create_directories(dir, ec);

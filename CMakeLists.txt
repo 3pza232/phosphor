@@ -139,6 +139,10 @@ if(PHOSPHOR_BUILD_TESTS)
         src/cart/cart_files.cpp
         src/shell/shelf_search.cpp)
     target_include_directories(phosphor_tests PRIVATE ${CMAKE_SOURCE_DIR}/src)
+    # 符号表：崩溃时 gdb 能指到行；不改变优化级别（测的是 Release 代码）
+    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        target_compile_options(phosphor_tests PRIVATE -g)
+    endif()
     target_link_libraries(phosphor_tests PRIVATE miniz)  # .phos 容器读取（cart_files）
     if(MINGW)
         target_link_options(phosphor_tests PRIVATE -static-libgcc -static-libstdc++)
