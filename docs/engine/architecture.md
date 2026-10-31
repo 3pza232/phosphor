@@ -64,12 +64,13 @@
 3. **OpenGL 只出现在 `render/` 与 `platform/window.cpp`**：前者是渲染后端，
    后者创建上下文并加载函数指针。其他模块出现 `glad.h` 即违规
 4. `cart/`、`pack/`、`agent/` 三者互不依赖，都只依赖 `core/`；把脚本里的表读成引擎类型时
-   可复用 `api/lua_value.hpp`（纯值读取：`{r,g,b}` → `Color`——越界规则只写一份）。
-   **现状有两处例外**（已知债务，清单只减不增）：
+   装配脚本沙箱/读本地化字段时可复用 `api/ 的纯宿主辅助：`api/lua_value.hpp`（值读取：`{r,g,b}` → `Color`）、`api/lua_guard.hpp`（预算/print 重定向）、`api/lua_sandbox.hpp`（沙箱底线 + manifest 本地化字段读法）——规则只写一份。
+   **现状有三处例外**（已知债务，清单只减不增）：
    - `pack/pack.cpp` include `render/font.hpp` 并调 `collect_font_files`（字体文件的默认
      回退顺序）——`pack` → `render` 反向依赖；目标见「pack」与「render/font」两节
    - `agent/cart_json.hpp` include `cart/cartridge.hpp`，实际只用 `CartInfo`（纯数据）——
      改 include `cart/cart_info.hpp` 即可断开，或把 `cart_json` 移进 `cart/`
+   - `pack/pack.cpp` include `api/lua_sandbox.hpp`：内容包脚本与卡带/清单共用同一套沙箱底线与本地化字段读法（`api/lua_guard.hpp` 原本已在用）
 5. 第三方库 include 只允许出现在对应封装模块内，禁止散布全工程
 
 `tools/check_includes.py` 机械核查第 1–3、5 条（core / render / shell 的禁止表、Lua、OpenGL）；

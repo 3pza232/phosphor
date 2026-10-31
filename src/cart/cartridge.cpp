@@ -3,6 +3,7 @@
 #include "api/host_api.hpp"
 #include "api/inspect.hpp"
 #include "api/lua_guard.hpp"
+#include "api/lua_sandbox.hpp"
 #include "api/lua_value.hpp"
 #include "core/defaults.hpp"
 #include "core/log.hpp"
@@ -25,14 +26,10 @@ CartInfo parse_manifest(const std::string& manifest_text, const std::string& car
     info.path = cart_path;
 
     sol::state lua;
-    lua.open_libraries(sol::lib::base, sol::lib::string, sol::lib::table);
-    // manifest 也是不可信输入（而且每次扫描卡带目录都会执行）：base 自带的文件/加载
-    // 函数一律摘掉，兑现 cart-format.md 的"无 IO 能力"
-    lua["dofile"] = sol::nil;
-    lua["loadfile"] = sol::nil;
-    lua["load"] = sol::nil;
+    // manifest 也是不可信输入（而且每次扫描卡带目录都会执行）：与卡带、内容包共用同一套
+    // 沙箱底线（白名单库 / 无文件与加载函数 / 看门狗）。print 不重定向——清单只声明、不产日志
+    lua_sandbox::open(lua, {sol::lib::base, sol::lib::string, sol::lib::table}, nullptr);
 
-    lua_guard::attach(lua.lua_state());
     lua_guard::BudgetScope budget;
     auto result = lua.safe_script(manifest_text, &sol::script_pass_on_error,
                                   "@" + cart_path + "/manifest.lua");
@@ -52,30 +49,14 @@ CartInfo parse_manifest(const std::string& manifest_text, const std::string& car
         sol::object v = t[key];
         return v.is<std::string>() ? v.as<std::string>() : std::string();
     };
-    /// desc 两种写法都认：字符串（中英同文）或 { zh = …, en = … }
-    auto get_localized = [&t](const char* key) -> Localized {
-        Localized out;
-        sol::object v = t[key];
-        if (v.is<std::string>()) {
-            out.zh = v.as<std::string>();
-            return out;
-        }
-        if (v.is<sol::table>()) {
-            sol::table map = v.as<sol::table>();
-            sol::object zh = map["zh"];
-            sol::object en = map["en"];
-            if (zh.is<std::string>()) out.zh = zh.as<std::string>();
-            if (en.is<std::string>()) out.en = en.as<std::string>();
-            if (out.zh.empty()) out.zh = out.en;  // 只写了 en 也不至于空着
-        }
-        return out;
-    };
-
     info.id = get_str("id");
-    info.name = get_localized("name");
+    // name/desc 两种写法都认：字符串（中英同文）或 { zh = …, en = … }（读取规则见 lua_sandbox）
+    const lua_sandbox::Localized name = lua_sandbox::read_localized(t, "name");
+    info.name = Localized{name.zh, name.en};
     info.author = get_str("author");
     info.version = get_str("version");
-    info.desc = get_localized("desc");
+    const lua_sandbox::Localized desc = lua_sandbox::read_localized(t, "desc");
+    info.desc = Localized{desc.zh, desc.en};
 
     info.entry = get_str("entry");
 
@@ -274,24 +255,18 @@ bool Cartridge::assemble(const std::string& entry, HostContext& host) {
     }
 
     // --- 装配沙箱：白名单库 + phos.* API ---
-    lua_.open_libraries(sol::lib::base, sol::lib::math, sol::lib::string,
-                        sol::lib::table, sol::lib::utf8);
-    // 文件与系统访问禁止（见 docs/cart-format.md 沙箱白名单）
-    lua_["dofile"] = sol::nil;
-    lua_["loadfile"] = sol::nil;
-    lua_["load"] = sol::nil;
-    lua_["loadstring"] = sol::nil;  // Lua 5.1 的名字；5.4 已无，留着写明"二进制块也禁"的意图
+    // 沙箱底线（摘文件/加载函数、看门狗、print 汇入日志）与内容包共用 lua_sandbox；
+    // 库集合与 phos.* 是卡带自己的白名单，留在这里
+    lua_sandbox::open(lua_,
+                      {sol::lib::base, sol::lib::math, sol::lib::string, sol::lib::table,
+                       sol::lib::utf8},
+                      "cart");
 
     // 卡带内模块加载：只允许读取本包内的 .lua，模块可拆分为多个文件
     lua_["require"] = [this](const std::string& name) { return load_module(name); };
 
     host.cart = this;  // 供 phos.debug.number 把参数注册落到本卡带（见 host_api 的 phos.debug）
     register_host_api(lua_, host);
-
-    // 沙箱装配完成：装指令计数钩子（预算由 BudgetScope 管），卡带 print 汇入主机日志。
-    // 入口脚本自己也可能死循环，所以加载期就布防——`require` 链同理
-    lua_guard::attach(lua_.lua_state());
-    lua_guard::redirect_print(lua_.lua_state(), "cart");
 
     lua_guard::BudgetScope entry_guard;
     auto loaded = lua_.safe_script(*entry_src, &sol::script_pass_on_error,

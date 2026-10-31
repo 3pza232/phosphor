@@ -95,7 +95,7 @@
 | S3 | 选择状态有 3~4 份副本 | `Config` 字符串、`ContentLibrary` 下标、`Shell` 自带名字/下标（`shell/shell.hpp:271-286`）、字体状态 4 处 | 每次改设置手工三方同步，17 处 `save_config_now()` 即其症状 |
 | S4 | `HostContext` 是 15 个裸指针的手工生命周期 | `api/host_api.hpp:26-71`；`clear_host_cart()` 有 9 个手工调用点（`app.cpp:176,273,295,347,354` 等） | 新增子系统就要再加一处"记得清空"；错一次就是悬垂指针 |
 | S5 | `cart` ↔ `api` 头文件环 | 旧：`cart/cartridge.hpp` include `api/host_api.hpp`，反向亦 include | 依赖方向与 `architecture.md:43-46` 相反 | ✅ **已断开**：两侧改用前向声明（`HostContext` / `SaveStore`），需要完整类型的 TU（`cartridge.cpp` / `score_api.cpp`）各自直接 include；`check_includes` 通过、构建与 12 项门禁全绿 |
-| S6 | 三份帧步进、三份沙箱、三份本地化解析 | 旧：`app.cpp` 三处 advance→计数→释放→回包→dump；`cartridge.cpp` 与 `pack.cpp` 各一份沙箱/本地化 | 三处已开始分叉；改一处漏两处 | ◐ **部分修复**：帧步进已收口到 `App::step_frame`（advance 全工程只剩一个调用点，无头/窗口实时/窗口单步共用帧语义；节流/空闲/中断外壳按环境保留）；沙箱与本地化解析仍为三份，待后续 |
+| S6 | 三份帧步进、三份沙箱、三份本地化解析 | 旧：`app.cpp` 三处 advance→计数→释放→回包→dump；cartridge/pack/host_api/devkit api_check 各一份沙箱或本地化 | 三处已开始分叉；改一处漏两处 | ✅ **已修复**：帧步进收口到 `App::step_frame`（advance 只剩一个调用点）；沙箱装配收口到 `api/lua_sandbox.hpp`（cart/pack/devkit api_check 共用）；manifest 本地化读取收口到 `lua_sandbox::read_localized`（cart/pack/host_api 共用）；环境节流/空闲外壳仍按各自循环保留 |
 | S7 | `Screen` 过载 | `core/screen.hpp:22-190`：存储 + 宽字续格 + 缩放块 + 稀疏笔迹 + 子位累积 + alpha + 文本导出 | 每个新绘制特性都要改它并同时改三条消费路径；不变式从公共写入口漏出（C10） |
 | S8 | 反向依赖 `pack → render` | `pack/pack.cpp:8` include `render/font.hpp`；`FontScheme` 定义在 `pack/pack.hpp:95-101` | 与 `architecture.md:127-129` 相反；字体方案想独立演进就会被 pack 拖住 |
 | S9 | 全局可变状态 | `core/log.cpp:13-15`、`platform/window.cpp:23`、`core/mods.cpp:11-20`、`cartridge.cpp:24-25` | 与 `code-style.md:70` 冲突；不可重入，无法并行跑两台主机/两个测试 |
@@ -121,7 +121,7 @@
 | U5 | 规范与现实相反 | `code-style.md` 要求"界面绘制只用组件原语"，过去组件集不存在；现在 `src/ui` 已可满足，但内容集还没改用 | ⚠ **部分修复**（规范可执行，内容未迁） |
 | U6 | agent 只能读"光标数" | 卡带声明式界面已暴露 `state.query.ui` 与 `ui.list/focus/activate`（控件 id/role/label/state）；外壳界面仍只有 `cursor` | ⚠ **部分修复**（卡带侧已可寻址；外壳未接） |
 | U7 | 主题只有颜色 | `ui::Theme` 已含颜色角色（text/text_dim/accent/warning/danger/disabled/border_focus…）、边框 / 光标字形集、度量；可替换的 `ui` 内容包未做 | ⚠ **部分修复** |
-| U8 | 绘制几何缺失 | 仍没有线 / 框 / 圆 / 环的独立 API；UI 组件只覆盖"界面常用件"（边框 / 进度条 / 分隔线），卡带仍各自逐格光栅化（`ballbattle/main.lua`、`towerdef/view.lua`） | ❌ **仍待修** |
+| U8 | 绘制几何缺失 | 旧：没有线/框/圆/环独立 API；卡带各自逐格光栅化 | ✅ **已修复**：`core/ui` 增加 `line`（Bresenham + Cohen–Sutherland 预裁剪）/ `outline` / `circle`（midpoint 八向、半径有界）；`phos.ui.line/outline/circle` 走内容区局部坐标（缺省 ch/fg/bg，只写字形不铺底），4 组纯逻辑测试覆盖裁剪/退化/对称；`region` 上的同类方法仍未提供 |
 | U9 | 文本框只有缓冲、没有控件 | 声明式 field 的焦点/光标/过滤/按码点退格/限长已在组件层；IME 接线核对结论 | ✅ **已修复**：`Frame::ime_requested` 聚焦 field 时置位，卡带 API 转发到 `host.ime_wanted`，App 每帧 `window.set_ime_enabled`；失焦/不渲染即释放。旧 `phos.input.field({ime=true})` 路径未变。外壳暂无通用转发，但当前唯一中文输入（卡带架搜索）已有专路，无功能缺口 |
 | U10 | 精灵语义与文档不一致 | `ui::icon` 的 `step` 仍是**降采样步长**（`core/ui.cpp`），文档已按实现改写（`api-reference.md` 与 `devkit/phos.lua`）；绑定层仍硬编码亮度 1.0，语义统一未做 | ⚠ **文档已对齐、代码待统一** |
 | U11 | 参数与单位校验缺失 | `ui::bar` 对 NaN 直接转 int；`phos.ui.sprite` 宽高按字节算 | ✅ **已修复**：bar 的 ratio 先 `isfinite` 再 clamp 0..1（core 与声明式两条路径一致）；`phos.ui.sprite` / 区域 sprite 的宽度改按显示列（中文占两格），行高仍按行数；新增 NaN/±inf/中文居中断言 |

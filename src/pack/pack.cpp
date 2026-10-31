@@ -1,6 +1,7 @@
 #include "pack/pack.hpp"
 
 #include "api/lua_guard.hpp"
+#include "api/lua_sandbox.hpp"
 #include "api/lua_value.hpp"
 #include "core/defaults.hpp"
 #include "core/log.hpp"
@@ -32,37 +33,14 @@ std::string pack_script_path(const std::string& dir, const char* filename) {
 /// 按字节补齐会错位）。沙箱里没有它，包脚本一调用就整包加载失败——
 /// 表现为"主题从列表里消失、无法切换"。
 void open_pack_api(sol::state& lua) {
-    lua.open_libraries(sol::lib::base, sol::lib::string, sol::lib::table, sol::lib::math);
-    // 内容包脚本同样不可信：base 自带的文件/加载函数一律摘掉
-    lua["dofile"] = sol::nil;
-    lua["loadfile"] = sol::nil;
-    lua["load"] = sol::nil;
+    // 沙箱底线（库白名单、摘文件/加载函数、看门狗、print 汇入日志）与卡带共用；
+    // phos.text 是内容包的业务面，留在本模块
+    lua_sandbox::open(lua, {sol::lib::base, sol::lib::string, sol::lib::table, sol::lib::math},
+                      "pack");
     sol::table phos = lua.create_named_table("phos");
     sol::table text = phos.create_named("text");
     text["width"] = [](const std::string& s) { return text::display_width(s); };
     text["truncate"] = [](const std::string& s, int cols) { return text::truncate(s, cols); };
-
-    // 包脚本与卡带共用同一套脚本纪律：看门狗预算 + print 汇入主机日志。
-    // 没有它，某个 skin/palette 里的死循环会在启动或换主题时冻住整机
-    lua_guard::attach(lua.lua_state());
-    lua_guard::redirect_print(lua.lua_state(), "pack");
-}
-
-/// 读一个本地化字段：`"字体放大"` = 中英同值；`{ zh = "…", en = "…" }` 各取一列。
-/// 只写一种语言时互补（缺 en 回落 zh，反之亦然）；都不给则留空，由调用方补文件夹名
-void read_localized(sol::table t, const char* key, std::string& zh, std::string& en) {
-    sol::object value = t[key];
-    if (value.is<std::string>()) {
-        zh = en = value.as<std::string>();
-        return;
-    }
-    if (!value.is<sol::table>()) return;
-    sol::table map = value.as<sol::table>();
-    sol::object z = map["zh"], e = map["en"];
-    if (z.is<std::string>()) zh = z.as<std::string>();
-    if (e.is<std::string>()) en = e.as<std::string>();
-    if (zh.empty()) zh = en;
-    if (en.empty()) en = zh;
 }
 
 } // namespace
@@ -293,16 +271,11 @@ std::vector<ShelfPack> scan_shelves(const std::string& dir) {
             log::warn("shelf pack declarations unreadable (using folder name): " + out.dir);
             return true;  // 包仍在列表里（设置可见、可选中），只是用回退值
         }
-        sol::object declared = lua["name"];
-        if (declared.is<std::string>()) {
-            out.name_zh = out.name_en = declared.as<std::string>();
-        } else if (declared.is<sol::table>()) {
-            sol::table map = declared.as<sol::table>();
-            sol::object zh = map["zh"], en = map["en"];
-            if (zh.is<std::string>()) out.name_zh = zh.as<std::string>();
-            if (en.is<std::string>()) out.name_en = en.as<std::string>();
-            if (out.name_zh.empty()) out.name_zh = out.name_en;  // 只写一种也不至于空着
-        }
+        // 顶层 name 与 manifest 的本地化读法同一套（字符串 = 中英同文）
+        const sol::object declared = lua["name"];
+        const lua_sandbox::Localized label = lua_sandbox::read_localized(declared);
+        out.name_zh = label.zh;
+        out.name_en = label.en;
         sol::object cols = lua["cols"];
         if (cols.is<double>() || cols.is<int>()) {
             const int value = cols.as<int>();
@@ -355,12 +328,13 @@ ModScan scan_mods() {
 
         ModManifest m;
         m.id = id;
-        m.name_zh = m.name_en = id;  // 缺省显示名 = 文件夹名
-        read_localized(t, "name", m.name_zh, m.name_en);
-        read_localized(t, "desc", m.desc_zh, m.desc_en);
-        if (m.name_zh.empty() && m.name_en.empty()) m.name_zh = m.name_en = id;
-        if (m.desc_zh.empty()) m.desc_zh = m.desc_en;
-        if (m.desc_en.empty()) m.desc_en = m.desc_zh;
+        // 清单里的 name/desc 与 manifest 同一套本地化读法（字符串 = 中英同文）
+        const lua_sandbox::Localized name = lua_sandbox::read_localized(t, "name");
+        const lua_sandbox::Localized desc = lua_sandbox::read_localized(t, "desc");
+        m.name_zh = name.empty() ? id : name.zh;
+        m.name_en = name.empty() ? id : name.en;
+        m.desc_zh = desc.zh;
+        m.desc_en = desc.en;
 
         // default_off = true：出厂默认关闭，要玩家显式打开（写进 config 的 mods_enabled）
         sol::object off = t["default_off"];

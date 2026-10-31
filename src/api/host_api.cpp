@@ -5,6 +5,7 @@
 #include "api/assets_api.hpp"
 #include "api/audio_api.hpp"
 #include "api/layer_api.hpp"
+#include "api/lua_sandbox.hpp"
 #include "api/lua_value.hpp"
 #include "api/net_api.hpp"
 #include "api/score_api.hpp"
@@ -47,18 +48,10 @@ using api::default_fg;
 /// 篮子文案 → Localized：字符串（中英同文）或 `{ zh = …, en = … }` 表。
 /// 控制台按当前界面语言取一份，于是切换语言时篮子文案跟着变
 Localized read_label(const sol::object& object) {
+    const lua_sandbox::Localized read = lua_sandbox::read_localized(object);
     Localized out;
-    if (object.is<std::string>()) {
-        out.zh = out.en = object.as<std::string>();
-    } else if (object.is<sol::table>()) {
-        const sol::table t = object.as<sol::table>();
-        const sol::object zh = t["zh"];
-        const sol::object en = t["en"];
-        if (zh.is<std::string>()) out.zh = zh.as<std::string>();
-        if (en.is<std::string>()) out.en = en.as<std::string>();
-        if (out.zh.empty()) out.zh = out.en;  // 只写一种也不至于空着
-        if (out.en.empty()) out.en = out.zh;
-    }
+    out.zh = read.zh;
+    out.en = read.en;
     return out;
 }
 
