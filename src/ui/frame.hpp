@@ -21,7 +21,8 @@ namespace ui {
 struct WidgetState {
     int cursor = 0;
     int scroll = 0;
-    bool scroll_ready = false;  ///< scroll 视口：状态是否已从声明初值初始化
+    int scroll_x = 0;
+    bool scroll_ready = false;  ///< scroll 视口：状态是否已从声明初值初始化（纵/横同时）
     bool checked = false;
     std::unique_ptr<text::TextInput> input;
 };

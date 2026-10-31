@@ -336,6 +336,7 @@ struct Builder {
         out.gap = int_field(t, "gap", out.gap);
         out.cols = int_field(t, "cols", out.cols);
         out.scroll = std::max(0, int_field(t, "scroll", out.scroll));
+        out.scroll_x = std::max(0, int_field(t, "scroll_x", out.scroll_x));
         out.margin = insets_field(t, "margin");
         out.padding = insets_field(t, "padding");
         out.align_h = align_field(t, "align_h", out.align_h);

@@ -54,7 +54,8 @@ struct Props {
     Insets padding{};
     int gap = 1;     ///< 容器内子项间距
     int cols = 0;    ///< grid 的列数（0 = 全部排一行）
-    int scroll = 0;  ///< scroll 的内容偏移（行）；显式给出，引擎负责裁剪
+    int scroll = 0;    ///< scroll 的纵向内容偏移（行）；显式初值，之后由焦点跟随维护
+    int scroll_x = 0;  ///< scroll 的横向内容偏移（列）；同一套语义
     Align align_h = Align::stretch;
     Align align_v = Align::start;
 

@@ -172,9 +172,11 @@ void sync_scroll_nodes(Node& node, State& state, const std::string& screen_id) {
         WidgetState& widget_state = state.screen(screen_id).widgets[node.id];
         if (!widget_state.scroll_ready) {
             widget_state.scroll = std::max(0, node.props.scroll);
+            widget_state.scroll_x = std::max(0, node.props.scroll_x);
             widget_state.scroll_ready = true;
         }
         node.props.scroll = widget_state.scroll;
+        node.props.scroll_x = widget_state.scroll_x;
     }
     for (Node& child : node.children) sync_scroll_nodes(child, state, screen_id);
 }
@@ -192,7 +194,7 @@ bool follow_focus_scroll(Node& node, const std::string& focus, State& state,
     bool changed = false;
     if (node.kind == Kind::scroll) {
         Node* focused = find_descendant(node, focus);
-        if (focused && node.inner.h > 0) {
+        if (focused && (node.inner.h > 0 || node.inner.w > 0)) {
             WidgetState& widget_state = state.screen(screen_id).widgets[node.id];
             const int top = node.inner.y;
             const int bottom = node.inner.y + node.inner.h;
@@ -212,6 +214,28 @@ bool follow_focus_scroll(Node& node, const std::string& focus, State& state,
             if (desired != widget_state.scroll) {
                 widget_state.scroll = desired;
                 node.props.scroll = desired;
+                changed = true;
+            }
+
+            // 横向同一套规则：焦点左右出视口时刚好滚进来，右界按内容右边缘钳制
+            const int left = node.inner.x;
+            const int right = node.inner.x + node.inner.w;
+            int desired_x = widget_state.scroll_x;
+            if (focused->rect.x < left) {
+                desired_x -= left - focused->rect.x;
+            } else if (focused->rect.x + focused->rect.w > right) {
+                desired_x += focused->rect.x + focused->rect.w - right;
+            }
+            desired_x = std::max(0, desired_x);
+            if (!node.children.empty()) {
+                const Node& last = node.children.back();
+                const int content_right =
+                    last.rect.x + last.rect.w - (node.inner.x - widget_state.scroll_x);
+                desired_x = std::min(desired_x, std::max(0, content_right - node.inner.w));
+            }
+            if (desired_x != widget_state.scroll_x) {
+                widget_state.scroll_x = desired_x;
+                node.props.scroll_x = desired_x;
                 changed = true;
             }
         }

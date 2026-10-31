@@ -412,7 +412,7 @@ pending = phos.ui.render{
 | `hint` | 页脚键位提示（`items` 为 `[键, 说明]` 交替） | — |
 | `table` | 表格：`columns` 表头 + `rows` 数据，列宽/对齐可指定（表头下自动画分隔线） | — |
 | `grid` | 等宽网格：按 `cols` 列逐行摆放子项（卡片/按键/头像墙） | — |
-| `scroll` | 纵向滚动视口：`height` = 视口高，`scroll` = 内容偏移（行）；超出视口的子项被引擎裁剪 | — |
+| `scroll` | 纵向滚动视口：`height` = 视口高、`scroll` = 纵向偏移（行）；`width` + `scroll_x` 可横向滚动；超出视口的子项被引擎裁剪 | — |
 
 **元素字段**
 
@@ -438,6 +438,7 @@ pending = phos.ui.render{
 | `items` | string[] | — | list 的行；hint 的 `[键, 说明]` 交替 |
 | `cols` | integer | 0 | grid 的列数（0 = 全部排一行）；单元格宽度均分可用宽度 |
 | `scroll` | integer | 0 | scroll 的内容偏移（行）；由卡带显式控制，引擎负责视口裁剪 |
+| `scroll_x` | integer | 0 | scroll 的横向内容偏移（列）；内容宽于视口时才启用横向滚动 |
 | `columns` | string[] | — | table 的表头（空 = 无表头；有表头时自动加一条分隔线） |
 | `rows` | table[] | — | table 的数据行：每行一个字符串数组；数字单元格按整数/两位小数转文本 |
 | `widths` | integer[] | — | table 各列固定宽度；0 或缺省 = 按内容自适应（余量均摊铺满可用宽度） |
@@ -509,9 +510,11 @@ pending = phos.ui.render{
 
 ### 滚动视口：kind = scroll
 
-height 指定视口高度，scroll 指定内容偏移（行，从 0 起）。偏移由卡带显式控制
-（比如只显示日志尾部：scroll = max(0, #lines - height)）；超出视口的子项由
-引擎**裁剪绘制**，不会漏到视口外。`scroll` 只在首次出现时作为初值；之后视口会**自动跟随焦点**
+height 指定视口高度，scroll 指定纵向偏移（行，从 0 起）；width + scroll_x 可做横向滚动
+（内容宽于视口时子项按自然宽排布，否则按视口宽拉伸，纵向列表行为不变）。
+偏移由卡带显式控制（比如只显示日志尾部：scroll = max(0, #lines - height)）；
+超出视口的子项由引擎**裁剪绘制**，不会漏到视口外。`scroll` / `scroll_x` 只在首次出现时作为初值；
+之后视口会**自动跟随焦点**（纵横各自把焦点"刚好"滚进可视区）
 （焦点移出可视区时滚动刚好够用的行数），与 checkbox 的 `checked` 初值同一套语义。
 
 ### 瞬时提示：phos.ui.toast(text, seconds?)

@@ -24,6 +24,34 @@ ui::Node* find_node(ui::Node& root, const std::string& id) {
     return nullptr;
 }
 
+TEST(ui_scroll_horizontal_clip_and_follow) {
+    ui::Theme theme;
+    ui::State state;
+    Input input;
+    ui::Frame frame("h", state, theme, ui::Rect{0, 0, 8, 4}, &input);
+    ui::Node& scroll = frame.root().add_scroll("hs", 2);
+    scroll.props.width = 4;
+    scroll.props.scroll_x = 2;  // 显式横向初值：只露出第 3 列起
+    scroll.add_text("row", "ABCDEF");
+    frame.run();
+
+    Screen screen(8, 4);
+    frame.paint(screen);
+    const std::string shown = screen.to_text();
+    CHECK(shown.find("CDEF") != std::string::npos);
+    CHECK(shown.find("AB") == std::string::npos);
+
+    // 焦点横向出视口时自动跟随（按钮显式宽 6 > 视口 4）
+    ui::Frame frame2("h2", state, theme, ui::Rect{0, 0, 8, 4}, &input);
+    ui::Node& wide = frame2.root().add_scroll("hs2", 2);
+    wide.props.width = 4;
+    ui::Node& button = wide.add(ui::Kind::button, "wide");
+    button.props.width = 6;
+    button.props.text = "ABCDEF";
+    frame2.run();
+    CHECK_EQ(state.screen("h2").widgets["hs2"].scroll_x, 2);
+}
+
 } // namespace
 
 TEST(ui_layout_column_and_padding) {

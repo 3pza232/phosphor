@@ -246,21 +246,33 @@ void arrange(Node& node, Rect rect, const Theme& theme) {
                       std::max(0, rect.h - border * 2 - pad_h(node))};
 
     if (node.kind == Kind::scroll) {
-        // 纵向视口：子项按列排，y 减去显式偏移；超出视口的部分由绘制裁剪
+        // 视口：子项按列排，y/x 减去显式偏移；超出视口的部分由绘制裁剪
         const int gap = std::max(0, node.props.gap);
         int cursor = node.inner.y - std::max(0, node.props.scroll);
+        const int offset_x = std::max(0, node.props.scroll_x);
+        // 内容更宽才启用横向自然宽（可滚）；否则按视口宽拉伸，保持纵向列表的旧布局
+        int widest = 0;
+        for (const Node& child : node.children) {
+            const int natural = child.props.width > 0 ? child.props.width : child.natural_w;
+            widest = std::max(widest, natural + child.props.margin.l + child.props.margin.r);
+        }
+        const bool horizontal_overflow = widest > node.inner.w;
         bool first = true;
         for (Node& child : node.children) {
             if (child.props.absolute) {
                 arrange(child,
-                        Rect{node.inner.x + child.props.x, cursor + child.props.y, 0, 0}, theme);
+                        Rect{node.inner.x + child.props.x - offset_x, cursor + child.props.y, 0, 0},
+                        theme);
                 continue;
             }
             if (!first) cursor += gap;
             first = false;
-            int child_w = child.props.width > 0 ? child.props.width : node.inner.w;
+            // 横向：显式 width 优先，否则用子项自然宽（可超出视口，由裁剪负责）
+            int child_w = child.props.width > 0 ? child.props.width
+                                                : (horizontal_overflow ? child.natural_w
+                                                                       : node.inner.w);
             int child_h = child.props.height > 0 ? child.props.height : child.natural_h;
-            arrange(child, Rect{node.inner.x + child.props.margin.l, cursor,
+            arrange(child, Rect{node.inner.x + child.props.margin.l - offset_x, cursor,
                                 std::max(0, child_w), std::max(0, child_h)}, theme);
             cursor += child_h + child.props.margin.t + child.props.margin.b;
         }
