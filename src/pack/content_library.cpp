@@ -53,6 +53,9 @@ void ContentLibrary::scan(const Config& config) {
 
     boots = scan_boots(kUserBootDir);
     merge_packs(boots, scan_boots(kFactoryBootDir));
+    // 兜底不变量：boots[0] 永远有效（dir 为空 = 不加载脚本，由内置自检屏接管）。
+    // 磁盘上一个 boot 包都没有时也必须能开机——App 的启动日志与开机流程都直接索引它
+    if (boots.empty()) boots.push_back(BootPack{"builtin", "BUILT-IN", ""});
     boot_index = index_of_id(boots, config.boot, [](const BootPack& b) { return b.id; });
 
     sounds.push_back(silent_sound_pack());

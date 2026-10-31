@@ -1,6 +1,7 @@
 #include "cart/cartridge.hpp"
 
 #include "api/inspect.hpp"
+#include "api/lua_guard.hpp"
 #include "api/lua_value.hpp"
 #include "core/defaults.hpp"
 #include "core/log.hpp"
@@ -14,38 +15,7 @@ namespace phos {
 
 namespace {
 
-/// 卡带执行看门狗：防止 `while true do end` 这类失控把整机一起拖死。
-/// 给卡带的 Lua 状态挂指令计数钩子，布防后再进卡带代码，超时就抛一个普通 Lua 错误——
-/// 于是失控走的是既有的"卡带出错 → 安全拔卡 + 错误屏"通道
-constexpr int kWatchdogStep = 20000;   // 每多少条 VM 指令查一次时钟（≈0.1ms，开销可忽略）
-constexpr int kWatchdogLimitMs = 100;  // 单次卡带调用的墙钟上限
 constexpr size_t kMaxDebugParams = 128; // phos.debug.* 的登记上限（每帧要调全部 get）
-
-std::chrono::steady_clock::time_point g_watchdog_deadline;
-bool g_watchdog_armed = false;
-
-void watchdog_hook(lua_State* state, lua_Debug*) {
-    if (!g_watchdog_armed) return;
-    if (std::chrono::steady_clock::now() < g_watchdog_deadline) return;
-    luaL_error(state, "cart exceeded %d ms in one call (watchdog)", kWatchdogLimitMs);
-}
-
-/// 布防/撤防成对出现，且**可嵌套**：内层结束会恢复外层的布防状态，
-/// 于是"入口脚本加载 → init → 模块 require"这种层层进入不会互相撤防。
-struct WatchdogScope {
-    bool outer_armed_ = g_watchdog_armed;
-    std::chrono::steady_clock::time_point outer_deadline_ = g_watchdog_deadline;
-
-    WatchdogScope() {
-        g_watchdog_deadline =
-            std::chrono::steady_clock::now() + std::chrono::milliseconds(kWatchdogLimitMs);
-        g_watchdog_armed = true;
-    }
-    ~WatchdogScope() {
-        g_watchdog_armed = outer_armed_;
-        g_watchdog_deadline = outer_deadline_;
-    }
-};
 
 } // namespace
 
@@ -61,10 +31,13 @@ CartInfo parse_manifest(const std::string& manifest_text, const std::string& car
     lua["loadfile"] = sol::nil;
     lua["load"] = sol::nil;
 
-    auto result = lua.safe_script(manifest_text, &sol::script_pass_on_error);
+    lua_guard::attach(lua.lua_state());
+    lua_guard::BudgetScope budget;
+    auto result = lua.safe_script(manifest_text, &sol::script_pass_on_error,
+                                  "@" + cart_path + "/manifest.lua");
     if (!result.valid()) {
         sol::error err = result;
-        info.error = std::string("manifest.lua syntax error: ") + err.what();
+        info.error = std::string("manifest.lua error: ") + err.what();
         return info;
     }
     sol::object ret = result;
@@ -275,11 +248,11 @@ bool Cartridge::shelf_draw(const ShelfDrawContext& c) {
 
     ctx["time"] = c.time;
 
-    WatchdogScope guard;  // 包脚本每帧都跑，看门狗与卡带同一道闸
+    lua_guard::BudgetScope guard;  // 包脚本每帧都跑，预算与卡带同一道闸
     const sol::protected_function_result result = draw_fn_(ctx);
     if (!result.valid()) {
         sol::error err = result;
-        error_ = std::string("shelf error in draw: ") + err.what();
+        error_ = "shelf '" + info_.id + "' error in draw: " + err.what();
         return false;
     }
     return true;
@@ -310,15 +283,17 @@ bool Cartridge::assemble(const std::string& entry, HostContext& host) {
     host.cart = this;  // 供 phos.debug.number 把参数注册落到本卡带（见 host_api 的 phos.debug）
     register_host_api(lua_, host);
 
-    // 挂上指令计数钩子（是否布防由 WatchdogScope 决定）：入口脚本自己也可能死循环，
-    // 所以加载期就布防——`require` 链同理
-    lua_sethook(lua_.lua_state(), watchdog_hook, LUA_MASKCOUNT, kWatchdogStep);
+    // 沙箱装配完成：装指令计数钩子（预算由 BudgetScope 管），卡带 print 汇入主机日志。
+    // 入口脚本自己也可能死循环，所以加载期就布防——`require` 链同理
+    lua_guard::attach(lua_.lua_state());
+    lua_guard::redirect_print(lua_.lua_state(), "cart");
 
-    WatchdogScope entry_guard;
-    auto loaded = lua_.safe_script(*entry_src, &sol::script_pass_on_error);
+    lua_guard::BudgetScope entry_guard;
+    auto loaded = lua_.safe_script(*entry_src, &sol::script_pass_on_error,
+                                   "@" + info_.id + "/" + entry);
     if (!loaded.valid()) {
         sol::error err = loaded;
-        error_ = std::string("entry script error: ") + err.what();
+        error_ = "cart '" + info_.id + "' entry script error: " + err.what();
         return false;
     }
 
@@ -351,7 +326,9 @@ sol::object Cartridge::load_module(const std::string& name) {
         return sol::nil;  // 返回 nil 让调用方自然报错，避免跨 C++ 帧长跳转
     }
 
-    auto result = lua_.safe_script(*source, &sol::script_pass_on_error);
+    lua_guard::BudgetScope budget;
+    auto result = lua_.safe_script(*source, &sol::script_pass_on_error,
+                                   "@" + info_.id + "/" + path + ".lua");
     if (!result.valid()) {
         sol::error err = result;
         log::warn("[cart] module error in " + name + ": " + std::string(err.what()));
@@ -370,11 +347,11 @@ int Cartridge::lua_memory_kb() const {
 }
 
 bool Cartridge::call_guard(const char* phase, sol::protected_function& fn) {
-    WatchdogScope guard;  // init / draw 等卡带入口都经这里
+    lua_guard::BudgetScope guard;  // init / draw 等卡带入口都经这里
     auto result = fn();
     if (!result.valid()) {
         sol::error err = result;
-        error_ = std::string("cart error in ") + phase + ": " + err.what();
+        error_ = "cart '" + info_.id + "' error in " + phase + ": " + err.what();
         return false;
     }
     return true;
@@ -384,7 +361,7 @@ std::string Cartridge::debug_state_json() {
     sol::object candidate = lua_["debug_state"];
     if (!candidate.is<sol::function>()) return {};
     sol::protected_function call = candidate;
-    WatchdogScope guard;  // 观测入口也执行卡带代码（死循环一样不该拖死主机）
+    lua_guard::BudgetScope guard;  // 观测入口也执行卡带代码（死循环一样不该拖死主机）
     const sol::protected_function_result result = call();
     if (!result.valid()) return {};  // 观测失败不报错、不留痕
     // 深度 4：debug_state 常见的形状是"若干实体的若干字段"（表里套数组、数组里套表），
@@ -415,7 +392,7 @@ float Cartridge::declared_seconds(float fallback) {
     sol::object d = lua_["duration"];
     if (d.is<double>()) return static_cast<float>(d.as<double>());
     if (d.is<sol::function>()) {
-        WatchdogScope guard;   // 时长声明也是脚本代码，别让死循环拖死主机
+        lua_guard::BudgetScope guard;   // 时长声明也是脚本代码，别让死循环拖死主机
         sol::protected_function call = d;
         const sol::protected_function_result r = call();
         if (r.valid() && r.get_type() == sol::type::number) return r.get<float>();
@@ -466,7 +443,7 @@ Cartridge::DebugParamView Cartridge::debug_param(size_t index) {
     out.min = reg.min;
     out.max = reg.max;
     out.step = reg.step;
-    WatchdogScope guard;  // get 是卡带代码：同样受看门狗约束
+    lua_guard::BudgetScope guard;  // get 是卡带代码：同样受看门狗约束
     const sol::protected_function_result r = reg.get();
     if (!r.valid()) return out;  // 读失败：ok=false，控制台按"取不到"处理
     const sol::object v = r;
@@ -484,7 +461,7 @@ bool Cartridge::debug_param_write(size_t index, float value) {
     if (index >= debug_regs_.size()) return false;
     DebugRegistration& reg = debug_regs_[index];
     if (!reg.set.valid()) return false;
-    WatchdogScope guard;
+    lua_guard::BudgetScope guard;
     // 按类型给**合适的 Lua 值**：布尔给 true/false（Lua 里 0 为真，给 0 会"关不掉"）、
     // 整数给整数（给浮点会让 HUD 显示 "5.0"）、浮点给浮点。于是卡带的 setter 直接 `x = v`
     // 就是对类型，不必自己兜
@@ -501,7 +478,7 @@ bool Cartridge::debug_param_write(size_t index, float value) {
 
 bool Cartridge::update(float dt) {
     if (!update_fn_.valid()) return true;
-    WatchdogScope guard;
+    lua_guard::BudgetScope guard;
     auto result = update_fn_(dt);
     if (!result.valid()) {
         sol::error err = result;

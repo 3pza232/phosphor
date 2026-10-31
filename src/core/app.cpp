@@ -346,7 +346,8 @@ void App::start_boot_animation() {
     boot_script_.reset();
     clear_host_cart();  // 上一段动画脚本（若有）的 host 指针收干净
 
-    if (!packs_.boots.empty()) {
+    // dir 为空 = 内置兜底项（一个 boot 包都没有时 ContentLibrary 保证 [0] 有效）
+    if (!packs_.boots[static_cast<size_t>(packs_.boot_index)].dir.empty()) {
         boot_script_ = std::make_unique<Cartridge>();
         if (!boot_script_->load_entry(packs_.boots[static_cast<size_t>(packs_.boot_index)].dir,
                                       "main.lua", host_)) {
@@ -492,7 +493,14 @@ int App::run_windowed(const CliOptions& opts) {
     auto last = clock::now();
     float accumulator = 0.0f;
 
-    if (opts.cart) load_cart_path(*opts.cart);
+    if (opts.cart) {
+        load_cart_path(*opts.cart);
+        // 与无头路径同一约定：--cart 给了一个装不上的卡带就不是成功运行
+        if (!playing_) {
+            std::fprintf(stderr, "ERROR: cart load failed: %s\n", last_error_.c_str());
+            return 2;
+        }
+    }
 
     while (!quit_ && !window.should_close()) {
         if (opts.frames > 0 && frame_count_ >= opts.frames) break;
