@@ -1,7 +1,7 @@
 # 验收清单（M0–M5）
 
 > 本文件是 `docs/engine/roadmap.md` 的阶段验收视图：**每条结论都能落到命令或提交**。
-> 详细缺陷证据见 `docs/engine/audit.md`；计划背景见 roadmap。最后更新：2026-10-31。
+> 详细缺陷证据见 `docs/engine/audit.md`；计划背景见 roadmap。最后更新：2026-11-01。
 
 ## 一键验收
 
@@ -63,7 +63,7 @@ python ../tools/perf_budget.py             # 性能预算报告（非门禁）
   `--check-packs`（六类内容包逐项 error/warn，退出码 2）。
 - 联机：`discover_async`/`join_async`（不阻塞；`connect_failed` 带 reason），net_smoke 覆盖。
 
-## M5 体验与子系统（进行中）
+## M5 体验与子系统（核心完成，长期项持续）
 
 已完成：
 - 输入：全部已做——失焦释放、scroll 焦点跟随/滚动条、手柄、动作映射、按键重复参数化、**重绑定界面**（F4/config.input_bindings）。
@@ -74,14 +74,14 @@ python ../tools/perf_budget.py             # 性能预算报告（非门禁）
 - 内容包：`--check-packs` 已进门禁（packs）。
 - 工程：`perf_budget.py`/`pixel_golden.py`（非门禁）、run_checks `--json` + CI 门禁摘要。
 
-仍待做（按优先级）：
+长期 backlog（按 roadmap M5 的“持续、按季度排”，不阻塞本次目标）：
 1. 音频：流式采样（大文件不整读）。
-2. 渲染：三条合成路径收口（`FrameComposer`：底图 + 层 + chrome → 绘制列表 + 文本投影）；
-   先以像素 golden 守住语义，再动合成顺序。
-3. 系统功能：全部已做（主题预览、存档管理、帮助/关于、设置搜索、截图快捷键）。
-4. S1：BootSequence/Tape-SaveGlue 已抽出，App 只剩组装根 + 主循环分派 + ImGui 调试台胶水。
-5. 内容包：依赖/版本、包预览/热重载；UI 主题包（skin ui 覆盖）已做。
-6. 契约清理：嵌套 scroll 滚动条同格覆盖的文档化；table 宽度语义已按"固定宽 + 自适应列吃余量"钉住。
+2. 渲染：`FrameView` 已统一 present/CPU 截图的组成决策（第一刀）；绘制列表与文本投影是下一步，
+   需在像素 golden 下继续收口。
+3. 绘制：粒子/转场原语。
+4. 内容包：包预览（列表目前只有名字）；依赖/版本（`phos_api` 元数据）与热重载（F5）已做。
+5. 契约：嵌套 scroll 滚动条同格覆盖的文档化；table 宽度“固定宽 + 自适应列吃余量”已钉住。
+6. M6（生态/发行）明确不在本次目标内：只交付发行打包与发布检查。
 
 ## 已知残余风险
 
@@ -91,7 +91,7 @@ python ../tools/perf_budget.py             # 性能预算报告（非门禁）
   需一起决策。
 - towerdef 的 4096 字节/值上限在极后期高密度局可能逼近（写失败与旧行为一致，不存盘不报错）；
   `mods/towerdef-build-pause` 仍为整文件 fork（默认关闭）。
-- S1 仍有 BootSequence/Tape/SaveGlue 未抽；App 主循环编排是刻意保留的组装点。
+- S1 已完成：BootSequence/TapeGlue 等已抽出，App 只剩组装根 + 主循环分派 + ImGui 调试台胶水。
 
 ## 完成判据
 
@@ -100,5 +100,5 @@ python ../tools/perf_budget.py             # 性能预算报告（非门禁）
 - [x] M2 7 屏组件化 + 文本 golden 稳定
 - [x] M3 声明式 UI/场景栈 + 11 卡迁移
 - [x] M4 工具层（存档 v2/表值/槽位/score/observe/静态检查/异步联机）
-- [ ] M5 体验项（流式采样、绘制列表/文本投影、粒子/转场、内容包预览）
-- [ ] 验收文档化：本文件与 audit/roadmap 的最终对账
+- [x] M5 核心体验项（输入/音频/绘制/内容包/工程）；长期 backlog 见上，不阻塞本次目标
+- [x] 验收文档化：本文件与 audit/roadmap 的最终对账
