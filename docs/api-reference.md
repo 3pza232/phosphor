@@ -170,20 +170,6 @@ phos.text.ink_box("@")                  -- xoff, width, approx（字形墨迹框
 写完超长的那一截就没了影，"按住更高"会变成"按住更"；`fit` 会补一个省略号，
 玩家一眼就知道"这里还有字"。`columns` 传可用列宽（面板里通常是 `pw - 2`）。
 
----
-
-### 数值展示：`score` / `clock` / `percent`
-
-千分位、计时与百分比只有一份实现（与主机自身的展示一致），卡带不要自己拼格式：
-
-```lua
-phos.text.score(31200)        -- "31,200"（负数保留符号）
-phos.text.clock(754)          -- "12:34"；3661 -> "1:01:01"；负数按 0
-phos.text.percent(0.4567)     -- "45.7%"；第二位参数是小数位数（0..2，缺省 1）
-```
-
-这三者接受 number/integer；坏值（nan/inf/字符串）按 0 处理，不会把画面写歪。
-
 ## phos.audio
 
 音频完全由**卡带自带的数据**驱动：音乐是文本记谱、音效是合成参数，
@@ -422,6 +408,7 @@ pending = phos.ui.render{
 | `bar` | 进度条（`ratio` 0..1） | — |
 | `button` | 按钮行 | A → `activated` |
 | `hint` | 页脚键位提示（`items` 为 `[键, 说明]` 交替） | — |
+| `table` | 表格：`columns` 表头 + `rows` 数据，列宽/对齐可指定（表头下自动画分隔线） | — |
 
 **元素字段**
 
@@ -445,6 +432,10 @@ pending = phos.ui.render{
 | `text` | string | — | text / option / button / stat 的正文；field 的**占位提示** |
 | `value` | string | — | stat 的右值；field 的**初始内容**（只在首次出现时写入） |
 | `items` | string[] | — | list 的行；hint 的 `[键, 说明]` 交替 |
+| `columns` | string[] | — | table 的表头（空 = 无表头；有表头时自动加一条分隔线） |
+| `rows` | table[] | — | table 的数据行：每行一个字符串数组；数字单元格按整数/两位小数转文本 |
+| `widths` | integer[] | — | table 各列固定宽度；0 或缺省 = 按内容自适应（余量均摊铺满可用宽度） |
+| `col_align` | string[] | start | table 各列对齐：`left` / `center` / `right` |
 | `disabled` | table? | — | list 中不可选的行：下标数组 `{2, 5}` 或等长布尔数组 |
 | `ratio` | number | 0 | bar 的比例（0..1，越界按 0/1 画） |
 | `checked` | boolean | false | checkbox 的**初值**；之后以用户操作为准 |
@@ -453,6 +444,14 @@ pending = phos.ui.render{
 | `indent` / `text_gap` | integer | 0 / 1 | 选中标记的缩进、正文相对标记的间距 |
 | `label_w` | integer | 0 | stat 的标签列宽；0 = 主题默认（16） |
 | `absolute` / `x` / `y` | boolean / integer | false / 0 | true = 相对父内容区定位，不参与流式布局 |
+
+表格示例（表头 + 右对齐数值列）：
+
+```lua
+{ kind = "table", columns = { "RANK", "NAME", "SCORE" }, widths = { 4, 8, 6 },
+  col_align = { "left", "left", "right" },
+  rows = { { "1", "ALPHA", "1200" }, { "2", "BETA", "900" } } },
+```
 
 **交互与焦点**
 
@@ -692,6 +691,7 @@ phos.scene.audio_pause()    -- 栈上是否有场景暂停音频
 - 卡片字段：`id`（缺省 `"scene"`）、`modal`、`pause_world`、`audio_pause`、`update(dt)`、
   `draw()`、`on_enter()`、`on_exit(result)`；后四个均可省略
 - 回调里可以继续 `push` / `pop`：引擎先排队、回调返回后再落地（不会在"正在执行的那层"上动刀）
+- 压栈的那一帧**不调用**新场景的 `update`：按键在那一帧仍是"按下"状态，立刻调 update 会把开门键当成关门键
 - `pause_world` / `audio_pause` 是**整栈查询**：压着菜单时世界就该停，回到栈顶也一样
 - 场景栈随卡带生命周期：换卡/拔卡清空，不跨卡带
 - agent 侧可读：`state.query.scenes` 报出底→顶的场景清单（id / modal / pause_world / audio_pause）
@@ -932,7 +932,7 @@ end
 
 ## phos.save
 
-需 manifest 声明 `save = true`，否则 `available()` 返回 false 且写入被忽略（不报错）。
+需 manifest 声明 `save = true`；值支持**文本 / 数字 / 布尔**（读回是同一类型；结构化表留给后续版本），否则 `available()` 返回 false 且写入被忽略（不报错）。
 
 ```lua
 phos.save.available()           -- 存档是否可用
@@ -1058,3 +1058,122 @@ end
 ## phos.debug
 
 把玩法里的常数登记进"**可调篮子**"，就能在运行中用 `~` 呼出的调试台**拖滑条实时改**，
+无需反复改代码重启。移动速度、生命值、武器半径/威力等常数都可登记。
+
+```lua
+-- 浮点（滑条）：get 读当前值、set 写回，range 决定滑条
+local SPEED = 1.0
+phos.debug.number("移动速度", function() return SPEED end,
+                  function(v) SPEED = v end, { min = 0.1, max = 3.0, step = 0.05 })
+
+-- 整数（滑条取整）：弹药 / 弹丸数之类
+phos.debug.integer("弹药", function() return W.ammo end, function(v) W.ammo = v end,
+                   { min = 0, max = 20, step = 1 })
+
+-- 布尔（复选框）
+phos.debug.toggle("无敌", function() return GOD end, function(v) GOD = v end)
+
+-- 嵌套数据也能调（回调自己存取）+ 分组折叠：武器表里第 1 件放在 "武器/<名字>" 下
+phos.debug.number({ zh = "爆炸半径", en = "Blast radius" },
+                  function() return WEAPONS[1].radius end,
+                  function(v) WEAPONS[1].radius = v end,
+                  { group = { { zh = "武器", en = "WEAPONS" }, WEAPONS[1].name },
+                    min = 1, max = 12, step = 0.5 })
+```
+三个入口形状相同：**浮点** `phos.debug.number`、**整数** `phos.debug.integer`（滑条取整）、**布尔**
+`phos.debug.toggle`（复选框）。分别对应面板里的浮点滑条 / 整数滑条 / 勾选框。
+
+- `get` / `set` 是**卡带自己的函数**，后端存储随意（局部变量、表字段、对象成员都行）。
+  `get` 在**面板打开**、`state.query`、
+  以及 `debug.set` 匹配名字时被调用，无需每帧执行。
+- `opts`：`min` / `max`（滑条范围，缺省 0 / 1）、`step`（缺省 0.01；**当前滑条样式下保留未用**）。
+  退化范围有兜底（`max <= min` 记作 `min + 1`，`step <= 0` 记作 0.01）；**空名 / 同组重名 /
+  超过上限（128）**的注册会被忽略。
+- **类型对得上**：`integer` 的 get 返回整数、set 收到**整数**；`toggle` 的 get 返回 `true/false`、
+  set 收到**布尔**——卡带直接 `X = v` 即类型匹配，无需转换（给浮点会让 HUD 显示 `5.0`，
+  给 0 在 Lua 里是真值，勾选框就"关不掉"）。
+- **注册随卡带生命周期**：拔卡即清；未插卡（主机脚本）时调用安全无效。
+- 面板里的改动**下一帧**才写回（不在渲染中途改卡带状态）。
+- 同一批参数也经控制通道暴露：`state.query.debug_params`（读）+ `debug.set`（写）——
+  agent 也能实时调参（见 `agent-interface.md`）。注意 `debug.set` **不做 min/max 钳制**
+  （那是滑条的活），值原样交给卡带的 `set`。
+- 调试台用**反引号键**（`` ` ``，就是键盘左上角那个 `~` 键）呼出。
+- **分组**：`opts.group` 把参数放进折叠层级（`"武器"` / `{zh=,en=}` 单层；数组 = 多层，如
+  `{ {zh="武器",en="WEAPONS"}, weapon.name }`）。分组是**默认关闭**的折叠节点，将来新增的
+  组 / 参数自动出现——遍历武器表逐件登记即可，加武器时面板自己会长出来。
+- **文案随语言**：`name` 与组标签都可写成 `{ zh = …, en = … }`；切界面语言时篮子文案跟着变。
+- 调试台 **HOST** 页里有个开关 **`Pause while panel is open`**：勾上后打开调试台即**冻结整机**
+  （卡带 `update` 不跑、`phos.sys.time` 不走、声音也停；画面仍按当前状态重绘），用于对静止画面细调。
+
+## phos.sys
+
+```lua
+local t   = phos.sys.time()        -- 卡带运行秒数（从 init 起）
+local fps = phos.sys.fps()         -- 当前实际帧率
+local fr  = phos.sys.frame()        -- 当前逻辑帧号（"每 N 帧一次"不必自己数）
+local r   = phos.sys.random(1, 100) -- 区间随机整数（确定性模式下由种子驱动）
+phos.sys.seed(42)                   -- 重置随机种子
+
+phos.sys.log("debug info")          -- 写主机日志（开发期）
+phos.sys.version()                  -- 主机版本（唯一权威来源）
+phos.sys.product()                  -- 产品名 "PHOSPHOR"
+phos.sys.language()                 -- 界面语言 "zh" / "en"（见下）
+phos.sys.capture_escape(true)       -- 接管 Esc：此后 Esc 是普通键（phos.input "escape"），
+                                    -- 主机不再拿它做暂停/返回。联机对局用它弹"非暂停"菜单
+```
+
+### 卡带文案的多语言
+
+**卡带文案属于卡带内容**，主机只告诉卡带"当前是什么语言"（`phos.sys.language()`），
+怎么翻译由卡带自己决定；**取值那一步用 `phos.lang`**，不必自己写查表：
+
+```lua
+-- 整屏的文案写成"两列"：新增语言只需再加一列
+local Text = {
+  zh = { over = "游戏结束", restart = "按 %s 重开" },
+  en = { over = "GAME OVER", restart = "press %s to restart" },
+}
+
+function draw()
+  local t = phos.lang.dict(Text)      -- 每帧取一次，跟随设置里的语言切换
+  phos.ui.center_text(mid, t.over)
+  phos.ui.center_text(mid + 2, string.format(t.restart, key))   -- 带参数的用 %s / %d
+end
+
+-- 单条（武器名、状态文案这类一条一对的记录）：
+local label = phos.lang.pick({ zh = "普通炮弹", en = "SHELL" })
+```
+
+- `phos.lang.dict(fields)` 返回**原表里的那一张**（引用，不拷贝）：每帧取一次即可，
+  设置里切了语言，下一帧的读数就跟着变
+- `phos.lang.pick(fields)` 取单条；两者都是**缺 en 回落中文**，漏翻不会露出空串
+- 排版一律用 `phos.text.pad` / `phos.text.width` 量宽度：中英宽度不同（汉字 2 列、
+  字母 1 列），写死列号、或按字节补空格的排版，在英文下必然错位
+
+按几列居中用 `phos.text.width` 判断；`#str` 数的是字节。
+
+---
+
+## 默认配色下的一个完整示例
+
+```lua
+local x, y = 40, 22
+
+function update(dt)
+  if phos.input.down("left")  then x = x - 1 end
+  if phos.input.down("right") then x = x + 1 end
+  if phos.input.pressed("a") then phos.audio.beep(880, 0.05) end
+end
+
+function draw()
+  phos.screen.clear()
+  phos.screen.print(2, 1, "PHOSPHOR DEMO", phos.color.green)
+  phos.screen.put(x, y, "@", phos.color.yellow)
+end
+```
+
+## 设计说明（给实现者）
+
+- API 表通过**开放注册表**装配（各模块可注册子表），为主机插件预留
+- 所有颜色/屏幕参数流经 palette 内容包，API 层不硬编码任何风格数值
+- 每个 API 函数必须对非法参数防御（类型检查 + 明确报错），错误信息面向卡带作者而非主机开发者
