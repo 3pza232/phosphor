@@ -111,13 +111,13 @@ void App::handle_intent(const Shell::Intent& intent, Renderer* renderer, Window*
     }
     if (intent.music_volume_changed) {
         config_.music_volume = shell_.music_volume();
-        audio_.set_music_volume(static_cast<float>(config_.music_volume) / 100.0f);
+        sound_state_.apply_music_volume(audio_, config_.music_volume);
         save_config_now();
         log::info("setting music_volume=" + std::to_string(config_.music_volume));
     }
     if (intent.sfx_volume_changed) {
         config_.sfx_volume = shell_.sfx_volume();
-        audio_.set_sfx_volume(static_cast<float>(config_.sfx_volume) / 100.0f);
+        sound_state_.apply_sfx_volume(audio_, config_.sfx_volume);
         play_event("confirm");  // 立即试听音效音量
         save_config_now();
         log::info("setting sfx_volume=" + std::to_string(config_.sfx_volume));

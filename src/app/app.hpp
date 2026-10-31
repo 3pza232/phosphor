@@ -2,6 +2,7 @@
 
 #include "app/font_state.hpp"
 #include "app/shelf_playback.hpp"
+#include "app/sound_state.hpp"
 
 #include "agent/cli.hpp"
 #include "agent/control_channel.hpp"
@@ -23,7 +24,6 @@
 #include "shell/shell.hpp"
 #include "ui/toast.hpp"
 
-#include <map>
 #include <memory>
 #include <string>
 #include <vector>
@@ -112,9 +112,9 @@ private:
     void start_boot_animation();
     void save_config_now();
 
-    // 音频事件（音效包驱动：优先包内音频文件，否则合成音）
+    /// 主机事件音：薄转发到 SoundState（音效包选择/采样缓存/播放编排都在那里）。
+    /// 保留这个一行的 App 入口是因为 app_cart 等调用点在本次写权限之外
     void play_event(const std::string& event);
-    int sample_handle_for(const std::string& event, const std::string& path);
     /// 界面上的任意按键边沿（用于按键音）
     bool any_key_edge() const;
 
@@ -200,9 +200,10 @@ private:
     CrtParams active_crt_;
 
     Audio audio_;
+    /// 主机事件音与采样缓存（音效包索引仍在 packs_，配置持久化仍归 App）
+    SoundState sound_state_;
     Net net_;  // 局域网联机（随卡带生命周期，见 app_cart.cpp）
     ui::Toasts toasts_;  // 卡带的瞬时提示（绘制在内容区底边，不冻结世界）
-    std::map<std::string, int> sample_cache_;  // 音效包内音频文件的解码句柄缓存
 
     // 仪式感动效状态
     float insert_flash_ = 0.0f;    // 插卡瞬间的电压闪烁

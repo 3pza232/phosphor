@@ -6,8 +6,6 @@
 
 #include <algorithm>
 #include <cstdio>
-#include <filesystem>
-#include <fstream>
 
 namespace phos {
 
@@ -95,8 +93,7 @@ void App::log_cart_error(const std::string& message) {
 void App::init_audio() {
     std::string error;
     if (audio_.init(error)) {
-        audio_.set_music_volume(static_cast<float>(config_.music_volume) / 100.0f);
-        audio_.set_sfx_volume(static_cast<float>(config_.sfx_volume) / 100.0f);
+        sound_state_.apply_volumes(audio_, config_.music_volume, config_.sfx_volume);
         std::fprintf(stderr, "audio: device ready\n");
         log::info("audio device ready");
     } else {
@@ -122,7 +119,7 @@ void App::apply_boot(int index) {
 void App::apply_sound(int index) {
     if (index < 0 || index >= static_cast<int>(packs_.sounds.size())) return;
     packs_.sound_index = index;
-    sample_cache_.clear();  // 包已切换，缓存句柄随旧包失效
+    sound_state_.clear_cache();  // 包已切换，缓存句柄随旧包失效
     config_.sound = packs_.sounds[static_cast<size_t>(packs_.sound_index)].id;
     save_config_now();
 }
@@ -197,63 +194,9 @@ void App::draw_shelf_content(Screen& screen, const ui::Rect& content, const Shel
 }
 
 
-int App::sample_handle_for(const std::string& event, const std::string& path) {
-    const SoundPack& sound_pack = packs_.sounds[static_cast<size_t>(packs_.sound_index)];
-    const std::string key = sound_pack.id + ":" + event;
-    auto it = sample_cache_.find(key);
-    if (it != sample_cache_.end()) return it->second;
-
-    int handle = 0;
-    if (host_.cart_files) {
-        // 音效包的音频文件：按包目录读取（此处 path 相对包目录）。
-        // 读之前**先看大小**：与卡带素材同一道闸，不把天量文件读进内存再交给解码器
-        const std::string file = sound_pack.dir + "/" + path;
-        std::error_code ec;
-        const auto on_disk = std::filesystem::file_size(file, ec);
-        if (!ec && on_disk <= kMaxAssetBytes) {
-            std::ifstream in(file, std::ios::binary);
-            if (in) {
-                std::ostringstream ss;
-                ss << in.rdbuf();
-                handle = audio_.load_sample(key, ss.str());
-            }
-        }
-    }
-    sample_cache_[key] = handle;
-    return handle;
-}
-
-
-namespace {
-
-/// 主机事件音的声部优先级：错误反馈最高；确认/插拔/开机次之；按键音是氛围级。
-/// 池被卡带音效压满时，至少不会把"操作失败"这种关键反馈丢掉
-int host_event_priority(const std::string& event) {
-    if (event == "error") return kPriorityCritical;
-    if (event == "confirm" || event == "insert" || event == "eject" || event == "boot")
-        return kPrioritySfx;
-    return kPriorityMin;
-}
-
-} // namespace
-
 void App::play_event(const std::string& event) {
-    if (packs_.sounds.empty()) return;
-    const SoundPack& pack = packs_.sounds[static_cast<size_t>(packs_.sound_index)];
-    const int priority = host_event_priority(event);
-
-    if (auto it = pack.files.find(event); it != pack.files.end()) {
-        const int handle = sample_handle_for(event, it->second);
-        if (handle > 0) {
-            audio_.play_sample(handle, 0.9f, false, priority, AudioBus::ui);
-            return;
-        }
-    }
-    if (auto tone = pack.tones.find(event); tone != pack.tones.end()) {
-        ToneSpec spec = tone->second;
-        if (spec.priority < priority) spec.priority = priority;
-        audio_.play_tone(spec, AudioBus::ui);
-    }
+    // 薄转发：音效包选择、采样缓存与播放编排在 SoundState（见 app/sound_state.hpp）
+    sound_state_.play_event(event, packs_, host_.cart_files, audio_);
 }
 
 
