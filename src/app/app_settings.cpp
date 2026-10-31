@@ -134,12 +134,10 @@ void App::apply_shelf(int select) {
 
     // 先卸下旧包脚本（连同它留下的 host 指针），并收回画家：新选择可能是内置样式，
     // 也可能加载失败——两种情况下内容区都必须能立即回退
-    if (shelf_script_) {
-        shelf_script_.reset();
-        clear_host_cart();
-    }
+    const bool had_script = shelf_playback_.active();
+    shelf_playback_.reset();
+    if (had_script) clear_host_cart();
     shell_.set_shelf_painter({});
-    shelf_time_ = 0.0f;
 
     if (select == 0) {
         config_.shelf_style = "list";
@@ -147,9 +145,8 @@ void App::apply_shelf(int select) {
         config_.shelf_style = "window";
     } else {
         const ShelfPack& pack = packs_.shelves[static_cast<size_t>(select - 2)];
-        auto script = std::make_unique<Cartridge>();
-        if (script->load_shelf(pack.dir, host_)) {
-            shelf_script_ = std::move(script);
+        std::string error;
+        if (shelf_playback_.load(pack.dir, host_, error)) {
             config_.shelf_style = pack.id;
             // 画家只在脚本可用时挂上：外部标记与它同步（见 Shell::shelf_view），
             // 于是"包在不在"与"内容区交给谁画"永远一致
@@ -159,7 +156,7 @@ void App::apply_shelf(int select) {
             });
         } else {
             // 包不可用（缺 shelf.lua / 缺 draw(ctx) / 语法错）：安静回退内置视窗样式并留痕
-            log::warn("shelf pack unusable, falling back to window: " + script->error());
+            log::warn("shelf pack unusable, falling back to window: " + error);
             select = 1;
             config_.shelf_style = "window";
         }
@@ -183,34 +180,17 @@ void App::apply_shelf(int select) {
 
 void App::draw_shelf_content(Screen& screen, const ui::Rect& content, const ShelfView& view,
                              const ui::Style& style) {
-    if (!shelf_script_) {  // 脚本已在别处卸下：本帧直接回退内置样式
+    if (!shelf_playback_.active()) {  // 脚本已在别处卸下：本帧直接回退内置样式
         shelf::draw_builtin(screen, content, view, style);
         return;
     }
 
-    // 把架子状态翻成只读 ctx：颜色取自卡带架所用的 ui::Style + 主题面板色，
-    // 内容包照搬上色，引擎不替内容定色
-    ShelfDrawContext ctx;
-    ctx.carts = view.carts;
-    ctx.cursor = view.cursor;
-    ctx.content_x = content.x;
-    ctx.content_y = content.y;
-    ctx.content_w = content.w;
-    ctx.content_h = content.h;
-    ctx.english = view.lang == Lang::en;
-    ctx.fg = style.fg;
-    ctx.accent = style.accent;
-    ctx.frame = style.frame;
-    ctx.dim = style.dim;
-    ctx.bg = style.bg;
-    ctx.panel = packs_.skin().panel;
-    ctx.time = shelf_time_;
-
-    if (shelf_script_->shelf_draw(ctx)) return;
+    std::string error;
+    if (shelf_playback_.draw(screen, content, view, style, packs_.skin().panel, error)) return;
 
     // 本帧报错：收回脚本、清画家，并**当帧**回退内置样式（不留半张脸）
-    log::warn("shelf script draw failed, falling back to built-in: " + shelf_script_->error());
-    shelf_script_.reset();
+    log::warn("shelf script draw failed, falling back to built-in: " + error);
+    shelf_playback_.reset();
     clear_host_cart();
     shell_.set_shelf_painter({});
     shelf::draw_builtin(screen, content, view, style);

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "app/font_state.hpp"
+#include "app/shelf_playback.hpp"
 
 #include "agent/cli.hpp"
 #include "agent/control_channel.hpp"
@@ -175,11 +176,8 @@ private:
     HostContext host_;
     Shell shell_;
     std::unique_ptr<Cartridge> boot_script_;
-    /// 当前卡带架样式包脚本（`theme/shelf/<id>/shelf.lua`）；无包时为 nullptr
-    std::unique_ptr<Cartridge> shelf_script_;
-    /// 卡带架自己的时钟（秒）：供内容包做动画。与 host_.time 分开——
-    /// 架子不是卡带，不该借用卡带的时间线
-    float shelf_time_ = 0.0f;
+    /// 卡带架样式包脚本与动画时钟（内容区由它绘制；画家注册 / config / packs 编排仍归 App）
+    ShelfPlayback shelf_playback_;
 
     /// 主机所处的**唯一**顶层面：开机动画 / 系统界面 / 卡带运行。三者互斥，于是"同时开机
     /// 又在玩"这类非法组合不可表示。系统界面内部的分支（设置 / 暂停 / Mod / 磁带码 /

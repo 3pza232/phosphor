@@ -323,14 +323,13 @@ void App::tick_shell(Renderer* renderer, Window* window) {
 
     // 卡带架样式包：架子模式下每帧推进它的 update(dt)（可选）。内容区的绘制由 draw 阶段的
     // 回调完成——update 与 draw 落在同一逻辑帧，脚本看到的时间与画画用的时间才一致
-    if (shelf_script_ && shell_.mode() == ShellMode::shelf) {
-        shelf_time_ += kLogicStep;
+    if (shelf_playback_.active() && shell_.mode() == ShellMode::shelf) {
         host_.time += kLogicStep;  // 让包里的 phos.sys.time() 也随架子时钟走
-        if (!shelf_script_->update(kLogicStep)) {
+        std::string error;
+        if (!shelf_playback_.tick(kLogicStep, error)) {
             // 脚本出错：收回脚本并清掉画家，本帧起回退内置样式。必须留痕，不能静默半张脸
-            log::warn("shelf script update failed, falling back to built-in: " +
-                      shelf_script_->error());
-            shelf_script_.reset();
+            log::warn("shelf script update failed, falling back to built-in: " + error);
+            shelf_playback_.reset();
             clear_host_cart();
             shell_.set_shelf_painter({});
         }
