@@ -1,0 +1,49 @@
+# PHOSPHOR CI：Windows + MSYS2 MinGW64 的构建与无头门禁。
+# 不加 Linux job：CMakeLists 目前硬编码 Windows 的 GLFW 预编译库
+# （extern/glfw-3.5.1.bin.WIN64），跨平台依赖解析另立任务。
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows-mingw64:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装 MSYS2 工具链（GCC / CMake / Ninja / Python + Pillow）
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-cmake
+            mingw-w64-x86_64-ninja
+            mingw-w64-x86_64-python
+            mingw-w64-x86_64-python-pillow
+
+      - name: 配置（Release + 单元测试）
+        run: cmake --preset ci
+
+      - name: 构建 phosphor 与 phosphor_tests
+        run: cmake --build --preset ci
+
+      - name: 纯逻辑单元测试
+        working-directory: build-ci
+        run: ./phosphor_tests.exe
+
+      - name: 无头门禁（includes / api / unit / control / draw / layer / cart / net）
+        working-directory: build-ci
+        run: python ../tools/run_checks.py

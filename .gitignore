@@ -2,6 +2,9 @@
 # build/ 里既有 CMake 产物，也有每次构建同步过来的运行包（carts / docs / theme …），
 # 两份都是"由源生成"的，不入库
 build/
+build-dev/
+build-sanity/
+build-ci/
 dist/
 CMakeCache.txt
 CMakeFiles/

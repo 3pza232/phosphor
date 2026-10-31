@@ -1,0 +1,23 @@
+# PHOSPHOR 编辑器约定（EditorConfig）；编码/换行/缩进统一在这里，格式化风格另行定义
+root = true
+
+# 默认：UTF-8（无 BOM）、LF、4 空格（C++ / Python / CMake）、文件末尾留一行、行尾不留空白
+[*]
+charset = utf-8
+end_of_line = lf
+indent_style = space
+indent_size = 4
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+# 文档与数据文件：嵌套列表/数组按 2 空格
+[*.{md,yml,yaml,json}]
+indent_size = 2
+
+# Lua：卡带与内容包按 2 空格（与 docs 示例、出厂卡带一致）
+[*.lua]
+indent_size = 2
+
+# Makefile 只认制表符
+[{Makefile,*.mk}]
+indent_style = tab

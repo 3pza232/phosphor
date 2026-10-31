@@ -1,0 +1,61 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 28,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "release",
+      "displayName": "release — build/（发行）",
+      "description": "Release；不产出测试目标：build/ 同时就是可直接分发的运行包目录",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "PHOSPHOR_BUILD_TESTS": "OFF"
+      }
+    },
+    {
+      "name": "dev",
+      "displayName": "dev — build-dev/（开发）",
+      "description": "Release；产出 phosphor_tests，供 run_checks 的 unit 门禁",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build-dev",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "PHOSPHOR_BUILD_TESTS": "ON"
+      }
+    },
+    {
+      "name": "sanity",
+      "displayName": "sanity — build-sanity/（排查内存问题）",
+      "description": "Release + PHOSPHOR_SANITY：容器边界断言与栈保护，慢，只用于排查",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build-sanity",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "PHOSPHOR_SANITY": "ON",
+        "PHOSPHOR_BUILD_TESTS": "ON"
+      }
+    },
+    {
+      "name": "ci",
+      "displayName": "ci — build-ci/（CI）",
+      "description": "Release + 单元测试；.github/workflows/ci.yml 用它",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build-ci",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "PHOSPHOR_BUILD_TESTS": "ON"
+      }
+    }
+  ],
+  "buildPresets": [
+    { "name": "release", "configurePreset": "release" },
+    { "name": "dev", "configurePreset": "dev" },
+    { "name": "sanity", "configurePreset": "sanity" },
+    { "name": "ci", "configurePreset": "ci" }
+  ]
+}
