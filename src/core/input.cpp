@@ -102,4 +102,24 @@ void Input::release_all() {
     std::fill(up_edge_.begin(), up_edge_.end(), false);
 }
 
+bool action_state(const Input& input, std::string_view name,
+                  const std::vector<std::string>* keys, ActionState state) {
+    if (!keys) {
+        // 未注册：默认映射同名虚拟键（不建表、不分配）
+        switch (state) {
+            case ActionState::down: return input.down(name);
+            case ActionState::pressed: return input.pressed(name);
+            case ActionState::released: return input.released(name);
+        }
+        return false;
+    }
+    for (const std::string& key : *keys) {
+        const bool hit = state == ActionState::down     ? input.down(key)
+                         : state == ActionState::pressed ? input.pressed(key)
+                                                         : input.released(key);
+        if (hit) return true;  // 多键任一满足
+    }
+    return false;  // 已注册但空表：恒 false
+}
+
 } // namespace phos

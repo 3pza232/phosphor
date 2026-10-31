@@ -912,8 +912,8 @@ phos.net.set_room({ open = false })
 ## phos.input
 
 输入抽象为虚拟键名：方向 + 动作键 + 系统键。
-输入来源只有**物理键盘**与 **agent 注入**（本机没有手柄，也不做手柄映射），两者在此汇入
-同一队列，卡带无从分辨来源。
+输入来源是**物理键盘、标准布局手柄**与 **agent 注入**（手柄映射见 [playing.md](playing.md)），
+它们在此汇入同一队列，卡带无从分辨来源。
 
 ```lua
 -- 持续按住（在 update 中查询） --
@@ -941,6 +941,25 @@ local s = phos.input.text()      -- UTF-8 字符串；无输入时为空串
 --   end
 ```
 
+**动作映射**：把"跳跃 / 确认 / 左"这类玩家意图绑定到一组虚拟键，查询时**任一键满足即为真**；
+未注册的动作默认映射同名虚拟键（`action_down("left") == down("left")`）。
+
+```lua
+-- 注册 / 替换：keys 可为字符串或字符串数组；返回当前键列表
+local keys = phos.input.action("jump", { "space", "a" })
+phos.input.action("jump", "space")          -- 单键也可以
+phos.input.action("jump", {})               -- 已注册、无绑定键：任何物理键都不触发
+local current = phos.input.action("jump")   -- 省略 keys = 只查询（未注册返回 { "jump" }）
+
+-- 查询：任一绑定键满足即真
+if phos.input.action_down("jump") then ... end      -- 持续按住
+if phos.input.action_pressed("jump") then ... end   -- 本帧刚按下
+if phos.input.action_released("jump") then ... end  -- 本帧刚松开
+```
+
+动作表**按卡带生命周期存在**（插拔 / 重载时清空，不写盘）；同一动作最多 16 个键。
+非法 name / keys（含非字符串项、不可见字符）返回 `nil` 并写 warning。
+
 默认键位映射：
 
 | 虚拟键 | 键盘 | 说明 |
@@ -949,7 +968,7 @@ local s = phos.input.text()      -- UTF-8 字符串；无输入时为空串
 | a / b | **A / B** | `a` 是确认，`b` 是取消 / 返回 |
 | x / y | **X / Y** | 卡带专用（主机保留键是 Esc / F2） |
 | start / select | Enter / Shift | `start` 是卡带自己的开始 / 暂停 |
-| space / comma / period / backspace | **空格 / , / . / 退格** | 键盘专属：留给"用了就舒服"的功能（发射、镜头平移、悔棋这类）；本机没有手柄，这些键只有键盘上有 |
+| space / comma / period / backspace | **空格 / , / . / 退格** | 键盘专属：留给"用了就舒服"的功能（发射、镜头平移、悔棋这类）；手柄没有对应键，这四颗只在键盘上 |
 | 其余任意键 | F1–F25、Tab、Home/End/Insert/Delete、PageUp/PageDown、小键盘、Ctrl/Alt/Super、其余符号… | **全部按键都有稳定名字**，卡带直接用 `phos.input.pressed("home")` / `"f5"` / `"tab"` 即可，**主机不为某个键改代码**；键名表见 `phos.input.keys()`。Esc / F2 除外（主机保留） |
 | 系统菜单 | Esc | 主机保留，卡带收不到 |
 
@@ -963,7 +982,9 @@ local s = phos.input.text()      -- UTF-8 字符串；无输入时为空串
 主机界面的提示也只写主键名）。同一物理键的不同位置不算替代——左右 Shift、
 主键盘与小键盘的 Enter 都可用，按"键帽上的字"算同一个键。
 
-> **主机没有手柄**：四个面键就是键盘上的 A/B/X/Y 本身。
+> **手柄**：标准布局手柄映射到同一套虚拟键——左摇杆/十字键 → 方向，A/B/X/Y → `a/b/x/y`，
+> START/BACK → `start/select`，LB/RB → `lbrace/rbrace`；键盘与手柄同时可用（任一来源按下即按下），
+> 详见 [playing.md](playing.md)。
 > 卡带写操作提示时用 `phos.input.key_name("a")` 取真实键名
 > （返回 "A"/"ENTER"/"SHIFT"/"LEFT"…），而非写死 "A"/"START" 之类的手柄叫法——
 > 否则提示与实际能按的键不一致。

@@ -9,8 +9,11 @@
 #include "ui/frame.hpp"
 
 #include <functional>
+#include <map>
 #include <memory>
 #include <random>
+#include <string>
+#include <vector>
 
 namespace sol { class state; }
 
@@ -49,6 +52,10 @@ struct HostContext {
     /// 控制通道请求：下一帧把焦点移到 / 激活某个控件 id（agent 用 ui.focus / ui.activate）
     std::string pending_ui_focus;
     std::string pending_ui_activate;
+    /// 卡带注册的输入动作（`phos.input.action`）：动作名 → 虚拟键列表。
+    /// 未注册 = 默认映射同名虚拟键；已注册但空表 = 无绑定键（恒 false）。
+    /// 按脚本会话存在，随 HostCartBinding 清理（不写全局、不持久化）
+    std::map<std::string, std::vector<std::string>> input_actions;
     /// 当前卡带（供 `phos.debug.number` 把可调参数注册到它上面）。由 Cartridge 装配时挂上、
     /// 拔卡时清空；无卡带时为 nullptr，phos.debug.* 安全无效
     Cartridge* cart = nullptr;
@@ -96,7 +103,8 @@ struct HostContext {
 ///
 /// 生命周期归属：HostContext 里的 `save` / `cart_files` / `cart_info` / `cart` / `scenes`
 /// 都指向当前脚本对象（Cartridge）——脚本装配时写入（`Cartridge::assemble`），脚本销毁前
-/// 必须置空，否则 API 层手里就是悬垂指针。清理本体在 `App::unbind_host_cart()`。
+/// 必须置空，否则 API 层手里就是悬垂指针。清理本体在 `App::unbind_host_cart()`；
+/// 动作表（`input_actions`）由本对象在构造 / 析构 / 换脚本时清空。
 ///
 /// **所有权**：卡带脚本对象由本对象持有（`std::unique_ptr<Cartridge>`）。于是"重置绑定"是一个
 /// 原子语义：先清 HostContext 的脚本字段，再销毁卡带——不存在"忘了单独 reset 卡带"这条路。

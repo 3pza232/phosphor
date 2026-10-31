@@ -9,6 +9,7 @@
 #include "core/config.hpp"
 #include "core/crt.hpp"
 #include "core/format.hpp"
+#include "core/input.hpp"
 #include "core/json_lite.hpp"
 #include "core/layered_screen.hpp"
 #include "core/palette.hpp"
@@ -2274,6 +2275,44 @@ TEST(frame_composition_decisions) {
     CHECK(frame_cpu_overlay(view) == &display.chrome);
     view.overlay = false;
     CHECK(frame_cpu_overlay(view) == nullptr);
+}
+
+TEST(input_action_state_and_default_mapping) {
+    Input input;
+    const std::vector<std::string> jump = {"space", "a"};
+    const std::vector<std::string> none;
+
+    // 未注册 → 默认映射同名虚拟键（不建表、不分配）
+    input.set_key("left", true);
+    CHECK(action_state(input, "left", nullptr, ActionState::down));
+    CHECK(action_state(input, "left", nullptr, ActionState::pressed));
+    CHECK(!action_state(input, "left", nullptr, ActionState::released));
+    input.next_frame();
+    CHECK(action_state(input, "left", nullptr, ActionState::down));  // 按住跨帧
+    CHECK(!action_state(input, "left", nullptr, ActionState::pressed));
+
+    // 多键任一：jump = { space, a }
+    input.set_key("space", true);
+    CHECK(action_state(input, "jump", &jump, ActionState::down));
+    CHECK(action_state(input, "jump", &jump, ActionState::pressed));
+    input.next_frame();
+    input.set_key("space", false);
+    CHECK(!action_state(input, "jump", &jump, ActionState::down));
+    CHECK(action_state(input, "jump", &jump, ActionState::released));
+    input.set_key("a", true);
+    CHECK(action_state(input, "jump", &jump, ActionState::down));
+
+    // 已注册但空表 = 无绑定键，恒 false（与"未注册默认同名"区分）
+    input.set_key("none_action", true);
+    CHECK(!action_state(input, "none_action", &none, ActionState::down));
+    CHECK(!action_state(input, "none_action", &none, ActionState::pressed));
+    CHECK(!action_state(input, "none_action", &none, ActionState::released));
+
+    // 多键里任一键的按下沿都算动作按下
+    input.next_frame();
+    input.set_key("space", true);
+    input.set_key("a", false);
+    CHECK(action_state(input, "jump", &jump, ActionState::pressed));
 }
 
 } // namespace

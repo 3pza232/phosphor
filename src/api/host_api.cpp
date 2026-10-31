@@ -256,6 +256,21 @@ sol::object save_value_to_lua(lua_State* state, const json::Value& value) {
     }
 }
 
+/// 动作表查询：未注册返回 nullptr（调用方据此走"默认映射同名虚拟键"）
+const std::vector<std::string>* action_keys_for(const HostContext& host, const std::string& name) {
+    const auto it = host.input_actions.find(name);
+    return it == host.input_actions.end() ? nullptr : &it->second;
+}
+
+/// 动作名/绑定键名的最小合法性：可见 ASCII、非空、长度受限（虚拟键名本来就长这样）
+bool valid_input_name(const std::string& name) {
+    if (name.empty() || name.size() > 64) return false;
+    for (unsigned char c : name) {
+        if (c < 33 || c > 126) return false;
+    }
+    return true;
+}
+
 } // namespace
 
 void apply_palette_to(sol::state& lua, const Palette& palette) {
@@ -433,7 +448,77 @@ void register_host_api(sol::state& lua, HostContext& host) {
     input["down"] = [&host](const std::string& key) { return host.input->down(key); };
     input["pressed"] = [&host](const std::string& key) { return host.input->pressed(key); };
     input["released"] = [&host](const std::string& key) { return host.input->released(key); };
-    // 操作提示应该写键盘上的键，而不是手柄按钮名——主机没有手柄
+
+    // 动作映射：把"跳跃/确认/左"绑到一组虚拟键，查询时任一键满足即为真。
+    // keys 省略或 nil = 只查询；未注册的动作默认映射同名虚拟键（action_down("left")==down("left")）。
+    // 动作表按脚本会话存在（HostContext::input_actions，HostCartBinding 清理），不写盘、不跨卡带。
+    input["action"] = [&host, &lua](const std::string& name,
+                                    sol::optional<sol::object> keys) -> sol::object {
+        if (!valid_input_name(name)) {
+            log::warn("phos.input.action: invalid action name");
+            return sol::nil;
+        }
+        if (keys && keys->get_type() != sol::type::nil) {
+            std::vector<std::string> list;
+            const sol::object value = *keys;
+            if (value.is<std::string>()) {
+                list.push_back(value.as<std::string>());
+            } else if (value.is<sol::table>()) {
+                const sol::table table = value.as<sol::table>();
+                // 只接受数组形态：带字符串键的表不是"键列表"，按非法处理
+                for (const auto& entry : table) {
+                    if (!entry.first.is<long long>()) {
+                        log::warn("phos.input.action: keys must be an array of strings");
+                        return sol::nil;
+                    }
+                }
+                for (std::size_t i = 1; i <= table.size(); ++i) {
+                    const sol::object item = table[static_cast<int>(i)];
+                    if (!item.is<std::string>()) {
+                        log::warn("phos.input.action: keys must be an array of strings");
+                        return sol::nil;
+                    }
+                    list.push_back(item.as<std::string>());
+                }
+            } else {
+                log::warn("phos.input.action: keys must be a string or an array of strings");
+                return sol::nil;
+            }
+            if (list.size() > 16) {
+                log::warn("phos.input.action: too many keys (max 16)");
+                return sol::nil;
+            }
+            for (const std::string& key : list) {
+                if (!valid_input_name(key)) {
+                    log::warn("phos.input.action: invalid key name");
+                    return sol::nil;
+                }
+            }
+            host.input_actions[name] = std::move(list);
+        }
+        // 返回当前键列表；未注册时返回 { name }，与默认映射一致
+        sol::table out = lua.create_table();
+        if (const std::vector<std::string>* current = action_keys_for(host, name)) {
+            for (std::size_t i = 0; i < current->size(); ++i)
+                out[static_cast<int>(i) + 1] = (*current)[i];
+        } else {
+            out[1] = name;
+        }
+        return sol::make_object(lua, out);
+    };
+    input["action_down"] = [&host](const std::string& name) {
+        return host.input && action_state(*host.input, name, action_keys_for(host, name),
+                                          ActionState::down);
+    };
+    input["action_pressed"] = [&host](const std::string& name) {
+        return host.input && action_state(*host.input, name, action_keys_for(host, name),
+                                          ActionState::pressed);
+    };
+    input["action_released"] = [&host](const std::string& name) {
+        return host.input && action_state(*host.input, name, action_keys_for(host, name),
+                                          ActionState::released);
+    };
+    // 操作提示写虚拟键在键盘上的主键名（手柄/键盘共用同一套虚拟键）
     input["key_name"] = [](const std::string& key) { return key_display_name(key); };
     // 本帧输入的文本（UTF-8；可含多字节字符与退格 '\b'）
     input["text"] = [&host]() { return host.input->text(); };
@@ -677,6 +762,7 @@ void register_host_api(sol::state& lua, HostContext& host) {
 HostCartBinding::HostCartBinding(HostContext& host, std::unique_ptr<Cartridge> cart,
                                  std::function<void()> on_release)
     : host_(host), cart_(std::move(cart)), on_release_(std::move(on_release)) {
+    host_.input_actions.clear();  // 动作表属于脚本会话：新会话从空表开始
     install_host_entries();
 }
 
@@ -684,6 +770,7 @@ HostCartBinding::~HostCartBinding() {
     // 顺序是有意的：先清 HostContext，再销毁卡带。卡带析构（Lua state / 场景栈 / UI 态）
     // 期间不会再有人从 HostContext 拿到它
     if (on_release_) on_release_();
+    host_.input_actions.clear();  // 动作表属于脚本会话，随会话结束清空
     cart_.reset();
 }
 
@@ -706,6 +793,7 @@ void HostCartBinding::detach_host_entries() {
 
 void HostCartBinding::replace_cart(std::unique_ptr<Cartridge> cart) {
     detach_host_entries();     // HostContext 先不再指向旧脚本
+    host_.input_actions.clear();  // 旧脚本的动作表不能跨重载/换卡存活
     cart_ = std::move(cart);   // 旧脚本在此销毁
     install_host_entries();    // 新脚本就位（assemble 还会写 cart_files 等）
 }

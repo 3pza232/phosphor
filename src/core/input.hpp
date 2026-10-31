@@ -55,6 +55,19 @@ inline bool is_host_key(const std::string& name) {
 /// 键名 → 输入动作；无法识别时返回 nullopt（调用方负责报错，不静默忽略）
 std::optional<InputAction> input_action_from(std::string_view name, bool down);
 
+class Input;  // 定义在下（动作判定只依赖它的查询接口）
+
+/// 动作的三种查询语义（与 Input 的三个同名查询一一对应）
+enum class ActionState { down, pressed, released };
+
+/// 动作判定：**多键任一满足即为真**。keys 的两种"空"必须区分：
+///   * keys == nullptr（未注册，或调用方只给动作名）→ 默认映射同名虚拟键
+///     （action_down("left") == down("left")），不产生任何分配；
+///   * keys != nullptr 但为空表（已注册、无绑定键）→ 恒 false。
+/// 不改变 down/pressed/released 的原有语义，只是把"任一键"的循环放在一处。
+bool action_state(const Input& input, std::string_view name,
+                  const std::vector<std::string>* keys, ActionState state);
+
 /// 统一输入状态。多源输入在此汇流，消费者无从分辨来源。
 /// 使用方式：每帧末尾调用 next_frame() 推进边沿检测。
 ///
@@ -98,6 +111,8 @@ public:
     bool down(Key key) const { return down(key_name(key)); }
     bool pressed(Key key) const { return pressed(key_name(key)); }
     bool released(Key key) const { return released(key_name(key)); }
+
+    // 动作判定在下方 action_state()（Host 的 phos.input.action_* 共用这一份实现）
 
     /// 该键已按住的秒数（松开或没按过 = 0）。按**逻辑帧**累计，
     /// 于是"越按越快"这类手感不必由卡带自己攒计时

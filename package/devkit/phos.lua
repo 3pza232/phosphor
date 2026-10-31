@@ -552,6 +552,30 @@ function phos.input.any_pressed() end
 ---@return string[]
 function phos.input.keys() end
 
+---注册 / 替换一个输入动作：把动作名绑定到一组虚拟键（字符串或字符串数组）。
+---省略 keys = 只查询，返回当前键列表；未注册的动作默认映射同名虚拟键
+---（action_down("left") == down("left")）。非法 name / keys 返回 nil 并写 warning。
+---动作表按卡带生命周期存在：插拔 / 重载即清空，不写盘、不跨卡带。
+---@param name string
+---@param keys string|string[]|nil
+---@return string[]|nil
+function phos.input.action(name, keys) end
+
+---动作是否按住：任一绑定键按住即真；未注册的动作 = 同名虚拟键
+---@param name string
+---@return boolean
+function phos.input.action_down(name) end
+
+---动作在本逻辑帧是否刚按下：任一绑定键的按下沿即真
+---@param name string
+---@return boolean
+function phos.input.action_pressed(name) end
+
+---动作在本逻辑帧是否刚松开：任一绑定键的松开沿即真
+---@param name string
+---@return boolean
+function phos.input.action_released(name) end
+
 ---本帧输入的文本（UTF-8，无输入时为空串）
 ---语义是"本帧"：每帧清空，所以在 update 里读到的就是这一帧新敲的字符。
 ---可含中文等多字节字符；退格以 '\b'（U+0008）送达，需自行处理。
