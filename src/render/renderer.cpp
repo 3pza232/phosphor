@@ -7,8 +7,10 @@
 #include <glad/glad.h>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdio>
+#include <string>
 
 namespace phos {
 
@@ -230,12 +232,9 @@ bool Renderer::reload_fonts(const std::vector<std::string>& font_files, std::str
     }
 
     const unsigned previous_tex = font_tex_;
-    font_tex_ = 0;
-    if (!build_font_atlas(std::move(fonts), err)) {
-        // 打包失败在固定字号/固定图集下不可达；真发生也宁可沿用旧图集，不要黑屏
-        font_tex_ = previous_tex;
-        return false;
-    }
+    // build_font_atlas 只在"新图集完全就绪"后才提交（字体链/字形 UV/纹理/度量一起换）。
+    // 失败时它什么都不改，所以这里不需要回滚——旧图集继续用，画面不会黑
+    if (!build_font_atlas(std::move(fonts), err)) return false;
     if (previous_tex != 0) glDeleteTextures(1, &previous_tex);
 
     // 动态区里已装好的字形属于旧图集，必须整片丢弃重装
@@ -245,19 +244,19 @@ bool Renderer::reload_fonts(const std::vector<std::string>& font_files, std::str
 }
 
 bool Renderer::build_font_atlas(std::unique_ptr<FontChain> fonts, std::string& err) {
+    // 全部先算在局部：纹理创建/上传/校验都成功之后才一次性提交。
+    // 这样任何一步失败都不会出现"字体链与字形 UV 换了、纹理还是旧的"的错位状态
     std::vector<unsigned char> bitmap(static_cast<size_t>(kAtlasSize) * kAtlasSize, 0);
     std::vector<FontChain::PackedGlyph> packed;
-    // 先在**局部**上打包：失败就原样返回，别把 fonts_ 换成一条没装成的链
-    // （否则 reload 的回滚只还原纹理，而字形/度量会与旧链对不上）
     if (!fonts->pack_ascii(kFirstChar, kCharCount, kFontPixels, kAtlasSize, bitmap, packed)) {
         err = "字体图集打包失败（图集尺寸不足？）";
         return false;
     }
-    fonts_ = std::move(fonts);  // 打包成功才接管
 
+    std::array<Glyph, kCharCount> new_glyphs{};
     for (size_t i = 0; i < packed.size() && i < kCharCount; ++i) {
         const FontChain::PackedGlyph& p = packed[i];
-        Glyph& g = glyphs_[i];
+        Glyph& g = new_glyphs[i];
         g.u0 = p.u0;
         g.v0 = p.v0;
         g.u1 = p.u1;
@@ -272,23 +271,20 @@ bool Renderer::build_font_atlas(std::unique_ptr<FontChain> fonts, std::string& e
     int ascii_bottom = 0;
     for (const FontChain::PackedGlyph& p : packed)
         ascii_bottom = std::max(ascii_bottom, static_cast<int>(p.v1 * kAtlasSize + 0.5f));
-    pen_x_ = 0;
-    pen_y_ = ascii_bottom + 1;
-    pen_row_h_ = 0;
-    pen_x0_ = pen_x_;          // 记住动态区起点：换字号时把装箱指针拨回这里复用空间
-    pen_y0_ = pen_y_;
+    const int new_pen_x = 0;
+    const int new_pen_y = ascii_bottom + 1;
 
     // 度量：主字体基线与 em（均为 kFontPixels 尺度）；绘制缩放由 update_scale 按字号算
-    font_ascent_ = fonts_->ascent(kFontPixels);
-    em32_ = fonts_->em_height(kFontPixels);
-    update_scale();
+    const float new_ascent = fonts->ascent(kFontPixels);
+    const float new_em = fonts->em_height(kFontPixels);
 
-    glGenTextures(1, &font_tex_);
-    if (font_tex_ == 0) {
+    GLuint new_tex = 0;
+    glGenTextures(1, &new_tex);
+    if (new_tex == 0) {
         err = "glGenTextures 失败（纹理名耗尽？）";
         return false;
     }
-    glBindTexture(GL_TEXTURE_2D, font_tex_);
+    glBindTexture(GL_TEXTURE_2D, new_tex);
     glPixelStorei(GL_UNPACK_ALIGNMENT, 1);  // 图集是单通道 8 位，行宽按字节算
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RED, kAtlasSize, kAtlasSize, 0,
                  GL_RED, GL_UNSIGNED_BYTE, bitmap.data());
@@ -297,6 +293,24 @@ bool Renderer::build_font_atlas(std::unique_ptr<FontChain> fonts, std::string& e
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    if (const GLenum gl_error = glGetError(); gl_error != GL_NO_ERROR) {
+        glDeleteTextures(1, &new_tex);
+        err = "字体图集上传失败（GL error " + std::to_string(gl_error) + "）";
+        return false;
+    }
+
+    // ---- 提交：到这里新图集已经完全就绪 ----
+    fonts_ = std::move(fonts);
+    std::copy(new_glyphs.begin(), new_glyphs.end(), glyphs_);
+    font_tex_ = new_tex;
+    font_ascent_ = new_ascent;
+    em32_ = new_em;
+    pen_x_ = new_pen_x;
+    pen_y_ = new_pen_y;
+    pen_row_h_ = 0;
+    pen_x0_ = pen_x_;  // 记住动态区起点：换字号时把装箱指针拨回这里复用空间
+    pen_y0_ = pen_y_;
+    update_scale();
     return true;
 }
 

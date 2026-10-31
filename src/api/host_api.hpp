@@ -1,6 +1,5 @@
 #pragma once
 
-#include "cart/save_store.hpp"
 #include "core/defaults.hpp"
 #include "core/input.hpp"
 #include "core/layered_screen.hpp"
@@ -17,6 +16,7 @@ namespace sol { class state; }
 namespace phos {
 
 class Audio;
+class SaveStore;
 class SceneStack;
 class CartFiles;
 class Cartridge;

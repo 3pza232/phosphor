@@ -74,7 +74,7 @@
 | C6 | `time.step` 的在途回包可被丢弃 | `core/app_control.cpp:452-458`：`time.resume` 直接清零 `step_request_id`、`pending_steps` | agent 端的同步点永远等不到回包（挂起）；违反 `agent-interface.md:126-127` | ✅ **已修复**：`time.resume` 先给在途 `time.step` 回 `time.step abandoned by time.resume`，再退出单步；`control_test.py` 用两条在途命令覆盖（回包按 id 归档） |
 | C7 | 一帧由三条互不相同的合成路径产生 | `render/renderer.cpp:398-420`（GL 逐格/逐笔）；`render/screen_image.cpp`（CPU 截图）；`core/layered_screen.cpp`（文本投影） | 窗口里看得见的笔迹，在 `screenshot`/文本里消失 | ✅ **已修复**（273d090）：CPU 的底图 / 图层 / 主机 chrome 三条路径都按 GL 的 `pens` 趟画无字形槽格上的笔迹（`screen_image.cpp` 三处分支）；`drawing.md` 已改为"两路同规则" |
 | C8 | 每帧做文本投影 | `core/app.cpp:223-228`：建层卡带每帧 `display_.base = display_.screen` 深拷贝 + `merge_over`，而渲染不读它 | 有层卡带每帧白付一次全屏拷贝与合并；`merge_ms` 测的就是这份浪费 | ❌ **仍待修**（已限定在 `layers.active()`，但每帧仍做） |
-| C9 | 字体热重载失败回滚不完整 | `render/renderer.cpp:256` 打包成功后即改写 `fonts_`/`glyphs_`，随后 `:286-290` 的 `glGenTextures` 失败只回滚纹理 | 失败后 UV 与旧纹理错位，字形乱码且无法自愈 | ❌ **仍待修**（字体链装载失败已安全回退；GPU 侧失败路径未回滚） |
+| C9 | 字体热重载失败回滚不完整 | `render/renderer.cpp:224-245` 旧实现：打包成功后即改写 `fonts_`/`glyphs_`，随后 `glGenTextures` 失败只回滚纹理 | 失败后 UV 与旧纹理错位，字形乱码且无法自愈 | ✅ **已修复**：`build_font_atlas` 全部先算在局部（字形/度量/装箱），纹理创建、上传与 `glGetError` 校验都通过后才一次性提交；失败时旧字体链/UV/纹理一个都不动，`reload_fonts` 无需回滚（`renderer.cpp:247-330`） |
 | C10 | `Screen::blend` 不校验宽字续格/被覆盖格 | `core/screen.cpp:188-205`：宽字笔迹拒绝；目标格 `cols == 0` 或 `scale == 0`（无字形槽）也拒绝 | 同一笔"返回成功却只在窗口可见" | ✅ **已修复**（273d090）：无字形槽的格上 `blend` 直接返回 false、日志只报一次；契约写进 `drawing.md` §3.1（叠笔只能落在有字形槽的格上） |
 | C11 | 内容根 = 进程当前目录 | `pack/content_library.cpp:13-22`、`core/app.hpp` 的固定相对路径；无 `--root` | 从资源管理器/CI/快捷方式以别的目录启动 → 无内容；与"绿色免安装、双击即用"冲突 | ❌ **仍待修** |
 | C12 | 窗口模式下 `--cart` 装载失败仍返回 0 | 旧：`core/app.cpp:495` 之后无失败返回，结尾恒 `return 0` | 脚本无法用退出码判断失败 | ✅ **已修复**：`core/app.cpp:417-420`（无头）与 `:498-501`（窗口）装载失败均 `return 2` |
@@ -94,7 +94,7 @@
 | S2 | 模式不是状态机 | `playing_/in_boot_/quit_`（`app.hpp:172-176`）与 `ShellMode` 由 5 个文件分别写 | 非法状态组合可表示；`state.query.mode` 不可信；弹窗/暂停类功能只能继续加布尔量 |
 | S3 | 选择状态有 3~4 份副本 | `Config` 字符串、`ContentLibrary` 下标、`Shell` 自带名字/下标（`shell/shell.hpp:271-286`）、字体状态 4 处 | 每次改设置手工三方同步，17 处 `save_config_now()` 即其症状 |
 | S4 | `HostContext` 是 15 个裸指针的手工生命周期 | `api/host_api.hpp:26-71`；`clear_host_cart()` 有 9 个手工调用点（`app.cpp:176,273,295,347,354` 等） | 新增子系统就要再加一处"记得清空"；错一次就是悬垂指针 |
-| S5 | `cart` ↔ `api` 头文件环 | `cart/cartridge.hpp:3` include `api/host_api.hpp`，`api/host_api.hpp:3` include `cart/save_store.hpp` | 依赖方向与 `architecture.md:43-46` 相反；一行前向声明即可断开 |
+| S5 | `cart` ↔ `api` 头文件环 | 旧：`cart/cartridge.hpp` include `api/host_api.hpp`，反向亦 include | 依赖方向与 `architecture.md:43-46` 相反 | ✅ **已断开**：两侧改用前向声明（`HostContext` / `SaveStore`），需要完整类型的 TU（`cartridge.cpp` / `score_api.cpp`）各自直接 include；`check_includes` 通过、构建与 12 项门禁全绿 |
 | S6 | 三份帧步进、三份沙箱、三份本地化解析 | `app.cpp:442-448 / 546-551 / 554-560`；`cartridge.cpp:56-62,299-311` 与 `pack.cpp:33-43`；`cartridge.cpp:82-98`、`pack.cpp:47-60,287-296` | 三处已开始分叉（无头路径少一次 `complete_frame_read`）；策略分散，改一处漏两处 |
 | S7 | `Screen` 过载 | `core/screen.hpp:22-190`：存储 + 宽字续格 + 缩放块 + 稀疏笔迹 + 子位累积 + alpha + 文本导出 | 每个新绘制特性都要改它并同时改三条消费路径；不变式从公共写入口漏出（C10） |
 | S8 | 反向依赖 `pack → render` | `pack/pack.cpp:8` include `render/font.hpp`；`FontScheme` 定义在 `pack/pack.hpp:95-101` | 与 `architecture.md:127-129` 相反；字体方案想独立演进就会被 pack 拖住 |

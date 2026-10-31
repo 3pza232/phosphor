@@ -65,10 +65,7 @@
    后者创建上下文并加载函数指针。其他模块出现 `glad.h` 即违规
 4. `cart/`、`pack/`、`agent/` 三者互不依赖，都只依赖 `core/`；把脚本里的表读成引擎类型时
    可复用 `api/lua_value.hpp`（纯值读取：`{r,g,b}` → `Color`——越界规则只写一份）。
-   **现状有三处例外**（已知债务，清单只减不增）：
-   - `cart/cartridge.hpp` include `api/host_api.hpp`，而后者 include `cart/save_store.hpp`
-     ——`cart` ↔ `api` 成环。`Cartridge` 只需要 `HostContext&` 与 `SaveStore*`，两侧各用
-     前置声明即可断开；目标：`cart/` 只依赖 `core/` 与 `api/lua_value.hpp`
+   **现状有两处例外**（已知债务，清单只减不增）：
    - `pack/pack.cpp` include `render/font.hpp` 并调 `collect_font_files`（字体文件的默认
      回退顺序）——`pack` → `render` 反向依赖；目标见「pack」与「render/font」两节
    - `agent/cart_json.hpp` include `cart/cartridge.hpp`，实际只用 `CartInfo`（纯数据）——
@@ -392,7 +389,7 @@ PHOSPHOR/
 - 渲染后端抽象（**目标，未做**）：当前是具体的 `Renderer` 类，直接绑定 OpenGL 与内联
   shader；对外只有 `draw(Screen)` / `draw_layers` / `draw_overlay` / `read_frame` 这类
   网格级方法，没有"后端接口"这一层抽象。换 Vulkan 需先把"网格 → 顶点 / 纹理"的中间层抽出来
-- 分层收口：断开 `cart` ↔ `api` 头文件环、把字体方案归入 `render/font`（第一节第 4 条）；
+- 分层收口：把字体方案归入 `render/font`（第一节第 4 条；`cart` ↔ `api` 头文件环已在 M0 断开）；
   `core/display` 对 `Renderer` 的调用改为注入窄接口或移出 core，解除 core ↔ render 互依
 - API 注册表开放：为主机插件（Lua Plugin）预留
 - Input 多源已完成于架构期（agent 需求倒逼），不得退化为直接读 GLFW

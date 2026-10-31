@@ -1,6 +1,5 @@
 #pragma once
 
-#include "api/host_api.hpp"
 #include "cart/cart_files.hpp"
 #include "cart/cart_info.hpp"
 #include "cart/save_store.hpp"
@@ -15,6 +14,7 @@
 
 namespace phos {
 class HostContext;
+struct Palette;
 }
 
 namespace phos {

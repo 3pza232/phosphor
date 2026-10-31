@@ -1,5 +1,6 @@
 #include "cart/cartridge.hpp"
 
+#include "api/host_api.hpp"
 #include "api/inspect.hpp"
 #include "api/lua_guard.hpp"
 #include "api/lua_value.hpp"
