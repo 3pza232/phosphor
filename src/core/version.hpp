@@ -16,7 +16,9 @@ namespace phos {
 ///         卡带 API 进世代 7
 /// 1.0.0：首个正式版——M0–M5 核心完成：UI 套件/外壳迁移/卡带工具层/存档 v2/音频/输入
 ///         （手柄/动作映射/重绑定）/内容包/工程治理；磁带码支持 Y 复制 / P 粘贴
-inline constexpr const char* kVersion = "1.0.0";
+/// 1.0.1：加入出厂卡带《视界线外 / BEYOND THE EVENT HORIZON》——8 章/59 场景/
+///         4 结局 + 2 失败、站点探索、电力配给与信号解调、环境音
+inline constexpr const char* kVersion = "1.0.1";
 /// 产品名
 inline constexpr const char* kProductName = "PHOSPHOR";
 /// 卡带 API 世代：manifest 声明 `phos_api` 高于它就拒绝加载，

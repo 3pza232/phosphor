@@ -347,8 +347,8 @@ phosphor/
 │   ├── app/               # 组装层：App 生命周期 / 主循环 / 各子系统接线（唯一知道全层）
 │   ├── agent/  api/  cart/  core/  devkit/  net/  pack/  platform/  render/  shell/  ui/
 ├── package/               # 程序包内容源（构建时整份复制到输出目录）
-│   ├── carts/             # 11 张出厂卡带（ballbattle / bricks / chomp / crawl / life / runner /
-│   │                      #   snake / tetris / towerdef / worms / xiangqi）
+│   ├── carts/             # 12 张出厂卡带（ballbattle / beyond-horizon / bricks / chomp / crawl /
+│   │                      #   life / runner / snake / tetris / towerdef / worms / xiangqi）
 │   ├── theme/             # 出厂内容包：skin / boot / shelf / palette / sound / font，另有 icon 窗口图标
 │   ├── devkit/            # 模板卡带 / phos.lua 注解 / 说明
 │   └── mods/  saves/      # 覆盖层与存档目录（各带 README 引导）

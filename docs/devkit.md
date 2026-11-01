@@ -291,7 +291,7 @@ local Panel = require("ui.panel")  -- ui/panel.lua
 `devkit/examples/layers/`（图层：世界 / HUD / 浮窗各占一层、按 z 叠放）、
 `devkit/examples/scene/`（场景栈：暂停浮窗冻结世界、暂停音频、出栈恢复）、
 `devkit/examples/toolkit/`（卡带工具层：排行榜持久化 / 共享词表 / 数值格式化 / 存档槽位）、
-出厂卡带 `carts/snake/`、`carts/runner/`、`carts/bricks/`、`carts/tetris/`、`carts/life/`、`carts/chomp/`、`carts/crawl/`、`carts/ballbattle/`、`carts/xiangqi/`、`carts/worms/`、`carts/towerdef/`（11 张全部已迁到新栈：组件侧栏/场景栈/score/observe/存档 v2 表值）是把这些新能力用起来的参考实现：
+出厂卡带 `carts/snake/`、`carts/runner/`、`carts/bricks/`、`carts/tetris/`、`carts/life/`、`carts/chomp/`、`carts/crawl/`、`carts/ballbattle/`、`carts/xiangqi/`、`carts/worms/`、`carts/towerdef/`、`carts/beyond-horizon/`（12 张；前 11 张已迁到新栈：组件侧栏/场景栈/score/observe/存档 v2 表值；`beyond-horizon` 是声明式 UI + 场景栈 + 存档的完整剧情卡带样板）是把这些新能力用起来的参考实现：
 侧栏用 `phos.ui.render` 声明、排行榜用 `phos.score`、暂停浮窗用 `phos.scene`、
 观测用 `phos.observe`、通用词用 `phos.lang.shared`。
 `devkit/examples/ui/`（声明式界面：列表 / 表格 / 2×3 卡片墙 / 纵向滚动与 `scroll_x`

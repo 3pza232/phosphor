@@ -18,7 +18,7 @@ python ../tools/perf_budget.py             # 性能预算报告（非门禁）
 ```
 
 当前基线：**14 门禁全绿、143 单测 / 1,636 断言、150/150 API、45 包 0/0、像素 10/10**。
-性能预算（本机，headless）：11 张出厂卡带 p95 update 均 ≤ 3.13 ms（life 最高，预算 16.67 ms）。
+性能预算（本机，headless）：12 张出厂卡带 p95 update 均 ≤ 3.18 ms（life 最高，预算 16.67 ms）。
 
 ## M0 止血与纠偏
 
@@ -49,7 +49,7 @@ python ../tools/perf_budget.py             # 性能预算报告（非门禁）
 
 - `phos.ui.render`（元素/样式/焦点/事件/主题/`input=false`）、`phos.scene`（push/pop、modal、
   pause_world、audio_pause、生命周期）、`phos.ui.toast`、表格/网格/滚动/滚动条。
-- 11 张出厂卡带全部迁移：侧栏组件化、暂停换场景栈、排行榜换 `phos.score`、观测换 `phos.observe`、
+- 11 张旧卡带全部迁移 + 新增《视界线外》（12 张）：侧栏组件化、暂停换场景栈、排行榜换 `phos.score`、观测换 `phos.observe`、
   词表/格式化/存档走工具层；`--check-cart` 全部 0 error/0 warning。
 - 场景栈：Cartridge 内的场景 push/pop 延后到安全点；卡带与外壳的输入/绘制边界由 HostContext 统一。
 

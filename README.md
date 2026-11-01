@@ -139,7 +139,7 @@ cmake --preset debug            # build-debug/：Debug + 测试目标（assert �
 | 你想 | 去看 |
 |---|---|
 | 玩：启动、操作、设置、存档与磁带码 | [`docs/playing.md`](docs/playing.md) |
-| 版本变化（1.0.0 起） | [CHANGELOG.md](CHANGELOG.md) |
+| 版本变化（1.0.1 起） | [CHANGELOG.md](CHANGELOG.md) |
 | 做卡带：一分钟版上手 + 踩坑清单 | [`docs/devkit.md`](docs/devkit.md) |
 | 查 API：每个 `phos.*` 调用 | [`docs/api-reference.md`](docs/api-reference.md) |
 | manifest 字段、生命周期、沙箱 | [`docs/cart-format.md`](docs/cart-format.md) |
